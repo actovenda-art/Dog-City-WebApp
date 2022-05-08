@@ -235,6 +235,19 @@ function hasValue(value) {
   return String(value ?? "").trim().length > 0;
 }
 
+function getFieldClassNames(showError, showValid, extraClassName = "") {
+  return [
+    "h-9 rounded-xl border px-2.5 text-[13px] shadow-sm transition-all duration-200 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]",
+    "bg-white/90 placeholder:text-slate-400 focus-visible:ring-4 focus-visible:ring-blue-100 focus-visible:ring-offset-0",
+    showError
+      ? "border-rose-300 bg-rose-50/80 text-rose-900 focus-visible:border-rose-400"
+      : showValid
+        ? "border-emerald-300 bg-emerald-50/70 text-slate-900 focus-visible:border-emerald-400"
+        : "border-slate-200 text-slate-900 focus-visible:border-blue-400",
+    extraClassName,
+  ].filter(Boolean).join(" ");
+}
+
 function getTextFieldError({
   value,
   optional = false,

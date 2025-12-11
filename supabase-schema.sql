@@ -114,6 +114,34 @@ CREATE TABLE IF NOT EXISTS despesa (
   updated_date TIMESTAMP DEFAULT NOW()
 );
 
+-- Tabela de Lançamentos (lancamento)
+CREATE TABLE IF NOT EXISTS lancamento (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  descricao TEXT,
+  valor DECIMAL(12,2) NOT NULL,
+  data_lancamento DATE DEFAULT NOW(),
+  tipo TEXT, -- entrada|saida
+  conta TEXT,
+  referencia_id TEXT,
+  categoria TEXT,
+  created_date TIMESTAMP DEFAULT NOW(),
+  updated_date TIMESTAMP DEFAULT NOW()
+);
+
+-- Tabela de Extrato Bancário (extratobancario)
+CREATE TABLE IF NOT EXISTS extratobancario (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  descricao TEXT,
+  tipo TEXT, -- entrada|saida
+  valor DECIMAL(12,2) NOT NULL,
+  data_movimento DATE DEFAULT NOW(),
+  conta_origem TEXT,
+  conta_destino TEXT,
+  lancamento_id TEXT,
+  created_date TIMESTAMP DEFAULT NOW(),
+  updated_date TIMESTAMP DEFAULT NOW()
+);
+
 -- Tabela de Planos/Assinaturas
 CREATE TABLE IF NOT EXISTS plan_config (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -123,6 +151,19 @@ CREATE TABLE IF NOT EXISTS plan_config (
   valor_mensal DECIMAL(10,2),
   data_vencimento DATE,
   status TEXT DEFAULT 'ativo',
+  created_date TIMESTAMP DEFAULT NOW(),
+  updated_date TIMESTAMP DEFAULT NOW()
+);
+
+-- Usuários (aplicação)
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  email TEXT UNIQUE,
+  full_name TEXT,
+  profile TEXT,
+  cpf TEXT,
+  phone TEXT,
+  active BOOLEAN DEFAULT true,
   created_date TIMESTAMP DEFAULT NOW(),
   updated_date TIMESTAMP DEFAULT NOW()
 );

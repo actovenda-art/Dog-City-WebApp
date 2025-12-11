@@ -49,4 +49,22 @@ INSERT INTO plan_config (id, dog_id, cliente_id, tipo_plano, valor_mensal, data_
 VALUES
   ('plan_1', 'dog_1', 'client_1', 'mensal-basic', 59.90, '2026-01-01', 'ativo', NOW());
 
+-- Usuários
+INSERT INTO users (id, email, full_name, profile, cpf, phone, active, created_date)
+VALUES
+  ('user_1', 'admin@example.com', 'Administrador', 'admin', '00000000000', '+5511999990000', true, NOW()),
+  ('user_2', 'recepcao@example.com', 'Recepção', 'staff', '11111111111', '+5511999990001', true, NOW());
+
+-- Lançamentos
+INSERT INTO lancamento (id, descricao, valor, data_lancamento, tipo, conta, categoria, created_date)
+VALUES
+  ('lan_1', 'Pagamento fornecedor', 1200.00, '2025-12-05', 'saida', 'conta_principal', 'fornecedor', NOW()),
+  ('lan_2', 'Recebimento cliente', 300.00, '2025-12-06', 'entrada', 'conta_principal', 'venda', NOW());
+
+-- Extrato bancário
+INSERT INTO extratobancario (id, descricao, tipo, valor, data_movimento, conta_origem, conta_destino, lancamento_id, created_date)
+VALUES
+  ('ext_1', 'Pagamento Pix fornecedor', 'saida', 1200.00, '2025-12-05', 'conta_principal', NULL, 'lan_1', NOW()),
+  ('ext_2', 'Recebimento cartão', 'entrada', 300.00, '2025-12-06', NULL, 'conta_principal', 'lan_2', NOW());
+
 -- Observação: ajuste os IDs e datas conforme necessário para seu ambiente.

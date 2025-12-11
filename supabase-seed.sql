@@ -79,3 +79,60 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Observação: ajuste os IDs e datas conforme necessário para seu ambiente.
+
+-- Seeds para tabelas adicionais
+INSERT INTO checkins (id, user_id, dog_id, data_checkin, observacoes, created_date)
+VALUES
+  ('chk_1', 'user_2', 'dog_1', '2025-12-15 08:55:00', 'Entrada padrão', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO serviceproviders (id, nome, contato, telefone, email, ativo, created_date)
+VALUES
+  ('sp_1', 'Fornecedor Exemplo', 'Contato A', '+5511999000111', 'fornecedor@example.com', true, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO serviceprovided (id, appointment_id, dog_id, service_type, preco, quantidade, observacoes, created_date)
+VALUES
+  ('svc_1', 'appt_1', 'dog_1', 'banho_tosa', 80.00, 1, 'Tosa básica', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO tabelaprecos (id, codigo, descricao, valor, ativo, created_date)
+VALUES
+  ('tp_1', 'BANHO01', 'Banho simples', 60.00, true, NOW()),
+  ('tp_2', 'TOSA01', 'Tosa completa', 120.00, true, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO notificacao (id, tipo, payload, lido, created_date)
+VALUES
+  ('not_1', 'orcamento', '{"orcamento_id":"orc_1"}'::jsonb, false, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO pedidointerno (id, descricao, solicitante_id, responsavel_id, status, created_date)
+VALUES
+  ('pi_1', 'Pedido de limpeza', 'user_2', 'user_1', 'aberto', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO receita (id, descricao, valor, data_receita, categoria, origem, created_date)
+VALUES
+  ('recp_1', 'Receita serviço', 300.00, '2025-12-06', 'servico', 'venda', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO "transaction" (id, referencia, valor, tipo, status, data_transacao, meta, created_date)
+VALUES
+  ('txn_1', 'rec_2', 120.00, 'recebimento', 'ok', '2025-12-22', '{"forma":"cartao"}'::jsonb, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO scheduledtransaction (id, descricao, valor, schedule_date, periodo, status, created_date)
+VALUES
+  ('schtx_1', 'Cobrança mensal plano', 59.90, '2026-01-01', 'mensal', 'ativo', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO replacement (id, tipo, referencia_id, detalhe, created_date)
+VALUES
+  ('rep_1', 'ajuste', 'lan_1', '{"motivo":"correcao"}'::jsonb, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO integracao_config (id, provider, config, ativo, created_date)
+VALUES
+  ('int_1', 'banco_exemplo', '{"key":"value"}'::jsonb, true, NOW())
+ON CONFLICT (id) DO NOTHING;

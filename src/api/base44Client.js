@@ -114,7 +114,17 @@ const mockIntegrations = {
 };
 
 // If Supabase is configured, create supabase-backed entities and integrations
-let base44 = { entities: defaultEntities, functions: mockFunctions, integrations: mockIntegrations, auth: { currentUser: null } };
+// Mock auth implementation (used when Supabase not configured)
+const createMockAuth = () => {
+  const currentUser = { id: 'local_user', email: 'dev@example.com', name: 'Dev User' };
+  return {
+    currentUser,
+    me: async () => currentUser,
+    list: async () => [currentUser]
+  };
+};
+
+let base44 = { entities: defaultEntities, functions: mockFunctions, integrations: mockIntegrations, auth: createMockAuth() };
 
 if (SUPABASE_URL && SUPABASE_ANON) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -250,7 +260,50 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     }
   };
 
-  base44 = { entities: supabaseEntities, functions: supabaseFunctions, integrations: supabaseIntegrations, auth: supabase.auth };
+  // Build a small auth wrapper that exposes `me()` and `list()` to match the app's expectations.
+  const supabaseAuth = {
+    // current authenticated user
+    currentUser: null,
+    me: async () => {
+      try {
+        if (typeof supabase.auth.getUser === 'function') {
+          const res = await supabase.auth.getUser();
+          // v2 returns { data: { user } }
+          if (res && res.data && res.data.user) return res.data.user;
+        }
+        // fallbacks for different versions
+        if (typeof supabase.auth.user === 'function') return supabase.auth.user();
+        if (supabase.auth && supabase.auth.session && supabase.auth.session.user) return supabase.auth.session.user;
+      } catch (e) {
+        console.warn('supabaseAuth.me error', e);
+      }
+      return null;
+    },
+    list: async (sort, limit) => {
+      // Try to read from a `users` table if it exists. If not, return empty array.
+      try {
+        let q = supabase.from('users').select('*');
+        if (sort && typeof sort === 'string') {
+          const field = sort.replace(/^-/, '');
+          const desc = sort.startsWith('-');
+          q = q.order(field, { ascending: !desc });
+        }
+        if (typeof limit === 'number') q = q.limit(limit);
+        const { data, error } = await q;
+        if (error) {
+          // Table may not exist — harmless fallback
+          console.warn('supabaseAuth.list: users table read error', error.message || error);
+          return [];
+        }
+        return data || [];
+      } catch (e) {
+        console.warn('supabaseAuth.list error', e);
+        return [];
+      }
+    }
+  };
+
+  base44 = { entities: supabaseEntities, functions: supabaseFunctions, integrations: supabaseIntegrations, auth: supabaseAuth };
 }
 
 export { base44 };

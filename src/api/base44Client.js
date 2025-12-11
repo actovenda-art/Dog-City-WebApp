@@ -1,10 +1,15 @@
-// Lightweight local mock of the Base44 client so the app can run without the SDK.
-// It provides `entities` with simple `list`, `filter`, `create`, `update`, `delete` methods
-// backed by `localStorage`, and a `functions` object with stubbed fns.
+// This file provides a dual-mode client:
+// - If VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are defined, use Supabase as backend.
+// - Otherwise fall back to a lightweight local mock (localStorage) so the app remains functional.
+
+import { createClient } from '@supabase/supabase-js';
 
 const STORAGE_PREFIX = 'local_base44_';
-
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2,9)}`;
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_BUCKET = import.meta.env.VITE_SUPABASE_BUCKET || 'public';
 
 function readStorage(key) {
   try { return JSON.parse(localStorage.getItem(STORAGE_PREFIX + key) || '[]'); }
@@ -15,48 +20,12 @@ function writeStorage(key, value) {
   localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
 }
 
-function createEntity(name) {
+function createMockEntity(name) {
   return {
-    list: (sort, limit) => {
-      const items = readStorage(name).slice();
-      // simple sort: if sort starts with '-', remove and sort by that field desc
-      if (sort && typeof sort === 'string') {
-        const field = sort.replace(/^-/, '');
-        const desc = sort.startsWith('-');
-        items.sort((a,b) => {
-          const va = a[field] || '';
-          const vb = b[field] || '';
-          if (va < vb) return desc ? 1 : -1;
-          if (va > vb) return desc ? -1 : 1;
-          return 0;
-        });
-      }
-      return Promise.resolve(typeof limit === 'number' ? items.slice(0, limit) : items);
-    },
-    filter: (query = {}, sort, limit) => {
-      const items = readStorage(name).filter(item => {
-        return Object.keys(query || {}).every(k => {
-          if (query[k] === null || query[k] === undefined) return true;
-          // simple contains for strings, strict equals otherwise
-          if (typeof query[k] === 'string' && typeof item[k] === 'string') {
-            return item[k].toLowerCase().includes(query[k].toLowerCase());
-          }
-          return item[k] === query[k];
-        });
-      });
-      if (sort && typeof sort === 'string') {
-        const field = sort.replace(/^-/, '');
-        const desc = sort.startsWith('-');
-        items.sort((a,b) => {
-          const va = a[field] || '';
-          const vb = b[field] || '';
-          if (va < vb) return desc ? 1 : -1;
-          if (va > vb) return desc ? -1 : 1;
-          return 0;
-        });
-      }
-      return Promise.resolve(typeof limit === 'number' ? items.slice(0, limit) : items);
-    },
+    list: (sort, limit) => Promise.resolve(readStorage(name).slice(0, limit || undefined)),
+    filter: (query = {}, sort, limit) => Promise.resolve(readStorage(name).filter(item => {
+      return Object.keys(query || {}).every(k => (query[k] === null || query[k] === undefined) || item[k] === query[k]);
+    }).slice(0, limit || undefined)),
     create: (data) => {
       const items = readStorage(name);
       const item = { ...data };
@@ -85,84 +54,203 @@ function createEntity(name) {
   };
 }
 
-const entitiesList = [
-  'Dog','Checkin','ServiceProvider','Lancamento','ExtratoBancario','ContaReceber','Client',
+// Build default mock entities
+const defaultEntities = {};
+[
+  'Dog','Checkin','Schedule','ServiceProvider','Lancamento','ExtratoBancario','ContaReceber','Client',
   'PedidoInterno','Despesa','Responsavel','Carteira','Notificacao','Orcamento','TabelaPrecos',
   'Appointment','ServiceProvided','Transaction','ScheduledTransaction','Replacement','PlanConfig',
   'IntegracaoConfig','Receita'
-];
+].forEach(n => { defaultEntities[n] = createMockEntity(n); });
 
-const entities = {};
-entitiesList.forEach(n => { entities[n] = createEntity(n); });
-
-const functions = {
+const mockFunctions = {
   notificacoesOrcamento: async (payload) => {
     console.info('[mock] notificacoesOrcamento called with', payload);
-    return Promise.resolve({ ok: true });
+    return { ok: true };
   },
   bancoInter: async (payload) => {
     console.info('[mock] bancoInter called with', payload);
-    return Promise.resolve({ ok: true });
+    return { ok: true };
   }
 };
 
-// Integrations mock: Core provider with file upload and simple helpers.
-const integrations = {
+const mockIntegrations = {
   Core: {
-    UploadFile: ({ file }) => new Promise((resolve, reject) => {
-      if (!file) return reject(new Error('No file provided'));
-      // If passed a File object in browser, read as data URL
+    UploadFile: async ({ file }) => {
+      if (!file) throw new Error('No file provided');
       if (typeof File !== 'undefined' && file instanceof File) {
         const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result;
-          const key = 'uploaded_' + makeId();
-          // store file dataUrl in localStorage for retrieval
-          try { localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify({ name: file.name, dataUrl })); }
-          catch (e) { /* ignore */ }
-          resolve({ file_url: dataUrl, file_key: key });
-        };
-        reader.onerror = (e) => reject(e);
-        reader.readAsDataURL(file);
-      } else if (typeof file === 'string') {
-        // already a URL or data URL
-        resolve({ file_url: file, file_key: makeId() });
-      } else {
-        // unsupported type
-        resolve({ file_url: null, file_key: makeId() });
+        return await new Promise((resolve, reject) => {
+          reader.onload = () => {
+            const dataUrl = reader.result;
+            const key = 'uploaded_' + makeId();
+            try { localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify({ name: file.name, dataUrl })); }
+            catch (e) { /* ignore */ }
+            resolve({ file_url: dataUrl, file_key: key });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
       }
-    }),
-    CreateFileSignedUrl: async ({ filename }) => {
-      // return a fake signed URL (not secure) that points to a data endpoint
-      const url = `data:application/octet-stream,${encodeURIComponent(filename || 'file')}`;
-      return Promise.resolve({ url });
+      if (typeof file === 'string') return { file_url: file, file_key: makeId() };
+      return { file_url: null, file_key: makeId() };
     },
-    UploadPrivateFile: async ({ file }) => {
-      // reuse UploadFile behaviour
-      return integrations.Core.UploadFile({ file });
-    },
+    CreateFileSignedUrl: async ({ filename }) => ({ url: `data:application/octet-stream,${encodeURIComponent(filename || 'file')}` }),
+    UploadPrivateFile: async ({ file }) => mockIntegrations.Core.UploadFile({ file }),
     GenerateImage: async ({ prompt }) => {
-      // return a simple SVG data URL as placeholder
       const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='%23eee'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23666' font-size='20'>${prompt ? prompt.toString().slice(0,40) : 'Generated Image'}</text></svg>`;
       const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-      return Promise.resolve({ image_url: dataUrl });
+      return { image_url: dataUrl };
     },
     ExtractDataFromUploadedFile: async ({ file_key }) => {
-      // try to read stored file data
       try {
         const raw = localStorage.getItem(STORAGE_PREFIX + file_key);
-        if (!raw) return Promise.resolve({ data: null });
+        if (!raw) return { data: null };
         const obj = JSON.parse(raw);
-        return Promise.resolve({ data: { name: obj.name, size: (obj.dataUrl || '').length } });
-      } catch (e) { return Promise.resolve({ data: null }); }
+        return { data: { name: obj.name, size: (obj.dataUrl || '').length } };
+      } catch (e) { return { data: null }; }
     }
   }
 };
 
-const auth = {
-  currentUser: null,
-  login: async (u) => { auth.currentUser = u; return Promise.resolve(u); },
-  logout: async () => { auth.currentUser = null; return Promise.resolve(); }
-};
+// If Supabase is configured, create supabase-backed entities and integrations
+let base44 = { entities: defaultEntities, functions: mockFunctions, integrations: mockIntegrations, auth: { currentUser: null } };
 
-export const base44 = { entities, functions, integrations, auth };
+if (SUPABASE_URL && SUPABASE_ANON) {
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  const createSupabaseEntity = (table) => ({
+    list: async (sort, limit) => {
+      let query = supabase.from(table).select('*');
+      if (sort && typeof sort === 'string') {
+        const field = sort.replace(/^-/, '');
+        const desc = sort.startsWith('-');
+        query = query.order(field, { ascending: !desc });
+      }
+      if (typeof limit === 'number') query = query.limit(limit);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    },
+    filter: async (q = {}, sort, limit) => {
+      let query = supabase.from(table).select('*');
+      if (q && Object.keys(q).length) query = query.match(q);
+      if (sort && typeof sort === 'string') {
+        const field = sort.replace(/^-/, '');
+        const desc = sort.startsWith('-');
+        query = query.order(field, { ascending: !desc });
+      }
+      if (typeof limit === 'number') query = query.limit(limit);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    },
+    create: async (payload) => {
+      const { data, error } = await supabase.from(table).insert([payload]).select().single();
+      if (error) throw error;
+      return data;
+    },
+    update: async (id, payload) => {
+      const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    delete: async (id) => {
+      const { data, error } = await supabase.from(table).delete().eq('id', id).select().single();
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  // Map entity names used in the code to Supabase table names.
+  // Adjust these values to match the actual table names in your Supabase project.
+  const entityToTable = {
+    Dog: 'dogs',
+    Carteira: 'carteira',
+    Client: 'carteira',
+    Responsavel: 'responsavel',
+    Orcamento: 'orcamento',
+    Schedule: 'appointment',
+    Appointment: 'appointment',
+    ContaReceber: 'conta_receber',
+    Despesa: 'despesa',
+    PlanConfig: 'plan_config',
+    // Common/expected: match name used in `supabase-schema.sql`
+    TabelaPrecos: 'tabelaprecos',
+    ServiceProvided: 'serviceprovided',
+    ServiceProvider: 'serviceproviders',
+    Transaction: 'transaction',
+    ScheduledTransaction: 'scheduledtransaction',
+    Replacement: 'replacement',
+    Lancamento: 'lancamento',
+    ExtratoBancario: 'extratobancario',
+    ContaReceber: 'conta_receber',
+    Receita: 'receita',
+    PedidoInterno: 'pedidointerno',
+    Notificacao: 'notificacao',
+    Checkin: 'checkins',
+    IntegracaoConfig: 'integracao_config'
+  };
+
+  const toSnake = (name) => name.replace(/([A-Z])/g, '_$1').replace(/^_/, '').toLowerCase();
+
+  const supabaseEntities = {};
+  // Create an entry for each entity name used by the app. If no explicit mapping exists,
+  // fallback to a snake_case table name derived from the entity name.
+  Object.keys(entityToTable).forEach(entityName => {
+    const table = entityToTable[entityName] || toSnake(entityName);
+    supabaseEntities[entityName] = createSupabaseEntity(table);
+  });
+
+  const supabaseFunctions = {
+    notificacoesOrcamento: async (payload) => {
+      // try to write to notificacao table when present
+      try {
+        if (payload) {
+          await supabase.from('notificacao').insert([{ tipo: payload.action, data: JSON.stringify(payload.data), created_date: new Date().toISOString() }]);
+        }
+      } catch (e) { /* ignore */ }
+      return { ok: true };
+    },
+    bancoInter: async (payload) => ({ ok: true })
+  };
+
+  const supabaseIntegrations = {
+    Core: {
+      UploadFile: async ({ file, path }) => {
+        const bucket = SUPABASE_BUCKET;
+        const filename = path || `${Date.now()}_${file.name || 'file'}`;
+        const { data, error: uploadError } = await supabase.storage.from(bucket).upload(filename, file, { upsert: true });
+        if (uploadError) throw uploadError;
+        const { publicURL } = supabase.storage.from(bucket).getPublicUrl(filename);
+        return { file_url: publicURL?.publicURL || publicURL || null, file_key: filename };
+      },
+      CreateFileSignedUrl: async ({ path, expires = 60 * 60 }) => {
+        const bucket = SUPABASE_BUCKET;
+        const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expires);
+        if (error) throw error;
+        return data;
+      },
+      UploadPrivateFile: async ({ file, path }) => supabaseIntegrations.Core.UploadFile({ file, path }),
+      GenerateImage: async ({ prompt }) => {
+        // placeholder: return an SVG data URL
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='%23eee'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23666' font-size='20'>${prompt ? prompt.toString().slice(0,40) : 'Generated Image'}</text></svg>`;
+        const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        return { image_url: dataUrl };
+      },
+      ExtractDataFromUploadedFile: async ({ path }) => {
+        // Not trivial to extract; return metadata if file exists
+        try {
+          const bucket = SUPABASE_BUCKET;
+          const { data, error } = await supabase.storage.from(bucket).list(path ? path.split('/').slice(0, -1).join('/') : '');
+          if (error) return { data: null };
+          return { data };
+        } catch (e) { return { data: null }; }
+      }
+    }
+  };
+
+  base44 = { entities: supabaseEntities, functions: supabaseFunctions, integrations: supabaseIntegrations, auth: supabase.auth };
+}
+
+export { base44 };

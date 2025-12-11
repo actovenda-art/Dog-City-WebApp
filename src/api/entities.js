@@ -32,6 +32,9 @@ export const TabelaPrecos = base44.entities.TabelaPrecos;
 
 export const Appointment = base44.entities.Appointment;
 
+// `Schedule` is used in several pages; prefer a dedicated export but fall back to Appointment
+export const Schedule = base44.entities.Schedule || base44.entities.Appointment;
+
 export const ServiceProvided = base44.entities.ServiceProvided;
 
 export const Transaction = base44.entities.Transaction;

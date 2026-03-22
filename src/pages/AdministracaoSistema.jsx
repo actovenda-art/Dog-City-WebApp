@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Copy, Image, KeyRound, Link2, Mail, Palette, Save, Shield, Tags, UserPlus, Users } from "lucide-react";
+import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Image, KeyRound, Link2, Mail, Palette, Save, Shield, Tags, UserPlus, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { createPageUrl, openImageViewer } from "@/utils";
 import { notifyBrandingChanged } from "@/hooks/use-branding";
@@ -54,6 +54,15 @@ const EMPTY_INVITE = {
   empresa_id: "",
   access_profile_id: "",
   is_platform_admin: false,
+};
+
+const EMPTY_FEEDBACK_MODAL = {
+  open: false,
+  title: "",
+  description: "",
+  fieldLabel: "",
+  fieldValue: "",
+  note: "",
 };
 
 function slugify(value) {
@@ -112,6 +121,8 @@ export default function AdministracaoSistema() {
   const [companyForm, setCompanyForm] = useState(EMPTY_EMPRESA);
   const [profileForm, setProfileForm] = useState(EMPTY_PERFIL);
   const [inviteForm, setInviteForm] = useState(EMPTY_INVITE);
+  const [feedbackModal, setFeedbackModal] = useState(EMPTY_FEEDBACK_MODAL);
+  const [hasCopiedFeedbackValue, setHasCopiedFeedbackValue] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -238,6 +249,31 @@ export default function AdministracaoSistema() {
     } catch (error) {
       console.error("Erro ao copiar convite:", error);
       alert("Nao foi possivel copiar o link.");
+    }
+  }
+
+  function openInviteFeedbackModal({ title, description, link }) {
+    setHasCopiedFeedbackValue(false);
+    setFeedbackModal({
+      open: true,
+      title,
+      description,
+      fieldLabel: "Link do convite",
+      fieldValue: link,
+      note: "Importante: compartilhe este link apenas com o usuario convidado. Ele deve acessar com o mesmo email informado para concluir o cadastro.",
+    });
+  }
+
+  async function copyFeedbackValue() {
+    if (!feedbackModal.fieldValue) return;
+
+    try {
+      await navigator.clipboard.writeText(feedbackModal.fieldValue);
+      setHasCopiedFeedbackValue(true);
+      window.setTimeout(() => setHasCopiedFeedbackValue(false), 2000);
+    } catch (error) {
+      console.error("Erro ao copiar valor do modal:", error);
+      alert("Nao foi possivel copiar o conteudo.");
     }
   }
 
@@ -460,11 +496,15 @@ export default function AdministracaoSistema() {
       setShowInviteModal(false);
       setInviteForm(EMPTY_INVITE);
       await loadData();
-      alert(
-        emailResult?.provider
-          ? `Convite enviado com sucesso para ${invitePayload.full_name}. Em breve se juntara a equipe!`
-          : `Convite criado para ${invitePayload.full_name}.`
-      );
+      if (emailResult?.provider) {
+        openInviteFeedbackModal({
+          title: "Convite Enviado com Sucesso",
+          description: `Convite enviado com sucesso para ${invitePayload.full_name}. Em breve se juntara a equipe!`,
+          link: inviteLink,
+        });
+      } else {
+        alert(`Convite criado para ${invitePayload.full_name}.`);
+      }
     } catch (error) {
       console.error("Erro ao enviar convite:", error);
       alert(formatApiError(error, "Erro ao criar ou enviar convite."));
@@ -781,7 +821,11 @@ export default function AdministracaoSistema() {
                                 subject: "Reenvio do convite para o Sistema Pet",
                                 body: `Ola, ${invite.full_name}.\n\nUse este link para acessar e concluir seu cadastro:\n${inviteLink}`,
                                 html: `<p>Ola, ${invite.full_name}.</p><p>Use este link para concluir seu cadastro:</p><p><a href="${inviteLink}">${inviteLink}</a></p>`,
-                              }).then(() => alert(`Convite reenviado com sucesso para ${invite.full_name}. Em breve estara com a equipe!`)).catch((error) => {
+                              }).then(() => openInviteFeedbackModal({
+                                title: "Convite Reenviado com Sucesso",
+                                description: `Convite reenviado com sucesso para ${invite.full_name}. Em breve estara com a equipe!`,
+                                link: inviteLink,
+                              })).catch((error) => {
                                 console.error("Erro ao reenviar convite:", error);
                                 alert(formatApiError(error, "Nao foi possivel reenviar o convite."));
                               })}
@@ -1067,6 +1111,73 @@ export default function AdministracaoSistema() {
               {isSaving ? "Enviando..." : "Enviar convite"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={feedbackModal.open}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFeedbackModal(EMPTY_FEEDBACK_MODAL);
+            setHasCopiedFeedbackValue(false);
+            return;
+          }
+
+          setFeedbackModal((current) => ({ ...current, open }));
+        }}
+      >
+        <DialogContent className="max-w-[560px] border-0 bg-white p-0 shadow-2xl">
+          <div className="p-7">
+            <DialogHeader className="space-y-0">
+              <DialogTitle className="flex items-start gap-3 text-3xl font-semibold text-slate-900">
+                <CircleCheckBig className="mt-1 h-7 w-7 text-emerald-500" />
+                <span>{feedbackModal.title}</span>
+              </DialogTitle>
+            </DialogHeader>
+
+            <p className="mt-5 text-lg text-slate-700">{feedbackModal.description}</p>
+
+            <div className="mt-6 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
+                <p className="text-base leading-7 text-amber-900">
+                  <span className="font-semibold">Importante:</span> {feedbackModal.note}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-7">
+              <Label className="text-2xl font-semibold text-slate-700">{feedbackModal.fieldLabel}</Label>
+              <div className="relative mt-3">
+                <Input
+                  readOnly
+                  value={feedbackModal.fieldValue}
+                  className="h-16 rounded-2xl border-slate-400 bg-slate-50 pr-14 font-medium text-slate-800 shadow-none"
+                />
+                <button
+                  type="button"
+                  onClick={copyFeedbackValue}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-slate-800"
+                  aria-label="Copiar conteudo"
+                >
+                  {hasCopiedFeedbackValue ? <Check className="h-5 w-5 text-emerald-600" /> : <Copy className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <Button
+                type="button"
+                onClick={() => {
+                  setFeedbackModal(EMPTY_FEEDBACK_MODAL);
+                  setHasCopiedFeedbackValue(false);
+                }}
+                className="h-12 rounded-xl bg-blue-600 px-8 text-base font-semibold text-white hover:bg-blue-700"
+              >
+                Entendi
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

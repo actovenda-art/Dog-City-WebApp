@@ -82,6 +82,20 @@ const mockFunctions = {
   },
   bancoInter: async (payload) => {
     console.info('[mock] bancoInter called with', payload);
+    if (payload?.action === 'test') {
+      return { success: true, message: 'Mock Banco Inter conectado.' };
+    }
+    if (payload?.action === 'buscarExtrato' || payload?.action === 'syncNow') {
+      return {
+        success: true,
+        message: 'Mock Banco Inter importou 0 registros.',
+        imported_count: 0,
+        deduplicated_count: 0,
+        total: 0,
+        inseridas: 0,
+        duplicadas: 0,
+      };
+    }
     return { ok: true };
   },
 };
@@ -281,7 +295,13 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       }
       return { ok: true };
     },
-    bancoInter: async () => ({ ok: true }),
+    bancoInter: async (payload = {}) => {
+      const { data, error } = await supabase.functions.invoke('banco-inter-sync', {
+        body: payload,
+      });
+      if (error) throw error;
+      return data;
+    },
   };
 
   const supabaseIntegrations = {

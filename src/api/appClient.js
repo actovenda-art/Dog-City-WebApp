@@ -5,7 +5,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const STORAGE_PREFIX = 'local_app_client_';
-const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2,9)}`;
+const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -13,8 +13,11 @@ const SUPABASE_PUBLIC_BUCKET = import.meta.env.VITE_SUPABASE_PUBLIC_BUCKET || 'p
 const SUPABASE_PRIVATE_BUCKET = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'private-files';
 
 function readStorage(key) {
-  try { return JSON.parse(localStorage.getItem(STORAGE_PREFIX + key) || '[]'); }
-  catch (e) { return []; }
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_PREFIX + key) || '[]');
+  } catch (e) {
+    return [];
+  }
 }
 
 function writeStorage(key, value) {
@@ -24,9 +27,13 @@ function writeStorage(key, value) {
 function createMockEntity(name) {
   return {
     list: (sort, limit) => Promise.resolve(readStorage(name).slice(0, limit || undefined)),
-    filter: (query = {}, sort, limit) => Promise.resolve(readStorage(name).filter(item => {
-      return Object.keys(query || {}).every(k => (query[k] === null || query[k] === undefined) || item[k] === query[k]);
-    }).slice(0, limit || undefined)),
+    filter: (query = {}, sort, limit) => Promise.resolve(
+      readStorage(name)
+        .filter((item) => Object.keys(query || {}).every((key) => {
+          return query[key] === null || query[key] === undefined || item[key] === query[key];
+        }))
+        .slice(0, limit || undefined)
+    ),
     create: (data) => {
       const items = readStorage(name);
       const item = { ...data };
@@ -38,31 +45,33 @@ function createMockEntity(name) {
     },
     update: (id, data) => {
       const items = readStorage(name);
-      const idx = items.findIndex(i => i.id === id);
+      const idx = items.findIndex((item) => item.id === id);
       if (idx === -1) return Promise.reject(new Error('Not found'));
       items[idx] = { ...items[idx], ...data, updated_date: new Date().toISOString() };
       writeStorage(name, items);
       return Promise.resolve(items[idx]);
     },
     delete: (id) => {
-      let items = readStorage(name);
-      const idx = items.findIndex(i => i.id === id);
+      const items = readStorage(name);
+      const idx = items.findIndex((item) => item.id === id);
       if (idx === -1) return Promise.reject(new Error('Not found'));
-      const removed = items.splice(idx,1)[0];
+      const [removed] = items.splice(idx, 1);
       writeStorage(name, items);
       return Promise.resolve(removed);
-    }
+    },
   };
 }
 
-// Build default mock entities
 const defaultEntities = {};
 [
-  'Dog','Checkin','Schedule','ServiceProvider','Lancamento','ExtratoBancario','ContaReceber','Client',
-  'PedidoInterno','Despesa','Responsavel','Carteira','Notificacao','Orcamento','TabelaPrecos',
-  'Appointment','ServiceProvided','Transaction','ScheduledTransaction','Replacement','PlanConfig',
-  'IntegracaoConfig','Receita','AppConfig','AppAsset','Empresa','PerfilAcesso','UserProfile'
-].forEach(n => { defaultEntities[n] = createMockEntity(n); });
+  'Dog', 'Checkin', 'Schedule', 'ServiceProvider', 'Lancamento', 'ExtratoBancario', 'Despesa',
+  'Responsavel', 'Carteira', 'Notificacao', 'Orcamento', 'TabelaPrecos', 'Appointment',
+  'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
+  'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
+  'UserProfile', 'ContaReceber', 'Client', 'PedidoInterno',
+].forEach((name) => {
+  defaultEntities[name] = createMockEntity(name);
+});
 
 const mockFunctions = {
   notificacoesOrcamento: async (payload) => {
@@ -72,34 +81,44 @@ const mockFunctions = {
   bancoInter: async (payload) => {
     console.info('[mock] bancoInter called with', payload);
     return { ok: true };
-  }
+  },
 };
 
 const mockIntegrations = {
   Core: {
     UploadFile: async ({ file }) => {
       if (!file) throw new Error('No file provided');
+
       if (typeof File !== 'undefined' && file instanceof File) {
         const reader = new FileReader();
         return await new Promise((resolve, reject) => {
           reader.onload = () => {
             const dataUrl = reader.result;
             const key = 'uploaded_' + makeId();
-            try { localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify({ name: file.name, dataUrl })); }
-            catch (e) { /* ignore */ }
+            try {
+              localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify({ name: file.name, dataUrl }));
+            } catch (e) {
+              // ignore localStorage quota errors
+            }
             resolve({ file_url: dataUrl, file_key: key });
           };
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
       }
-      if (typeof file === 'string') return { file_url: file, file_key: makeId() };
+
+      if (typeof file === 'string') {
+        return { file_url: file, file_key: makeId() };
+      }
+
       return { file_url: null, file_key: makeId() };
     },
-    CreateFileSignedUrl: async ({ filename, path }) => ({ url: `data:application/octet-stream,${encodeURIComponent(path || filename || 'file')}` }),
+    CreateFileSignedUrl: async ({ filename, path }) => ({
+      url: `data:application/octet-stream,${encodeURIComponent(path || filename || 'file')}`,
+    }),
     UploadPrivateFile: async ({ file }) => mockIntegrations.Core.UploadFile({ file }),
     GenerateImage: async ({ prompt }) => {
-      const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='%23eee'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23666' font-size='20'>${prompt ? prompt.toString().slice(0,40) : 'Generated Image'}</text></svg>`;
+      const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='%23eee'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23666' font-size='20'>${prompt ? prompt.toString().slice(0, 40) : 'Generated Image'}</text></svg>`;
       const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
       return { image_url: dataUrl };
     },
@@ -109,26 +128,51 @@ const mockIntegrations = {
         if (!raw) return { data: null };
         const obj = JSON.parse(raw);
         return { data: { name: obj.name, size: (obj.dataUrl || '').length } };
-      } catch (e) { return { data: null }; }
-    }
-  }
+      } catch (e) {
+        return { data: null };
+      }
+    },
+  },
 };
 
-// If Supabase is configured, create supabase-backed entities and integrations
-// Mock auth implementation (used when Supabase not configured)
 const createMockAuth = () => {
-  const currentUser = { id: 'local_user', email: 'dev@example.com', name: 'Dev User', empresa_id: 'empresa_demo' };
+  const currentUser = {
+    id: 'local_user',
+    email: 'dev@example.com',
+    full_name: 'Dev User',
+    empresa_id: 'empresa_demo',
+  };
+
   return {
     currentUser,
+    isEnabled: () => false,
+    requiresLogin: () => false,
+    getSession: async () => ({ user: currentUser }),
     me: async () => currentUser,
-    list: async () => [currentUser]
+    list: async () => [currentUser],
+    signInWithGoogle: async () => ({ provider: 'google', user: currentUser }),
+    exchangeCodeForSession: async () => ({ session: { user: currentUser }, user: currentUser }),
+    onAuthStateChange: () => ({ unsubscribe() {} }),
+    logout: async () => ({ ok: true }),
   };
 };
 
-let appClient = { entities: defaultEntities, functions: mockFunctions, integrations: mockIntegrations, auth: createMockAuth() };
+let appClient = {
+  entities: defaultEntities,
+  functions: mockFunctions,
+  integrations: mockIntegrations,
+  auth: createMockAuth(),
+};
 
 if (SUPABASE_URL && SUPABASE_ANON) {
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+      flowType: 'pkce',
+    },
+  });
 
   const createSupabaseEntity = (table) => ({
     list: async (sort, limit) => {
@@ -143,9 +187,9 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       if (error) throw error;
       return data || [];
     },
-    filter: async (q = {}, sort, limit) => {
+    filter: async (queryObj = {}, sort, limit) => {
       let query = supabase.from(table).select('*');
-      if (q && Object.keys(q).length) query = query.match(q);
+      if (queryObj && Object.keys(queryObj).length) query = query.match(queryObj);
       if (sort && typeof sort === 'string') {
         const field = sort.replace(/^-/, '');
         const desc = sort.startsWith('-');
@@ -170,11 +214,9 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const { data, error } = await supabase.from(table).delete().eq('id', id).select().single();
       if (error) throw error;
       return data;
-    }
+    },
   });
 
-  // Map entity names used in the code to Supabase table names.
-  // Adjust these values to match the actual table names in your Supabase project.
   const entityToTable = {
     Dog: 'dogs',
     Carteira: 'carteira',
@@ -186,7 +228,6 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     ContaReceber: 'conta_receber',
     Despesa: 'despesa',
     PlanConfig: 'plan_config',
-    // Common/expected: match name used in `supabase-schema.sql`
     TabelaPrecos: 'tabelaprecos',
     ServiceProvided: 'serviceprovided',
     ServiceProvider: 'serviceproviders',
@@ -195,7 +236,6 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     Replacement: 'replacement',
     Lancamento: 'lancamento',
     ExtratoBancario: 'extratobancario',
-    ContaReceber: 'conta_receber',
     Receita: 'receita',
     PedidoInterno: 'pedidointerno',
     Notificacao: 'notificacao',
@@ -205,30 +245,33 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     AppAsset: 'app_asset',
     Empresa: 'empresa',
     PerfilAcesso: 'perfil_acesso',
-    UserProfile: 'users'
+    UserProfile: 'users',
   };
 
   const toSnake = (name) => name.replace(/([A-Z])/g, '_$1').replace(/^_/, '').toLowerCase();
 
   const supabaseEntities = {};
-  // Create an entry for each entity name used by the app. If no explicit mapping exists,
-  // fallback to a snake_case table name derived from the entity name.
-  Object.keys(entityToTable).forEach(entityName => {
+  Object.keys(entityToTable).forEach((entityName) => {
     const table = entityToTable[entityName] || toSnake(entityName);
     supabaseEntities[entityName] = createSupabaseEntity(table);
   });
 
   const supabaseFunctions = {
     notificacoesOrcamento: async (payload) => {
-      // try to write to notificacao table when present
       try {
         if (payload) {
-          await supabase.from('notificacao').insert([{ tipo: payload.action, data: JSON.stringify(payload.data), created_date: new Date().toISOString() }]);
+          await supabase.from('notificacao').insert([{
+            tipo: payload.action,
+            data: JSON.stringify(payload.data),
+            created_date: new Date().toISOString(),
+          }]);
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        // ignore notification write failures
+      }
       return { ok: true };
     },
-    bancoInter: async (payload) => ({ ok: true })
+    bancoInter: async () => ({ ok: true }),
   };
 
   const supabaseIntegrations = {
@@ -236,7 +279,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       UploadFile: async ({ file, path }) => {
         const bucket = SUPABASE_PUBLIC_BUCKET;
         const filename = path || `${Date.now()}_${file.name || 'file'}`;
-        const { data, error: uploadError } = await supabase.storage.from(bucket).upload(filename, file, { upsert: true });
+        const { error: uploadError } = await supabase.storage.from(bucket).upload(filename, file, { upsert: true });
         if (uploadError) throw uploadError;
         const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(filename);
         return { file_url: publicData?.publicUrl || null, file_key: filename, bucket };
@@ -254,84 +297,210 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         return { file_url: null, file_key: filename, bucket };
       },
       GenerateImage: async ({ prompt }) => {
-        // placeholder: return an SVG data URL
-        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='%23eee'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23666' font-size='20'>${prompt ? prompt.toString().slice(0,40) : 'Generated Image'}</text></svg>`;
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='%23eee'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23666' font-size='20'>${prompt ? prompt.toString().slice(0, 40) : 'Generated Image'}</text></svg>`;
         const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
         return { image_url: dataUrl };
       },
       ExtractDataFromUploadedFile: async ({ path }) => {
-        // Not trivial to extract; return metadata if file exists
         try {
           const bucket = SUPABASE_PRIVATE_BUCKET;
-          const { data, error } = await supabase.storage.from(bucket).list(path ? path.split('/').slice(0, -1).join('/') : '');
+          const folder = path ? path.split('/').slice(0, -1).join('/') : '';
+          const { data, error } = await supabase.storage.from(bucket).list(folder);
           if (error) return { data: null };
           return { data };
-        } catch (e) { return { data: null }; }
+        } catch (e) {
+          return { data: null };
+        }
+      },
+    },
+  };
+
+  const getAuthName = (authUser) => {
+    const metadata = authUser?.user_metadata || {};
+    return (
+      metadata.full_name ||
+      metadata.name ||
+      [metadata.first_name, metadata.last_name].filter(Boolean).join(' ') ||
+      authUser?.email?.split('@')?.[0] ||
+      null
+    );
+  };
+
+  const findUserProfile = async (authUser) => {
+    if (!authUser) return null;
+
+    try {
+      if (authUser.id) {
+        const { data, error } = await supabase.from('users').select('*').eq('id', authUser.id).limit(1);
+        if (!error && data?.[0]) return data[0];
       }
+
+      if (authUser.email) {
+        const { data, error } = await supabase.from('users').select('*').eq('email', authUser.email).limit(1);
+        if (!error && data?.[0]) return data[0];
+      }
+    } catch (error) {
+      console.warn('findUserProfile error', error);
+    }
+
+    return null;
+  };
+
+  const syncUserProfile = async (authUser) => {
+    if (!authUser?.email) return authUser;
+
+    try {
+      const existingProfile = await findUserProfile(authUser);
+      const payload = {
+        email: authUser.email,
+        full_name: existingProfile?.full_name || getAuthName(authUser),
+        active: existingProfile?.active ?? true,
+      };
+
+      if (existingProfile) {
+        const { data, error } = await supabase
+          .from('users')
+          .update(payload)
+          .eq('id', existingProfile.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return { ...authUser, ...data };
+      }
+
+      const { data, error } = await supabase
+        .from('users')
+        .insert([{
+          id: authUser.id,
+          email: authUser.email,
+          full_name: getAuthName(authUser),
+          profile: 'usuario',
+          active: true,
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { ...authUser, ...data };
+    } catch (error) {
+      console.warn('syncUserProfile error', error);
+      return authUser;
     }
   };
 
-  // Build a small auth wrapper that exposes `me()` and `list()` to match the app's expectations.
-  const supabaseAuth = {
-    // current authenticated user
-    currentUser: null,
-    me: async () => {
-      try {
-        let authUser = null;
-        if (typeof supabase.auth.getUser === 'function') {
-          const res = await supabase.auth.getUser();
-          // v2 returns { data: { user } }
-          if (res && res.data && res.data.user) authUser = res.data.user;
-        }
-        // fallbacks for different versions
-        if (!authUser && typeof supabase.auth.user === 'function') authUser = supabase.auth.user();
-        if (!authUser && supabase.auth && supabase.auth.session && supabase.auth.session.user) authUser = supabase.auth.session.user;
-        if (!authUser) return null;
-
-        try {
-          let query = supabase.from('users').select('*');
-          if (authUser.id) {
-            query = query.eq('id', authUser.id);
-          } else if (authUser.email) {
-            query = query.eq('email', authUser.email);
-          }
-          const { data: profileData } = await query.limit(1);
-          const profile = profileData?.[0];
-          if (profile) return { ...authUser, ...profile };
-        } catch (profileError) {
-          console.warn('supabaseAuth.me profile lookup error', profileError);
-        }
-        return authUser;
-      } catch (e) {
-        console.warn('supabaseAuth.me error', e);
-      }
+  const getAuthenticatedUser = async () => {
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) throw error;
+      return data?.user || null;
+    } catch (error) {
+      console.warn('getAuthenticatedUser error', error);
       return null;
+    }
+  };
+
+  const supabaseAuth = {
+    currentUser: null,
+    isEnabled: () => true,
+    requiresLogin: () => true,
+    getSession: async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      return data?.session || null;
+    },
+    me: async () => {
+      const authUser = await getAuthenticatedUser();
+      if (!authUser) return null;
+
+      const mergedUser = await syncUserProfile(authUser);
+      supabaseAuth.currentUser = mergedUser;
+      return mergedUser;
+    },
+    signInWithGoogle: async ({ redirectTo, nextPath } = {}) => {
+      const origin = typeof window !== 'undefined' ? window.location.origin : SUPABASE_URL;
+      const callbackUrl = new URL(redirectTo || `${origin}/auth-callback`, origin);
+
+      if (nextPath) {
+        callbackUrl.searchParams.set('next', nextPath);
+      }
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: callbackUrl.toString(),
+        },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    exchangeCodeForSession: async (currentUrl) => {
+      const origin = typeof window !== 'undefined' ? window.location.origin : SUPABASE_URL;
+      const url = new URL(currentUrl || `${origin}/auth-callback`, origin);
+      const authCode = url.searchParams.get('code');
+
+      if (!authCode) {
+        return supabaseAuth.getSession();
+      }
+
+      const { data, error } = await supabase.auth.exchangeCodeForSession(authCode);
+      if (error) throw error;
+
+      const mergedUser = await syncUserProfile(data?.user || data?.session?.user);
+      supabaseAuth.currentUser = mergedUser;
+      return data;
+    },
+    onAuthStateChange: (callback) => {
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          const mergedUser = await syncUserProfile(session.user);
+          supabaseAuth.currentUser = mergedUser;
+        } else {
+          supabaseAuth.currentUser = null;
+        }
+
+        if (typeof callback === 'function') {
+          callback(event, session);
+        }
+      });
+
+      return data?.subscription || { unsubscribe() {} };
+    },
+    logout: async () => {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      supabaseAuth.currentUser = null;
+      return { ok: true };
     },
     list: async (sort, limit) => {
-      // Try to read from a `users` table if it exists. If not, return empty array.
       try {
-        let q = supabase.from('users').select('*');
+        let query = supabase.from('users').select('*');
         if (sort && typeof sort === 'string') {
           const field = sort.replace(/^-/, '');
           const desc = sort.startsWith('-');
-          q = q.order(field, { ascending: !desc });
+          query = query.order(field, { ascending: !desc });
         }
-        if (typeof limit === 'number') q = q.limit(limit);
-        const { data, error } = await q;
+        if (typeof limit === 'number') query = query.limit(limit);
+        const { data, error } = await query;
         if (error) {
-          // Table may not exist — harmless fallback
           console.warn('supabaseAuth.list: users table read error', error.message || error);
           return [];
         }
         return data || [];
-      } catch (e) {
-        console.warn('supabaseAuth.list error', e);
+      } catch (error) {
+        console.warn('supabaseAuth.list error', error);
         return [];
       }
-    }
+    },
   };
 
-  appClient = { entities: supabaseEntities, functions: supabaseFunctions, integrations: supabaseIntegrations, auth: supabaseAuth };
+  appClient = {
+    entities: supabaseEntities,
+    functions: supabaseFunctions,
+    integrations: supabaseIntegrations,
+    auth: supabaseAuth,
+  };
 }
 
 export { appClient };

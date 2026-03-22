@@ -294,7 +294,14 @@ if (SUPABASE_URL && SUPABASE_ANON) {
             body: JSON.stringify({ to, subject, body, html }),
           });
           if (!response.ok) {
-            throw new Error(`Falha ao enviar email (${response.status})`);
+            let details = '';
+            try {
+              const errorPayload = await response.json();
+              details = errorPayload?.details?.message || errorPayload?.details || errorPayload?.error || '';
+            } catch (error) {
+              details = '';
+            }
+            throw new Error(details ? `Falha ao enviar email (${response.status}): ${details}` : `Falha ao enviar email (${response.status})`);
           }
           return { ok: true, mode: 'webhook' };
         }

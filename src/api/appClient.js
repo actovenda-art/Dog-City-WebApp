@@ -284,10 +284,26 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     notificacoesOrcamento: async (payload) => {
       try {
         if (payload) {
+          const notificationPayload = payload.data || {};
+          const action = payload.action || 'notificacao';
+          const titleByAction = {
+            status_alterado: 'Status de orcamento atualizado',
+            orcamento_criado: 'Novo orcamento criado',
+            orcamento_enviado: 'Orcamento enviado',
+          };
+          const defaultMessage = action === 'status_alterado'
+            ? `Novo status: ${notificationPayload?.novo_status || 'atualizado'}`
+            : 'Voce recebeu uma nova notificacao.';
           await supabase.from('notificacao').insert([{
-            tipo: payload.action,
-            data: JSON.stringify(payload.data),
+            user_id: payload.user_id || notificationPayload.user_id || null,
+            empresa_id: payload.empresa_id || notificationPayload.empresa_id || null,
+            tipo: action,
+            titulo: payload.titulo || titleByAction[action] || 'Notificacao',
+            mensagem: payload.mensagem || notificationPayload.mensagem || defaultMessage,
+            link: payload.link || notificationPayload.link || null,
+            payload: notificationPayload,
             created_date: new Date().toISOString(),
+            updated_date: new Date().toISOString(),
           }]);
         }
       } catch (e) {

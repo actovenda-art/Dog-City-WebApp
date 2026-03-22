@@ -450,7 +450,7 @@ export default function AdministracaoSistema() {
         "Se o login abrir em outra conta Google, troque para o email convidado antes de prosseguir.",
       ].join("\n");
 
-      await SendEmail({
+      const emailResult = await SendEmail({
         to: invitePayload.email,
         subject,
         body,
@@ -460,7 +460,7 @@ export default function AdministracaoSistema() {
       setShowInviteModal(false);
       setInviteForm(EMPTY_INVITE);
       await loadData();
-      alert("Convite criado. O email foi disparado pelo modo configurado no app.");
+      alert(emailResult?.provider ? "Convite criado e email enviado com sucesso." : "Convite criado.");
     } catch (error) {
       console.error("Erro ao enviar convite:", error);
       alert(formatApiError(error, "Erro ao criar ou enviar convite."));

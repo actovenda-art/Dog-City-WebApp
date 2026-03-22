@@ -781,7 +781,7 @@ export default function AdministracaoSistema() {
                                 subject: "Reenvio do convite para o Sistema Pet",
                                 body: `Ola, ${invite.full_name}.\n\nUse este link para acessar e concluir seu cadastro:\n${inviteLink}`,
                                 html: `<p>Ola, ${invite.full_name}.</p><p>Use este link para concluir seu cadastro:</p><p><a href="${inviteLink}">${inviteLink}</a></p>`,
-                              }).then(() => alert("Reenvio iniciado pelo modo configurado no app.")).catch((error) => {
+                              }).then(() => alert(`Convite reenviado com sucesso para ${invite.full_name}. Em breve estara com a equipe!`)).catch((error) => {
                                 console.error("Erro ao reenviar convite:", error);
                                 alert(formatApiError(error, "Nao foi possivel reenviar o convite."));
                               })}

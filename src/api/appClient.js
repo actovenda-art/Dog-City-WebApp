@@ -11,6 +11,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SUPABASE_PUBLIC_BUCKET = import.meta.env.VITE_SUPABASE_PUBLIC_BUCKET || 'public-assets';
 const SUPABASE_PRIVATE_BUCKET = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'private-files';
+const DEFAULT_EMAIL_WEBHOOK_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/send-email` : '';
 
 function readStorage(key) {
   try {
@@ -286,7 +287,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
   const supabaseIntegrations = {
     Core: {
       SendEmail: async ({ to, subject, body, html }) => {
-        const webhookUrl = import.meta.env.VITE_EMAIL_WEBHOOK_URL;
+        const webhookUrl = import.meta.env.VITE_EMAIL_WEBHOOK_URL || DEFAULT_EMAIL_WEBHOOK_URL;
         if (webhookUrl) {
           const headers = { 'Content-Type': 'application/json' };
           if (SUPABASE_ANON && webhookUrl.includes('.supabase.co/functions/v1/')) {

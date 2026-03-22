@@ -68,6 +68,7 @@ const defaultEntities = {};
   'Responsavel', 'Carteira', 'Notificacao', 'Orcamento', 'TabelaPrecos', 'Appointment',
   'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
+  'UserInvite',
   'UserProfile', 'ContaReceber', 'Client', 'PedidoInterno',
 ].forEach((name) => {
   defaultEntities[name] = createMockEntity(name);
@@ -86,6 +87,13 @@ const mockFunctions = {
 
 const mockIntegrations = {
   Core: {
+    SendEmail: async ({ to, subject, body }) => {
+      if (typeof window !== 'undefined') {
+        const mailto = `mailto:${encodeURIComponent(to || '')}?subject=${encodeURIComponent(subject || '')}&body=${encodeURIComponent(body || '')}`;
+        window.open(mailto, '_blank', 'noopener,noreferrer');
+      }
+      return { ok: true, mode: 'mailto' };
+    },
     UploadFile: async ({ file }) => {
       if (!file) throw new Error('No file provided');
 
@@ -245,6 +253,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     AppAsset: 'app_asset',
     Empresa: 'empresa',
     PerfilAcesso: 'perfil_acesso',
+    UserInvite: 'user_invite',
     UserProfile: 'users',
   };
 
@@ -276,6 +285,27 @@ if (SUPABASE_URL && SUPABASE_ANON) {
 
   const supabaseIntegrations = {
     Core: {
+      SendEmail: async ({ to, subject, body, html }) => {
+        const webhookUrl = import.meta.env.VITE_EMAIL_WEBHOOK_URL;
+        if (webhookUrl) {
+          const response = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to, subject, body, html }),
+          });
+          if (!response.ok) {
+            throw new Error(`Falha ao enviar email (${response.status})`);
+          }
+          return { ok: true, mode: 'webhook' };
+        }
+
+        if (typeof window !== 'undefined') {
+          const mailto = `mailto:${encodeURIComponent(to || '')}?subject=${encodeURIComponent(subject || '')}&body=${encodeURIComponent(body || '')}`;
+          window.open(mailto, '_blank', 'noopener,noreferrer');
+        }
+
+        return { ok: true, mode: 'mailto' };
+      },
       UploadFile: async ({ file, path }) => {
         const bucket = SUPABASE_PUBLIC_BUCKET;
         const filename = path || `${Date.now()}_${file.name || 'file'}`;
@@ -346,15 +376,46 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     return null;
   };
 
+  const findPendingInviteByEmail = async (email) => {
+    if (!email) return null;
+
+    try {
+      const { data, error } = await supabase
+        .from('user_invite')
+        .select('*')
+        .eq('email', email)
+        .in('status', ['pendente', 'aceito'])
+        .order('created_date', { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.warn('findPendingInviteByEmail error', error);
+        return null;
+      }
+
+      return data?.[0] || null;
+    } catch (error) {
+      console.warn('findPendingInviteByEmail error', error);
+      return null;
+    }
+  };
+
   const syncUserProfile = async (authUser) => {
     if (!authUser?.email) return authUser;
 
     try {
       const existingProfile = await findUserProfile(authUser);
+      const invite = await findPendingInviteByEmail(authUser.email);
+      const onboardingStatus = existingProfile?.onboarding_status || (invite ? 'pendente' : 'completo');
       const payload = {
         email: authUser.email,
-        full_name: existingProfile?.full_name || getAuthName(authUser),
+        full_name: existingProfile?.full_name || invite?.full_name || getAuthName(authUser),
         active: existingProfile?.active ?? true,
+        empresa_id: existingProfile?.empresa_id || invite?.empresa_id || null,
+        access_profile_id: existingProfile?.access_profile_id || invite?.access_profile_id || null,
+        company_role: existingProfile?.company_role || invite?.company_role || null,
+        is_platform_admin: existingProfile?.is_platform_admin ?? invite?.is_platform_admin ?? false,
+        onboarding_status: onboardingStatus,
       };
 
       if (existingProfile) {
@@ -374,9 +435,14 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         .insert([{
           id: authUser.id,
           email: authUser.email,
-          full_name: getAuthName(authUser),
+          full_name: invite?.full_name || getAuthName(authUser),
           profile: 'usuario',
           active: true,
+          empresa_id: invite?.empresa_id || null,
+          access_profile_id: invite?.access_profile_id || null,
+          company_role: invite?.company_role || null,
+          is_platform_admin: invite?.is_platform_admin ?? false,
+          onboarding_status: invite ? 'pendente' : 'completo',
         }])
         .select()
         .single();
@@ -456,9 +522,8 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const authUser = data?.user || data?.session?.user || null;
       supabaseAuth.currentUser = authUser;
       if (authUser) {
-        syncUserProfile(authUser).catch((syncError) => {
-          console.warn('exchangeCodeForSession syncUserProfile error', syncError);
-        });
+        const mergedUser = await syncUserProfile(authUser);
+        supabaseAuth.currentUser = mergedUser;
       }
       return data;
     },

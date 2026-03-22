@@ -1,6 +1,7 @@
 export const PAGE_ROUTES: Record<string, string> = {
     Login: "login",
     AuthCallback: "auth-callback",
+    CompletarCadastro: "completar-cadastro",
     Dev_Dashboard: "dashboard",
     Backup: "backup",
     Registrador: "registrador",

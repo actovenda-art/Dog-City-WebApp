@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
 import { AppAsset, AppConfig, User } from "@/api/entities";
 
+export const BRANDING_EVENT = "app-branding-updated";
+
 const DEFAULT_BRANDING = {
   companyName: "Dog City Brasil",
   logoUrl: "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' rx='24' fill='%23fff7ed'/%3E%3Cpath d='M34 79c0-11 9-20 20-20h12c11 0 20 9 20 20v7H34z' fill='%23ea580c'/%3E%3Ccircle cx='47' cy='42' r='7' fill='%23111827'/%3E%3Ccircle cx='73' cy='42' r='7' fill='%23111827'/%3E%3Cpath d='M40 18l14 18H38zM80 18l-14 18h16z' fill='%23fb923c'/%3E%3Ccircle cx='60' cy='66' r='9' fill='%23f59e0b'/%3E%3C/svg%3E",
 };
+
+export function notifyBrandingChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(BRANDING_EVENT));
+}
 
 function getFaviconType(url) {
   if (!url) return "image/svg+xml";
@@ -72,9 +79,28 @@ export function useBranding() {
       }
     }
 
+    function handleRefresh() {
+      loadBranding();
+    }
+
+    function handleVisibilityChange() {
+      if (!document.hidden) {
+        loadBranding();
+      }
+    }
+
     loadBranding();
+    window.addEventListener(BRANDING_EVENT, handleRefresh);
+    window.addEventListener("focus", handleRefresh);
+    window.addEventListener("storage", handleRefresh);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       cancelled = true;
+      window.removeEventListener(BRANDING_EVENT, handleRefresh);
+      window.removeEventListener("focus", handleRefresh);
+      window.removeEventListener("storage", handleRefresh);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -84,7 +110,8 @@ export function useBranding() {
     const faviconType = getFaviconType(branding.logoUrl);
     upsertFaviconLink("app-favicon", "icon", branding.logoUrl, faviconType);
     upsertFaviconLink("app-favicon-shortcut", "shortcut icon", branding.logoUrl, faviconType);
-  }, [branding.logoUrl]);
+    document.title = branding.companyName || DEFAULT_BRANDING.companyName;
+  }, [branding.companyName, branding.logoUrl]);
 
   return branding;
 }

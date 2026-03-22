@@ -7,6 +7,7 @@ import { createPageUrl, getPageNameFromPath } from "@/utils";
 import Layout from "./Layout.jsx";
 import Login from "./Login.jsx";
 import AuthCallback from "./AuthCallback.jsx";
+import CompletarCadastro from "./CompletarCadastro.jsx";
 import Dev_Dashboard from "./Dev_Dashboard";
 import Backup from "./Backup";
 import Registrador from "./Registrador";
@@ -35,6 +36,7 @@ import VisualizadorImagem from "./VisualizadorImagem";
 const PAGES = {
   Login,
   AuthCallback,
+  CompletarCadastro,
   Dev_Dashboard,
   Backup,
   Registrador,
@@ -61,7 +63,7 @@ const PAGES = {
   VisualizadorImagem,
 };
 
-const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "VisualizadorImagem"]);
+const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "VisualizadorImagem"]);
 const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "VisualizadorImagem"]);
 
 function getSafeNextPath(search) {
@@ -112,12 +114,17 @@ function LegacyPageRedirect({ pageName }) {
 
 function RequireAuth({ authEnabled, authReady, currentUser, children }) {
   const location = useLocation();
+  const onboardingPath = createPageUrl("CompletarCadastro");
 
   if (!authEnabled) return children;
   if (!authReady) return <FullScreenAuthLoader />;
   if (!currentUser) {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`${createPageUrl("Login")}?next=${encodeURIComponent(next)}`} replace />;
+  }
+  if (currentUser?.onboarding_status === "pendente" && location.pathname !== onboardingPath) {
+    const next = `${location.pathname}${location.search}`;
+    return <Navigate to={`${onboardingPath}?next=${encodeURIComponent(next)}`} replace />;
   }
 
   return children;

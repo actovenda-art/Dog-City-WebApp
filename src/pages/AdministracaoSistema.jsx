@@ -6,9 +6,10 @@ import {
   PerfilAcesso,
   TabelaPrecos,
   User,
+  UserInvite,
   UserProfile,
 } from "@/api/entities";
-import { UploadFile } from "@/api/integrations";
+import { SendEmail, UploadFile } from "@/api/integrations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,9 +20,10 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Image, KeyRound, Link2, Palette, Save, Shield, Tags, Users } from "lucide-react";
+import { Building2, Copy, Image, KeyRound, Link2, Mail, Palette, Save, Shield, Tags, UserPlus, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { createPageUrl, openImageViewer } from "@/utils";
+import { notifyBrandingChanged } from "@/hooks/use-branding";
 
 const EMPTY_EMPRESA = {
   codigo: "",
@@ -44,6 +46,14 @@ const EMPTY_PERFIL = {
 const DEFAULT_BRANDING = {
   companyName: "",
   logoUrl: "",
+};
+
+const EMPTY_INVITE = {
+  full_name: "",
+  email: "",
+  empresa_id: "",
+  access_profile_id: "",
+  is_platform_admin: false,
 };
 
 function slugify(value) {
@@ -72,7 +82,7 @@ function formatApiError(error, fallbackMessage) {
 }
 
 function isMissingAdminTablesError(error) {
-  return error?.code === "PGRST205" || /public\.empresa|public\.perfil_acesso|schema cache/i.test(error?.message || "");
+  return error?.code === "PGRST205" || /public\.empresa|public\.perfil_acesso|public\.user_invite|schema cache/i.test(error?.message || "");
 }
 
 function isRowLevelSecurityError(error) {
@@ -84,6 +94,7 @@ export default function AdministracaoSistema() {
   const [companies, setCompanies] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [users, setUsers] = useState([]);
+  const [invites, setInvites] = useState([]);
   const [pricingRows, setPricingRows] = useState([]);
   const [configs, setConfigs] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -95,10 +106,12 @@ export default function AdministracaoSistema() {
   const [isUploading, setIsUploading] = useState(false);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
   const [editingProfile, setEditingProfile] = useState(null);
   const [companyForm, setCompanyForm] = useState(EMPTY_EMPRESA);
   const [profileForm, setProfileForm] = useState(EMPTY_PERFIL);
+  const [inviteForm, setInviteForm] = useState(EMPTY_INVITE);
 
   useEffect(() => {
     loadData();
@@ -129,11 +142,12 @@ export default function AdministracaoSistema() {
     setIsLoading(true);
     setSetupError("");
     try {
-      const [me, companiesData, profilesData, usersData, pricingData, configData, assetData] = await Promise.all([
+      const [me, companiesData, profilesData, usersData, invitesData, pricingData, configData, assetData] = await Promise.all([
         User.me(),
         Empresa.list("-created_date", 200),
         PerfilAcesso.list("-created_date", 200),
         UserProfile.list("-created_date", 500),
+        UserInvite.list("-created_date", 500),
         TabelaPrecos.list("-created_date", 1000),
         AppConfig.list("-created_date", 500),
         AppAsset.list("-created_date", 500),
@@ -143,13 +157,14 @@ export default function AdministracaoSistema() {
       setCompanies(companiesData || []);
       setProfiles(profilesData || []);
       setUsers(usersData || []);
+      setInvites(invitesData || []);
       setPricingRows(pricingData || []);
       setConfigs(configData || []);
       setAssets(assetData || []);
     } catch (error) {
       console.error("Erro ao carregar administracao:", error);
       if (isMissingAdminTablesError(error)) {
-        setSetupError("As tabelas de administracao multiempresa ainda nao existem no Supabase. Execute `supabase-schema-admin-multiempresa.sql` e depois `supabase-seed-admin-config.sql`.");
+        setSetupError("As tabelas administrativas ainda nao existem no Supabase. Execute `supabase-schema-admin-multiempresa.sql`, `supabase-schema-user-invite-onboarding.sql` e depois `supabase-seed-admin-config.sql`.");
       } else if (isRowLevelSecurityError(error)) {
         setSetupError("O Supabase bloqueou a leitura/escrita por RLS nas tabelas administrativas. Se o app ainda nao usa login Supabase nessa area, desabilite RLS nessas tabelas ou crie policies compativeis.");
       }
@@ -171,6 +186,11 @@ export default function AdministracaoSistema() {
     () => users.filter((item) => item.empresa_id === selectedCompanyId),
     [users, selectedCompanyId]
   );
+
+  const selectedCompanyInvites = useMemo(() => {
+    if (!selectedCompanyId) return invites;
+    return invites.filter((item) => item.empresa_id === selectedCompanyId || item.is_platform_admin);
+  }, [invites, selectedCompanyId]);
 
   function openCompanyModal(company = null) {
     setEditingCompany(company);
@@ -196,6 +216,29 @@ export default function AdministracaoSistema() {
       ativo: profile.ativo !== false,
     } : EMPTY_PERFIL);
     setShowProfileModal(true);
+  }
+
+  function openInviteModal() {
+    setInviteForm({
+      ...EMPTY_INVITE,
+      empresa_id: selectedCompanyId || "",
+    });
+    setShowInviteModal(true);
+  }
+
+  function buildInviteLink(token) {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return `${origin}${createPageUrl("CompletarCadastro")}?invite=${encodeURIComponent(token)}`;
+  }
+
+  async function copyInviteLink(token) {
+    try {
+      await navigator.clipboard.writeText(buildInviteLink(token));
+      alert("Link do convite copiado.");
+    } catch (error) {
+      console.error("Erro ao copiar convite:", error);
+      alert("Nao foi possivel copiar o link.");
+    }
   }
 
   async function handleSaveCompany() {
@@ -298,6 +341,7 @@ export default function AdministracaoSistema() {
       }
 
       await loadData();
+      notifyBrandingChanged();
     } catch (error) {
       console.error("Erro ao salvar branding:", error);
       alert("Erro ao salvar branding.");
@@ -334,6 +378,7 @@ export default function AdministracaoSistema() {
       }
 
       await loadData();
+      notifyBrandingChanged();
     } catch (error) {
       console.error("Erro ao enviar logo:", error);
       alert("Erro ao enviar logo.");
@@ -351,6 +396,7 @@ export default function AdministracaoSistema() {
         is_platform_admin: !!user.is_platform_admin,
       });
       await loadData();
+      notifyBrandingChanged();
     } catch (error) {
       console.error("Erro ao atualizar usuario:", error);
       alert("Erro ao atualizar usuario.");
@@ -359,6 +405,67 @@ export default function AdministracaoSistema() {
 
   function patchUserState(userId, patch) {
     setUsers((current) => current.map((item) => item.id === userId ? { ...item, ...patch } : item));
+  }
+
+  async function handleSendInvite() {
+    if (!inviteForm.full_name || !inviteForm.email) {
+      alert("Preencha nome completo e email.");
+      return;
+    }
+
+    if (!inviteForm.is_platform_admin && !inviteForm.empresa_id) {
+      alert("Selecione a empresa ou marque o usuario como ADM do Sistema Pet.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const token = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const invitePayload = {
+        token,
+        full_name: inviteForm.full_name.trim(),
+        email: inviteForm.email.trim().toLowerCase(),
+        empresa_id: inviteForm.is_platform_admin ? null : inviteForm.empresa_id || null,
+        access_profile_id: inviteForm.access_profile_id || null,
+        is_platform_admin: !!inviteForm.is_platform_admin,
+        company_role: inviteForm.is_platform_admin ? "platform_admin" : "company_user",
+        status: "pendente",
+        invited_by_user_id: currentUser?.id || null,
+        invited_at: new Date().toISOString(),
+      };
+
+      const createdInvite = await UserInvite.create(invitePayload);
+      const inviteLink = buildInviteLink(createdInvite.token);
+      const companyName = companies.find((item) => item.id === invitePayload.empresa_id)?.nome_fantasia || "Sistema Pet";
+      const subject = "Convite para acessar o Sistema Pet";
+      const body = [
+        `Ola, ${invitePayload.full_name}.`,
+        "",
+        `Voce recebeu um convite para acessar ${companyName}.`,
+        "Entre com o mesmo email convidado e complete sua ficha cadastral no link abaixo:",
+        inviteLink,
+        "",
+        "Se o login abrir em outra conta Google, troque para o email convidado antes de prosseguir.",
+      ].join("\n");
+
+      await SendEmail({
+        to: invitePayload.email,
+        subject,
+        body,
+        html: `<p>Ola, ${invitePayload.full_name}.</p><p>Voce recebeu um convite para acessar <strong>${companyName}</strong>.</p><p><a href="${inviteLink}">Clique aqui para acessar e concluir seu cadastro</a>.</p><p>Use o mesmo email convidado para fazer login.</p>`,
+      });
+
+      setShowInviteModal(false);
+      setInviteForm(EMPTY_INVITE);
+      await loadData();
+      alert("Convite criado. O email foi disparado pelo modo configurado no app.");
+    } catch (error) {
+      console.error("Erro ao enviar convite:", error);
+      alert(formatApiError(error, "Erro ao criar ou enviar convite."));
+    }
+    setIsSaving(false);
   }
 
   if (isLoading) {
@@ -428,6 +535,7 @@ export default function AdministracaoSistema() {
               <div>
                 <p className="text-sm text-gray-600">Usuarios da empresa</p>
                 <p className="text-2xl font-bold text-orange-600">{selectedCompanyUsers.length}</p>
+                <p className="text-xs text-gray-500 mt-1">{selectedCompanyInvites.filter((item) => item.status === "pendente").length} convite(s) pendente(s)</p>
               </div>
               <Users className="w-10 h-10 text-orange-600 opacity-60" />
             </CardContent>
@@ -626,13 +734,67 @@ export default function AdministracaoSistema() {
 
           <TabsContent value="usuarios">
             <Card className="bg-white border-gray-200">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle className="flex items-center gap-2">
                   <Users className="w-5 h-5 text-orange-600" />
                   Empresa e acesso por usuario
                 </CardTitle>
+                <Button onClick={openInviteModal}>
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Convidar usuario
+                </Button>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                  <div className="flex items-center gap-2 text-orange-700">
+                    <Mail className="w-4 h-4" />
+                    <p className="font-medium">Convites pendentes</p>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {selectedCompanyInvites.filter((item) => item.status !== "concluido").slice(0, 6).map((invite) => {
+                      const inviteCompany = companies.find((item) => item.id === invite.empresa_id);
+                      const inviteLink = buildInviteLink(invite.token);
+                      return (
+                        <div key={invite.id} className="rounded-lg border border-orange-100 bg-white p-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-gray-900">{invite.full_name}</p>
+                            <p className="text-sm text-gray-600">{invite.email}</p>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {inviteCompany?.nome_fantasia && <Badge variant="outline">{inviteCompany.nome_fantasia}</Badge>}
+                              {invite.is_platform_admin && <Badge className="bg-slate-900 text-white">ADM Sistema Pet</Badge>}
+                              <Badge className="bg-orange-100 text-orange-700">{invite.status || "pendente"}</Badge>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" onClick={() => copyInviteLink(invite.token)}>
+                              <Copy className="w-4 h-4 mr-2" />
+                              Copiar link
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => SendEmail({
+                                to: invite.email,
+                                subject: "Reenvio do convite para o Sistema Pet",
+                                body: `Ola, ${invite.full_name}.\n\nUse este link para acessar e concluir seu cadastro:\n${inviteLink}`,
+                                html: `<p>Ola, ${invite.full_name}.</p><p>Use este link para concluir seu cadastro:</p><p><a href="${inviteLink}">${inviteLink}</a></p>`,
+                              }).then(() => alert("Reenvio iniciado pelo modo configurado no app.")).catch((error) => {
+                                console.error("Erro ao reenviar convite:", error);
+                                alert(formatApiError(error, "Nao foi possivel reenviar o convite."));
+                              })}
+                            >
+                              <Mail className="w-4 h-4 mr-2" />
+                              Reenviar
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {selectedCompanyInvites.filter((item) => item.status !== "concluido").length === 0 && (
+                      <p className="text-sm text-gray-600">Nenhum convite pendente para a empresa selecionada.</p>
+                    )}
+                  </div>
+                </div>
+
                 {users.map((user) => (
                   <div key={user.id} className="rounded-lg border border-gray-200 p-4 bg-gray-50 space-y-4">
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
@@ -814,6 +976,92 @@ export default function AdministracaoSistema() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowProfileModal(false)}>Cancelar</Button>
             <Button onClick={handleSaveProfile} disabled={isSaving}>Salvar perfil</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
+        <DialogContent className="max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>Convidar usuario</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div>
+              <Label>Nome completo</Label>
+              <Input
+                value={inviteForm.full_name}
+                onChange={(event) => setInviteForm((current) => ({ ...current, full_name: event.target.value }))}
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={inviteForm.email}
+                onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
+                className="mt-2"
+              />
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
+              <Switch
+                checked={inviteForm.is_platform_admin}
+                onCheckedChange={(checked) => setInviteForm((current) => ({
+                  ...current,
+                  is_platform_admin: checked,
+                  empresa_id: checked ? "" : current.empresa_id || selectedCompanyId || "",
+                }))}
+              />
+              <div>
+                <p className="text-sm font-medium text-gray-900">ADM do Sistema Pet</p>
+                <p className="text-xs text-gray-500">Nao vincula a uma empresa especifica e libera acesso transversal.</p>
+              </div>
+            </div>
+            <div>
+              <Label>Empresa a vincular</Label>
+              <Select
+                value={inviteForm.empresa_id || "__none__"}
+                onValueChange={(value) => setInviteForm((current) => ({ ...current, empresa_id: value === "__none__" ? "" : value }))}
+                disabled={inviteForm.is_platform_admin}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Selecionar empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Selecionar empresa</SelectItem>
+                  {companies.map((company) => (
+                    <SelectItem key={company.id} value={company.id}>{company.nome_fantasia}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Tipo de acesso</Label>
+              <Select
+                value={inviteForm.access_profile_id || "__none__"}
+                onValueChange={(value) => setInviteForm((current) => ({ ...current, access_profile_id: value === "__none__" ? "" : value }))}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Selecionar perfil" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Sem perfil inicial</SelectItem>
+                  {profiles.filter((profile) => profile.ativo !== false).map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>{profile.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
+              O convite envia o link de acesso e o usuario conclui a ficha cadastral com nome, CPF, data de nascimento, endereco, PIX, contato de emergencia e foto de perfil.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowInviteModal(false)}>Cancelar</Button>
+            <Button onClick={handleSendInvite} disabled={isSaving}>
+              <Mail className="w-4 h-4 mr-2" />
+              {isSaving ? "Enviando..." : "Enviar convite"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

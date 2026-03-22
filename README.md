@@ -1,20 +1,23 @@
-# Base44 App
+# Dog City Brasil WebApp
 
+Aplicacao Vite + React da Dog City Brasil, conectada ao Supabase para dados, autenticacao e storage.
 
-This app was created automatically by Base44.
-It's a Vite+React app that communicates with the Base44 API.
-
-## Running the app
+## Rodando localmente
 
 ```bash
 npm install
 npm run dev
 ```
 
-## Building the app
+## Build
 
 ```bash
 npm run build
 ```
 
-For more information and support, please contact Base44 support at app@base44.com.
+## Estrutura relevante
+
+- `src/api/appClient.js`: cliente da aplicacao com Supabase + fallback local
+- `src/api/entities.js`: entidades usadas pelas paginas
+- `src/api/integrations.js`: uploads e signed URLs
+- `supabase-*.sql`: schemas, migracoes e seeds do projeto

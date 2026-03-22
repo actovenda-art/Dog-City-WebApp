@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { UploadFile } from "@/api/integrations";
+import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
 const PIPELINES = [
@@ -98,10 +98,25 @@ export default function PedidosInternos() {
     if (!file) return;
     setIsUploading(true);
     try {
-      const { file_url } = await UploadFile({ file });
-      setFormData(prev => ({ ...prev, anexo_url: file_url }));
+      const empresaId = currentUser?.empresa_id || currentUser?.company_id || "empresa-default";
+      const tarefaId = editingItem?.id || `tmp-${Date.now()}`;
+      const safeName = `${Date.now()}_${(file.name || "arquivo").replace(/\s+/g, "_")}`;
+      const path = `${empresaId}/tarefas/${tarefaId}/${safeName}`;
+      const { file_key } = await UploadPrivateFile({ file, path });
+      setFormData(prev => ({ ...prev, anexo_url: file_key }));
     } catch (error) { alert("Erro ao enviar arquivo."); }
     setIsUploading(false);
+  };
+
+  const openAttachment = async (path) => {
+    if (!path) return;
+    try {
+      const signed = await CreateFileSignedUrl({ path, expires: 3600 });
+      const url = signed?.signedUrl || signed?.url;
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      alert("Erro ao abrir arquivo.");
+    }
   };
 
   const handleSave = async () => {
@@ -113,6 +128,7 @@ export default function PedidosInternos() {
       const dataToSave = {
         ...formData,
         valor_estimado: formData.valor_estimado ? parseFloat(formData.valor_estimado.replace(",", ".")) : null,
+        empresa_id: currentUser?.empresa_id || null,
         solicitante_id: currentUser?.id,
         data_conclusao: formData.status === "concluido" ? new Date().toISOString().split('T')[0] : null
       };
@@ -434,9 +450,13 @@ export default function PedidosInternos() {
                   {isUploading ? "Enviando..." : "Adicionar arquivo"}
                 </Button>
                 {formData.anexo_url && (
-                  <a href={formData.anexo_url} target="_blank" rel="noreferrer" className="text-blue-600 text-sm hover:underline">
+                  <button
+                    type="button"
+                    onClick={() => openAttachment(formData.anexo_url)}
+                    className="text-blue-600 text-sm hover:underline"
+                  >
                     Ver arquivo
-                  </a>
+                  </button>
                 )}
               </div>
             </div>

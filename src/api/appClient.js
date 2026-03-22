@@ -4,12 +4,13 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const STORAGE_PREFIX = 'local_base44_';
+const STORAGE_PREFIX = 'local_app_client_';
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2,9)}`;
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const SUPABASE_BUCKET = import.meta.env.VITE_SUPABASE_BUCKET || 'public';
+const SUPABASE_PUBLIC_BUCKET = import.meta.env.VITE_SUPABASE_PUBLIC_BUCKET || 'public-assets';
+const SUPABASE_PRIVATE_BUCKET = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'private-files';
 
 function readStorage(key) {
   try { return JSON.parse(localStorage.getItem(STORAGE_PREFIX + key) || '[]'); }
@@ -60,7 +61,7 @@ const defaultEntities = {};
   'Dog','Checkin','Schedule','ServiceProvider','Lancamento','ExtratoBancario','ContaReceber','Client',
   'PedidoInterno','Despesa','Responsavel','Carteira','Notificacao','Orcamento','TabelaPrecos',
   'Appointment','ServiceProvided','Transaction','ScheduledTransaction','Replacement','PlanConfig',
-  'IntegracaoConfig','Receita'
+  'IntegracaoConfig','Receita','AppConfig','AppAsset','Empresa','PerfilAcesso','UserProfile'
 ].forEach(n => { defaultEntities[n] = createMockEntity(n); });
 
 const mockFunctions = {
@@ -95,7 +96,7 @@ const mockIntegrations = {
       if (typeof file === 'string') return { file_url: file, file_key: makeId() };
       return { file_url: null, file_key: makeId() };
     },
-    CreateFileSignedUrl: async ({ filename }) => ({ url: `data:application/octet-stream,${encodeURIComponent(filename || 'file')}` }),
+    CreateFileSignedUrl: async ({ filename, path }) => ({ url: `data:application/octet-stream,${encodeURIComponent(path || filename || 'file')}` }),
     UploadPrivateFile: async ({ file }) => mockIntegrations.Core.UploadFile({ file }),
     GenerateImage: async ({ prompt }) => {
       const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='%23eee'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23666' font-size='20'>${prompt ? prompt.toString().slice(0,40) : 'Generated Image'}</text></svg>`;
@@ -116,7 +117,7 @@ const mockIntegrations = {
 // If Supabase is configured, create supabase-backed entities and integrations
 // Mock auth implementation (used when Supabase not configured)
 const createMockAuth = () => {
-  const currentUser = { id: 'local_user', email: 'dev@example.com', name: 'Dev User' };
+  const currentUser = { id: 'local_user', email: 'dev@example.com', name: 'Dev User', empresa_id: 'empresa_demo' };
   return {
     currentUser,
     me: async () => currentUser,
@@ -124,7 +125,7 @@ const createMockAuth = () => {
   };
 };
 
-let base44 = { entities: defaultEntities, functions: mockFunctions, integrations: mockIntegrations, auth: createMockAuth() };
+let appClient = { entities: defaultEntities, functions: mockFunctions, integrations: mockIntegrations, auth: createMockAuth() };
 
 if (SUPABASE_URL && SUPABASE_ANON) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -199,7 +200,12 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     PedidoInterno: 'pedidointerno',
     Notificacao: 'notificacao',
     Checkin: 'checkins',
-    IntegracaoConfig: 'integracao_config'
+    IntegracaoConfig: 'integracao_config',
+    AppConfig: 'app_config',
+    AppAsset: 'app_asset',
+    Empresa: 'empresa',
+    PerfilAcesso: 'perfil_acesso',
+    UserProfile: 'users'
   };
 
   const toSnake = (name) => name.replace(/([A-Z])/g, '_$1').replace(/^_/, '').toLowerCase();
@@ -228,20 +234,25 @@ if (SUPABASE_URL && SUPABASE_ANON) {
   const supabaseIntegrations = {
     Core: {
       UploadFile: async ({ file, path }) => {
-        const bucket = SUPABASE_BUCKET;
+        const bucket = SUPABASE_PUBLIC_BUCKET;
         const filename = path || `${Date.now()}_${file.name || 'file'}`;
         const { data, error: uploadError } = await supabase.storage.from(bucket).upload(filename, file, { upsert: true });
         if (uploadError) throw uploadError;
-        const { publicURL } = supabase.storage.from(bucket).getPublicUrl(filename);
-        return { file_url: publicURL?.publicURL || publicURL || null, file_key: filename };
+        const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(filename);
+        return { file_url: publicData?.publicUrl || null, file_key: filename, bucket };
       },
-      CreateFileSignedUrl: async ({ path, expires = 60 * 60 }) => {
-        const bucket = SUPABASE_BUCKET;
+      CreateFileSignedUrl: async ({ path, bucket = SUPABASE_PRIVATE_BUCKET, expires = 60 * 60 }) => {
         const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expires);
         if (error) throw error;
         return data;
       },
-      UploadPrivateFile: async ({ file, path }) => supabaseIntegrations.Core.UploadFile({ file, path }),
+      UploadPrivateFile: async ({ file, path }) => {
+        const bucket = SUPABASE_PRIVATE_BUCKET;
+        const filename = path || `${Date.now()}_${file.name || 'file'}`;
+        const { error: uploadError } = await supabase.storage.from(bucket).upload(filename, file, { upsert: true });
+        if (uploadError) throw uploadError;
+        return { file_url: null, file_key: filename, bucket };
+      },
       GenerateImage: async ({ prompt }) => {
         // placeholder: return an SVG data URL
         const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='%23eee'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23666' font-size='20'>${prompt ? prompt.toString().slice(0,40) : 'Generated Image'}</text></svg>`;
@@ -251,7 +262,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       ExtractDataFromUploadedFile: async ({ path }) => {
         // Not trivial to extract; return metadata if file exists
         try {
-          const bucket = SUPABASE_BUCKET;
+          const bucket = SUPABASE_PRIVATE_BUCKET;
           const { data, error } = await supabase.storage.from(bucket).list(path ? path.split('/').slice(0, -1).join('/') : '');
           if (error) return { data: null };
           return { data };
@@ -266,14 +277,31 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     currentUser: null,
     me: async () => {
       try {
+        let authUser = null;
         if (typeof supabase.auth.getUser === 'function') {
           const res = await supabase.auth.getUser();
           // v2 returns { data: { user } }
-          if (res && res.data && res.data.user) return res.data.user;
+          if (res && res.data && res.data.user) authUser = res.data.user;
         }
         // fallbacks for different versions
-        if (typeof supabase.auth.user === 'function') return supabase.auth.user();
-        if (supabase.auth && supabase.auth.session && supabase.auth.session.user) return supabase.auth.session.user;
+        if (!authUser && typeof supabase.auth.user === 'function') authUser = supabase.auth.user();
+        if (!authUser && supabase.auth && supabase.auth.session && supabase.auth.session.user) authUser = supabase.auth.session.user;
+        if (!authUser) return null;
+
+        try {
+          let query = supabase.from('users').select('*');
+          if (authUser.id) {
+            query = query.eq('id', authUser.id);
+          } else if (authUser.email) {
+            query = query.eq('email', authUser.email);
+          }
+          const { data: profileData } = await query.limit(1);
+          const profile = profileData?.[0];
+          if (profile) return { ...authUser, ...profile };
+        } catch (profileError) {
+          console.warn('supabaseAuth.me profile lookup error', profileError);
+        }
+        return authUser;
       } catch (e) {
         console.warn('supabaseAuth.me error', e);
       }
@@ -303,7 +331,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     }
   };
 
-  base44 = { entities: supabaseEntities, functions: supabaseFunctions, integrations: supabaseIntegrations, auth: supabaseAuth };
+  appClient = { entities: supabaseEntities, functions: supabaseFunctions, integrations: supabaseIntegrations, auth: supabaseAuth };
 }
 
-export { base44 };
+export { appClient };

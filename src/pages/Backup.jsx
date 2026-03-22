@@ -3,8 +3,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, Dog, Calendar, Database } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useBranding } from "@/hooks/use-branding";
 
 export default function Backup() {
+  const { companyName, logoUrl } = useBranding();
   const [notifyOpen, setNotifyOpen] = React.useState(false);
   const [notifyTitle, setNotifyTitle] = React.useState("");
   const [notifyMessage, setNotifyMessage] = React.useState("");
@@ -37,8 +39,8 @@ export default function Backup() {
         <div className="mb-6 sm:mb-8">
           <div className="flex items-center gap-3 mb-2">
             <img 
-              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68d30bcc5ca43f0f9b7df581/b25f6333e_Capturadetela2025-09-24192240.png"
-              alt="Dog City Brasil"
+              src={logoUrl}
+              alt={companyName}
               className="h-10 w-10 sm:h-12 sm:w-12"
             />
             <div>

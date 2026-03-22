@@ -24,17 +24,21 @@ import {
   Settings,
   Dog,
   Wallet,
-  Truck
+  Truck,
+  Building2
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import NotificationBell from "@/components/layout/NotificationBell";
+import { useBranding } from "@/hooks/use-branding";
 
 export default function Layout({ children, currentPageName }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const brandTitleClass = "font-brand text-gray-900";
+  const { companyName, logoUrl } = useBranding();
   const [expandedSections, setExpandedSections] = useState({
     operacional: false,
     financeiro: false,
@@ -120,6 +124,7 @@ export default function Layout({ children, currentPageName }) {
           icon: Settings,
           items: [
             { title: "Gestão de Usuários", url: createPageUrl("Dev_Dashboard"), icon: Shield },
+            { title: "AdministraÃ§Ã£o", url: createPageUrl("AdministracaoSistema"), icon: Building2 },
             { title: "Backup", url: createPageUrl("Backup"), icon: Database },
             { title: "Tarefas", url: createPageUrl("PedidosInternos"), icon: FileText },
             { title: "Integrações", url: createPageUrl("ConfigurarIntegracoes"), icon: Settings },
@@ -146,12 +151,12 @@ export default function Layout({ children, currentPageName }) {
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <img 
-              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68d30bcc5ca43f0f9b7df581/b25f6333e_Capturadetela2025-09-24192240.png"
-              alt="Dog City Brasil"
+              src={logoUrl}
+              alt={companyName}
               className="h-10 w-10"
             />
             <div>
-              <h1 className="text-lg font-bold text-gray-900">Dog City Brasil</h1>
+              <h1 className={`${brandTitleClass} text-2xl leading-none`}>{companyName}</h1>
             </div>
           </div>
         </div>
@@ -238,12 +243,12 @@ export default function Layout({ children, currentPageName }) {
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
             <img 
-              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68d30bcc5ca43f0f9b7df581/b25f6333e_Capturadetela2025-09-24192240.png"
-              alt="Dog City Brasil"
+              src={logoUrl}
+              alt={companyName}
               className="h-8 w-8"
             />
             <div>
-              <h1 className="text-sm font-bold text-gray-900">Dog City Brasil</h1>
+              <h1 className={`${brandTitleClass} text-xl leading-none`}>{companyName}</h1>
             </div>
           </div>
           <div className="flex items-center gap-2">

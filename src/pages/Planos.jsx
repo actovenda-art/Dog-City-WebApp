@@ -21,8 +21,10 @@ import {
 } from "lucide-react";
 import { format, isPast, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useBranding } from "@/hooks/use-branding";
 
 export default function Planos() {
+  const { logoUrl } = useBranding();
   const [planos, setPlanos] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
@@ -237,7 +239,7 @@ export default function Planos() {
         {/* Header */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68d30bcc5ca43f0f9b7df581/b25f6333e_Capturadetela2025-09-24192240.png" alt="Logo" className="h-10 w-10 sm:h-12 sm:w-12" />
+            <img src={logoUrl} alt="Logo" className="h-10 w-10 sm:h-12 sm:w-12" />
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestão de Planos</h1>
               <p className="text-sm text-gray-600">Controle de planos e reposições</p>

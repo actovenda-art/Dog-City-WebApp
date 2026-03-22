@@ -8,6 +8,8 @@ VALUES
   ('client_2', 'PetShop Amigo', '12.345.678/0001-90', '+5511988888888', 'contato@petamigo.com', true, NOW())
 ON CONFLICT (id) DO NOTHING;
 
+UPDATE users SET empresa_id = 'empresa_demo' WHERE id IN ('user_1', 'user_2');
+
 -- Cães
 INSERT INTO dogs (id, nome, apelido, raca, peso, data_nascimento, foto_url, ativo, created_date)
 VALUES

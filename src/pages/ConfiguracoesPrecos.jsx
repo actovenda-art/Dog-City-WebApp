@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { TabelaPrecos } from "@/api/entities";
+import { TabelaPrecos, User } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,7 @@ const DESCONTOS_PADRAO = [
 
 export default function ConfiguracoesPrecos() {
   const [precos, setPrecos] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -52,11 +53,17 @@ export default function ConfiguracoesPrecos() {
 
   useEffect(() => { loadData(); }, []);
 
+  const empresaId = currentUser?.empresa_id || null;
+
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const data = await TabelaPrecos.list("-created_date", 500);
-      setPrecos(data);
+      const [data, me] = await Promise.all([
+        TabelaPrecos.list("-created_date", 500),
+        User.me(),
+      ]);
+      setCurrentUser(me);
+      setPrecos((data || []).filter((item) => item.ativo !== false && (!item.empresa_id || item.empresa_id === me?.empresa_id)));
     } catch (error) { console.error("Erro:", error); }
     setIsLoading(false);
   };
@@ -86,6 +93,7 @@ export default function ConfiguracoesPrecos() {
     try {
       const dataToSave = {
         ...formData,
+        empresa_id: empresaId,
         valor: parseFloat(formData.valor.replace(",", ".")) || 0
       };
       if (editingItem) await TabelaPrecos.update(editingItem.id, dataToSave);
@@ -117,6 +125,10 @@ export default function ConfiguracoesPrecos() {
   const getTipoLabel = (tipo) => {
     const found = TIPOS_SERVICO.find(t => t.id === tipo);
     return found ? found.label : tipo;
+  };
+
+  const getDiscountRows = () => {
+    return precos.filter((item) => item.tipo === "desconto" || item.config_key?.startsWith("desconto_"));
   };
 
   if (isLoading) return (
@@ -336,17 +348,23 @@ export default function ConfiguracoesPrecos() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {DESCONTOS_PADRAO.map(desconto => (
+                  {getDiscountRows().map(desconto => (
                     <div key={desconto.id} className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
                       <div>
-                        <p className="font-medium text-gray-900">{desconto.label}</p>
-                        <p className="text-sm text-gray-500">{desconto.descricao}</p>
+                        <p className="font-medium text-gray-900">{desconto.descricao || desconto.config_key || "Desconto"}</p>
+                        <p className="text-sm text-gray-500">{desconto.codigo || "Configuracao por empresa"}</p>
                       </div>
-                      <Badge className="bg-green-600 text-white text-lg px-4 py-2">
-                        {desconto.percentual}%
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-green-600 text-white text-lg px-4 py-2">
+                          {desconto.valor}%
+                        </Badge>
+                        <Button variant="ghost" size="icon" onClick={() => openEditModal(desconto)}><Pencil className="w-4 h-4" /></Button>
+                      </div>
                     </div>
                   ))}
+                  {getDiscountRows().length === 0 && (
+                    <p className="text-center text-gray-500 py-8">Nenhum desconto cadastrado para esta empresa</p>
+                  )}
                   <p className="text-sm text-gray-500 text-center mt-4">
                     ℹ️ Os descontos são aplicados automaticamente nos orçamentos
                   </p>

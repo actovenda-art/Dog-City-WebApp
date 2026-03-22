@@ -44,6 +44,8 @@ import Despesas from "./Despesas";
 
 import ConfigurarIntegracoes from "./ConfigurarIntegracoes";
 
+import AdministracaoSistema from "./AdministracaoSistema";
+
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
 const PAGES = {
@@ -91,6 +93,8 @@ const PAGES = {
     Despesas: Despesas,
     
     ConfigurarIntegracoes: ConfigurarIntegracoes,
+
+    AdministracaoSistema: AdministracaoSistema,
     
 }
 
@@ -162,6 +166,8 @@ function PagesContent() {
                 <Route path="/Despesas" element={<Despesas />} />
                 
                 <Route path="/ConfigurarIntegracoes" element={<ConfigurarIntegracoes />} />
+
+                <Route path="/AdministracaoSistema" element={<AdministracaoSistema />} />
                 
             </Routes>
         </Layout>

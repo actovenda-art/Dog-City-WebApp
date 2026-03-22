@@ -29,7 +29,7 @@ import {
   DialogDescription
 } from "@/components/ui/dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadFile } from "@/api/integrations";
+import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkin } from "@/api/entities"; // New import
 
@@ -48,6 +48,7 @@ export default function Registrador() {
   const [showCheckinModal, setShowCheckinModal] = useState(false);
   const [selectedDog, setSelectedDog] = useState(null);
   const [monitors, setMonitors] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [checkinForm, setCheckinForm] = useState({
     monitor_id: "",
     entregador: "",
@@ -65,6 +66,8 @@ export default function Registrador() {
     const initLoad = async () => {
       const loadedDogs = await loadDogs(); // Load dogs and get the result
       await loadMonitors();
+      const me = await User.me();
+      setCurrentUser(me);
       await loadPresentCheckins(loadedDogs); // Pass loaded dogs to loadPresentCheckins
       setIsLoading(false); // Set loading to false after all initial data is loaded
     };
@@ -228,8 +231,12 @@ export default function Registrador() {
     if (!file) return;
     setIsUploading(true);
     try {
-      const { file_url } = await UploadFile({ file });
-      setCheckinForm(prev => ({ ...prev, pertences_foto_url: file_url }));
+      const empresaId = currentUser?.empresa_id || currentUser?.company_id || "empresa-default";
+      const petId = selectedDog?.id || "pet";
+      const safeName = `${Date.now()}_${(file.name || "arquivo").replace(/\s+/g, "_")}`;
+      const path = `${empresaId}/checkins/${petId}/${safeName}`;
+      const { file_key } = await UploadPrivateFile({ file, path });
+      setCheckinForm(prev => ({ ...prev, pertences_foto_url: file_key }));
     } catch (error) {
       console.error("Erro ao fazer upload da imagem:", error);
       setNotifyTitle("Erro no upload");
@@ -237,6 +244,19 @@ export default function Registrador() {
       setNotifyOpen(true);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const openPrivateAttachment = async (path) => {
+    if (!path) return;
+    try {
+      const signed = await CreateFileSignedUrl({ path, expires: 3600 });
+      const url = signed?.signedUrl || signed?.url;
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setNotifyTitle("Erro");
+      setNotifyMessage("Nao foi possivel abrir o arquivo.");
+      setNotifyOpen(true);
     }
   };
 
@@ -257,6 +277,7 @@ export default function Registrador() {
 
     try {
       await Checkin.create({
+        empresa_id: currentUser?.empresa_id || null,
         tipo: "pet",
         dog_id: selectedDog.id,
         monitor_id: checkinForm.monitor_id,
@@ -348,6 +369,7 @@ export default function Registrador() {
         }
 
         await Checkin.create({
+          empresa_id: currentUser?.empresa_id || null,
           tipo: "prestador",
           user_id: user.id,
           checkin_datetime: new Date().toISOString(),
@@ -837,14 +859,13 @@ export default function Registrador() {
                       {isUploading ? "Enviando..." : "Enviar foto"}
                     </Button>
                     {checkinForm.pertences_foto_url && (
-                      <a
-                        href={checkinForm.pertences_foto_url}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => openPrivateAttachment(checkinForm.pertences_foto_url)}
                         className="text-blue-600 text-sm underline"
                       >
                         Ver imagem
-                      </a>
+                      </button>
                     )}
                   </div>
                 </div>

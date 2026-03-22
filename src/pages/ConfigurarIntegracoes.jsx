@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { IntegracaoConfig } from "@/api/entities";
+import { bancoInter } from "@/api/functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,7 +42,7 @@ export default function ConfigurarIntegracoes() {
   const loadConfig = async () => {
     setIsLoading(true);
     try {
-      const configs = await base44.entities.IntegracaoConfig.filter({ nome: "banco_inter" });
+      const configs = await IntegracaoConfig.filter({ nome: "banco_inter" });
       if (configs.length > 0) {
         const cfg = configs[0];
         setConfig(cfg);
@@ -84,9 +85,9 @@ export default function ConfigurarIntegracoes() {
       };
 
       if (config) {
-        await base44.entities.IntegracaoConfig.update(config.id, data);
+        await IntegracaoConfig.update(config.id, data);
       } else {
-        await base44.entities.IntegracaoConfig.create(data);
+        await IntegracaoConfig.create(data);
       }
 
       await loadConfig();
@@ -103,7 +104,7 @@ export default function ConfigurarIntegracoes() {
     setIsTesting(true);
     setTestResult(null);
     try {
-      const { data } = await base44.functions.invoke('bancoInter', { action: 'test' });
+      const data = await bancoInter({ action: 'test' });
       setTestResult({ success: true, message: data.message });
     } catch (error) {
         console.error('Erro completo:', error);
@@ -138,7 +139,7 @@ export default function ConfigurarIntegracoes() {
     setIsImporting(true);
     setImportResult(null);
     try {
-      const { data } = await base44.functions.invoke('bancoInter', { 
+      const data = await bancoInter({ 
         action: 'buscarExtrato',
         dataInicio,
         dataFim

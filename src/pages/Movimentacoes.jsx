@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { ExtratoBancario } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,7 +48,7 @@ export default function Movimentacoes() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const data = await base44.entities.ExtratoBancario.list("-data", 1000);
+      const data = await ExtratoBancario.list("-data", 1000);
       setLancamentos(data);
     } catch (error) { console.error("Erro:", error); }
     setIsLoading(false);
@@ -78,8 +78,8 @@ export default function Movimentacoes() {
     setIsSaving(true);
     try {
       const data = { ...formData, valor: parseFloat(formData.valor.replace(",", ".")) || 0 };
-      if (editingItem) await base44.entities.ExtratoBancario.update(editingItem.id, data);
-      else await base44.entities.ExtratoBancario.create(data);
+      if (editingItem) await ExtratoBancario.update(editingItem.id, data);
+      else await ExtratoBancario.create(data);
       await loadData(); 
       setShowModal(false);
     } catch (error) { alert("Erro ao salvar."); }
@@ -88,7 +88,7 @@ export default function Movimentacoes() {
 
   const handleDelete = async (id) => { 
     if (confirm("Excluir este lançamento?")) { 
-      await base44.entities.ExtratoBancario.delete(id); 
+      await ExtratoBancario.delete(id); 
       await loadData();
       setShowActionsMenu(null);
     } 

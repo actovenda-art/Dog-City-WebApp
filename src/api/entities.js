@@ -1,55 +1,65 @@
-import { base44 } from './base44Client';
+import { appClient } from './appClient';
 
 
-export const Dog = base44.entities.Dog;
+export const Dog = appClient.entities.Dog;
 
-export const Checkin = base44.entities.Checkin;
+export const Checkin = appClient.entities.Checkin;
 
-export const ServiceProvider = base44.entities.ServiceProvider;
+export const ServiceProvider = appClient.entities.ServiceProvider;
 
-export const Lancamento = base44.entities.Lancamento;
+export const Lancamento = appClient.entities.Lancamento;
 
-export const ExtratoBancario = base44.entities.ExtratoBancario;
+export const ExtratoBancario = appClient.entities.ExtratoBancario;
 
-export const ContaReceber = base44.entities.ContaReceber;
+export const ContaReceber = appClient.entities.ContaReceber;
 
 // alias Client (used across the app) if the SDK exposes it
-export const Client = base44.entities.Client;
+export const Client = appClient.entities.Client;
 
-export const PedidoInterno = base44.entities.PedidoInterno;
+export const PedidoInterno = appClient.entities.PedidoInterno;
 
-export const Despesa = base44.entities.Despesa;
+export const Despesa = appClient.entities.Despesa;
 
-export const Responsavel = base44.entities.Responsavel;
+export const Responsavel = appClient.entities.Responsavel;
 
-export const Carteira = base44.entities.Carteira;
+export const Carteira = appClient.entities.Carteira;
 
-export const Notificacao = base44.entities.Notificacao;
+export const Notificacao = appClient.entities.Notificacao;
 
-export const Orcamento = base44.entities.Orcamento;
+export const Orcamento = appClient.entities.Orcamento;
 
-export const TabelaPrecos = base44.entities.TabelaPrecos;
+export const TabelaPrecos = appClient.entities.TabelaPrecos;
 
-export const Appointment = base44.entities.Appointment;
+export const Appointment = appClient.entities.Appointment;
 
 // `Schedule` is used in several pages; prefer a dedicated export but fall back to Appointment
-export const Schedule = base44.entities.Schedule || base44.entities.Appointment;
+export const Schedule = appClient.entities.Schedule || appClient.entities.Appointment;
 
-export const ServiceProvided = base44.entities.ServiceProvided;
+export const ServiceProvided = appClient.entities.ServiceProvided;
 
-export const Transaction = base44.entities.Transaction;
+export const Transaction = appClient.entities.Transaction;
 
-export const ScheduledTransaction = base44.entities.ScheduledTransaction;
+export const ScheduledTransaction = appClient.entities.ScheduledTransaction;
 
-export const Replacement = base44.entities.Replacement;
+export const Replacement = appClient.entities.Replacement;
 
-export const PlanConfig = base44.entities.PlanConfig;
+export const PlanConfig = appClient.entities.PlanConfig;
 
-export const IntegracaoConfig = base44.entities.IntegracaoConfig;
+export const IntegracaoConfig = appClient.entities.IntegracaoConfig;
 
-export const Receita = base44.entities.Receita;
+export const Receita = appClient.entities.Receita;
+
+export const AppConfig = appClient.entities.AppConfig;
+
+export const AppAsset = appClient.entities.AppAsset;
+
+export const Empresa = appClient.entities.Empresa;
+
+export const PerfilAcesso = appClient.entities.PerfilAcesso;
+
+export const UserProfile = appClient.entities.UserProfile;
 
 
 
 // auth sdk:
-export const User = base44.auth;
+export const User = appClient.auth;

@@ -2,13 +2,14 @@ import React, { useState, useEffect } from "react";
 import { Dog } from "@/api/entities";
 import { Responsavel } from "@/api/entities";
 import { Carteira } from "@/api/entities";
+import { User } from "@/api/entities";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Search, Check } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { UploadFile } from "@/api/integrations";
+import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,9 +21,11 @@ export default function Cadastro() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [dogs, setDogs] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
 
-  useEffect(() => { loadDogs(); }, []);
+  useEffect(() => { loadDogs(); loadCurrentUser(); }, []);
   const loadDogs = async () => { const data = await Dog.list("-created_date", 500); setDogs(data); };
+  const loadCurrentUser = async () => { const me = await User.me(); setCurrentUser(me); };
 
   // Dog Form
   const emptyDog = {
@@ -63,19 +66,41 @@ export default function Cadastro() {
     if (!file) return;
     setIsUploading(true);
     try {
-      const { file_url } = await UploadFile({ file });
-      setDogForm(prev => ({ ...prev, [field]: file_url }));
+      if (field === "foto_carteirinha_vacina_url") {
+        const empresaId = currentUser?.empresa_id || currentUser?.company_id || "empresa-default";
+        const dogId = dogForm.nome ? dogForm.nome.toLowerCase().replace(/\s+/g, "-") : `tmp-${Date.now()}`;
+        const safeName = `${Date.now()}_${(file.name || "arquivo").replace(/\s+/g, "_")}`;
+        const path = `${empresaId}/dogs/${dogId}/documentos/${safeName}`;
+        const { file_key } = await UploadPrivateFile({ file, path });
+        setDogForm(prev => ({ ...prev, [field]: file_key }));
+      } else {
+        const { file_url } = await UploadFile({ file });
+        setDogForm(prev => ({ ...prev, [field]: file_url }));
+      }
     } catch (error) {
       setNotifyTitle("Erro"); setNotifyMessage("Erro ao enviar arquivo."); setNotifyOpen(true);
     }
     setIsUploading(false);
   };
 
+  const openDogDocument = async (path) => {
+    if (!path) return;
+    try {
+      const signed = await CreateFileSignedUrl({ path, expires: 3600 });
+      const url = signed?.signedUrl || signed?.url;
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setNotifyTitle("Erro");
+      setNotifyMessage("Nao foi possivel abrir o documento.");
+      setNotifyOpen(true);
+    }
+  };
+
   const handleSaveDog = async () => {
     if (!dogForm.nome) { setNotifyTitle("Campo obrigatório"); setNotifyMessage("Informe o nome do cão."); setNotifyOpen(true); return; }
     setIsSaving(true);
     try {
-      await Dog.create({ ...dogForm, peso: dogForm.peso ? parseFloat(dogForm.peso) : null });
+      await Dog.create({ ...dogForm, empresa_id: currentUser?.empresa_id || null, peso: dogForm.peso ? parseFloat(dogForm.peso) : null });
       setNotifyTitle("Sucesso"); setNotifyMessage("Cão cadastrado com sucesso!"); setNotifyOpen(true);
       setDogForm(emptyDog); loadDogs();
     } catch (error) { setNotifyTitle("Erro"); setNotifyMessage("Erro ao cadastrar."); setNotifyOpen(true); }
@@ -88,7 +113,7 @@ export default function Cadastro() {
     }
     setIsSaving(true);
     try {
-      await Responsavel.create(responsavelForm);
+      await Responsavel.create({ ...responsavelForm, empresa_id: currentUser?.empresa_id || null });
       setNotifyTitle("Sucesso"); setNotifyMessage("Responsável cadastrado!"); setNotifyOpen(true);
       setResponsavelForm(emptyResponsavel);
     } catch (error) { setNotifyTitle("Erro"); setNotifyMessage("Erro ao cadastrar."); setNotifyOpen(true); }
@@ -101,7 +126,7 @@ export default function Cadastro() {
     }
     setIsSaving(true);
     try {
-      await Carteira.create(carteiraForm);
+      await Carteira.create({ ...carteiraForm, empresa_id: currentUser?.empresa_id || null });
       setNotifyTitle("Sucesso"); setNotifyMessage("Carteira cadastrada!"); setNotifyOpen(true);
       setCarteiraForm(emptyCarteira);
     } catch (error) { setNotifyTitle("Erro"); setNotifyMessage("Erro ao cadastrar."); setNotifyOpen(true); }
@@ -144,7 +169,7 @@ export default function Cadastro() {
                   <div><Label>Peso (KG)</Label><Input type="number" step="0.1" value={dogForm.peso} onChange={(e) => setDogForm({ ...dogForm, peso: e.target.value })} /></div>
                   <div><Label>Data de Nascimento</Label><Input type="date" value={dogForm.data_nascimento} onChange={(e) => setDogForm({ ...dogForm, data_nascimento: e.target.value })} /></div>
                   <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <a href={dogForm.foto_url} target="_blank" rel="noreferrer" className="text-blue-600 text-sm self-center">Ver</a>}</div></div>
-                  <div><Label>Carteirinha Vacinação</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <a href={dogForm.foto_carteirinha_vacina_url} target="_blank" rel="noreferrer" className="text-blue-600 text-sm self-center">Ver</a>}</div></div>
+                  <div><Label>Carteirinha Vacinação</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
                   <div><Label>1ª Revacinação</Label><Input type="date" value={dogForm.data_revacinacao_1} onChange={(e) => setDogForm({ ...dogForm, data_revacinacao_1: e.target.value })} /></div>
                   <div><Label>2ª Revacinação</Label><Input type="date" value={dogForm.data_revacinacao_2} onChange={(e) => setDogForm({ ...dogForm, data_revacinacao_2: e.target.value })} /></div>
                   <div><Label>3ª Revacinação</Label><Input type="date" value={dogForm.data_revacinacao_3} onChange={(e) => setDogForm({ ...dogForm, data_revacinacao_3: e.target.value })} /></div>

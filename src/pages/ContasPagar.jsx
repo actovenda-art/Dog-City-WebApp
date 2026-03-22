@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
-import { Lancamento } from "@/api/entities";
-import { Transaction } from "@/api/entities";
-import { ExtratoBancario } from "@/api/entities";
+import { Lancamento, User, ExtratoBancario, Despesa } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,11 +17,12 @@ import {
 } from "lucide-react";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { UploadFile } from "@/api/integrations";
+import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 
 export default function ContasPagar() {
   const [lancamentos, setLancamentos] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategoria, setFilterCategoria] = useState("all");
@@ -56,12 +54,14 @@ export default function ContasPagar() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [lancData, transData] = await Promise.all([
+      const [lancData, transData, me] = await Promise.all([
         Lancamento.list("-vencimento", 500),
-        ExtratoBancario.filter({ tipo: "saida" })
+        ExtratoBancario.filter({ tipo: "saida" }),
+        User.me()
       ]);
       setLancamentos(lancData);
       setTransactions(transData);
+      setCurrentUser(me);
     } catch (error) { console.error("Erro:", error); }
     setIsLoading(false);
   };
@@ -101,10 +101,25 @@ export default function ContasPagar() {
     if (!file) return;
     setIsUploading(true);
     try { 
-      const { file_url } = await UploadFile({ file }); 
-      setFormData(prev => ({ ...prev, anexo_url: file_url })); 
+      const empresaId = currentUser?.empresa_id || currentUser?.company_id || "empresa-default";
+      const contaId = editingItem?.id || `tmp-${Date.now()}`;
+      const safeName = `${Date.now()}_${(file.name || "arquivo").replace(/\s+/g, "_")}`;
+      const path = `${empresaId}/financeiro/contas-pagar/${contaId}/${safeName}`;
+      const { file_key } = await UploadPrivateFile({ file, path }); 
+      setFormData(prev => ({ ...prev, anexo_url: file_key })); 
     } catch (error) { alert("Erro ao enviar arquivo."); }
     setIsUploading(false);
+  };
+
+  const openAttachment = async (path) => {
+    if (!path) return;
+    try {
+      const signed = await CreateFileSignedUrl({ path, expires: 3600 });
+      const url = signed?.signedUrl || signed?.url;
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      alert("Erro ao abrir arquivo.");
+    }
   };
 
   const handleSave = async () => {
@@ -115,6 +130,7 @@ export default function ContasPagar() {
     try {
       const data = { 
         ...formData, 
+        empresa_id: currentUser?.empresa_id || null,
         valor: parseFloat(formData.valor.replace(",", ".")) || 0, 
         juros_multa: formData.juros_multa ? parseFloat(formData.juros_multa.replace(",", ".")) : 0,
         valor_quitado: editingItem?.valor_quitado || 0,
@@ -285,7 +301,7 @@ export default function ContasPagar() {
           ? Math.max(0, Math.floor((new Date(dataQuitacao) - new Date(vinculandoConta.vencimento)) / (1000 * 60 * 60 * 24)))
           : 0;
 
-        await base44.entities.Despesa.create({
+        await Despesa.create({
           data: dataQuitacao,
           categoria: vinculandoConta.categoria,
           subcategoria: vinculandoConta.referencia,
@@ -847,7 +863,7 @@ export default function ContasPagar() {
                 <Button type="button" variant="outline" onClick={() => document.getElementById("anexo").click()} disabled={isUploading} className="flex-1">
                   <Upload className="w-4 h-4 mr-2" />{isUploading ? "Enviando..." : "Upload"}
                 </Button>
-                {formData.anexo_url && <a href={formData.anexo_url} target="_blank" rel="noreferrer" className="text-blue-600 text-sm self-center">Ver</a>}
+                {formData.anexo_url && <button type="button" onClick={() => openAttachment(formData.anexo_url)} className="text-blue-600 text-sm self-center">Ver</button>}
               </div>
             </div>
             <div className="sm:col-span-2"><Label>Negociação</Label><Input value={formData.negociacao} onChange={(e) => setFormData({ ...formData, negociacao: e.target.value })} placeholder="Observações" /></div>

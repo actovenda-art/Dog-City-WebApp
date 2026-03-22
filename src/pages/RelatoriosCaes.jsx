@@ -12,8 +12,10 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { format, addDays, isBefore, isAfter, subDays, differenceInDays, getMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useBranding } from "@/hooks/use-branding";
 
 export default function RelatoriosCaes() {
+  const { logoUrl } = useBranding();
   const [dogs, setDogs] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -100,7 +102,7 @@ export default function RelatoriosCaes() {
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6 flex items-center gap-3">
-          <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68d30bcc5ca43f0f9b7df581/b25f6333e_Capturadetela2025-09-24192240.png" alt="Logo" className="h-10 w-10 sm:h-12 sm:w-12" />
+          <img src={logoUrl} alt="Logo" className="h-10 w-10 sm:h-12 sm:w-12" />
           <div><h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Relatórios de Cães</h1><p className="text-sm text-gray-600">Análises e listagens</p></div>
         </div>
 

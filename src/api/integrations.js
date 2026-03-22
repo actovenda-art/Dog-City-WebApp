@@ -1,9 +1,9 @@
-import { base44 } from './base44Client';
+import { appClient } from './appClient';
 
 
 
 
-const getIntegrations = () => (base44 && base44.integrations) ? base44.integrations : null;
+const getIntegrations = () => (appClient && appClient.integrations) ? appClient.integrations : null;
 
 const getCore = () => {
 	const i = getIntegrations();
@@ -61,7 +61,6 @@ export const Core = {
 	CreateFileSignedUrl,
 	UploadPrivateFile
 };
-
 
 
 

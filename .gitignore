@@ -10,7 +10,7 @@ coverage/
 /.idea
 /.vscode
 *.log
-local_base44_*
+local_app_client_*
 # Logs
 logs
 *.log

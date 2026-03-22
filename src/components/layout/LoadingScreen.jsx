@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check } from "lucide-react";
+import { useBranding } from "@/hooks/use-branding";
 
 const LOADING_STEPS = [
   { text: "Carregando agendamentos...", duration: 800 },
@@ -9,6 +10,7 @@ const LOADING_STEPS = [
 ];
 
 export default function LoadingScreen({ onComplete }) {
+  const { companyName, logoUrl } = useBranding();
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
@@ -54,8 +56,8 @@ export default function LoadingScreen({ onComplete }) {
       <div className="flex flex-col items-center">
         {/* Logo */}
         <motion.img
-          src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68d30bcc5ca43f0f9b7df581/b25f6333e_Capturadetela2025-09-24192240.png"
-          alt="Dog City Brasil"
+          src={logoUrl}
+          alt={companyName}
           className="w-20 h-20 mb-8"
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}

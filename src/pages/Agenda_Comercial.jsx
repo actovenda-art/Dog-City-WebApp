@@ -38,8 +38,10 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
+import { useBranding } from "@/hooks/use-branding";
 
 export default function Agenda_Comercial() {
+  const { companyName, logoUrl } = useBranding();
   const [schedules, setSchedules] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [clients, setClients] = useState([]);
@@ -275,8 +277,8 @@ export default function Agenda_Comercial() {
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img
-              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68d30bcc5ca43f0f9b7df581/b25f6333e_Capturadetela2025-09-24192240.png"
-              alt="Dog City Brasil"
+              src={logoUrl}
+              alt={companyName}
               className="h-10 w-10 sm:h-12 sm:w-12"
             />
             <div>

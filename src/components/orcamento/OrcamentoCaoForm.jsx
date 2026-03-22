@@ -1,258 +1,455 @@
 import React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dog, Trash2, Calendar, Clock, Scissors, Moon, Plus, X } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Dog, Plus, Trash2, X } from "lucide-react";
 
-const TIPOS_TOSA = [
-  { id: "higienica", label: "Higiênica" },
-  { id: "geral", label: "Geral" },
-  { id: "detalhada", label: "Detalhada" },
+const TOSA_HIGIENICA_OPTIONS = [
+  { id: "pequeno_baixa", label: "Pequeno - Pelagem baixa" },
+  { id: "pequeno_alta", label: "Pequeno - Pelagem alta" },
+  { id: "medio_baixa", label: "Medio - Pelagem baixa" },
+  { id: "medio_alta", label: "Medio - Pelagem alta" },
+  { id: "grande_baixa", label: "Grande - Pelagem baixa" },
+  { id: "grande_alta", label: "Grande - Pelagem alta" },
 ];
 
-export default function OrcamentoCaoForm({ 
-  cao, 
-  index, 
-  dogs, 
-  onUpdate, 
+export default function OrcamentoCaoForm({
+  cao,
+  index,
+  dogs,
+  onUpdate,
   onRemove,
   canRemove,
-  precosBanhoTosa,
-  servicosSelecionados = { hospedagem: true, banho: true, tosa: true, transporte: true }
 }) {
-  const selectedDog = dogs.find(d => d.id === cao.dog_id);
-
-  const handleChange = (field, value) => {
+  function handleChange(field, value) {
     onUpdate(index, { ...cao, [field]: value });
-  };
+  }
+
+  function handleServiceChange(service, checked) {
+    onUpdate(index, {
+      ...cao,
+      servicos: {
+        ...cao.servicos,
+        [service]: checked,
+      },
+    });
+  }
+
+  function updateTransporteViagem(viagemIndex, field, value) {
+    const transporte_viagens = [...(cao.transporte_viagens || [])];
+    transporte_viagens[viagemIndex] = {
+      ...transporte_viagens[viagemIndex],
+      [field]: value,
+    };
+    handleChange("transporte_viagens", transporte_viagens);
+  }
+
+  function addViagem() {
+    handleChange("transporte_viagens", [
+      ...(cao.transporte_viagens || []),
+      { partida: "", destino: "", data: "", horario: "", km: "" },
+    ]);
+  }
+
+  function removeViagem(viagemIndex) {
+    handleChange(
+      "transporte_viagens",
+      (cao.transporte_viagens || []).filter((_, currentIndex) => currentIndex !== viagemIndex)
+    );
+  }
+
+  const selectedDog = dogs.find((dog) => dog.id === cao.dog_id);
 
   return (
     <Card className="border-blue-200 bg-white">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Dog className="w-5 h-5 text-blue-600" />
-            Cão {index + 1}
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Dog className="h-5 w-5 text-blue-600" />
+            Cao {index + 1}
           </CardTitle>
           {canRemove && (
-            <Button variant="ghost" size="icon" onClick={() => onRemove(index)} className="h-8 w-8 text-red-500 hover:text-red-700">
-              <Trash2 className="w-4 h-4" />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onRemove(index)}
+              className="h-8 w-8 text-red-500 hover:text-red-700"
+            >
+              <Trash2 className="h-4 w-4" />
             </Button>
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Seleção do Cão */}
+
+      <CardContent className="space-y-5">
         <div>
-          <Label>Selecionar Cão *</Label>
-          <Select value={cao.dog_id} onValueChange={(v) => handleChange("dog_id", v)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Escolha o cão" />
+          <Label>Selecionar Cao *</Label>
+          <Select value={cao.dog_id} onValueChange={(value) => handleChange("dog_id", value)}>
+            <SelectTrigger className="mt-1">
+              <SelectValue placeholder="Escolha o cao" />
             </SelectTrigger>
             <SelectContent>
-              {dogs.map(dog => (
+              {dogs.map((dog) => (
                 <SelectItem key={dog.id} value={dog.id}>
-                  <div className="flex items-center gap-2">
-                    {dog.foto_url ? (
-                      <img src={dog.foto_url} className="w-6 h-6 rounded-full object-cover" />
-                    ) : (
-                      <span>🐕</span>
-                    )}
-                    {dog.nome} {dog.raca && `(${dog.raca})`}
-                  </div>
+                  {dog.nome} {dog.raca ? `(${dog.raca})` : ""}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
 
-        {/* Hospedagem - só exibe se serviço selecionado */}
-        {servicosSelecionados.hospedagem && (
-          <>
-            {/* É mensalista? */}
-            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-              <div>
-                <Label className="text-sm font-medium">É mensalista de Day Care?</Label>
-                <p className="text-xs text-gray-500">Mensalistas têm diária diferenciada (R$ 120 vs R$ 150)</p>
-              </div>
-              <Switch 
-                checked={cao.is_mensalista} 
-                onCheckedChange={(v) => handleChange("is_mensalista", v)} 
-              />
-            </div>
-
-            {/* Datas de Hospedagem */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <Label className="flex items-center gap-1">
-                  <Calendar className="w-3 h-3" /> Data Entrada *
-                </Label>
-                <Input 
-                  type="date" 
-                  value={cao.data_entrada} 
-                  onChange={(e) => handleChange("data_entrada", e.target.value)} 
-                />
-              </div>
-              <div>
-                <Label className="flex items-center gap-1">
-                  <Calendar className="w-3 h-3" /> Data Saída *
-                </Label>
-                <Input 
-                  type="date" 
-                  value={cao.data_saida} 
-                  onChange={(e) => handleChange("data_saida", e.target.value)} 
-                />
-              </div>
-              <div>
-                <Label className="flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> Horário Saída *
-                </Label>
-                <Input 
-                  type="time" 
-                  value={cao.horario_saida} 
-                  onChange={(e) => handleChange("horario_saida", e.target.value)} 
-                />
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Pernoite - só exibe se hospedagem selecionada */}
-        {servicosSelecionados.hospedagem && (
-        <div className="p-3 bg-indigo-50 rounded-lg space-y-2">
-          <div className="flex items-center justify-between">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex items-center justify-between rounded-lg bg-blue-50 p-3">
             <div>
-              <Label className="text-sm font-medium flex items-center gap-1">
-                <Moon className="w-3 h-3" /> Tem pernoite?
-              </Label>
-              <p className="text-xs text-indigo-600">
-                Dias com Day Care agendado = R$ 60,00 (sem desconto canil)
-              </p>
+              <Label className="text-sm font-medium">Hospedagem</Label>
+              <p className="text-xs text-gray-500">Diarias e pernoite</p>
             </div>
-            <Switch 
-              checked={cao.tem_pernoite} 
-              onCheckedChange={(v) => {
-                handleChange("tem_pernoite", v);
-                if (!v) handleChange("datas_pernoite", []);
-              }} 
+            <Switch
+              checked={cao.servicos?.hospedagem || false}
+              onCheckedChange={(checked) => handleServiceChange("hospedagem", checked)}
             />
           </div>
-          {cao.tem_pernoite && (
-            <div className="space-y-2 pt-2">
-              <Label className="text-xs">Datas com Day Care agendado:</Label>
-              <div className="space-y-2">
-                {(cao.datas_pernoite || []).map((data, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <Input 
-                      type="date" 
-                      value={data} 
-                      onChange={(e) => {
-                        const newDatas = [...(cao.datas_pernoite || [])];
-                        newDatas[idx] = e.target.value;
-                        handleChange("datas_pernoite", newDatas);
-                      }}
-                      className="flex-1"
-                    />
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => {
-                        const newDatas = (cao.datas_pernoite || []).filter((_, i) => i !== idx);
-                        handleChange("datas_pernoite", newDatas);
-                      }}
-                      className="h-8 w-8 text-red-500"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    const newDatas = [...(cao.datas_pernoite || []), ""];
-                    handleChange("datas_pernoite", newDatas);
-                  }}
-                  className="w-full border-dashed"
-                >
-                  <Plus className="w-3 h-3 mr-1" /> Adicionar data
-                </Button>
-              </div>
-              {(cao.datas_pernoite || []).filter(d => d).length > 0 && (
-                <p className="text-xs text-indigo-700 font-medium">
-                  {(cao.datas_pernoite || []).filter(d => d).length} pernoite(s) = R$ {((cao.datas_pernoite || []).filter(d => d).length * 60).toFixed(2)}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-        )}
 
-        {/* Serviços opcionais - Banho */}
-        {servicosSelecionados.banho && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between p-3 bg-cyan-50 rounded-lg">
+          <div className="flex items-center justify-between rounded-lg bg-cyan-50 p-3">
             <div>
-              <Label className="text-sm font-medium">Banho na saída?</Label>
-              {cao.banho && selectedDog?.raca && precosBanhoTosa?.banho?.[selectedDog.raca] && (
-                <p className="text-xs text-cyan-600">
-                  R$ {precosBanhoTosa.banho[selectedDog.raca]?.toFixed(2)} ({selectedDog.raca})
-                </p>
-              )}
+              <Label className="text-sm font-medium">Banho</Label>
+              <p className="text-xs text-gray-500">Servico por raca</p>
             </div>
-            <Switch 
-              checked={cao.banho} 
-              onCheckedChange={(v) => handleChange("banho", v)} 
+            <Switch
+              checked={cao.servicos?.banho || false}
+              onCheckedChange={(checked) => handleServiceChange("banho", checked)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg bg-purple-50 p-3">
+            <div>
+              <Label className="text-sm font-medium">Tosa</Label>
+              <p className="text-xs text-gray-500">Higienica, geral ou detalhada</p>
+            </div>
+            <Switch
+              checked={cao.servicos?.tosa || false}
+              onCheckedChange={(checked) => handleServiceChange("tosa", checked)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg bg-amber-50 p-3">
+            <div>
+              <Label className="text-sm font-medium">Transporte</Label>
+              <p className="text-xs text-gray-500">Viagens por km</p>
+            </div>
+            <Switch
+              checked={cao.servicos?.transporte || false}
+              onCheckedChange={(checked) => handleServiceChange("transporte", checked)}
             />
           </div>
         </div>
-        )}
-          
-        {/* Tosa */}
-        {servicosSelecionados.tosa && (
-        <div className="space-y-3">
-          <div className="p-3 bg-purple-50 rounded-lg space-y-2">
-            <div className="flex items-center justify-between">
+
+        {cao.servicos?.hospedagem && (
+          <div className="space-y-4 rounded-lg border border-blue-100 bg-blue-50/50 p-4">
+            <div className="flex items-center justify-between rounded-lg bg-white p-3">
               <div>
-                <Label className="text-sm font-medium">Tosa na saída?</Label>
-                {cao.tosa && cao.tipo_tosa && selectedDog?.raca && precosBanhoTosa?.[`tosa_${cao.tipo_tosa}`]?.[selectedDog.raca] && (
-                  <p className="text-xs text-purple-600">
-                    R$ {precosBanhoTosa[`tosa_${cao.tipo_tosa}`][selectedDog.raca]?.toFixed(2)} ({selectedDog.raca})
-                  </p>
-                )}
+                <Label className="text-sm font-medium">Mensalista de Day Care?</Label>
+                <p className="text-xs text-gray-500">Usa diaria diferenciada</p>
               </div>
-              <Switch 
-                checked={cao.tosa} 
-                onCheckedChange={(v) => {
-                  handleChange("tosa", v);
-                  if (v && !cao.tipo_tosa) handleChange("tipo_tosa", "higienica");
-                }} 
+              <Switch
+                checked={cao.hosp_is_mensalista}
+                onCheckedChange={(checked) => handleChange("hosp_is_mensalista", checked)}
               />
             </div>
-            {cao.tosa && (
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <Label className="text-xs flex items-center gap-1">
-                  <Scissors className="w-3 h-3" /> Tipo de Tosa
-                </Label>
-                <Select value={cao.tipo_tosa || "higienica"} onValueChange={(v) => handleChange("tipo_tosa", v)}>
+                <Label>Data de Entrada</Label>
+                <Input
+                  className="mt-1"
+                  type="date"
+                  value={cao.hosp_data_entrada}
+                  onChange={(event) => handleChange("hosp_data_entrada", event.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Horario de Entrada</Label>
+                <Input
+                  className="mt-1"
+                  type="time"
+                  value={cao.hosp_horario_entrada}
+                  onChange={(event) => handleChange("hosp_horario_entrada", event.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Data de Saida</Label>
+                <Input
+                  className="mt-1"
+                  type="date"
+                  value={cao.hosp_data_saida}
+                  onChange={(event) => handleChange("hosp_data_saida", event.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Horario de Saida</Label>
+                <Input
+                  className="mt-1"
+                  type="time"
+                  value={cao.hosp_horario_saida}
+                  onChange={(event) => handleChange("hosp_horario_saida", event.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-white p-3">
+              <div>
+                <Label className="text-sm font-medium">Dormitorio compartilhado?</Label>
+                <p className="text-xs text-gray-500">Aplica desconto no proprio cao</p>
+              </div>
+              <Switch
+                checked={cao.hosp_dormitorio_compartilhado}
+                onCheckedChange={(checked) => handleChange("hosp_dormitorio_compartilhado", checked)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-white p-3">
+              <div>
+                <Label className="text-sm font-medium">Tem Day Care ativo?</Label>
+                <p className="text-xs text-gray-500">Pernoites ligados ao Day Care</p>
+              </div>
+              <Switch
+                checked={cao.hosp_tem_daycare_ativo}
+                onCheckedChange={(checked) => handleChange("hosp_tem_daycare_ativo", checked)}
+              />
+            </div>
+
+            <div className="space-y-2 rounded-lg bg-white p-3">
+              <Label>Datas de Day Care / Pernoite</Label>
+              {(cao.hosp_datas_daycare || []).map((data, dataIndex) => (
+                <div key={dataIndex} className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    value={data}
+                    onChange={(event) => {
+                      const hosp_datas_daycare = [...(cao.hosp_datas_daycare || [])];
+                      hosp_datas_daycare[dataIndex] = event.target.value;
+                      handleChange("hosp_datas_daycare", hosp_datas_daycare);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      const hosp_datas_daycare = (cao.hosp_datas_daycare || []).filter((_, currentIndex) => currentIndex !== dataIndex);
+                      handleChange("hosp_datas_daycare", hosp_datas_daycare);
+                    }}
+                    className="h-8 w-8 text-red-500"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button type="button" variant="outline" onClick={() => handleChange("hosp_datas_daycare", [...(cao.hosp_datas_daycare || []), ""])} className="w-full border-dashed">
+                <Plus className="mr-2 h-4 w-4" />
+                Adicionar Data
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {cao.servicos?.banho && (
+          <div className="space-y-4 rounded-lg border border-cyan-100 bg-cyan-50/50 p-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Raca para Banho</Label>
+                <Input
+                  className="mt-1"
+                  value={cao.banho_raca || selectedDog?.raca || ""}
+                  onChange={(event) => handleChange("banho_raca", event.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Horario do Banho</Label>
+                <Input
+                  className="mt-1"
+                  type="time"
+                  value={cao.banho_horario}
+                  onChange={(event) => handleChange("banho_horario", event.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="flex items-center justify-between rounded-lg bg-white p-3">
+                <div>
+                  <Label className="text-sm font-medium">Plano ativo</Label>
+                  <p className="text-xs text-gray-500">Controle informativo</p>
+                </div>
+                <Switch
+                  checked={cao.banho_plano_ativo}
+                  onCheckedChange={(checked) => handleChange("banho_plano_ativo", checked)}
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg bg-white p-3">
+                <div>
+                  <Label className="text-sm font-medium">Do pacote</Label>
+                  <p className="text-xs text-gray-500">Marcacao visual</p>
+                </div>
+                <Switch
+                  checked={cao.banho_do_pacote}
+                  onCheckedChange={(checked) => handleChange("banho_do_pacote", checked)}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {cao.servicos?.tosa && (
+          <div className="space-y-4 rounded-lg border border-purple-100 bg-purple-50/50 p-4">
+            <div>
+              <Label>Tipo de Tosa</Label>
+              <Select value={cao.tosa_tipo} onValueChange={(value) => handleChange("tosa_tipo", value)}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Escolha o tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="higienica">Higienica</SelectItem>
+                  <SelectItem value="geral">Geral</SelectItem>
+                  <SelectItem value="detalhada">Detalhada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {cao.tosa_tipo === "higienica" && (
+              <div>
+                <Label>Subtipo Higienica</Label>
+                <Select value={cao.tosa_subtipo_higienica} onValueChange={(value) => handleChange("tosa_subtipo_higienica", value)}>
                   <SelectTrigger className="mt-1">
-                    <SelectValue />
+                    <SelectValue placeholder="Escolha o subtipo" />
                   </SelectTrigger>
                   <SelectContent>
-                    {TIPOS_TOSA.map(tipo => (
-                      <SelectItem key={tipo.id} value={tipo.id}>{tipo.label}</SelectItem>
+                    {TOSA_HIGIENICA_OPTIONS.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="flex items-center justify-between rounded-lg bg-white p-3">
+                <div>
+                  <Label className="text-sm font-medium">Plano ativo</Label>
+                  <p className="text-xs text-gray-500">Controle informativo</p>
+                </div>
+                <Switch
+                  checked={cao.tosa_plano_ativo}
+                  onCheckedChange={(checked) => handleChange("tosa_plano_ativo", checked)}
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg bg-white p-3">
+                <div>
+                  <Label className="text-sm font-medium">Do pacote</Label>
+                  <p className="text-xs text-gray-500">Marcacao visual</p>
+                </div>
+                <Switch
+                  checked={cao.tosa_do_pacote}
+                  onCheckedChange={(checked) => handleChange("tosa_do_pacote", checked)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Observacoes da Tosa</Label>
+              <Input
+                className="mt-1"
+                value={cao.tosa_obs}
+                onChange={(event) => handleChange("tosa_obs", event.target.value)}
+                placeholder="Observacoes especificas"
+              />
+            </div>
           </div>
-        </div>
+        )}
+
+        {cao.servicos?.transporte && (
+          <div className="space-y-3 rounded-lg border border-amber-100 bg-amber-50/50 p-4">
+            {(cao.transporte_viagens || []).map((viagem, viagemIndex) => (
+              <div key={viagemIndex} className="space-y-3 rounded-lg bg-white p-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Viagem {viagemIndex + 1}</Label>
+                  {(cao.transporte_viagens || []).length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeViagem(viagemIndex)}
+                      className="h-8 w-8 text-red-500"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Input
+                    placeholder="Partida"
+                    value={viagem.partida}
+                    onChange={(event) => updateTransporteViagem(viagemIndex, "partida", event.target.value)}
+                  />
+                  <Input
+                    placeholder="Destino"
+                    value={viagem.destino}
+                    onChange={(event) => updateTransporteViagem(viagemIndex, "destino", event.target.value)}
+                  />
+                  <Input
+                    type="date"
+                    value={viagem.data}
+                    onChange={(event) => updateTransporteViagem(viagemIndex, "data", event.target.value)}
+                  />
+                  <Input
+                    type="time"
+                    value={viagem.horario}
+                    onChange={(event) => updateTransporteViagem(viagemIndex, "horario", event.target.value)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Input
+                    placeholder="KM"
+                    value={viagem.km}
+                    onChange={(event) => updateTransporteViagem(viagemIndex, "km", event.target.value)}
+                  />
+                  <div className="flex items-center justify-between rounded-lg bg-amber-50 p-3">
+                    <div>
+                      <Label className="text-sm font-medium">Do pacote</Label>
+                      <p className="text-xs text-gray-500">Transporte do pacote</p>
+                    </div>
+                    <Switch
+                      checked={cao.transporte_do_pacote}
+                      onCheckedChange={(checked) => handleChange("transporte_do_pacote", checked)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div className="flex items-center justify-between rounded-lg bg-white p-3">
+              <div>
+                <Label className="text-sm font-medium">Plano ativo</Label>
+                <p className="text-xs text-gray-500">Controle informativo</p>
+              </div>
+              <Switch
+                checked={cao.transporte_plano_ativo}
+                onCheckedChange={(checked) => handleChange("transporte_plano_ativo", checked)}
+              />
+            </div>
+
+            <Button type="button" variant="outline" onClick={addViagem} className="w-full border-dashed">
+              <Plus className="mr-2 h-4 w-4" />
+              Adicionar Viagem
+            </Button>
+          </div>
         )}
       </CardContent>
     </Card>

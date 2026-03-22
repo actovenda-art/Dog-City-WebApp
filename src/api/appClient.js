@@ -315,7 +315,19 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const { data, error } = await supabase.functions.invoke('banco-inter-sync', {
         body: payload,
       });
-      if (error) throw error;
+      if (error) {
+        let details = '';
+        try {
+          if (error.context) {
+            const cloned = error.context.clone ? error.context.clone() : error.context;
+            const errorPayload = await cloned.json();
+            details = errorPayload?.details || errorPayload?.error || '';
+          }
+        } catch (parseError) {
+          details = '';
+        }
+        throw new Error(details || error.message || 'Falha na integração com Banco Inter.');
+      }
       return data;
     },
   };

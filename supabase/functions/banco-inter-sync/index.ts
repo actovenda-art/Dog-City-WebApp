@@ -200,51 +200,61 @@ async function getAccessToken(config: IntegrationConfig) {
 
   const scope = sanitizeText(getConfigValue(config, "scope"), DEFAULT_SCOPE);
   const tokenUrl = sanitizeText(config.token_url || getConfigValue(config, "token_url"), DEFAULT_TOKEN_URL);
-  const tokenAuthMode = sanitizeText(getConfigValue(config, "token_auth_mode"), "body");
+  const configuredTokenAuthMode = sanitizeText(getConfigValue(config, "token_auth_mode"), "auto").toLowerCase();
   const httpClient = await createHttpClient(config);
+  const modes = configuredTokenAuthMode === "auto"
+    ? ["basic", "body"]
+    : [configuredTokenAuthMode];
+  const errors: string[] = [];
 
-  const formData = new URLSearchParams();
-  formData.set("grant_type", "client_credentials");
-  if (scope) formData.set("scope", scope);
-  if (tokenAuthMode !== "basic") {
-    formData.set("client_id", clientId);
-    formData.set("client_secret", clientSecret);
+  for (const tokenAuthMode of modes) {
+    const formData = new URLSearchParams();
+    formData.set("grant_type", "client_credentials");
+    if (scope) formData.set("scope", scope);
+    if (tokenAuthMode !== "basic") {
+      formData.set("client_id", clientId);
+      formData.set("client_secret", clientSecret);
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    };
+
+    if (tokenAuthMode === "basic") {
+      headers.Authorization = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
+    }
+
+    const response = await fetch(tokenUrl, {
+      method: "POST",
+      headers,
+      body: formData.toString(),
+      client: httpClient,
+    });
+
+    const rawText = await response.text();
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      parsed = { raw: rawText };
+    }
+
+    if (!response.ok) {
+      errors.push(`${tokenAuthMode}:${response.status}:${JSON.stringify(parsed)}`);
+      continue;
+    }
+
+    const accessToken = sanitizeText(firstDefined(parsed.access_token, parsed.token));
+    if (!accessToken) {
+      errors.push(`${tokenAuthMode}:${response.status}:sem access_token`);
+      continue;
+    }
+
+    return { accessToken, httpClient, tokenResponse: parsed, tokenStatus: response.status };
   }
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/x-www-form-urlencoded",
-    Accept: "application/json",
-  };
-
-  if (tokenAuthMode === "basic") {
-    headers.Authorization = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
-  }
-
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers,
-    body: formData.toString(),
-    client: httpClient,
-  });
-
-  const rawText = await response.text();
-  let parsed: Record<string, unknown> = {};
-  try {
-    parsed = rawText ? JSON.parse(rawText) : {};
-  } catch {
-    parsed = { raw: rawText };
-  }
-
-  if (!response.ok) {
-    throw new Error(`Falha ao autenticar no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
-  }
-
-  const accessToken = sanitizeText(firstDefined(parsed.access_token, parsed.token));
-  if (!accessToken) {
-    throw new Error("Banco Inter nao retornou access_token.");
-  }
-
-  return { accessToken, httpClient, tokenResponse: parsed, tokenStatus: response.status };
+  throw new Error(`Falha ao autenticar no Banco Inter: ${errors.join(" | ")}`);
 }
 
 async function fetchExtrato(
@@ -481,6 +491,7 @@ async function runSyncForConfig(
     requestedTo,
     triggerSource,
     persist = true,
+    empresaIdOverride,
   }: {
     action: string;
     requestedFrom?: string;

@@ -10,18 +10,33 @@ import { ArrowLeft, Dog as DogIcon, Calendar, Syringe, Phone, Utensils, Clipboar
 import { format, differenceInYears, differenceInMonths, addDays, isBefore, isAfter, subDays, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
+import { CreateFileSignedUrl } from "@/api/integrations";
+import { createPageUrl, openImageViewer } from "@/utils";
 
 export default function PerfilCao() {
   const [dog, setDog] = useState(null);
   const [responsaveis, setResponsaveis] = useState([]);
   const [servicos, setServicos] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [vaccineCardUrl, setVaccineCardUrl] = useState("");
 
   const urlParams = new URLSearchParams(window.location.search);
   const dogId = urlParams.get("id");
 
   useEffect(() => { if (dogId) loadData(); }, [dogId]);
+
+  const resolveDogImage = async (path) => {
+    if (!path) return "";
+    if (/^(https?:)?\/\//i.test(path) || path.startsWith("data:")) return path;
+
+    try {
+      const signed = await CreateFileSignedUrl({ path, expires: 3600 });
+      return signed?.signedUrl || signed?.url || "";
+    } catch (error) {
+      console.error("Erro ao resolver imagem privada:", error);
+      return "";
+    }
+  };
 
   const loadData = async () => {
     setIsLoading(true);
@@ -33,6 +48,7 @@ export default function PerfilCao() {
       ]);
       const foundDog = dogsData.find(d => d.id === dogId);
       setDog(foundDog);
+      setVaccineCardUrl(await resolveDogImage(foundDog?.foto_carteirinha_vacina_url));
       
       // Encontrar responsáveis vinculados a este cão
       const respVinculados = respData.filter(r => 
@@ -75,6 +91,12 @@ export default function PerfilCao() {
       }
     });
     return result.sort((a, b) => a.diasRestantes - b.diasRestantes);
+  };
+
+  const handleOpenVaccineCard = async () => {
+    const imageUrl = vaccineCardUrl || await resolveDogImage(dog?.foto_carteirinha_vacina_url);
+    if (!imageUrl) return;
+    openImageViewer(imageUrl, "Carteirinha de vacinacao");
   };
 
   if (isLoading) return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div></div>;
@@ -180,10 +202,10 @@ export default function PerfilCao() {
               <Card className="border-gray-200 bg-white">
                 <CardHeader><CardTitle className="flex items-center gap-2"><Syringe className="w-5 h-5 text-purple-600" />Carteirinha de Vacinação</CardTitle></CardHeader>
                 <CardContent>
-                  {dog.foto_carteirinha_vacina_url ? (
-                    <a href={dog.foto_carteirinha_vacina_url} target="_blank" rel="noreferrer">
-                      <img src={dog.foto_carteirinha_vacina_url} alt="Carteirinha" className="w-full rounded-lg border" />
-                    </a>
+                  {dog.foto_carteirinha_vacina_url && vaccineCardUrl ? (
+                    <button type="button" onClick={handleOpenVaccineCard} className="block w-full text-left">
+                      <img src={vaccineCardUrl} alt="Carteirinha" className="w-full rounded-lg border" />
+                    </button>
                   ) : (
                     <p className="text-center text-gray-500 py-8">Carteirinha não cadastrada</p>
                   )}

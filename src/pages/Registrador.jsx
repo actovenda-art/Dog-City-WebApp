@@ -32,6 +32,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkin } from "@/api/entities"; // New import
+import { isImagePreviewable, openImageViewer } from "@/utils";
 
 export default function Registrador() {
   const [dogs, setDogs] = useState([]);
@@ -252,7 +253,14 @@ export default function Registrador() {
     try {
       const signed = await CreateFileSignedUrl({ path, expires: 3600 });
       const url = signed?.signedUrl || signed?.url;
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      if (!url) return;
+
+      if (isImagePreviewable(path) || isImagePreviewable(url)) {
+        openImageViewer(url, "Imagem dos pertences");
+        return;
+      }
+
+      window.open(url, "_blank", "noopener,noreferrer");
     } catch (error) {
       setNotifyTitle("Erro");
       setNotifyMessage("Nao foi possivel abrir o arquivo.");

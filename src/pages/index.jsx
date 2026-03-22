@@ -46,7 +46,10 @@ import ConfigurarIntegracoes from "./ConfigurarIntegracoes";
 
 import AdministracaoSistema from "./AdministracaoSistema";
 
-import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import VisualizadorImagem from "./VisualizadorImagem";
+
+import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { createPageUrl, getPageNameFromPath } from "@/utils";
 
 const PAGES = {
     
@@ -95,82 +98,75 @@ const PAGES = {
     ConfigurarIntegracoes: ConfigurarIntegracoes,
 
     AdministracaoSistema: AdministracaoSistema,
+
+    VisualizadorImagem: VisualizadorImagem,
     
 }
 
-function _getCurrentPage(url) {
-    if (url.endsWith('/')) {
-        url = url.slice(0, -1);
-    }
-    let urlLastPart = url.split('/').pop();
-    if (urlLastPart.includes('?')) {
-        urlLastPart = urlLastPart.split('?')[0];
+const STANDALONE_PAGES = new Set(["VisualizadorImagem"]);
+
+function PageFrame({ pageName, currentPageName }) {
+    const PageComponent = PAGES[pageName];
+
+    if (!PageComponent) return null;
+    if (STANDALONE_PAGES.has(pageName)) {
+        return <PageComponent />;
     }
 
-    const pageName = Object.keys(PAGES).find(page => page.toLowerCase() === urlLastPart.toLowerCase());
-    return pageName || Object.keys(PAGES)[0];
+    return (
+        <Layout currentPageName={currentPageName}>
+            <PageComponent />
+        </Layout>
+    );
+}
+
+function LegacyPageRedirect({ pageName }) {
+    const location = useLocation();
+
+    return (
+        <Navigate
+            to={{ pathname: createPageUrl(pageName), search: location.search }}
+            replace
+        />
+    );
 }
 
 // Create a wrapper component that uses useLocation inside the Router context
 function PagesContent() {
     const location = useLocation();
-    const currentPage = _getCurrentPage(location.pathname);
+    const currentPage = getPageNameFromPath(location.pathname);
     
     return (
-        <Layout currentPageName={currentPage}>
-            <Routes>            
-                
-                    <Route path="/" element={<Dev_Dashboard />} />
-                
-                
-                <Route path="/Dev_Dashboard" element={<Dev_Dashboard />} />
-                
-                <Route path="/Backup" element={<Backup />} />
-                
-                <Route path="/Registrador" element={<Registrador />} />
-                
-                <Route path="/Agenda_Comercial" element={<Agenda_Comercial />} />
-                
-                <Route path="/Cadastro" element={<Cadastro />} />
-                
-                <Route path="/Planos" element={<Planos />} />
-                
-                <Route path="/Cockpit" element={<Cockpit />} />
-                
-                <Route path="/ContasReceber" element={<ContasReceber />} />
-                
-                <Route path="/PedidosInternos" element={<PedidosInternos />} />
-                
-                <Route path="/Movimentacoes" element={<Movimentacoes />} />
-                
-                <Route path="/Receitas" element={<Receitas />} />
-                
-                <Route path="/ContasPagar" element={<ContasPagar />} />
-                
-                <Route path="/RelatoriosCaes" element={<RelatoriosCaes />} />
-                
-                <Route path="/PerfilCao" element={<PerfilCao />} />
-                
-                <Route path="/Orcamentos" element={<Orcamentos />} />
-                
-                <Route path="/ConfiguracoesPrecos" element={<ConfiguracoesPrecos />} />
-                
-                <Route path="/HistoricoOrcamentos" element={<HistoricoOrcamentos />} />
-                
-                <Route path="/Agendamentos" element={<Agendamentos />} />
-                
-                <Route path="/PlanosConfig" element={<PlanosConfig />} />
-                
-                <Route path="/ServicosPrestados" element={<ServicosPrestados />} />
-                
-                <Route path="/Despesas" element={<Despesas />} />
-                
-                <Route path="/ConfigurarIntegracoes" element={<ConfigurarIntegracoes />} />
+        <Routes>
+            <Route path="/" element={<Navigate to={createPageUrl("Dev_Dashboard")} replace />} />
 
-                <Route path="/AdministracaoSistema" element={<AdministracaoSistema />} />
-                
-            </Routes>
-        </Layout>
+            {Object.keys(PAGES).map((pageName) => (
+                <Route
+                    key={`pretty-${pageName}`}
+                    path={createPageUrl(pageName)}
+                    element={<PageFrame pageName={pageName} currentPageName={currentPage} />}
+                />
+            ))}
+
+            {Object.keys(PAGES).map((pageName) => {
+                const legacyPath = `/${pageName}`;
+                const prettyPath = createPageUrl(pageName);
+
+                if (legacyPath.toLowerCase() === prettyPath.toLowerCase()) {
+                    return null;
+                }
+
+                return (
+                    <Route
+                        key={`legacy-${pageName}`}
+                        path={legacyPath}
+                        element={<LegacyPageRedirect pageName={pageName} />}
+                    />
+                );
+            })}
+
+            <Route path="*" element={<Navigate to={createPageUrl("Dev_Dashboard")} replace />} />
+        </Routes>
     );
 }
 

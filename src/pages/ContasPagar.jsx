@@ -18,6 +18,7 @@ import {
 import { format, differenceInDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
+import { isImagePreviewable, openImageViewer } from "@/utils";
 
 export default function ContasPagar() {
   const [lancamentos, setLancamentos] = useState([]);
@@ -116,7 +117,14 @@ export default function ContasPagar() {
     try {
       const signed = await CreateFileSignedUrl({ path, expires: 3600 });
       const url = signed?.signedUrl || signed?.url;
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      if (!url) return;
+
+      if (isImagePreviewable(path) || isImagePreviewable(url)) {
+        openImageViewer(url, "Anexo da conta");
+        return;
+      }
+
+      window.open(url, "_blank", "noopener,noreferrer");
     } catch (error) {
       alert("Erro ao abrir arquivo.");
     }

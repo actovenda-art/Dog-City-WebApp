@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, Image, KeyRound, Link2, Palette, Save, Shield, Tags, Users } from "lucide-react";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
+import { createPageUrl, openImageViewer } from "@/utils";
 
 const EMPTY_EMPRESA = {
   codigo: "",
@@ -577,9 +577,13 @@ export default function AdministracaoSistema() {
                         {isUploading ? "Enviando..." : "Enviar logo"}
                       </Button>
                       {brandingForm.logoUrl ? (
-                        <a href={brandingForm.logoUrl} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline">
-                          Abrir logo atual
-                        </a>
+                        <button
+                          type="button"
+                          onClick={() => openImageViewer(brandingForm.logoUrl, "Logo da empresa")}
+                          className="text-sm text-blue-600 hover:underline"
+                        >
+                          Ver logo atual
+                        </button>
                       ) : (
                         <span className="text-sm text-gray-500">Nenhuma logo cadastrada.</span>
                       )}

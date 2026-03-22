@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ExternalLink, ImageOff } from "lucide-react";
+import { ArrowLeft, ImageOff } from "lucide-react";
 import { getImageViewerPayload } from "@/utils";
 
 export default function VisualizadorImagem() {
@@ -50,12 +50,6 @@ export default function VisualizadorImagem() {
           <Button variant="outline" onClick={handleBack} className="border-slate-600 bg-transparent text-white hover:bg-slate-800">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar
-          </Button>
-          <Button asChild className="bg-orange-500 hover:bg-orange-600 text-white">
-            <a href={payload.src} target="_blank" rel="noreferrer">
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Abrir original
-            </a>
           </Button>
         </div>
       </div>

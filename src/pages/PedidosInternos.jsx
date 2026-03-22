@@ -17,6 +17,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { isImagePreviewable, openImageViewer } from "@/utils";
 
 const PIPELINES = [
   { id: "sem_tramitacao", label: "Sem Tramitação", gradient: "from-slate-400 to-slate-500", bg: "bg-slate-50", border: "border-slate-200", icon: FileText },
@@ -113,7 +114,14 @@ export default function PedidosInternos() {
     try {
       const signed = await CreateFileSignedUrl({ path, expires: 3600 });
       const url = signed?.signedUrl || signed?.url;
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      if (!url) return;
+
+      if (isImagePreviewable(path) || isImagePreviewable(url)) {
+        openImageViewer(url, "Anexo da tarefa");
+        return;
+      }
+
+      window.open(url, "_blank", "noopener,noreferrer");
     } catch (error) {
       alert("Erro ao abrir arquivo.");
     }

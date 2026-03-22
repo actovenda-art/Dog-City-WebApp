@@ -13,6 +13,7 @@ import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integr
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { isImagePreviewable, openImageViewer } from "@/utils";
 
 export default function Cadastro() {
   const [notifyOpen, setNotifyOpen] = useState(false);
@@ -88,7 +89,14 @@ export default function Cadastro() {
     try {
       const signed = await CreateFileSignedUrl({ path, expires: 3600 });
       const url = signed?.signedUrl || signed?.url;
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      if (!url) return;
+
+      if (isImagePreviewable(path) || isImagePreviewable(url)) {
+        openImageViewer(url, "Carteirinha de vacinacao");
+        return;
+      }
+
+      window.open(url, "_blank", "noopener,noreferrer");
     } catch (error) {
       setNotifyTitle("Erro");
       setNotifyMessage("Nao foi possivel abrir o documento.");
@@ -168,7 +176,7 @@ export default function Cadastro() {
                   <div><Label>Pelagem</Label><Input value={dogForm.pelagem} onChange={(e) => setDogForm({ ...dogForm, pelagem: e.target.value })} placeholder="Ex: Curta, Longa" /></div>
                   <div><Label>Peso (KG)</Label><Input type="number" step="0.1" value={dogForm.peso} onChange={(e) => setDogForm({ ...dogForm, peso: e.target.value })} /></div>
                   <div><Label>Data de Nascimento</Label><Input type="date" value={dogForm.data_nascimento} onChange={(e) => setDogForm({ ...dogForm, data_nascimento: e.target.value })} /></div>
-                  <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <a href={dogForm.foto_url} target="_blank" rel="noreferrer" className="text-blue-600 text-sm self-center">Ver</a>}</div></div>
+                  <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <button type="button" onClick={() => openImageViewer(dogForm.foto_url, "Foto do perfil")} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
                   <div><Label>Carteirinha Vacinação</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
                   <div><Label>1ª Revacinação</Label><Input type="date" value={dogForm.data_revacinacao_1} onChange={(e) => setDogForm({ ...dogForm, data_revacinacao_1: e.target.value })} /></div>
                   <div><Label>2ª Revacinação</Label><Input type="date" value={dogForm.data_revacinacao_2} onChange={(e) => setDogForm({ ...dogForm, data_revacinacao_2: e.target.value })} /></div>

@@ -460,7 +460,11 @@ export default function AdministracaoSistema() {
       setShowInviteModal(false);
       setInviteForm(EMPTY_INVITE);
       await loadData();
-      alert(emailResult?.provider ? "Convite criado e email enviado com sucesso." : "Convite criado.");
+      alert(
+        emailResult?.provider
+          ? `Convite enviado com sucesso para ${invitePayload.full_name}. Em breve se juntara a equipe!`
+          : `Convite criado para ${invitePayload.full_name}.`
+      );
     } catch (error) {
       console.error("Erro ao enviar convite:", error);
       alert(formatApiError(error, "Erro ao criar ou enviar convite."));

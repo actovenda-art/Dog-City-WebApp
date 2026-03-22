@@ -391,6 +391,11 @@ if (SUPABASE_URL && SUPABASE_ANON) {
 
   const getAuthenticatedUser = async () => {
     try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (!sessionError && sessionData?.session?.user) {
+        return sessionData.session.user;
+      }
+
       const { data, error } = await supabase.auth.getUser();
       if (error) throw error;
       return data?.user || null;
@@ -413,7 +418,8 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const authUser = await getAuthenticatedUser();
       if (!authUser) return null;
 
-      const mergedUser = await syncUserProfile(authUser);
+      const profile = await findUserProfile(authUser);
+      const mergedUser = profile ? { ...authUser, ...profile } : authUser;
       supabaseAuth.currentUser = mergedUser;
       return mergedUser;
     },
@@ -447,15 +453,22 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const { data, error } = await supabase.auth.exchangeCodeForSession(authCode);
       if (error) throw error;
 
-      const mergedUser = await syncUserProfile(data?.user || data?.session?.user);
-      supabaseAuth.currentUser = mergedUser;
+      const authUser = data?.user || data?.session?.user || null;
+      supabaseAuth.currentUser = authUser;
+      if (authUser) {
+        syncUserProfile(authUser).catch((syncError) => {
+          console.warn('exchangeCodeForSession syncUserProfile error', syncError);
+        });
+      }
       return data;
     },
     onAuthStateChange: (callback) => {
-      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
         if (session?.user) {
-          const mergedUser = await syncUserProfile(session.user);
-          supabaseAuth.currentUser = mergedUser;
+          supabaseAuth.currentUser = session.user;
+          syncUserProfile(session.user).catch((syncError) => {
+            console.warn('onAuthStateChange syncUserProfile error', syncError);
+          });
         } else {
           supabaseAuth.currentUser = null;
         }

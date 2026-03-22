@@ -6,14 +6,7 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   server: {
-    allowedHosts: true,
-    proxy: {
-      "/api": {
-        target: "https://dogcityapp.vercel.app",
-        changeOrigin: true,
-        secure: true,
-      },
-    },
+    allowedHosts: true
   },
   resolve: {
     alias: {

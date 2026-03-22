@@ -288,9 +288,14 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       SendEmail: async ({ to, subject, body, html }) => {
         const webhookUrl = import.meta.env.VITE_EMAIL_WEBHOOK_URL;
         if (webhookUrl) {
+          const headers = { 'Content-Type': 'application/json' };
+          if (SUPABASE_ANON && webhookUrl.includes('.supabase.co/functions/v1/')) {
+            headers.apikey = SUPABASE_ANON;
+            headers.Authorization = `Bearer ${SUPABASE_ANON}`;
+          }
           const response = await fetch(webhookUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ to, subject, body, html }),
           });
           if (!response.ok) {

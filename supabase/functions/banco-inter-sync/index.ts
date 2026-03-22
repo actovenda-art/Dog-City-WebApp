@@ -177,16 +177,18 @@ function countTransactions(payload: unknown) {
 }
 
 async function createHttpClient(config: IntegrationConfig) {
-  const certChain = sanitizeText(config.certificate_crt);
-  const privateKey = sanitizeText(config.certificate_key);
+  const cert = sanitizeText(config.certificate_crt);
+  const key = sanitizeText(config.certificate_key);
 
-  if (!certChain || !privateKey) {
+  if (!cert || !key) {
     throw new Error("Certificado .crt e chave .key do Banco Inter sao obrigatorios.");
   }
 
   return Deno.createHttpClient({
-    certChain,
-    privateKey,
+    cert,
+    key,
+    http1: true,
+    http2: false,
   });
 }
 

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
+import { createPageUrl, getPageNameFromPath } from "@/utils";
 import { 
   LogOut,
   Shield,
@@ -192,7 +192,7 @@ export default function Layout({ children, currentPageName }) {
                                   <div className="pl-2 space-y-0.5 mt-1">
                                     {section.items.map((item) => {
                                       const Icon = item.icon;
-                                      const isActive = currentPageName === item.url.split('?')[0].split('/').pop();
+                                      const isActive = currentPageName === getPageNameFromPath(item.url);
 
                                       return (
                                         <Link
@@ -297,7 +297,7 @@ export default function Layout({ children, currentPageName }) {
                                       <div className="pl-2 space-y-0.5 mt-1">
                                         {section.items.map((item) => {
                                           const Icon = item.icon;
-                                          const isActive = currentPageName === item.url.split('?')[0].split('/').pop();
+                                          const isActive = currentPageName === getPageNameFromPath(item.url);
 
                                           return (
                                             <Link

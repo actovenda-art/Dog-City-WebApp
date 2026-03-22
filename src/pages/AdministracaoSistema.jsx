@@ -75,6 +75,10 @@ function isMissingAdminTablesError(error) {
   return error?.code === "PGRST205" || /public\.empresa|public\.perfil_acesso|schema cache/i.test(error?.message || "");
 }
 
+function isRowLevelSecurityError(error) {
+  return error?.code === "42501" || /row-level security policy|violates row-level security policy/i.test(error?.message || "");
+}
+
 export default function AdministracaoSistema() {
   const [currentUser, setCurrentUser] = useState(null);
   const [companies, setCompanies] = useState([]);
@@ -146,6 +150,8 @@ export default function AdministracaoSistema() {
       console.error("Erro ao carregar administracao:", error);
       if (isMissingAdminTablesError(error)) {
         setSetupError("As tabelas de administracao multiempresa ainda nao existem no Supabase. Execute `supabase-schema-admin-multiempresa.sql` e depois `supabase-seed-admin-config.sql`.");
+      } else if (isRowLevelSecurityError(error)) {
+        setSetupError("O Supabase bloqueou a leitura/escrita por RLS nas tabelas administrativas. Se o app ainda nao usa login Supabase nessa area, desabilite RLS nessas tabelas ou crie policies compativeis.");
       }
     }
     setIsLoading(false);
@@ -220,6 +226,8 @@ export default function AdministracaoSistema() {
       console.error("Erro ao salvar empresa:", error);
       if (isMissingAdminTablesError(error)) {
         setSetupError("Nao foi possivel salvar porque a tabela `empresa` nao existe no Supabase. Execute `supabase-schema-admin-multiempresa.sql` e `supabase-seed-admin-config.sql`.");
+      } else if (isRowLevelSecurityError(error)) {
+        setSetupError("O insert em `empresa` foi bloqueado por RLS. Ajuste ou desabilite RLS para `empresa` antes de salvar empresas pelo app.");
       }
       alert(formatApiError(error, "Erro ao salvar empresa."));
     }
@@ -257,6 +265,8 @@ export default function AdministracaoSistema() {
       console.error("Erro ao salvar perfil:", error);
       if (isMissingAdminTablesError(error)) {
         setSetupError("Nao foi possivel salvar porque a tabela `perfil_acesso` nao existe no Supabase. Execute `supabase-schema-admin-multiempresa.sql` e `supabase-seed-admin-config.sql`.");
+      } else if (isRowLevelSecurityError(error)) {
+        setSetupError("O insert em `perfil_acesso` foi bloqueado por RLS. Ajuste ou desabilite RLS para `perfil_acesso` antes de salvar perfis.");
       }
       alert(formatApiError(error, "Erro ao salvar perfil de acesso."));
     }

@@ -142,6 +142,12 @@ function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
+function diffDays(fromDate: string, toDate: string) {
+  const start = normalizeDateInput(fromDate);
+  const end = normalizeDateInput(toDate);
+  return Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
+}
+
 function buildDateWindows(fromDate: string, toDate: string, maxRangeDays = 80) {
   const windows: Array<{ from: string; to: string }> = [];
   let cursor = normalizeDateInput(fromDate);
@@ -161,6 +167,36 @@ function buildDateWindows(fromDate: string, toDate: string, maxRangeDays = 80) {
   }
 
   return windows;
+}
+
+function isTransientUpstreamError(error: unknown) {
+  const message = serializeError(error).toLowerCase();
+  return (
+    message.includes("(502)") ||
+    message.includes("(503)") ||
+    message.includes("(504)") ||
+    message.includes("no healthy upstream") ||
+    message.includes("upstream connect error") ||
+    message.includes("temporarily unavailable")
+  );
+}
+
+function splitDateWindow(fromDate: string, toDate: string) {
+  const totalDays = diffDays(fromDate, toDate);
+  if (totalDays < 1) return null;
+
+  const start = normalizeDateInput(fromDate);
+  const middle = addDays(start, Math.floor(totalDays / 2));
+  const secondStart = addDays(middle, 1);
+
+  return {
+    left: { from: formatDateOnly(start), to: formatDateOnly(middle) },
+    right: { from: formatDateOnly(secondStart), to: formatDateOnly(toDate) },
+  };
+}
+
+async function wait(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function chunkArray<T>(items: T[], size: number) {
@@ -494,6 +530,61 @@ async function fetchExtrato(
   }
 
   return { payload: parsed, httpStatus: response.status };
+}
+
+async function fetchExtratoResilient(
+  config: IntegrationConfig,
+  accessToken: string,
+  httpClient: Deno.HttpClient,
+  fromDate: string,
+  toDate: string,
+  attempt = 1,
+): Promise<{ payload: unknown; httpStatus: number; processedWindows: number }> {
+  try {
+    const result = await fetchExtrato(config, accessToken, httpClient, fromDate, toDate);
+    return {
+      ...result,
+      processedWindows: 1,
+    };
+  } catch (error) {
+    if (isTransientUpstreamError(error) && attempt < 3) {
+      await wait(attempt * 1500);
+      return fetchExtratoResilient(config, accessToken, httpClient, fromDate, toDate, attempt + 1);
+    }
+
+    if (isTransientUpstreamError(error)) {
+      const splitWindow = splitDateWindow(fromDate, toDate);
+      if (splitWindow) {
+        const left = await fetchExtratoResilient(
+          config,
+          accessToken,
+          httpClient,
+          splitWindow.left.from,
+          splitWindow.left.to,
+          1,
+        );
+        const right = await fetchExtratoResilient(
+          config,
+          accessToken,
+          httpClient,
+          splitWindow.right.from,
+          splitWindow.right.to,
+          1,
+        );
+
+        return {
+          payload: [
+            ...getTransactionArray(left.payload),
+            ...getTransactionArray(right.payload),
+          ],
+          httpStatus: right.httpStatus || left.httpStatus,
+          processedWindows: left.processedWindows + right.processedWindows,
+        };
+      }
+    }
+
+    throw error;
+  }
 }
 
 async function normalizeTransactions(
@@ -863,12 +954,18 @@ async function runSyncForConfig(
     let rawCount = 0;
     let normalizedRows: NormalizedTransaction[] = [];
     let httpStatus = tokenStatus;
+    let processedWindowCount = 0;
 
     for (const window of dateWindows) {
       try {
-        const { payload, httpStatus: windowHttpStatus } = await fetchExtrato(config, accessToken, httpClient, window.from, window.to);
+        const {
+          payload,
+          httpStatus: windowHttpStatus,
+          processedWindows,
+        } = await fetchExtratoResilient(config, accessToken, httpClient, window.from, window.to);
         rawCount += countTransactions(payload);
         httpStatus = windowHttpStatus;
+        processedWindowCount += processedWindows;
 
         if (empresaId) {
           const windowRows = await normalizeTransactions(empresaId, log.id, payload);
@@ -895,6 +992,8 @@ async function runSyncForConfig(
         token_type: tokenResponse?.token_type || null,
         range: { from: fromDate, to: toDate },
         windows: dateWindows,
+        requested_window_count: dateWindows.length,
+        processed_window_count: processedWindowCount,
         received_count: rawCount,
       },
     });
@@ -920,11 +1019,11 @@ async function runSyncForConfig(
       inseridas: persistence.importedCount,
       duplicadas: persistence.deduplicatedCount,
       received_count: rawCount,
-      windows_processed: dateWindows.length,
+      windows_processed: processedWindowCount,
       message: action === "test"
         ? "Conexao com Banco Inter validada com sucesso."
-        : dateWindows.length > 1
-          ? `Extrato importado em ${dateWindows.length} janela(s). ${persistence.importedCount} registro(s) novo(s).`
+        : processedWindowCount > 1
+          ? `Extrato importado em ${processedWindowCount} janela(s). ${persistence.importedCount} registro(s) novo(s).`
           : `Extrato importado com sucesso. ${persistence.importedCount} registro(s) novo(s).`,
     };
   } catch (error) {

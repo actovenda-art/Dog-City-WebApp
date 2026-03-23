@@ -131,7 +131,7 @@ export default function FinanceDetailDialog({
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-              <p className="text-xs uppercase tracking-wide text-gray-500">Referencia</p>
+              <p className="text-xs uppercase tracking-wide text-gray-500">Transacao ID</p>
               <p className="mt-2 text-sm font-medium text-gray-900 break-all">
                 {formData.referencia || normalizedMovement.referenciaFinanceira}
               </p>
@@ -193,7 +193,7 @@ export default function FinanceDetailDialog({
             </div>
 
             <div>
-              <Label>Referencia</Label>
+              <Label>Transacao ID</Label>
               <Input
                 className="mt-2"
                 value={formData.referencia}

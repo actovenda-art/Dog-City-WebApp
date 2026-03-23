@@ -20,7 +20,6 @@ import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateT
 import {
   ArrowDownCircle,
   ArrowUpCircle,
-  Landmark,
   Pencil,
   Plus,
   RefreshCw,
@@ -430,7 +429,7 @@ export default function Movimentacoes() {
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 className="pl-9"
-                placeholder="Buscar por titular, metodo, banco ou referencia"
+                placeholder="Buscar por titular, metodo, banco ou transacao ID"
               />
             </div>
 
@@ -512,12 +511,6 @@ export default function Movimentacoes() {
                         <Badge variant="outline">Origem API</Badge>
                       ) : (
                         <Badge variant="outline">Manual</Badge>
-                      )}
-                      {movement.referenciaFinanceira && movement.referenciaFinanceira !== "-" && (
-                        <Badge className="bg-slate-100 text-slate-700">
-                          <Landmark className="mr-1 h-3 w-3" />
-                          {movement.referenciaFinanceira}
-                        </Badge>
                       )}
                     </div>
                   </div>
@@ -623,7 +616,7 @@ export default function Movimentacoes() {
             </div>
 
             <div className="md:col-span-2">
-              <Label>Referencia</Label>
+              <Label>Transacao ID</Label>
               <Input
                 className="mt-2"
                 value={formData.referencia}

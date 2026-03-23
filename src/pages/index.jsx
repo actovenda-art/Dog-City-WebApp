@@ -122,6 +122,9 @@ function RequireAuth({ authEnabled, authReady, currentUser, children }) {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`${createPageUrl("Login")}?next=${encodeURIComponent(next)}`} replace />;
   }
+  if (currentUser?.active === false) {
+    return <Navigate to={`${createPageUrl("Login")}?blocked=1`} replace />;
+  }
   if (currentUser?.onboarding_status === "pendente" && location.pathname !== onboardingPath) {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`${onboardingPath}?next=${encodeURIComponent(next)}`} replace />;
@@ -135,7 +138,7 @@ function RedirectAuthenticatedUser({ authEnabled, authReady, currentUser, childr
 
   if (!authEnabled) return children;
   if (!authReady) return <FullScreenAuthLoader />;
-  if (currentUser) {
+  if (currentUser && currentUser.active !== false) {
     return <Navigate to={getSafeNextPath(location.search)} replace />;
   }
 

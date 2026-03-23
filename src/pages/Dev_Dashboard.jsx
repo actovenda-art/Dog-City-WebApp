@@ -1,959 +1,879 @@
-import React, { useState, useEffect } from "react";
-import { User } from "@/api/entities";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { Empresa, PerfilAcesso, User, UserInvite, UserProfile } from "@/api/entities";
+import { SendEmail } from "@/api/integrations";
+import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { 
-  Search,
-  UserPlus,
-  Pencil,
-  Trash2,
-  Shield,
-  Users,
-  Home,
-  Scissors,
-  Car,
-  CheckCircle,
-  XCircle,
-  Mail,
-  Phone,
-  DollarSign,
-  MoreVertical,
-  Eye,
-  Key,
-  AlertCircle,
-  Copy,
-  CheckCheck
-} from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription
-} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { motion, AnimatePresence } from "framer-motion";
+import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Mail, RotateCcw, Save, Search, Settings, Shield, Trash2, UserPlus, UserX, Users } from "lucide-react";
+
+const EMPTY_INVITE = {
+  full_name: "",
+  email: "",
+  empresa_id: "",
+  access_profile_id: "",
+  is_platform_admin: false,
+};
+
+const EMPTY_FEEDBACK_MODAL = {
+  open: false,
+  title: "",
+  description: "",
+  fieldLabel: "",
+  fieldValue: "",
+  note: "",
+};
+
+function formatApiError(error, fallbackMessage) {
+  const details = error?.message || error?.details || error?.hint || "";
+  return details ? `${fallbackMessage}\n${details}` : fallbackMessage;
+}
+
+function isMissingAdminTablesError(error) {
+  return error?.code === "PGRST205" || /public\.empresa|public\.perfil_acesso|public\.user_invite|schema cache/i.test(error?.message || "");
+}
+
+function isRowLevelSecurityError(error) {
+  return error?.code === "42501" || /row-level security policy|violates row-level security policy/i.test(error?.message || "");
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(new Date(value));
+  } catch (error) {
+    return value;
+  }
+}
+
+function getInviteStatusMeta(status) {
+  const map = {
+    pendente: { label: "Pendente", className: "bg-amber-100 text-amber-700" },
+    aceito: { label: "Aguardando ficha", className: "bg-sky-100 text-sky-700" },
+    concluido: { label: "Confirmado", className: "bg-emerald-100 text-emerald-700" },
+    cancelado: { label: "Cancelado", className: "bg-rose-100 text-rose-700" },
+  };
+
+  return map[status] || map.pendente;
+}
+
+function getAccessStatusMeta(user) {
+  if (user?.active === false) {
+    return { label: "Acesso cancelado", className: "bg-rose-100 text-rose-700" };
+  }
+
+  if (user?.onboarding_status === "pendente") {
+    return { label: "Aguardando ficha", className: "bg-sky-100 text-sky-700" };
+  }
+
+  return { label: "Confirmado", className: "bg-emerald-100 text-emerald-700" };
+}
 
 export default function Dev_Dashboard() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [units, setUnits] = useState([]);
+  const [profiles, setProfiles] = useState([]);
   const [users, setUsers] = useState([]);
-  const [filteredUsers, setFilteredUsers] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [invites, setInvites] = useState([]);
+  const [setupError, setSetupError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterProfile, setFilterProfile] = useState("all");
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false); // New state for view modal
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [editingUser, setEditingUser] = useState(null);
-  const [viewingUser, setViewingUser] = useState(null); // New state for viewing user
+  const [selectedUnitId, setSelectedUnitId] = useState("__all__");
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [nameError, setNameError] = useState(false);
-  const [generatedPassword, setGeneratedPassword] = useState("");
-  const [passwordCopied, setPasswordCopied] = useState(false);
-  const [newUser, setNewUser] = useState({
-    full_name: "",
-    cpf: "",
-    phone: "",
-    emergency_contact: "",
-    profile: "comercial"
-  });
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteForm, setInviteForm] = useState(EMPTY_INVITE);
+  const [feedbackModal, setFeedbackModal] = useState(EMPTY_FEEDBACK_MODAL);
+  const [hasCopiedFeedbackValue, setHasCopiedFeedbackValue] = useState(false);
 
   useEffect(() => {
-    loadUsers();
+    loadData();
   }, []);
 
-  useEffect(() => {
-    let filtered = users;
-
-    if (searchTerm) {
-      filtered = filtered.filter(user => 
-        user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.phone?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    if (filterProfile !== "all") {
-      filtered = filtered.filter(user => user.profile === filterProfile);
-    }
-
-    setFilteredUsers(filtered);
-  }, [searchTerm, filterProfile, users]);
-
-  const loadUsers = async () => {
+  async function loadData() {
     setIsLoading(true);
+    setSetupError("");
+
     try {
-      const allUsers = await User.list("-created_date", 1000);
-      setUsers(allUsers);
+      const [me, unitRows, profileRows, userRows, inviteRows] = await Promise.all([
+        User.me(),
+        Empresa.list("-created_date", 200),
+        PerfilAcesso.list("-created_date", 200),
+        UserProfile.list("-created_date", 500),
+        UserInvite.list("-created_date", 500),
+      ]);
+
+      setCurrentUser(me);
+      setUnits(unitRows || []);
+      setProfiles(profileRows || []);
+      setUsers(userRows || []);
+      setInvites(inviteRows || []);
+
+      if (me?.empresa_id && unitRows?.some((item) => item.id === me.empresa_id)) {
+        setSelectedUnitId((current) => current === "__all__" ? me.empresa_id : current);
+      }
     } catch (error) {
-      console.error("Erro ao carregar usuários:", error);
+      console.error("Erro ao carregar gestao de usuarios:", error);
+      if (isMissingAdminTablesError(error)) {
+        setSetupError("As tabelas administrativas ainda nao existem no Supabase. Execute `supabase-schema-admin-multiempresa.sql`, `supabase-schema-user-invite-onboarding.sql` e `supabase-seed-admin-config.sql`.");
+      } else if (isRowLevelSecurityError(error)) {
+        setSetupError("O Supabase bloqueou leitura ou escrita por RLS nas tabelas de usuarios, convites ou unidades. Ajuste as policies antes de continuar.");
+      } else {
+        setSetupError(error?.message || "Nao foi possivel carregar a gestao de usuarios.");
+      }
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  };
+  }
 
-  const handleView = (user) => {
-    setViewingUser(user);
-    setShowViewModal(true);
-  };
+  const activeProfiles = useMemo(() => profiles.filter((profile) => profile.ativo !== false), [profiles]);
+  const normalizedSearch = searchTerm.trim().toLowerCase();
 
-  const handleEdit = (user) => {
-    setEditingUser({...user});
-    setShowEditModal(true);
-  };
+  const filteredInvites = useMemo(() => {
+    return invites.filter((invite) => {
+      const unit = units.find((item) => item.id === invite.empresa_id);
+      const matchesUnit = selectedUnitId === "__all__" ? true : invite.empresa_id === selectedUnitId;
+      const haystack = [invite.full_name, invite.email, unit?.nome_fantasia].filter(Boolean).join(" ").toLowerCase();
+      return matchesUnit && (!normalizedSearch || haystack.includes(normalizedSearch));
+    });
+  }, [invites, normalizedSearch, selectedUnitId, units]);
 
-  const handleSave = async () => {
-    if (!editingUser) return;
+  const filteredUsers = useMemo(() => {
+    return users.filter((user) => {
+      const unit = units.find((item) => item.id === user.empresa_id);
+      const matchesUnit = selectedUnitId === "__all__" ? true : user.empresa_id === selectedUnitId;
+      const haystack = [user.full_name, user.email, unit?.nome_fantasia].filter(Boolean).join(" ").toLowerCase();
+      return matchesUnit && (!normalizedSearch || haystack.includes(normalizedSearch));
+    });
+  }, [users, normalizedSearch, selectedUnitId, units]);
+
+  const activeUsersCount = users.filter((user) => user.active !== false).length;
+  const pendingInvitesCount = invites.filter((invite) => ["pendente", "aceito"].includes(invite.status || "pendente")).length;
+  const confirmedUsersCount = users.filter((user) => user.active !== false && user.onboarding_status !== "pendente").length;
+  const blockedUsersCount = users.filter((user) => user.active === false).length;
+
+  function getUnitName(unitId) {
+    if (!unitId) return "Administracao Central";
+    return units.find((item) => item.id === unitId)?.nome_fantasia || "Unidade nao identificada";
+  }
+
+  function buildInviteLink(token) {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return `${origin}${createPageUrl("CompletarCadastro")}?invite=${encodeURIComponent(token)}`;
+  }
+
+  function openInviteModal() {
+    setInviteForm({
+      ...EMPTY_INVITE,
+      empresa_id: selectedUnitId !== "__all__" ? selectedUnitId : currentUser?.empresa_id || "",
+    });
+    setShowInviteModal(true);
+  }
+
+  function openInviteFeedbackModal({ title, description, link }) {
+    setHasCopiedFeedbackValue(false);
+    setFeedbackModal({
+      open: true,
+      title,
+      description,
+      fieldLabel: "Link do convite",
+      fieldValue: link,
+      note: "Compartilhe este link apenas com o usuario convidado. O login deve ser feito com o mesmo email do convite.",
+    });
+  }
+
+  async function copyFeedbackValue() {
+    if (!feedbackModal.fieldValue) return;
+
+    try {
+      await navigator.clipboard.writeText(feedbackModal.fieldValue);
+      setHasCopiedFeedbackValue(true);
+      window.setTimeout(() => setHasCopiedFeedbackValue(false), 2000);
+    } catch (error) {
+      console.error("Erro ao copiar valor do modal:", error);
+      alert("Nao foi possivel copiar o link.");
+    }
+  }
+
+  async function copyInviteLink(token) {
+    try {
+      await navigator.clipboard.writeText(buildInviteLink(token));
+      alert("Link do convite copiado.");
+    } catch (error) {
+      console.error("Erro ao copiar convite:", error);
+      alert("Nao foi possivel copiar o link.");
+    }
+  }
+
+  function buildInviteEmail(invite) {
+    const inviteLink = buildInviteLink(invite.token);
+    const destinationLabel = invite.is_platform_admin
+      ? "a administracao central da Dog City Brasil"
+      : `a unidade ${getUnitName(invite.empresa_id)} da Dog City Brasil`;
+
+    return {
+      inviteLink,
+      subject: "Convite para acessar a Dog City Brasil",
+      body: [
+        `Ola, ${invite.full_name}.`,
+        "",
+        `Voce recebeu um convite para acessar ${destinationLabel}.`,
+        "Entre com o mesmo email convidado e conclua sua ficha cadastral no link abaixo:",
+        inviteLink,
+        "",
+        "Se o login abrir em outra conta Google, troque para o email convidado antes de prosseguir.",
+      ].join("\n"),
+      html: [
+        `<p>Ola, ${invite.full_name}.</p>`,
+        `<p>Voce recebeu um convite para acessar <strong>${destinationLabel}</strong>.</p>`,
+        `<p><a href="${inviteLink}">Clique aqui para acessar e concluir seu cadastro</a>.</p>`,
+        "<p>Use o mesmo email convidado para fazer login.</p>",
+      ].join(""),
+    };
+  }
+
+  async function handleSendInvite() {
+    if (!inviteForm.full_name || !inviteForm.email) {
+      alert("Preencha nome completo e email.");
+      return;
+    }
+
+    if (!inviteForm.is_platform_admin && !inviteForm.empresa_id) {
+      alert("Selecione a unidade ou marque o usuario como ADM do Sistema Pet.");
+      return;
+    }
 
     setIsSaving(true);
     try {
-      await User.update(editingUser.id, {
-        profile: editingUser.profile,
-        phone: editingUser.phone,
-        emergency_contact: editingUser.emergency_contact, // Added emergency_contact
-        active: editingUser.active
+      const token = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      const invitePayload = {
+        token,
+        full_name: inviteForm.full_name.trim(),
+        email: inviteForm.email.trim().toLowerCase(),
+        empresa_id: inviteForm.is_platform_admin ? null : inviteForm.empresa_id || null,
+        access_profile_id: inviteForm.access_profile_id || null,
+        is_platform_admin: !!inviteForm.is_platform_admin,
+        company_role: inviteForm.is_platform_admin ? "platform_admin" : "company_user",
+        status: "pendente",
+        invited_by_user_id: currentUser?.id || null,
+        invited_at: new Date().toISOString(),
+      };
+
+      const createdInvite = await UserInvite.create(invitePayload);
+      const emailPayload = buildInviteEmail(createdInvite);
+      const emailResult = await SendEmail({
+        to: createdInvite.email,
+        subject: emailPayload.subject,
+        body: emailPayload.body,
+        html: emailPayload.html,
       });
-      
-      await loadUsers();
-      setShowEditModal(false);
-      setEditingUser(null);
-    } catch (error) {
-      console.error("Erro ao salvar usuário:", error);
-      alert("Erro ao salvar usuário. Verifique se você tem permissão para editar este usuário.");
-    }
-    setIsSaving(false);
-  };
 
-  const handleResetPassword = async (user, e) => {
-    e.stopPropagation(); // Prevent opening view modal when clicking this button
-    
-    if (!confirm(`Tem certeza que deseja redefinir a senha de ${user.full_name}?`)) return;
+      setShowInviteModal(false);
+      setInviteForm(EMPTY_INVITE);
+      await loadData();
 
-    try {
-      // In a real application, this would involve an API call to reset the password securely.
-      // For this mock, we generate a random password and display it.
-      const randomPassword = Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12).toUpperCase() + "!@#";
-      
-      setGeneratedPassword(randomPassword);
-      setShowPasswordModal(true);
-      setPasswordCopied(false);
-      
-      console.log("Reset de senha para:", user.email, "Nova senha:", randomPassword);
-      // Here you would typically call an API, e.g., await User.resetPassword(user.id);
-    } catch (error) {
-      console.error("Erro ao redefinir senha:", error);
-      alert("Erro ao redefinir senha. Tente novamente.");
-    }
-  };
-
-  const handleCopyPassword = async () => {
-    try {
-      await navigator.clipboard.writeText(generatedPassword);
-      setPasswordCopied(true);
-      setTimeout(() => setPasswordCopied(false), 2000);
-    } catch (error) {
-      console.error("Erro ao copiar senha:", error);
-      alert("Erro ao copiar senha. Por favor, copie manualmente.");
-    }
-  };
-
-  const handleDelete = async (userId) => {
-    if (!confirm("Tem certeza que deseja excluir este usuário?")) return;
-
-    try {
-      await User.delete(userId);
-      await loadUsers();
-    } catch (error) {
-      console.error("Erro ao excluir usuário:", error);
-      alert("Erro ao excluir usuário. Apenas administradores podem excluir usuários.");
-    }
-  };
-
-  const validateFullName = (name) => {
-    const trimmedName = name.trim();
-    const words = trimmedName.split(/\s+/);
-    return words.length >= 2 && words.every(word => word.length > 0);
-  };
-
-  const handleNameBlur = () => {
-    if (newUser.full_name && !validateFullName(newUser.full_name)) {
-      setNameError(true);
-    } else {
-      setNameError(false);
-    }
-  };
-
-  const handleInviteUser = () => {
-    if (!newUser.full_name || !newUser.cpf || !newUser.phone || !newUser.emergency_contact) {
-      alert("Por favor, preencha todos os campos obrigatórios.");
-      if (!validateFullName(newUser.full_name)) {
-        setNameError(true);
+      if (emailResult?.provider || emailResult?.mode) {
+        openInviteFeedbackModal({
+          title: "Convite Enviado com Sucesso",
+          description: `Convite enviado com sucesso para ${createdInvite.full_name}. Em breve se juntara a equipe!`,
+          link: emailPayload.inviteLink,
+        });
+      } else {
+        alert(`Convite criado para ${createdInvite.full_name}.`);
       }
-      return;
+    } catch (error) {
+      console.error("Erro ao enviar convite:", error);
+      alert(formatApiError(error, "Erro ao criar ou enviar convite."));
+    } finally {
+      setIsSaving(false);
     }
+  }
 
-    if (!validateFullName(newUser.full_name)) {
-      setNameError(true);
-      return;
-    }
+  async function handleResendInvite(invite) {
+    setIsSaving(true);
+    try {
+      const emailPayload = buildInviteEmail(invite);
+      await SendEmail({
+        to: invite.email,
+        subject: emailPayload.subject,
+        body: emailPayload.body,
+        html: emailPayload.html,
+      });
 
-    console.log("Convidando usuário:", newUser);
-    alert("Funcionalidade será implementada em breve!");
-    setShowInviteModal(false);
-    setNewUser({
-      full_name: "",
-      cpf: "",
-      phone: "",
-      emergency_contact: "",
-      profile: "comercial"
-    });
-    setNameError(false);
-  };
+      openInviteFeedbackModal({
+        title: "Convite Reenviado com Sucesso",
+        description: `Convite reenviado com sucesso para ${invite.full_name}. Em breve estara com a equipe!`,
+        link: emailPayload.inviteLink,
+      });
+    } catch (error) {
+      console.error("Erro ao reenviar convite:", error);
+      alert(formatApiError(error, "Nao foi possivel reenviar o convite."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
-  const formatCPF = (value) => {
-    const numbers = value.replace(/\D/g, '');
-    let formatted = numbers;
-    if (numbers.length > 3) {
-      formatted = `${numbers.slice(0, 3)}.${numbers.slice(3)}`;
-    }
-    if (numbers.length > 6) {
-      formatted = `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6)}`;
-    }
-    if (numbers.length > 9) {
-      formatted = `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6, 9)}-${numbers.slice(9, 11)}`;
-    }
-    return formatted.slice(0, 14); // Limit to CPF length
-  };
+  async function handleCancelInvite(invite) {
+    if (!window.confirm(`Cancelar o acesso pendente de ${invite.full_name}?`)) return;
 
-  const formatPhone = (value) => {
-    const numbers = value.replace(/\D/g, '');
-    if (numbers.length <= 10) { // (XX) XXXX-XXXX
-      return numbers.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3');
+    setIsSaving(true);
+    try {
+      await UserInvite.update(invite.id, { status: "cancelado" });
+      await loadData();
+    } catch (error) {
+      console.error("Erro ao cancelar convite:", error);
+      alert(formatApiError(error, "Nao foi possivel cancelar o acesso pendente."));
+    } finally {
+      setIsSaving(false);
     }
-    return numbers.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3'); // (XX) XXXXX-XXXX
-  };
+  }
 
-  const getProfileInfo = (profile) => {
-    const profiles = {
-      desenvolvedor: { 
-        name: "Dev", 
-        fullName: "Desenvolvedor",
-        icon: Shield, 
-        color: "bg-purple-100 text-purple-700 border-purple-200" 
-      },
-      administrador: { 
-        name: "Adm", 
-        fullName: "Administrador",
-        icon: Shield, 
-        color: "bg-blue-100 text-blue-700 border-blue-200" 
-      },
-      comercial: { 
-        name: "Com", 
-        fullName: "Comercial",
-        icon: Users, 
-        color: "bg-orange-100 text-orange-700 border-orange-200" 
-      },
-      monitoria: { 
-        name: "Mon", 
-        fullName: "Monitor",
-        icon: Home, 
-        color: "bg-green-100 text-green-700 border-green-200" 
-      },
-      banhista_tosador: { 
-        name: "Ban", 
-        fullName: "Banhista/Tosador",
-        icon: Scissors, 
-        color: "bg-pink-100 text-pink-700 border-pink-200" 
-      },
-      motorista: { 
-        name: "Mot", 
-        fullName: "Motorista",
-        icon: Car, 
-        color: "bg-indigo-100 text-indigo-700 border-indigo-200" 
-      },
-      financeiro: { 
-        name: "Fin", 
-        fullName: "Financeiro",
-        icon: DollarSign, 
-        color: "bg-emerald-100 text-emerald-700 border-emerald-200" 
-      }
-    };
-    return profiles[profile] || { name: 'N/A', fullName: 'Não definido', icon: Users, color: "bg-gray-100 text-gray-700" };
-  };
+  async function handleDeleteInvite(invite) {
+    if (!window.confirm(`Excluir o acesso pendente de ${invite.full_name}? Esta acao nao pode ser desfeita.`)) return;
 
-  const stats = {
-    total: users.length,
-    inactive: users.filter(u => u.active === false).length,
-    byProfile: {
-      desenvolvedor: users.filter(u => u.profile === "desenvolvedor" && u.active !== false).length,
-      administrador: users.filter(u => u.profile === "administrador" && u.active !== false).length,
-      comercial: users.filter(u => u.profile === "comercial" && u.active !== false).length,
-      monitoria: users.filter(u => u.profile === "monitoria" && u.active !== false).length,
-      banhista_tosador: users.filter(u => u.profile === "banhista_tosador" && u.active !== false).length,
-      motorista: users.filter(u => u.profile === "motorista" && u.active !== false).length,
-      financeiro: users.filter(u => u.profile === "financeiro" && u.active !== false).length,
+    setIsSaving(true);
+    try {
+      await UserInvite.delete(invite.id);
+      await loadData();
+    } catch (error) {
+      console.error("Erro ao excluir convite:", error);
+      alert(formatApiError(error, "Nao foi possivel excluir o acesso."));
+    } finally {
+      setIsSaving(false);
     }
-  };
+  }
+
+  function patchUserState(userId, patch) {
+    setUsers((current) => current.map((item) => item.id === userId ? { ...item, ...patch } : item));
+  }
+
+  async function handleSaveUserAccess(user) {
+    setIsSaving(true);
+    try {
+      await UserProfile.update(user.id, {
+        empresa_id: user.is_platform_admin ? null : user.empresa_id || null,
+        access_profile_id: user.access_profile_id || null,
+        company_role: user.is_platform_admin ? "platform_admin" : (user.company_role || "company_user"),
+        is_platform_admin: !!user.is_platform_admin,
+        active: user.active !== false,
+      });
+      await loadData();
+    } catch (error) {
+      console.error("Erro ao salvar usuario:", error);
+      alert(formatApiError(error, "Nao foi possivel salvar o acesso do usuario."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleCancelUserAccess(user) {
+    if (!window.confirm(`Cancelar o acesso de ${user.full_name || user.email}?`)) return;
+
+    setIsSaving(true);
+    try {
+      await UserProfile.update(user.id, { active: false });
+      await loadData();
+    } catch (error) {
+      console.error("Erro ao cancelar acesso do usuario:", error);
+      alert(formatApiError(error, "Nao foi possivel cancelar o acesso do usuario."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleReactivateUserAccess(user) {
+    setIsSaving(true);
+    try {
+      await UserProfile.update(user.id, { active: true });
+      await loadData();
+    } catch (error) {
+      console.error("Erro ao reativar acesso do usuario:", error);
+      alert(formatApiError(error, "Nao foi possivel reativar o acesso do usuario."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDeleteUserAccess(user) {
+    if (!window.confirm(`Excluir o acesso de ${user.full_name || user.email}? O vinculo sera removido da unidade e o usuario ficara sem acesso.`)) return;
+
+    setIsSaving(true);
+    try {
+      await UserProfile.update(user.id, {
+        active: false,
+        empresa_id: null,
+        access_profile_id: null,
+        company_role: null,
+        is_platform_admin: false,
+      });
+
+      const relatedInvites = invites.filter((invite) => invite.email?.toLowerCase() === user.email?.toLowerCase() && invite.status !== "concluido");
+      await Promise.all(relatedInvites.map((invite) => UserInvite.update(invite.id, { status: "cancelado" })));
+
+      await loadData();
+    } catch (error) {
+      console.error("Erro ao excluir acesso do usuario:", error);
+      alert(formatApiError(error, "Nao foi possivel excluir o acesso do usuario."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando usuários...</p>
-        </div>
+        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600" />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex items-start gap-3 mb-2">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div className="flex items-start gap-3">
             <div className="mt-1">
-              <Shield className="w-6 h-6 text-blue-500" />
+              <Shield className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestão de Usuários</h1>
-              <p className="text-sm sm:text-base text-gray-600 mt-1">Controle completo de usuários do sistema</p>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestao de Usuarios</h1>
+              <p className="text-sm text-gray-600 mt-1">Convites, confirmacoes e acessos das unidades da Dog City Brasil.</p>
             </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Link to={createPageUrl("AdministracaoSistema")}>
+              <Button variant="outline">
+                <Settings className="w-4 h-4 mr-2" />
+                Abrir administracao central
+              </Button>
+            </Link>
+            <Button onClick={openInviteModal} className="bg-blue-600 hover:bg-blue-700 text-white">
+              <UserPlus className="w-4 h-4 mr-2" />
+              Convidar usuario
+            </Button>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6">
-          {/* Primeira Linha - Usuários Ativos por Perfil */}
-          <Card className="border-green-200 bg-white">
-            <CardContent className="p-3 sm:p-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-700 mb-2 sm:mb-3">Usuários Ativos por Perfil</p>
-              <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                <Badge className="bg-blue-100 text-blue-700 text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1">
-                  <span className="sm:hidden">Adm: {stats.byProfile.administrador}</span>
-                  <span className="hidden sm:inline">Administrador: {stats.byProfile.administrador}</span>
-                </Badge>
-                <Badge className="bg-green-100 text-green-700 text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1">
-                  <span className="sm:hidden">Mon: {stats.byProfile.monitoria}</span>
-                  <span className="hidden sm:inline">Monitor: {stats.byProfile.monitoria}</span>
-                </Badge>
-                <Badge className="bg-indigo-100 text-indigo-700 text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1">
-                  <span className="sm:hidden">Mot: {stats.byProfile.motorista}</span>
-                  <span className="hidden sm:inline">Motorista: {stats.byProfile.motorista}</span>
-                </Badge>
-                <Badge className="bg-purple-100 text-purple-700 text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1">
-                  <span className="sm:hidden">Dev: {stats.byProfile.desenvolvedor}</span>
-                  <span className="hidden sm:inline">Desenvolvedor: {stats.byProfile.desenvolvedor}</span>
-                </Badge>
-                <Badge className="bg-emerald-100 text-emerald-700 text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1">
-                  <span className="sm:hidden">Fin: {stats.byProfile.financeiro}</span>
-                  <span className="hidden sm:inline">Financeiro: {stats.byProfile.financeiro}</span>
-                </Badge>
-                <Badge className="bg-orange-100 text-orange-700 text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1">
-                  <span className="sm:hidden">Com: {stats.byProfile.comercial}</span>
-                  <span className="hidden sm:inline">Comercial: {stats.byProfile.comercial}</span>
-                </Badge>
-                <Badge className="bg-pink-100 text-pink-700 text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1">
-                  <span className="sm:hidden">Ban: {stats.byProfile.banhista_tosador}</span>
-                  <span className="hidden sm:inline">Banhista/Tosador: {stats.byProfile.banhista_tosador}</span>
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Segunda Linha - Total e Inativos */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4">
-            {/* Total de Usuários */}
-            <Card className="border-blue-200 bg-white">
-              <CardContent className="p-3 sm:p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs sm:text-sm text-gray-600 mb-1">Total de Usuários</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-blue-600">{stats.total}</p>
-                  </div>
-                  <Users className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Usuários Inativos */}
-            <Card className="border-red-200 bg-white">
-              <CardContent className="p-3 sm:p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs sm:text-sm text-gray-600 mb-1">Usuários Inativos</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-red-600">{stats.inactive}</p>
-                  </div>
-                  <XCircle className="w-8 h-8 sm:w-10 sm:h-10 text-red-600" />
-                </div>
-              </CardContent>
-            </Card>
+        {setupError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {setupError}
           </div>
+        )}
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: "Usuarios ativos", value: activeUsersCount, tone: "text-blue-600", border: "border-blue-200" },
+            { label: "Convites pendentes", value: pendingInvitesCount, tone: "text-amber-600", border: "border-amber-200" },
+            { label: "Acessos confirmados", value: confirmedUsersCount, tone: "text-emerald-600", border: "border-emerald-200" },
+            { label: "Acessos bloqueados", value: blockedUsersCount, tone: "text-rose-600", border: "border-rose-200" },
+          ].map((stat) => (
+            <Card key={stat.label} className={`bg-white ${stat.border}`}>
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">{stat.label}</p>
+                  <p className={`text-2xl font-bold ${stat.tone}`}>{stat.value}</p>
+                </div>
+                <Users className={`w-10 h-10 opacity-50 ${stat.tone}`} />
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
-        {/* Filters and Search */}
-        <Card className="mb-4 sm:mb-6 border-gray-200 bg-white">
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex flex-col gap-3 sm:gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
-                  <Input
-                    type="text"
-                    placeholder="Buscar por nome, email ou telefone..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9 sm:pl-10 border-gray-300 text-sm sm:text-base"
-                  />
-                </div>
-              </div>
-              
-              <div className="flex gap-2 sm:gap-4">
-                <Select value={filterProfile} onValueChange={setFilterProfile}>
-                  <SelectTrigger className="flex-1 border-gray-300 text-sm sm:text-base">
-                    <SelectValue placeholder="Filtrar por perfil" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos os perfis</SelectItem>
-                    <SelectItem value="desenvolvedor">Desenvolvedor</SelectItem>
-                    <SelectItem value="administrador">Administrador</SelectItem>
-                    <SelectItem value="comercial">Comercial</SelectItem>
-                    <SelectItem value="monitoria">Monitor</SelectItem>
-                    <SelectItem value="banhista_tosador">Banhista/Tosador</SelectItem>
-                    <SelectItem value="motorista">Motorista</SelectItem>
-                    <SelectItem value="financeiro">Financeiro</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Button 
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-base px-3 sm:px-4"
-                  onClick={() => setShowInviteModal(true)}
-                >
-                  <UserPlus className="w-4 h-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Convidar</span>
-                </Button>
-              </div>
+        <Card className="bg-white border-gray-200">
+          <CardContent className="p-4 flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                className="pl-9"
+                placeholder="Buscar por nome, email ou unidade..."
+              />
             </div>
+            <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
+              <SelectTrigger className="w-full lg:w-[280px] bg-white">
+                <SelectValue placeholder="Filtrar por unidade" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Todas as unidades</SelectItem>
+                {units.map((unit) => (
+                  <SelectItem key={unit.id} value={unit.id}>
+                    {unit.nome_fantasia}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </CardContent>
         </Card>
 
-        {/* Users List */}
-        <div className="grid gap-3 sm:gap-4">
-          <AnimatePresence>
-            {filteredUsers.map((user) => {
-              const profileInfo = getProfileInfo(user.profile);
-              const ProfileIcon = profileInfo.icon;
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <Card className="bg-white border-gray-200">
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="w-5 h-5 text-amber-600" />
+                Convites e confirmacoes
+              </CardTitle>
+              <Badge variant="outline">{filteredInvites.length} registro(s)</Badge>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {filteredInvites.length === 0 && (
+                <div className="rounded-lg border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+                  Nenhum convite localizado para o filtro atual.
+                </div>
+              )}
 
-              return (
-                <motion.div
-                  key={user.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                >
-                  <Card 
-                    className="border-gray-200 bg-white hover:shadow-lg transition-shadow cursor-pointer"
-                    onClick={() => handleView(user)} // Make card clickable to view details
-                  >
-                    <CardContent className="p-4 sm:p-6">
-                      <div className="flex items-start justify-between gap-3 sm:gap-4">
-                        <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
-                          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full ${user.active !== false ? 'bg-blue-100' : 'bg-gray-200'} flex items-center justify-center flex-shrink-0`}>
-                            <ProfileIcon className={`w-5 h-5 sm:w-6 sm:h-6 ${user.active !== false ? 'text-blue-600' : 'text-gray-500'}`} />
-                          </div>
-                          
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">
-                                {user.full_name || "Nome não informado"}
-                              </h3>
-                              {user.active === false && (
-                                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-xs flex-shrink-0">
-                                  Inativo
-                                </Badge>
-                              )}
-                            </div>
-                            
-                            <div className="space-y-1 mb-2 sm:mb-3">
-                              <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
-                                <Mail className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                                <span className="truncate">{user.email}</span>
-                              </div>
-                              {user.phone && (
-                                <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
-                                  <Phone className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                                  <span>{formatPhone(user.phone)}</span>
-                                </div>
-                              )}
-                            </div>
+              {filteredInvites.map((invite) => {
+                const statusMeta = getInviteStatusMeta(invite.status || "pendente");
+                const canShareInvite = !["concluido", "cancelado"].includes(invite.status || "pendente");
 
-                            <Badge className={profileInfo.color + " border text-xs sm:text-sm"}>
-                              <ProfileIcon className="w-3 h-3 mr-1" />
-                              {profileInfo.fullName}
+                return (
+                  <div key={invite.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-gray-900">{invite.full_name}</p>
+                        <p className="text-sm text-gray-600">{invite.email}</p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {!invite.is_platform_admin && <Badge variant="outline">{getUnitName(invite.empresa_id)}</Badge>}
+                          {invite.is_platform_admin && <Badge className="bg-slate-900 text-white">ADM Sistema Pet</Badge>}
+                          {invite.access_profile_id && (
+                            <Badge variant="outline">
+                              {profiles.find((profile) => profile.id === invite.access_profile_id)?.nome || "Perfil inicial"}
                             </Badge>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation(); // Prevent card's onClick from firing
-                              handleEdit(user);
-                            }}
-                            className="border-gray-300 hover:bg-gray-50 h-8 w-8 sm:h-10 sm:w-10"
-                          >
-                            <Pencil className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={(e) => handleResetPassword(user, e)} // Pass event to stop propagation
-                            className="border-orange-300 hover:bg-orange-50 h-8 w-8 sm:h-10 sm:w-10"
-                          >
-                            <Key className="w-3 h-3 sm:w-4 sm:h-4 text-orange-600" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation(); // Prevent card's onClick from firing
-                              handleDelete(user.id);
-                            }}
-                            className="border-red-300 hover:bg-red-50 h-8 w-8 sm:h-10 sm:w-10"
-                          >
-                            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4 text-red-600" />
-                          </Button>
+                          )}
+                          <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+                      <div className="text-sm text-gray-500">
+                        Criado em {formatDateTime(invite.invited_at || invite.created_date)}
+                      </div>
+                    </div>
 
-          {filteredUsers.length === 0 && (
-            <Card className="border-gray-200 bg-white">
-              <CardContent className="p-8 sm:p-12 text-center">
-                <Users className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Nenhum usuário encontrado</h3>
-                <p className="text-sm sm:text-base text-gray-600">Tente ajustar os filtros de busca</p>
-              </CardContent>
-            </Card>
-          )}
+                    <div className="flex flex-wrap gap-2">
+                      {canShareInvite && (
+                        <>
+                          <Button variant="outline" onClick={() => copyInviteLink(invite.token)}>
+                            <Copy className="w-4 h-4 mr-2" />
+                            Copiar link
+                          </Button>
+                          <Button variant="outline" onClick={() => handleResendInvite(invite)} disabled={isSaving}>
+                            <Mail className="w-4 h-4 mr-2" />
+                            Reenviar
+                          </Button>
+                          <Button variant="outline" onClick={() => handleCancelInvite(invite)} disabled={isSaving}>
+                            <UserX className="w-4 h-4 mr-2" />
+                            Cancelar acesso
+                          </Button>
+                        </>
+                      )}
+                      <Button variant="outline" onClick={() => handleDeleteInvite(invite)} disabled={isSaving}>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Excluir acesso
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white border-gray-200">
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-blue-600" />
+                Acessos por unidade
+              </CardTitle>
+              <Badge variant="outline">{filteredUsers.length} usuario(s)</Badge>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {filteredUsers.length === 0 && (
+                <div className="rounded-lg border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+                  Nenhum usuario localizado para o filtro atual.
+                </div>
+              )}
+
+              {filteredUsers.map((user) => {
+                const statusMeta = getAccessStatusMeta(user);
+
+                return (
+                  <div key={user.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-gray-900">{user.full_name || user.email}</p>
+                        <p className="text-sm text-gray-600">{user.email || "Sem email cadastrado"}</p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {!user.is_platform_admin && user.empresa_id && <Badge variant="outline">{getUnitName(user.empresa_id)}</Badge>}
+                          {user.is_platform_admin && <Badge className="bg-slate-900 text-white">ADM Sistema Pet</Badge>}
+                          <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
+                        </div>
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Atualizado em {formatDateTime(user.updated_date || user.created_date)}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <Label>Unidade</Label>
+                        <Select
+                          value={user.empresa_id || "__none__"}
+                          onValueChange={(value) => patchUserState(user.id, { empresa_id: value === "__none__" ? null : value })}
+                          disabled={user.is_platform_admin}
+                        >
+                          <SelectTrigger className="mt-2 bg-white">
+                            <SelectValue placeholder="Selecionar unidade" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Sem unidade</SelectItem>
+                            {units.map((unit) => (
+                              <SelectItem key={unit.id} value={unit.id}>
+                                {unit.nome_fantasia}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <Label>Perfil de acesso</Label>
+                        <Select
+                          value={user.access_profile_id || "__none__"}
+                          onValueChange={(value) => patchUserState(user.id, { access_profile_id: value === "__none__" ? null : value })}
+                        >
+                          <SelectTrigger className="mt-2 bg-white">
+                            <SelectValue placeholder="Selecionar perfil" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Sem perfil</SelectItem>
+                            {activeProfiles.map((profile) => (
+                              <SelectItem key={profile.id} value={profile.id}>
+                                {profile.nome}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">ADM do Sistema Pet</p>
+                          <p className="text-xs text-gray-500">Acesso transversal para a administracao central.</p>
+                        </div>
+                        <Switch
+                          checked={!!user.is_platform_admin}
+                          onCheckedChange={(checked) => patchUserState(user.id, {
+                            is_platform_admin: checked,
+                            empresa_id: checked ? null : user.empresa_id,
+                          })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button variant="outline" onClick={() => handleSaveUserAccess(user)} disabled={isSaving}>
+                        <Save className="w-4 h-4 mr-2" />
+                        Salvar acesso
+                      </Button>
+                      {user.active === false ? (
+                        <Button variant="outline" onClick={() => handleReactivateUserAccess(user)} disabled={isSaving}>
+                          <RotateCcw className="w-4 h-4 mr-2" />
+                          Reativar acesso
+                        </Button>
+                      ) : (
+                        <Button variant="outline" onClick={() => handleCancelUserAccess(user)} disabled={isSaving}>
+                          <UserX className="w-4 h-4 mr-2" />
+                          Cancelar acesso
+                        </Button>
+                      )}
+                      <Button variant="outline" onClick={() => handleDeleteUserAccess(user)} disabled={isSaving}>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Excluir acesso
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
         </div>
       </div>
 
-      {/* Password Reset Modal */}
-      <Dialog open={showPasswordModal} onOpenChange={setShowPasswordModal}>
-        <DialogContent className="w-[95vw] max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="text-lg sm:text-xl flex items-center gap-2">
-              <Key className="w-5 h-5 text-green-600" />
-              Senha Redefinida com Sucesso
-            </DialogTitle>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-yellow-800">
-                  <strong>Importante:</strong> Anote essa senha e entregue ao usuário de forma segura. Esta senha não será exibida novamente.
-                </p>
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-gray-700 mb-2">Nova Senha Temporária</Label>
-              <div className="relative">
-                <Input
-                  type="text"
-                  value={generatedPassword}
-                  readOnly
-                  className="bg-gray-50 border-gray-300 font-mono text-sm pr-12"
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleCopyPassword}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
-                >
-                  {passwordCopied ? (
-                    <CheckCheck className="w-4 h-4 text-green-600" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-gray-600" />
-                  )}
-                </Button>
-              </div>
-              {passwordCopied && (
-                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                  <CheckCheck className="w-3 h-3" />
-                  Senha copiada!
-                </p>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              onClick={() => setShowPasswordModal(false)}
-              className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto"
-            >
-              Entendi
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* View Modal */}
-      <Dialog open={showViewModal} onOpenChange={setShowViewModal}>
-        <DialogContent className="w-[95vw] max-w-[600px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-lg sm:text-xl">Informações do Usuário</DialogTitle>
-          </DialogHeader>
-          
-          {viewingUser && (
-            <div className="space-y-4 py-4">
-              <div className="flex items-center gap-4 pb-4 border-b border-gray-200">
-                {(() => {
-                  const profileInfo = getProfileInfo(viewingUser.profile);
-                  const ProfileIcon = profileInfo.icon;
-                  return (
-                    <div className={`w-16 h-16 rounded-full ${viewingUser.active !== false ? 'bg-blue-100' : 'bg-gray-200'} flex items-center justify-center`}>
-                      <ProfileIcon className={`w-8 h-8 ${viewingUser.active !== false ? 'text-blue-600' : 'text-gray-500'}`} />
-                    </div>
-                  );
-                })()}
-                <div className="flex-1">
-                  <h3 className="text-xl font-bold text-gray-900">{viewingUser.full_name || "Nome não informado"}</h3>
-                  <Badge className={getProfileInfo(viewingUser.profile).color + " border mt-2"}>
-                    {getProfileInfo(viewingUser.profile).fullName}
-                  </Badge>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <Label className="text-sm font-medium text-gray-500">Email</Label>
-                  <p className="text-sm text-gray-900 mt-1">{viewingUser.email}</p>
-                </div>
-
-                {viewingUser.cpf && (
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">CPF</Label>
-                    <p className="text-sm text-gray-900 mt-1">{formatCPF(viewingUser.cpf)}</p>
-                  </div>
-                )}
-
-                {viewingUser.phone && (
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Telefone</Label>
-                    <p className="text-sm text-gray-900 mt-1">{formatPhone(viewingUser.phone)}</p>
-                  </div>
-                )}
-
-                {viewingUser.emergency_contact && (
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Contato de Emergência</Label>
-                    <p className="text-sm text-gray-900 mt-1">{formatPhone(viewingUser.emergency_contact)}</p>
-                  </div>
-                )}
-
-                <div>
-                  <Label className="text-sm font-medium text-gray-500">Status</Label>
-                  <p className="text-sm text-gray-900 mt-1">
-                    {viewingUser.active === false ? (
-                      <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                        Inativo
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                        Ativo
-                      </Badge>
-                    )}
-                  </p>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium text-gray-500">Cadastrado em</Label>
-                  <p className="text-sm text-gray-900 mt-1">
-                    {new Date(viewingUser.created_date).toLocaleDateString('pt-BR', { 
-                      day: '2-digit', 
-                      month: '2-digit', 
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </p>
-                </div>
-
-                {viewingUser.updated_date && (
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Última atualização</Label>
-                    <p className="text-sm text-gray-900 mt-1">
-                      {new Date(viewingUser.updated_date).toLocaleDateString('pt-BR', { 
-                        day: '2-digit', 
-                        month: '2-digit', 
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowViewModal(false)}
-              className="w-full sm:w-auto"
-            >
-              Fechar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Invite Modal */}
       <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
-        <DialogContent className="w-[95vw] max-w-[600px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[640px]">
           <DialogHeader>
-            <DialogTitle className="text-lg sm:text-xl">Convidar Novo Usuário</DialogTitle>
-            <DialogDescription className="text-sm sm:text-base">
-              Preencha as informações do novo usuário para enviar o convite
+            <DialogTitle>Convidar usuario</DialogTitle>
+            <DialogDescription>
+              Convide um usuario para uma unidade da Dog City Brasil ou para a administracao central.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4 py-4">
+          <div className="grid gap-4 py-4">
             <div>
-              <Label className="text-sm font-medium text-gray-700 mb-2">Nome Completo *</Label>
+              <Label>Nome completo</Label>
               <Input
-                type="text"
-                value={newUser.full_name}
-                onChange={(e) => {
-                  setNewUser({...newUser, full_name: e.target.value});
-                  if (nameError) setNameError(false);
-                }}
-                onBlur={handleNameBlur}
-                placeholder="Ex: João da Silva"
-                className={`border-gray-300 text-sm sm:text-base ${nameError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-              />
-              {nameError ? (
-                <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
-                  <XCircle className="w-3 h-3" />
-                  Por favor, informe nome e sobrenome completos
-                </p>
-              ) : (
-                <p className="text-xs text-gray-500 mt-1">Informe nome e sobrenome</p>
-              )}
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-gray-700 mb-2">CPF *</Label>
-              <Input
-                type="text"
-                value={newUser.cpf}
-                onChange={(e) => setNewUser({...newUser, cpf: formatCPF(e.target.value)})}
-                placeholder="000.000.000-00"
-                maxLength={14}
-                className="border-gray-300 text-sm sm:text-base"
+                value={inviteForm.full_name}
+                onChange={(event) => setInviteForm((current) => ({ ...current, full_name: event.target.value }))}
+                className="mt-2"
               />
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-gray-700 mb-2">Número de Telefone *</Label>
+              <Label>Email</Label>
               <Input
-                type="tel"
-                value={newUser.phone}
-                onChange={(e) => setNewUser({...newUser, phone: formatPhone(e.target.value)})}
-                placeholder="(11) 99999-9999"
-                maxLength={15}
-                className="border-gray-300 text-sm sm:text-base"
+                type="email"
+                value={inviteForm.email}
+                onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
+                className="mt-2"
               />
             </div>
 
-            <div>
-              <Label className="text-sm font-medium text-gray-700 mb-2">Contato de Emergência *</Label>
-              <Input
-                type="tel"
-                value={newUser.emergency_contact}
-                onChange={(e) => setNewUser({...newUser, emergency_contact: formatPhone(e.target.value)})}
-                placeholder="(11) 99999-9999"
-                maxLength={15}
-                className="border-gray-300 text-sm sm:text-base"
+            <div className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
+              <Switch
+                checked={inviteForm.is_platform_admin}
+                onCheckedChange={(checked) => setInviteForm((current) => ({
+                  ...current,
+                  is_platform_admin: checked,
+                  empresa_id: checked ? "" : current.empresa_id || currentUser?.empresa_id || "",
+                }))}
               />
-              <p className="text-xs text-gray-500 mt-1">Número para contato em caso de emergência</p>
+              <div>
+                <p className="text-sm font-medium text-gray-900">ADM do Sistema Pet</p>
+                <p className="text-xs text-gray-500">Nao vincula a uma unidade especifica e libera acesso transversal.</p>
+              </div>
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-gray-700 mb-2">Tipo de Perfil *</Label>
+              <Label>Unidade a vincular</Label>
               <Select
-                value={newUser.profile}
-                onValueChange={(value) => setNewUser({...newUser, profile: value})}
+                value={inviteForm.empresa_id || "__none__"}
+                onValueChange={(value) => setInviteForm((current) => ({ ...current, empresa_id: value === "__none__" ? "" : value }))}
+                disabled={inviteForm.is_platform_admin}
               >
-                <SelectTrigger className="border-gray-300 text-sm sm:text-base">
-                  <SelectValue />
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Selecionar unidade" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="desenvolvedor">Desenvolvedor</SelectItem>
-                  <SelectItem value="administrador">Administrador</SelectItem>
-                  <SelectItem value="comercial">Comercial</SelectItem>
-                  <SelectItem value="monitoria">Monitor</SelectItem>
-                  <SelectItem value="banhista_tosador">Banhista/Tosador</SelectItem>
-                  <SelectItem value="motorista">Motorista</SelectItem>
-                  <SelectItem value="financeiro">Financeiro</SelectItem>
+                  <SelectItem value="__none__">Selecionar unidade</SelectItem>
+                  {units.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id}>
+                      {unit.nome_fantasia}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-          </div>
 
-          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowInviteModal(false);
-                setNewUser({
-                  full_name: "",
-                  cpf: "",
-                  phone: "",
-                  emergency_contact: "",
-                  profile: "comercial"
-                });
-                setNameError(false);
-              }}
-              className="border-gray-300 w-full sm:w-auto text-sm sm:text-base"
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleInviteUser}
-              className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto text-sm sm:text-base"
-              disabled={!newUser.full_name || !newUser.cpf || !newUser.phone || !newUser.emergency_contact || nameError}
-            >
-              <UserPlus className="w-4 h-4 mr-2" />
-              Enviar Convite
+            <div>
+              <Label>Tipo de acesso</Label>
+              <Select
+                value={inviteForm.access_profile_id || "__none__"}
+                onValueChange={(value) => setInviteForm((current) => ({ ...current, access_profile_id: value === "__none__" ? "" : value }))}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Selecionar perfil" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Sem perfil inicial</SelectItem>
+                  {activeProfiles.map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {profile.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
+              O convite envia o link de acesso e o usuario conclui a ficha cadastral com nome, CPF, nascimento, endereco, PIX, contato de emergencia e foto de perfil.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowInviteModal(false)}>Cancelar</Button>
+            <Button onClick={handleSendInvite} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white">
+              <Mail className="w-4 h-4 mr-2" />
+              {isSaving ? "Enviando..." : "Enviar convite"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Modal */}
-      <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-        <DialogContent className="w-[95vw] max-w-[500px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-lg sm:text-xl">Editar Usuário</DialogTitle>
-          </DialogHeader>
-          
-          {editingUser && (
-            <div className="space-y-4 py-4">
-              <div>
-                <Label className="text-sm font-medium text-gray-700 mb-2">Nome</Label>
-                <Input
-                  value={editingUser.full_name || ""}
-                  disabled
-                  className="bg-gray-50 border-gray-300 text-sm sm:text-base"
-                />
-                <p className="text-xs text-gray-500 mt-1">O nome não pode ser editado</p>
-              </div>
+      <Dialog
+        open={feedbackModal.open}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFeedbackModal(EMPTY_FEEDBACK_MODAL);
+            setHasCopiedFeedbackValue(false);
+            return;
+          }
 
-              <div>
-                <Label className="text-sm font-medium text-gray-700 mb-2">Email</Label>
-                <Input
-                  value={editingUser.email}
-                  disabled
-                  className="bg-gray-50 border-gray-300 text-sm sm:text-base"
-                />
-                <p className="text-xs text-gray-500 mt-1">O email não pode ser editado</p>
-              </div>
+          setFeedbackModal((current) => ({ ...current, open }));
+        }}
+      >
+        <DialogContent className="max-w-[560px] border-0 bg-white p-0 shadow-2xl">
+          <div className="p-7">
+            <DialogHeader className="space-y-0">
+              <DialogTitle className="flex items-start gap-3 text-3xl font-semibold text-slate-900">
+                <CircleCheckBig className="mt-1 h-7 w-7 text-emerald-500" />
+                <span>{feedbackModal.title}</span>
+              </DialogTitle>
+              <DialogDescription className="sr-only">{feedbackModal.description}</DialogDescription>
+            </DialogHeader>
 
-              <div>
-                <Label className="text-sm font-medium text-gray-700 mb-2">Perfil</Label>
-                <Select
-                  value={editingUser.profile}
-                  onValueChange={(value) => setEditingUser({...editingUser, profile: value})}
-                >
-                  <SelectTrigger className="border-gray-300 text-sm sm:text-base">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="desenvolvedor">Desenvolvedor</SelectItem>
-                    <SelectItem value="administrador">Administrador</SelectItem>
-                    <SelectItem value="comercial">Comercial</SelectItem>
-                    <SelectItem value="monitoria">Monitor</SelectItem>
-                    <SelectItem value="banhista_tosador">Banhista/Tosador</SelectItem>
-                    <SelectItem value="motorista">Motorista</SelectItem>
-                    <SelectItem value="financeiro">Financeiro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <p className="mt-5 text-lg text-slate-700">{feedbackModal.description}</p>
 
-              <div>
-                <Label className="text-sm font-medium text-gray-700 mb-2">Telefone</Label>
-                <Input
-                  value={editingUser.phone || ""}
-                  onChange={(e) => setEditingUser({...editingUser, phone: formatPhone(e.target.value)})}
-                  placeholder="(11) 99999-9999"
-                  maxLength={15}
-                  className="border-gray-300 text-sm sm:text-base"
-                />
-              </div>
-
-              <div>
-                <Label className="text-sm font-medium text-gray-700 mb-2">Contato de Emergência</Label>
-                <Input
-                  value={editingUser.emergency_contact || ""}
-                  onChange={(e) => setEditingUser({...editingUser, emergency_contact: formatPhone(e.target.value)})}
-                  placeholder="(11) 99999-9999"
-                  maxLength={15}
-                  className="border-gray-300 text-sm sm:text-base"
-                />
-              </div>
-
-              <div>
-                <Label className="text-sm font-medium text-gray-700 mb-2">Status</Label>
-                <Select
-                  value={editingUser.active === false ? "false" : "true"}
-                  onValueChange={(value) => setEditingUser({...editingUser, active: value === "true"})}
-                >
-                  <SelectTrigger className="border-gray-300 text-sm sm:text-base">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="true">Ativo</SelectItem>
-                    <SelectItem value="false">Inativo</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="mt-6 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
+                <p className="text-base leading-7 text-amber-900">
+                  <span className="font-semibold">Importante:</span> {feedbackModal.note}
+                </p>
               </div>
             </div>
-          )}
 
-          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setShowEditModal(false)}
-              disabled={isSaving}
-              className="border-gray-300 w-full sm:w-auto text-sm sm:text-base"
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={isSaving}
-              className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto text-sm sm:text-base"
-            >
-              {isSaving ? "Salvando..." : "Salvar"}
-            </Button>
-          </DialogFooter>
+            <div className="mt-7">
+              <Label className="text-2xl font-semibold text-slate-700">{feedbackModal.fieldLabel}</Label>
+              <div className="relative mt-3">
+                <Input
+                  readOnly
+                  value={feedbackModal.fieldValue}
+                  className="h-16 rounded-2xl border-slate-400 bg-slate-50 pr-14 font-medium text-slate-800 shadow-none"
+                />
+                <button
+                  type="button"
+                  onClick={copyFeedbackValue}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-slate-800"
+                  aria-label="Copiar conteudo"
+                >
+                  {hasCopiedFeedbackValue ? <Check className="h-5 w-5 text-emerald-600" /> : <Copy className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <Button
+                type="button"
+                onClick={() => {
+                  setFeedbackModal(EMPTY_FEEDBACK_MODAL);
+                  setHasCopiedFeedbackValue(false);
+                }}
+                className="h-12 rounded-xl bg-blue-600 px-8 text-base font-semibold text-white hover:bg-blue-700"
+              >
+                Entendi
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

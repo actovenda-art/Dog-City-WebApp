@@ -33,6 +33,7 @@ export default function Login() {
   const location = useLocation();
   const { companyName, logoUrl } = useBranding();
   const nextPath = useMemo(() => getSafeNextPath(location.search), [location.search]);
+  const isBlocked = useMemo(() => new URLSearchParams(location.search).get("blocked") === "1", [location.search]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -66,11 +67,17 @@ export default function Login() {
             <p className="mt-6 text-xs font-semibold uppercase tracking-[0.25em] text-orange-500">Acesso</p>
             <h1 className="mt-3 text-3xl font-brand text-slate-900">{companyName}</h1>
             <p className="mt-3 text-sm text-slate-600">
-              Entre com sua conta Google para acessar o ambiente da empresa.
+              Entre com sua conta Google para acessar a Dog City Brasil.
             </p>
           </div>
 
           <div className="mt-8 space-y-4">
+            {isBlocked && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                Este acesso foi cancelado ou desativado. Fale com a administracao central para liberar uma nova vinculacao.
+              </div>
+            )}
+
             <Button
               type="button"
               onClick={handleGoogleLogin}

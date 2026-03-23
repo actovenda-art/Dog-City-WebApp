@@ -141,7 +141,32 @@ function sanitizeText(value: unknown, fallback = "") {
 function toNumber(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
-    const normalized = value.replace(/\./g, "").replace(",", ".").replace(/[^\d.-]/g, "");
+    const cleaned = value.replace(/[^\d,.-]/g, "").trim();
+    if (!cleaned) return 0;
+
+    const hasComma = cleaned.includes(",");
+    const hasDot = cleaned.includes(".");
+    let normalized = cleaned;
+
+    if (hasComma && hasDot) {
+      const lastComma = cleaned.lastIndexOf(",");
+      const lastDot = cleaned.lastIndexOf(".");
+      const decimalSeparator = lastComma > lastDot ? "," : ".";
+      const thousandSeparator = decimalSeparator === "," ? "." : ",";
+      normalized = cleaned.split(thousandSeparator).join("");
+      if (decimalSeparator === ",") {
+        normalized = normalized.replace(",", ".");
+      }
+    } else if (hasComma) {
+      normalized = cleaned.replace(/\./g, "").replace(",", ".");
+    } else if (hasDot) {
+      const parts = cleaned.split(".");
+      if (parts.length > 2) {
+        const decimalPart = parts.pop();
+        normalized = `${parts.join("")}.${decimalPart}`;
+      }
+    }
+
     const parsed = Number(normalized);
     return Number.isFinite(parsed) ? parsed : 0;
   }

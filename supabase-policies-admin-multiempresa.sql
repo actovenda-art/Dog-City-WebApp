@@ -14,6 +14,10 @@ alter table if exists public.integracao_config disable row level security;
 alter table if exists public.integracao_sync_log disable row level security;
 alter table if exists public.extratobancario disable row level security;
 alter table if exists public.notificacao disable row level security;
+alter table if exists public.lancamento disable row level security;
+alter table if exists public.despesa disable row level security;
+alter table if exists public.conta_receber disable row level security;
+alter table if exists public.receita disable row level security;
 
 -- Se desejar administrar branding/usuarios por essa mesma area:
 alter table if exists public.app_config disable row level security;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { DatePickerInput } from "@/components/common/DateTimeInputs";
+import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import { X, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { subDays, format, differenceInYears } from "date-fns";
@@ -169,23 +169,16 @@ export default function PeriodFilterSidebar({
                 
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-xs text-gray-700">Data inicial</Label>
-                    <DatePickerInput
-                      value={dataInicial}
-                      onChange={(value) => {
+                    <Label className="text-xs text-gray-700">Intervalo</Label>
+                    <DateRangePickerInput
+                      startValue={dataInicial}
+                      endValue={dataFinal}
+                      onStartChange={(value) => {
                         setDataInicial(value);
                         setSelectedPeriodo(null);
                         setError("");
                       }}
-                      className="mt-1"
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label className="text-xs text-gray-700">Data final</Label>
-                    <DatePickerInput
-                      value={dataFinal}
-                      onChange={(value) => {
+                      onEndChange={(value) => {
                         setDataFinal(value);
                         setSelectedPeriodo(null);
                         setError("");

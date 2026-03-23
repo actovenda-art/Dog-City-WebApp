@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { DatePickerInput, DateTimePickerInput } from "@/components/common/DateTimeInputs";
+import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import {
   AlertTriangle,
   ArrowDownCircle,
@@ -32,11 +32,11 @@ import {
 import {
   formatCurrency,
   formatMovementDateTime,
-  fromDateTimeInputValue,
+  fromDateInputValue,
   getMovementComparableDate,
   getMovementCounterparty,
   normalizeMovement,
-  toDateTimeInputValue,
+  toDateInputValue,
 } from "@/utils/finance";
 
 const EMPTY_FORM = {
@@ -83,7 +83,7 @@ function DuplicateMovementCard({ label, movement, accentClass }) {
           <p className="mt-1 font-semibold text-gray-900">{movement.contraparte}</p>
         </div>
         <div>
-          <p className="text-xs uppercase tracking-wide text-gray-500">Data e hora</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">Data</p>
           <p className="mt-1 font-medium text-gray-900">{formatMovementDateTime(movement)}</p>
         </div>
         <div>
@@ -146,7 +146,7 @@ export default function Movimentacoes() {
 
     try {
       const [movementsData, duplicateData] = await Promise.all([
-        ExtratoBancario.list("-data_hora_transacao", 1000),
+        ExtratoBancario.list("-data_movimento", 1000),
         ExtratoDuplicidade.list("-created_date", 500).catch((duplicateError) => {
           console.warn("Tabela de duplicidades ainda indisponivel:", duplicateError);
           return [];
@@ -242,18 +242,30 @@ export default function Movimentacoes() {
   const totalSaidas = filtered
     .filter((item) => item.tipo === "saida")
     .reduce((sum, item) => sum + (item.valor || 0), 0);
+  const totalEntradasGeral = normalizedMovements
+    .filter((item) => item.tipo === "entrada")
+    .reduce((sum, item) => sum + (item.valor || 0), 0);
+  const totalSaidasGeral = normalizedMovements
+    .filter((item) => item.tipo === "saida")
+    .reduce((sum, item) => sum + (item.valor || 0), 0);
 
   const saldoAtual = useMemo(() => {
-    const movementWithBalance = normalizedMovements.find((item) => typeof item.saldo === "number" && Number.isFinite(item.saldo));
-    return movementWithBalance?.saldo ?? (totalEntradas - totalSaidas);
-  }, [normalizedMovements, totalEntradas, totalSaidas]);
+    const movementWithBalance = normalizedMovements
+      .filter((item) => typeof item.saldo === "number" && Number.isFinite(item.saldo))
+      .sort((a, b) => {
+        const dateA = new Date(a.imported_at || a.updated_date || a.created_date || 0).getTime();
+        const dateB = new Date(b.imported_at || b.updated_date || b.created_date || 0).getTime();
+        return dateB - dateA;
+      })[0];
+    return movementWithBalance?.saldo ?? (totalEntradasGeral - totalSaidasGeral);
+  }, [normalizedMovements, totalEntradasGeral, totalSaidasGeral]);
 
   const openModal = (item = null) => {
     if (item) {
       const normalized = normalizeMovement(item);
       setEditingItem(item);
       setFormData({
-        data_hora_transacao: toDateTimeInputValue(normalized.dataHora),
+        data_hora_transacao: toDateInputValue(normalized.dataHora || normalized.data_movimento || normalized.data),
         tipo: item.tipo || "entrada",
         nome_contraparte: item.nome_contraparte || getMovementCounterparty(item),
         valor: item.valor?.toString() || "",
@@ -272,21 +284,20 @@ export default function Movimentacoes() {
 
   const handleSave = async () => {
     if (!formData.data_hora_transacao || !formData.valor || !formData.nome_contraparte) {
-      alert("Preencha data/hora, valor e remetente/recebedor.");
+      alert("Preencha data, valor e remetente/recebedor.");
       return;
     }
 
     setIsSaving(true);
     try {
-      const isoDateTime = fromDateTimeInputValue(formData.data_hora_transacao);
-      const dateOnly = isoDateTime ? isoDateTime.slice(0, 10) : null;
+      const dateOnly = fromDateInputValue(formData.data_hora_transacao);
       const payload = {
         descricao: formData.nome_contraparte.trim(),
         tipo: formData.tipo,
         valor: parseFloat(String(formData.valor).replace(",", ".")) || 0,
         data: dateOnly,
         data_movimento: dateOnly,
-        data_hora_transacao: isoDateTime,
+        data_hora_transacao: null,
         nome_contraparte: formData.nome_contraparte.trim(),
         banco_contraparte: formData.banco_contraparte.trim() || null,
         banco: formData.banco_contraparte.trim() || null,
@@ -493,10 +504,12 @@ export default function Movimentacoes() {
                   </SelectContent>
                 </Select>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <DatePickerInput value={dataInicial} onChange={setDataInicial} />
-                  <DatePickerInput value={dataFinal} onChange={setDataFinal} />
-                </div>
+                <DateRangePickerInput
+                  startValue={dataInicial}
+                  endValue={dataFinal}
+                  onStartChange={setDataInicial}
+                  onEndChange={setDataFinal}
+                />
               </CardContent>
             </Card>
 
@@ -659,8 +672,8 @@ export default function Movimentacoes() {
 
           <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
             <div>
-              <Label>Data e hora *</Label>
-              <DateTimePickerInput
+              <Label>Data *</Label>
+              <DatePickerInput
                 className="mt-2"
                 value={formData.data_hora_transacao}
                 onChange={(value) => setFormData((prev) => ({ ...prev, data_hora_transacao: value }))}

@@ -61,6 +61,20 @@ export function fromDateTimeInputValue(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+export function toDateInputValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return format(date, "yyyy-MM-dd");
+}
+
+export function fromDateInputValue(value) {
+  if (!value) return null;
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
 function hasTimeFragment(value) {
   return typeof value === "string" && /\d{2}:\d{2}/.test(value);
 }
@@ -160,19 +174,10 @@ export function formatMovementDateTime(record) {
   if (!record) return "-";
 
   if (typeof record === "string") {
-    const date = new Date(record);
-    if (Number.isNaN(date.getTime())) return "-";
-    return format(date, "dd/MM/yyyy HH:mm");
+    return formatDateOnlyLabel(record);
   }
 
-  if (!hasExplicitMovementTime(record)) {
-    return formatDateOnlyLabel(getMovementDateOnly(record));
-  }
-
-  const date = getMovementComparableDate(record);
-  if (!date) return "-";
-
-  return format(date, "dd/MM/yyyy HH:mm");
+  return formatDateOnlyLabel(getMovementDateOnly(record) || getMovementDateTime(record));
 }
 
 export function getMovementCounterparty(record) {

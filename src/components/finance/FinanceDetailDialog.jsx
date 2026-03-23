@@ -1,19 +1,26 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { DateTimePickerInput } from "@/components/common/DateTimeInputs";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import {
   FINANCE_RATEIO_FIELDS,
   formatCurrency,
-  fromDateTimeInputValue,
+  fromDateInputValue,
   getRateioTotal,
   normalizeMovement,
   normalizeRateio,
-  toDateTimeInputValue,
+  toDateInputValue,
 } from "@/utils/finance";
 
 export default function FinanceDetailDialog({
@@ -42,7 +49,7 @@ export default function FinanceDetailDialog({
     setFormData({
       nome_contraparte: normalizedMovement.contraparte || "",
       carteira_nome: movement?.carteira_nome || "",
-      data_hora_transacao: toDateTimeInputValue(normalizedMovement.dataHora),
+      data_hora_transacao: toDateInputValue(normalizedMovement.dataHora || normalizedMovement.data_movimento || normalizedMovement.data),
       banco_contraparte: movement?.banco_contraparte || "",
       tipo_transacao_detalhado: movement?.tipo_transacao_detalhado || "",
       referencia: movement?.referencia || "",
@@ -65,11 +72,14 @@ export default function FinanceDetailDialog({
 
   const handleSubmit = async () => {
     if (!movement?.id || typeof onSave !== "function") return;
+    const movementDate = fromDateInputValue(formData.data_hora_transacao);
 
     await onSave(movement.id, {
       nome_contraparte: formData.nome_contraparte.trim() || null,
       carteira_nome: isReceita ? formData.carteira_nome.trim() || null : null,
-      data_hora_transacao: fromDateTimeInputValue(formData.data_hora_transacao),
+      data: movementDate,
+      data_movimento: movementDate,
+      data_hora_transacao: null,
       banco_contraparte: formData.banco_contraparte.trim() || null,
       tipo_transacao_detalhado: formData.tipo_transacao_detalhado.trim() || null,
       referencia: formData.referencia.trim() || null,
@@ -85,6 +95,9 @@ export default function FinanceDetailDialog({
           <DialogTitle>
             {isReceita ? "Detalhes do recebimento" : "Detalhes da saida"}
           </DialogTitle>
+          <DialogDescription>
+            Revise os dados financeiros da movimentacao usando apenas a data da transacao.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-2">
@@ -120,8 +133,8 @@ export default function FinanceDetailDialog({
             </div>
 
             <div>
-              <Label>Data e hora da transacao</Label>
-              <DateTimePickerInput
+              <Label>Data da transacao</Label>
+              <DatePickerInput
                 className="mt-2"
                 value={formData.data_hora_transacao}
                 onChange={(value) => setFormData((prev) => ({ ...prev, data_hora_transacao: value }))}

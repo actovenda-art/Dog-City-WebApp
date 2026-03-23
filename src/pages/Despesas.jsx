@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { DatePickerInput } from "@/components/common/DateTimeInputs";
+import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import { ArrowDownCircle, Landmark, Search } from "lucide-react";
 import {
   formatCurrency,
@@ -35,7 +35,7 @@ export default function Despesas() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const data = await ExtratoBancario.filter({ tipo: "saida" }, "-data_hora_transacao", 1000);
+      const data = await ExtratoBancario.filter({ tipo: "saida" }, "-data_movimento", 1000);
       setDespesas(data || []);
     } catch (error) {
       console.error("Erro ao carregar despesas:", error);
@@ -146,7 +146,7 @@ export default function Despesas() {
         </div>
 
         <Card className="border-gray-200 bg-white mb-6">
-          <CardContent className="p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+          <CardContent className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="relative md:col-span-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
@@ -156,8 +156,12 @@ export default function Despesas() {
                 placeholder="Buscar por favorecido, banco, referencia ou observacoes"
               />
             </div>
-            <DatePickerInput value={dateStart} onChange={setDateStart} />
-            <DatePickerInput value={dateEnd} onChange={setDateEnd} />
+            <DateRangePickerInput
+              startValue={dateStart}
+              endValue={dateEnd}
+              onStartChange={setDateStart}
+              onEndChange={setDateEnd}
+            />
           </CardContent>
         </Card>
 
@@ -184,7 +188,7 @@ export default function Despesas() {
                       </div>
 
                       <div>
-                          <p className="text-xs uppercase tracking-wide text-gray-500">Data e hora</p>
+                          <p className="text-xs uppercase tracking-wide text-gray-500">Data</p>
                           <p className="mt-1 font-medium text-gray-900">{formatMovementDateTime(item)}</p>
                         </div>
 

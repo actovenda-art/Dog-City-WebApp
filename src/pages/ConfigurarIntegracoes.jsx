@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { DatePickerInput } from "@/components/common/DateTimeInputs";
+import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import {
   AlertCircle,
   Building2,
@@ -663,16 +663,15 @@ export default function ConfigurarIntegracoes() {
             <div>
               <h3 className="font-semibold text-gray-900 mb-3">2. Importar extrato bancario</h3>
 
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <div>
-                  <Label className="text-sm">Data inicio</Label>
-                  <DatePickerInput value={dataInicio} onChange={setDataInicio} className="mt-1" />
-                </div>
-
-                <div>
-                  <Label className="text-sm">Data fim</Label>
-                  <DatePickerInput value={dataFim} onChange={setDataFim} className="mt-1" />
-                </div>
+              <div className="mb-3">
+                <Label className="text-sm">Periodo</Label>
+                <DateRangePickerInput
+                  startValue={dataInicio}
+                  endValue={dataFim}
+                  onStartChange={setDataInicio}
+                  onEndChange={setDataFim}
+                  className="mt-1"
+                />
               </div>
 
               <Button

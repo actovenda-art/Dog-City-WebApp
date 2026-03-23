@@ -2,7 +2,7 @@ import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DatePickerInput } from "@/components/common/DateTimeInputs";
+import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import { Search, Calendar, Filter, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -44,22 +44,14 @@ export default function TableFilters({
         </PopoverTrigger>
         <PopoverContent className="w-80">
           <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-gray-700">Data inicial</label>
-              <DatePickerInput
-                value={dateStart}
-                onChange={onDateStartChange}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700">Data final</label>
-              <DatePickerInput
-                value={dateEnd}
-                onChange={onDateEndChange}
-                className="mt-1"
-              />
-            </div>
+            <label className="text-xs font-medium text-gray-700">Selecionar periodo</label>
+            <DateRangePickerInput
+              startValue={dateStart}
+              endValue={dateEnd}
+              onStartChange={onDateStartChange}
+              onEndChange={onDateEndChange}
+              className="mt-1"
+            />
           </div>
         </PopoverContent>
       </Popover>

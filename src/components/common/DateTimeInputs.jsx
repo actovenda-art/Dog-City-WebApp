@@ -33,6 +33,9 @@ const calendarClassNames = {
   cell: "h-11 w-11 p-0 text-center text-sm",
   day: "h-11 w-11 rounded-full p-0 text-base font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900",
   day_selected: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white focus:bg-blue-500 focus:text-white",
+  day_range_start: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
+  day_range_end: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
+  day_range_middle: "bg-blue-100 text-blue-700 hover:bg-blue-100 hover:text-blue-700",
   day_today: "border border-blue-200 bg-blue-50 text-blue-700",
   day_outside: "text-slate-300",
   day_disabled: "text-slate-300 opacity-40",
@@ -80,6 +83,16 @@ function formatDateTimeLocal(date) {
 function formatDisplayDate(value) {
   const parsed = parseDateOnly(value);
   return parsed ? format(parsed, "dd/MM/yyyy", { locale: ptBR }) : null;
+}
+
+function formatDisplayDateRange(startValue, endValue) {
+  const startLabel = formatDisplayDate(startValue);
+  const endLabel = formatDisplayDate(endValue);
+
+  if (startLabel && endLabel) return `${startLabel} ate ${endLabel}`;
+  if (startLabel) return `A partir de ${startLabel}`;
+  if (endLabel) return `Ate ${endLabel}`;
+  return null;
 }
 
 function formatDisplayDateTime(value) {
@@ -199,6 +212,79 @@ export function DatePickerInput({
           <CalendarIcon className="h-4 w-4 text-blue-500" />
           <span className={value ? "text-slate-900" : "text-slate-400"}>
             {formatDisplayDate(value) || placeholder}
+          </span>
+        </span>
+        <ChevronDown className="h-4 w-4 text-slate-400" />
+      </Button>
+    </PickerPopover>
+  );
+}
+
+export function DateRangePickerInput({
+  startValue,
+  endValue,
+  onStartChange,
+  onEndChange,
+  placeholder = "Selecione o periodo",
+  disabled = false,
+  className,
+}) {
+  const rangeStart = parseDateOnly(startValue);
+  const rangeEnd = parseDateOnly(endValue);
+  const selectedRange = rangeStart || rangeEnd
+    ? {
+        from: rangeStart || rangeEnd || undefined,
+        to: rangeEnd || undefined,
+      }
+    : undefined;
+
+  const hasSelection = Boolean(startValue || endValue);
+
+  return (
+    <PickerPopover
+      className="p-3"
+      content={
+        <div className="space-y-3">
+          <Calendar
+            mode="range"
+            locale={ptBR}
+            numberOfMonths={1}
+            selected={selectedRange}
+            onSelect={(range) => {
+              onStartChange?.(range?.from ? formatDateOnly(range.from) : "");
+              onEndChange?.(range?.to ? formatDateOnly(range.to) : "");
+            }}
+            className="rounded-[24px] bg-white p-2"
+            classNames={calendarClassNames}
+          />
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Periodo</p>
+            <p className="mt-2 text-sm font-semibold text-slate-900">
+              {formatDisplayDateRange(startValue, endValue) || "Defina a data inicial e final"}
+            </p>
+          </div>
+          <div className="flex items-center justify-between gap-2 px-2 pb-1">
+            <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Intervalo</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                onStartChange?.("");
+                onEndChange?.("");
+              }}
+            >
+              Limpar
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <Button type="button" variant="outline" disabled={disabled} className={cn(pickerTriggerClassName, className)}>
+        <span className="flex items-center gap-3">
+          <CalendarIcon className="h-4 w-4 text-blue-500" />
+          <span className={hasSelection ? "text-slate-900" : "text-slate-400"}>
+            {formatDisplayDateRange(startValue, endValue) || placeholder}
           </span>
         </span>
         <ChevronDown className="h-4 w-4 text-slate-400" />

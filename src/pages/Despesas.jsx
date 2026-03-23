@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { ArrowDownCircle, Landmark, Search } from "lucide-react";
 import {
   formatCurrency,
   formatMovementDateTime,
+  getMovementComparableDate,
   getMovementBank,
   getMovementCounterparty,
   getMovementReference,
@@ -46,7 +48,7 @@ export default function Despesas() {
     () =>
       (despesas || [])
         .map((item) => normalizeMovement(item))
-        .sort((a, b) => new Date(b.dataHora || b.data || 0) - new Date(a.dataHora || a.data || 0)),
+        .sort((a, b) => (b.dataOrdenacao?.getTime() || 0) - (a.dataOrdenacao?.getTime() || 0)),
     [despesas],
   );
 
@@ -65,7 +67,7 @@ export default function Despesas() {
       return false;
     }
 
-    const movementDate = item.dataHora ? new Date(item.dataHora) : null;
+    const movementDate = getMovementComparableDate(item);
     if (dateStart && movementDate && movementDate < new Date(`${dateStart}T00:00:00`)) {
       return false;
     }
@@ -154,8 +156,8 @@ export default function Despesas() {
                 placeholder="Buscar por favorecido, banco, referencia ou observacoes"
               />
             </div>
-            <Input type="date" value={dateStart} onChange={(event) => setDateStart(event.target.value)} />
-            <Input type="date" value={dateEnd} onChange={(event) => setDateEnd(event.target.value)} />
+            <DatePickerInput value={dateStart} onChange={setDateStart} />
+            <DatePickerInput value={dateEnd} onChange={setDateEnd} />
           </CardContent>
         </Card>
 
@@ -182,9 +184,9 @@ export default function Despesas() {
                       </div>
 
                       <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Data e hora</p>
-                        <p className="mt-1 font-medium text-gray-900">{formatMovementDateTime(item.dataHora)}</p>
-                      </div>
+                          <p className="text-xs uppercase tracking-wide text-gray-500">Data e hora</p>
+                          <p className="mt-1 font-medium text-gray-900">{formatMovementDateTime(item)}</p>
+                        </div>
 
                       <div>
                         <p className="text-xs uppercase tracking-wide text-gray-500">Banco</p>

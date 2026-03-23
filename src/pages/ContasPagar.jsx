@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -855,7 +856,7 @@ export default function ContasPagar() {
             <div><Label>Categoria *</Label><Input value={formData.categoria} onChange={(e) => setFormData({ ...formData, categoria: e.target.value })} placeholder="Ex: Água, Energia" /></div>
             <div><Label>Recebedor *</Label><Input value={formData.recebedor} onChange={(e) => setFormData({ ...formData, recebedor: e.target.value })} placeholder="Fornecedor" /></div>
             <div><Label>Referência</Label><Input value={formData.referencia} onChange={(e) => setFormData({ ...formData, referencia: e.target.value })} placeholder="Mês/Ano" /></div>
-            <div><Label>Vencimento *</Label><Input type="date" value={formData.vencimento} onChange={(e) => setFormData({ ...formData, vencimento: e.target.value })} /></div>
+            <div><Label>Vencimento *</Label><DatePickerInput value={formData.vencimento} onChange={(value) => setFormData({ ...formData, vencimento: value })} /></div>
             <div><Label>Valor *</Label><Input value={formData.valor} onChange={(e) => setFormData({ ...formData, valor: e.target.value })} placeholder="0,00" /></div>
             <div><Label>Juros/Multa</Label><Input value={formData.juros_multa} onChange={(e) => setFormData({ ...formData, juros_multa: e.target.value })} placeholder="0,00" /></div>
             <div><Label>Forma Pagamento</Label>

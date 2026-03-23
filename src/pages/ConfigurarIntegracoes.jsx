@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import {
   AlertCircle,
   Building2,
@@ -665,28 +666,12 @@ export default function ConfigurarIntegracoes() {
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
                   <Label className="text-sm">Data inicio</Label>
-                  <div className="relative mt-1">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
-                      type="date"
-                      value={dataInicio}
-                      onChange={(event) => setDataInicio(event.target.value)}
-                      className="pl-9"
-                    />
-                  </div>
+                  <DatePickerInput value={dataInicio} onChange={setDataInicio} className="mt-1" />
                 </div>
 
                 <div>
                   <Label className="text-sm">Data fim</Label>
-                  <div className="relative mt-1">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
-                      type="date"
-                      value={dataFim}
-                      onChange={(event) => setDataFim(event.target.value)}
-                      className="pl-9"
-                    />
-                  </div>
+                  <DatePickerInput value={dataFim} onChange={setDataFim} className="mt-1" />
                 </div>
               </div>
 

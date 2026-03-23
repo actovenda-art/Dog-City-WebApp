@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
@@ -264,7 +265,7 @@ export default function Agendamentos() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
             </div>
-            <Input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
+            <DatePickerInput value={filterDate} onChange={setFilterDate} />
             <Select value={filterService} onValueChange={setFilterService}>
               <SelectTrigger><SelectValue placeholder="Serviço" /></SelectTrigger>
               <SelectContent>
@@ -406,11 +407,11 @@ export default function Agendamentos() {
             </div>
             <div>
               <Label>Data *</Label>
-              <Input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
+              <DatePickerInput value={formData.date} onChange={(value) => setFormData({ ...formData, date: value })} />
             </div>
             <div>
               <Label>Horário</Label>
-              <Input type="time" value={formData.time} onChange={(e) => setFormData({ ...formData, time: e.target.value })} />
+              <TimePickerInput value={formData.time} onChange={(value) => setFormData({ ...formData, time: value })} />
             </div>
             <div>
               <Label>Valor</Label>

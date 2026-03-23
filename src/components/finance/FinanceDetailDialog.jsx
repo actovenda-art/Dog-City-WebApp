@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { DateTimePickerInput } from "@/components/common/DateTimeInputs";
 import {
   FINANCE_RATEIO_FIELDS,
   formatCurrency,
@@ -120,11 +121,10 @@ export default function FinanceDetailDialog({
 
             <div>
               <Label>Data e hora da transacao</Label>
-              <Input
-                type="datetime-local"
+              <DateTimePickerInput
                 className="mt-2"
                 value={formData.data_hora_transacao}
-                onChange={(event) => setFormData((prev) => ({ ...prev, data_hora_transacao: event.target.value }))}
+                onChange={(value) => setFormData((prev) => ({ ...prev, data_hora_transacao: value }))}
               />
             </div>
 

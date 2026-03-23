@@ -61,22 +61,116 @@ export function fromDateTimeInputValue(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-export function getMovementDateTime(record) {
-  if (record?.data_hora_transacao) return record.data_hora_transacao;
-  if (record?.raw_data?.dataHora) return record.raw_data.dataHora;
-  if (record?.raw_data?.transactionDateTime) return record.raw_data.transactionDateTime;
-  if (record?.created_date) return record.created_date;
-
-  const dateOnly = record?.data || record?.data_movimento;
-  return dateOnly ? `${dateOnly}T12:00:00.000Z` : null;
+function hasTimeFragment(value) {
+  return typeof value === "string" && /\d{2}:\d{2}/.test(value);
 }
 
-export function formatMovementDateTime(record) {
-  const value = typeof record === "string" ? record : getMovementDateTime(record);
+function getRawMovementDateTime(record) {
+  return (
+    record?.raw_data?.dataHora ||
+    record?.raw_data?.transactionDateTime ||
+    record?.raw_data?.dataTransacao ||
+    record?.raw_data?.createdAt ||
+    record?.raw_data?.bookingDateTime ||
+    null
+  );
+}
+
+function formatDateOnlyLabel(value) {
   if (!value) return "-";
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, year, month, day] = match;
+    return `${day}/${month}/${year}`;
+  }
 
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
+  return format(date, "dd/MM/yyyy");
+}
+
+export function hasExplicitMovementTime(record) {
+  if (!record || typeof record !== "object") return false;
+
+  const rawDateTime = getRawMovementDateTime(record);
+  if (hasTimeFragment(rawDateTime)) {
+    return true;
+  }
+
+  const storedDateTime = record?.data_hora_transacao;
+  const hasOnlyDateFromSource = Boolean(getMovementDateOnly(record));
+  const shouldIgnoreStoredTime = Boolean(record?.raw_data) && hasOnlyDateFromSource && !hasTimeFragment(rawDateTime);
+
+  if (shouldIgnoreStoredTime) {
+    return false;
+  }
+
+  if (hasTimeFragment(storedDateTime)) {
+    return !/T00:00(:00(?:\.000)?)?(Z|[+-]00:00)?$/i.test(storedDateTime);
+  }
+
+  return false;
+}
+
+export function getMovementDateOnly(record) {
+  return (
+    record?.data_movimento ||
+    record?.data ||
+    record?.raw_data?.dataEntrada ||
+    record?.raw_data?.dataMovimento ||
+    record?.raw_data?.dataLancamento ||
+    record?.raw_data?.bookingDate ||
+    null
+  );
+}
+
+export function getMovementDateTime(record) {
+  const rawDateTime = getRawMovementDateTime(record);
+  if (rawDateTime) return rawDateTime;
+
+  const dateOnly = getMovementDateOnly(record);
+  if (dateOnly) return `${dateOnly}T12:00:00`;
+
+  if (record?.data_hora_transacao) return record.data_hora_transacao;
+  if (record?.created_date) return record.created_date;
+
+  return null;
+}
+
+export function getMovementComparableDate(record) {
+  if (!record) return null;
+
+  if (hasExplicitMovementTime(record)) {
+    const dateTime = getMovementDateTime(record);
+    const parsed = dateTime ? new Date(dateTime) : null;
+    return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+  }
+
+  const dateOnly = getMovementDateOnly(record);
+  if (dateOnly) {
+    const parsed = new Date(`${dateOnly}T12:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const fallback = record?.created_date ? new Date(record.created_date) : null;
+  return fallback && !Number.isNaN(fallback.getTime()) ? fallback : null;
+}
+
+export function formatMovementDateTime(record) {
+  if (!record) return "-";
+
+  if (typeof record === "string") {
+    const date = new Date(record);
+    if (Number.isNaN(date.getTime())) return "-";
+    return format(date, "dd/MM/yyyy HH:mm");
+  }
+
+  if (!hasExplicitMovementTime(record)) {
+    return formatDateOnlyLabel(getMovementDateOnly(record));
+  }
+
+  const date = getMovementComparableDate(record);
+  if (!date) return "-";
 
   return format(date, "dd/MM/yyyy HH:mm");
 }
@@ -124,9 +218,15 @@ export function getMovementObservations(record) {
 }
 
 export function normalizeMovement(record) {
+  const dataHora = getMovementDateTime(record);
+  const possuiHoraReal = hasExplicitMovementTime(record);
+  const dataOrdenacao = getMovementComparableDate(record);
+
   return {
     ...record,
-    dataHora: getMovementDateTime(record),
+    dataHora,
+    possuiHoraReal,
+    dataOrdenacao,
     contraparte: getMovementCounterparty(record),
     bancoContraparte: getMovementBank(record),
     tipoDetalhado: getMovementTransactionType(record),

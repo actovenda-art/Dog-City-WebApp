@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { X, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { subDays, format, parse, differenceInYears } from "date-fns";
+import { subDays, format, differenceInYears } from "date-fns";
 
 const PERIODOS_RAPIDOS = [
   { label: "7 dias", value: "7dias", days: 7 },
@@ -170,11 +170,10 @@ export default function PeriodFilterSidebar({
                 <div className="space-y-3">
                   <div>
                     <Label className="text-xs text-gray-700">Data inicial</Label>
-                    <Input
-                      type="date"
+                    <DatePickerInput
                       value={dataInicial}
-                      onChange={(e) => {
-                        setDataInicial(e.target.value);
+                      onChange={(value) => {
+                        setDataInicial(value);
                         setSelectedPeriodo(null);
                         setError("");
                       }}
@@ -184,11 +183,10 @@ export default function PeriodFilterSidebar({
                   
                   <div>
                     <Label className="text-xs text-gray-700">Data final</Label>
-                    <Input
-                      type="date"
+                    <DatePickerInput
                       value={dataFinal}
-                      onChange={(e) => {
-                        setDataFinal(e.target.value);
+                      onChange={(value) => {
+                        setDataFinal(value);
                         setSelectedPeriodo(null);
                         setError("");
                       }}

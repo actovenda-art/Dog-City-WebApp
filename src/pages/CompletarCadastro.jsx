@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { createPageUrl, openImageViewer } from "@/utils";
 import { AlertTriangle, LoaderCircle, Upload, UserRound } from "lucide-react";
 
@@ -317,10 +318,9 @@ export default function CompletarCadastro() {
                 </div>
                 <div>
                   <Label>Data de nascimento *</Label>
-                  <Input
-                    type="date"
+                  <DatePickerInput
                     value={form.birth_date}
-                    onChange={(event) => setForm((current) => ({ ...current, birth_date: event.target.value }))}
+                    onChange={(value) => setForm((current) => ({ ...current, birth_date: value }))}
                     className="mt-2"
                   />
                 </div>

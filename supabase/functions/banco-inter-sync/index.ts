@@ -45,7 +45,7 @@ type NormalizedTransaction = {
   tipo: "entrada" | "saida";
   valor: number;
   data: string;
-  data_hora_transacao: string;
+  data_hora_transacao: string | null;
   data_movimento: string;
   banco: string;
   nome_contraparte: string | null;
@@ -83,7 +83,7 @@ type DuplicateReviewRow = {
   imported_valor: number;
   imported_descricao: string;
   imported_data_movimento: string;
-  imported_data_hora: string;
+  imported_data_hora: string | null;
   imported_payload: Record<string, unknown>;
   existing_record_id: string | null;
   existing_snapshot: Record<string, unknown>;
@@ -211,6 +211,10 @@ function sanitizeText(value: unknown, fallback = "") {
   if (value === null || value === undefined) return fallback;
   const text = String(value).trim();
   return text || fallback;
+}
+
+function hasTimeFragment(value: unknown) {
+  return typeof value === "string" && /\d{2}:\d{2}/.test(value);
 }
 
 function toNumber(value: unknown) {
@@ -621,7 +625,7 @@ async function normalizeTransactions(
       transaction.createdAt,
     ), new Date().toISOString());
     const movementDate = formatDateOnly(rawDate);
-    const movementDateTime = formatDateTime(rawDate);
+    const movementDateTime = hasTimeFragment(rawDate) ? formatDateTime(rawDate) : null;
     const description = sanitizeText(firstDefined(
       transaction.descricao,
       transaction.historico,
@@ -697,6 +701,37 @@ async function normalizeTransactions(
       imported_at: new Date().toISOString(),
       sync_run_id: syncRunId,
     } satisfies NormalizedTransaction;
+  }));
+}
+
+function buildDateDebugSample(rawPayload: unknown, normalizedRows: NormalizedTransaction[]) {
+  const transactions = getTransactionArray(rawPayload);
+  return transactions.slice(0, 5).map((transaction, index) => ({
+    index,
+    raw_candidates: {
+      dataHora: firstDefined(transaction.dataHora, null),
+      dataTransacao: firstDefined(transaction.dataTransacao, null),
+      transactionDateTime: firstDefined(transaction.transactionDateTime, null),
+      dataMovimento: firstDefined(transaction.dataMovimento, null),
+      dataLancamento: firstDefined(transaction.dataLancamento, null),
+      dataEntrada: firstDefined(transaction.dataEntrada, null),
+      data: firstDefined(transaction.data, null),
+      bookingDate: firstDefined(transaction.bookingDate, null),
+      createdAt: firstDefined(transaction.createdAt, null),
+      dataHoraTransacao: firstDefined(transaction.dataHoraTransacao, null),
+      dataOperacao: firstDefined(transaction.dataOperacao, null),
+      dataInclusao: firstDefined(transaction.dataInclusao, null),
+    },
+    raw_preview: transaction,
+    normalized: normalizedRows[index]
+      ? {
+        data: normalizedRows[index].data,
+        data_movimento: normalizedRows[index].data_movimento,
+        data_hora_transacao: normalizedRows[index].data_hora_transacao,
+        descricao: normalizedRows[index].descricao,
+        external_id: normalizedRows[index].external_id,
+      }
+      : null,
   }));
 }
 
@@ -916,6 +951,7 @@ async function runSyncForConfig(
     triggerSource,
     persist = true,
     empresaIdOverride,
+    debug = false,
   }: {
     action: string;
     requestedFrom?: string;
@@ -923,6 +959,7 @@ async function runSyncForConfig(
     triggerSource: string;
     persist?: boolean;
     empresaIdOverride?: string;
+    debug?: boolean;
   },
 ) {
   const now = new Date();
@@ -955,6 +992,7 @@ async function runSyncForConfig(
     let normalizedRows: NormalizedTransaction[] = [];
     let httpStatus = tokenStatus;
     let processedWindowCount = 0;
+    const debugWindows: unknown[] = [];
 
     for (const window of dateWindows) {
       try {
@@ -970,6 +1008,12 @@ async function runSyncForConfig(
         if (empresaId) {
           const windowRows = await normalizeTransactions(empresaId, log.id, payload);
           normalizedRows = normalizedRows.concat(windowRows);
+          if (debug) {
+            debugWindows.push({
+              window,
+              sample: buildDateDebugSample(payload, windowRows),
+            });
+          }
         }
       } catch (error) {
         const baseMessage = serializeError(error);
@@ -1020,6 +1064,7 @@ async function runSyncForConfig(
       duplicadas: persistence.deduplicatedCount,
       received_count: rawCount,
       windows_processed: processedWindowCount,
+      debug_windows: debug ? debugWindows : undefined,
       message: action === "test"
         ? "Conexao com Banco Inter validada com sucesso."
         : processedWindowCount > 1
@@ -1138,6 +1183,7 @@ Deno.serve(async (request) => {
         triggerSource: "manual_test",
         persist: false,
         empresaIdOverride: sanitizeText(payload.empresa_id),
+        debug: Boolean(payload.debug),
       });
       return jsonResponse(data);
     }
@@ -1150,6 +1196,7 @@ Deno.serve(async (request) => {
         triggerSource: "manual_import",
         persist: true,
         empresaIdOverride: sanitizeText(payload.empresa_id),
+        debug: Boolean(payload.debug),
       });
       return jsonResponse(data);
     }

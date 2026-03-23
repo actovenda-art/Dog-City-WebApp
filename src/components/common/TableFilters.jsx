@@ -2,6 +2,7 @@ import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { Search, Calendar, Filter, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -45,19 +46,17 @@ export default function TableFilters({
           <div className="space-y-3">
             <div>
               <label className="text-xs font-medium text-gray-700">Data inicial</label>
-              <Input 
-                type="date" 
-                value={dateStart} 
-                onChange={(e) => onDateStartChange(e.target.value)}
+              <DatePickerInput
+                value={dateStart}
+                onChange={onDateStartChange}
                 className="mt-1"
               />
             </div>
             <div>
               <label className="text-xs font-medium text-gray-700">Data final</label>
-              <Input 
-                type="date" 
-                value={dateEnd} 
-                onChange={(e) => onDateEndChange(e.target.value)}
+              <DatePickerInput
+                value={dateEnd}
+                onChange={onDateEndChange}
                 className="mt-1"
               />
             </div>

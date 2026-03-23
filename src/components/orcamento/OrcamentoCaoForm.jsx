@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import { Dog, Plus, Trash2, X } from "lucide-react";
 
 const TOSA_HIGIENICA_OPTIONS = [
@@ -163,38 +164,34 @@ export default function OrcamentoCaoForm({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <Label>Data de Entrada</Label>
-                <Input
+                <DatePickerInput
                   className="mt-1"
-                  type="date"
                   value={cao.hosp_data_entrada}
-                  onChange={(event) => handleChange("hosp_data_entrada", event.target.value)}
+                  onChange={(value) => handleChange("hosp_data_entrada", value)}
                 />
               </div>
               <div>
                 <Label>Horario de Entrada</Label>
-                <Input
+                <TimePickerInput
                   className="mt-1"
-                  type="time"
                   value={cao.hosp_horario_entrada}
-                  onChange={(event) => handleChange("hosp_horario_entrada", event.target.value)}
+                  onChange={(value) => handleChange("hosp_horario_entrada", value)}
                 />
               </div>
               <div>
                 <Label>Data de Saida</Label>
-                <Input
+                <DatePickerInput
                   className="mt-1"
-                  type="date"
                   value={cao.hosp_data_saida}
-                  onChange={(event) => handleChange("hosp_data_saida", event.target.value)}
+                  onChange={(value) => handleChange("hosp_data_saida", value)}
                 />
               </div>
               <div>
                 <Label>Horario de Saida</Label>
-                <Input
+                <TimePickerInput
                   className="mt-1"
-                  type="time"
                   value={cao.hosp_horario_saida}
-                  onChange={(event) => handleChange("hosp_horario_saida", event.target.value)}
+                  onChange={(value) => handleChange("hosp_horario_saida", value)}
                 />
               </div>
             </div>
@@ -225,12 +222,11 @@ export default function OrcamentoCaoForm({
               <Label>Datas de Day Care / Pernoite</Label>
               {(cao.hosp_datas_daycare || []).map((data, dataIndex) => (
                 <div key={dataIndex} className="flex items-center gap-2">
-                  <Input
-                    type="date"
+                  <DatePickerInput
                     value={data}
-                    onChange={(event) => {
+                    onChange={(value) => {
                       const hosp_datas_daycare = [...(cao.hosp_datas_daycare || [])];
-                      hosp_datas_daycare[dataIndex] = event.target.value;
+                      hosp_datas_daycare[dataIndex] = value;
                       handleChange("hosp_datas_daycare", hosp_datas_daycare);
                     }}
                   />
@@ -269,11 +265,10 @@ export default function OrcamentoCaoForm({
               </div>
               <div>
                 <Label>Horario do Banho</Label>
-                <Input
+                <TimePickerInput
                   className="mt-1"
-                  type="time"
                   value={cao.banho_horario}
-                  onChange={(event) => handleChange("banho_horario", event.target.value)}
+                  onChange={(value) => handleChange("banho_horario", value)}
                 />
               </div>
             </div>
@@ -402,15 +397,13 @@ export default function OrcamentoCaoForm({
                     value={viagem.destino}
                     onChange={(event) => updateTransporteViagem(viagemIndex, "destino", event.target.value)}
                   />
-                  <Input
-                    type="date"
+                  <DatePickerInput
                     value={viagem.data}
-                    onChange={(event) => updateTransporteViagem(viagemIndex, "data", event.target.value)}
+                    onChange={(value) => updateTransporteViagem(viagemIndex, "data", value)}
                   />
-                  <Input
-                    type="time"
+                  <TimePickerInput
                     value={viagem.horario}
-                    onChange={(event) => updateTransporteViagem(viagemIndex, "horario", event.target.value)}
+                    onChange={(value) => updateTransporteViagem(viagemIndex, "horario", value)}
                   />
                 </div>
 

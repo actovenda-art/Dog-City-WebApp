@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import {
   Calendar as CalendarIcon,
   Home,
@@ -312,22 +313,12 @@ export default function Agenda_Comercial() {
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
                 <Label className="text-xs text-gray-600 mb-1">Data Início</Label>
-                <Input
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="h-10"
-                />
+                <DatePickerInput value={dateFilter} onChange={setDateFilter} className="h-10" />
               </div>
               
               <div>
                 <Label className="text-xs text-gray-600 mb-1">Data Fim</Label>
-                <Input
-                  type="date"
-                  value={dateFilterEnd}
-                  onChange={(e) => setDateFilterEnd(e.target.value)}
-                  className="h-10"
-                />
+                <DatePickerInput value={dateFilterEnd} onChange={setDateFilterEnd} className="h-10" />
               </div>
 
               <div>

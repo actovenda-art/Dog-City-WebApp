@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
@@ -235,11 +236,11 @@ export default function ContasReceber() {
             </div>
             <div>
               <Label>Vencimento *</Label>
-              <Input type="date" value={formData.vencimento} onChange={(e) => setFormData({ ...formData, vencimento: e.target.value })} />
+              <DatePickerInput value={formData.vencimento} onChange={(value) => setFormData({ ...formData, vencimento: value })} />
             </div>
             <div>
               <Label>Data Recebimento</Label>
-              <Input type="date" value={formData.data_recebimento} onChange={(e) => setFormData({ ...formData, data_recebimento: e.target.value })} />
+              <DatePickerInput value={formData.data_recebimento} onChange={(value) => setFormData({ ...formData, data_recebimento: value })} />
             </div>
             <div>
               <Label>Forma Pagamento</Label>

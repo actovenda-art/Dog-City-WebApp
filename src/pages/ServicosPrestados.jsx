@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
@@ -245,7 +246,7 @@ export default function ServicosPrestados() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input placeholder="Buscar cão..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
             </div>
-            <Input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
+            <DatePickerInput value={filterDate} onChange={setFilterDate} />
             <Select value={filterService} onValueChange={setFilterService}>
               <SelectTrigger><SelectValue placeholder="Serviço" /></SelectTrigger>
               <SelectContent>
@@ -359,15 +360,15 @@ export default function ServicosPrestados() {
             </div>
             <div>
               <Label>Data *</Label>
-              <Input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
+              <DatePickerInput value={formData.date} onChange={(value) => setFormData({ ...formData, date: value })} />
             </div>
             <div>
               <Label>Hora Início</Label>
-              <Input type="time" value={formData.time_start} onChange={(e) => setFormData({ ...formData, time_start: e.target.value })} />
+              <TimePickerInput value={formData.time_start} onChange={(value) => setFormData({ ...formData, time_start: value })} />
             </div>
             <div>
               <Label>Hora Fim</Label>
-              <Input type="time" value={formData.time_end} onChange={(e) => setFormData({ ...formData, time_end: e.target.value })} />
+              <TimePickerInput value={formData.time_end} onChange={(value) => setFormData({ ...formData, time_end: value })} />
             </div>
             <div>
               <Label>Valor</Label>

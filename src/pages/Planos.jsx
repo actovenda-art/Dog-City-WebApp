@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
@@ -456,7 +457,7 @@ export default function Planos() {
             </div>
             <div>
               <Label>Data de Vencimento *</Label>
-              <Input type="date" value={formData.data_vencimento} onChange={(e) => setFormData({ ...formData, data_vencimento: e.target.value })} />
+              <DatePickerInput value={formData.data_vencimento} onChange={(value) => setFormData({ ...formData, data_vencimento: value })} />
             </div>
             <div>
               <Label>Status</Label>

@@ -13,6 +13,7 @@ import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integr
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import { isImagePreviewable, openImageViewer } from "@/utils";
 
 export default function Cadastro() {
@@ -175,12 +176,12 @@ export default function Cadastro() {
                   <div><Label>Cores da Pelagem</Label><Input value={dogForm.cores_pelagem} onChange={(e) => setDogForm({ ...dogForm, cores_pelagem: e.target.value })} /></div>
                   <div><Label>Pelagem</Label><Input value={dogForm.pelagem} onChange={(e) => setDogForm({ ...dogForm, pelagem: e.target.value })} placeholder="Ex: Curta, Longa" /></div>
                   <div><Label>Peso (KG)</Label><Input type="number" step="0.1" value={dogForm.peso} onChange={(e) => setDogForm({ ...dogForm, peso: e.target.value })} /></div>
-                  <div><Label>Data de Nascimento</Label><Input type="date" value={dogForm.data_nascimento} onChange={(e) => setDogForm({ ...dogForm, data_nascimento: e.target.value })} /></div>
+                  <div><Label>Data de Nascimento</Label><DatePickerInput value={dogForm.data_nascimento} onChange={(value) => setDogForm({ ...dogForm, data_nascimento: value })} /></div>
                   <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <button type="button" onClick={() => openImageViewer(dogForm.foto_url, "Foto do perfil")} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
                   <div><Label>Carteirinha Vacinação</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
-                  <div><Label>1ª Revacinação</Label><Input type="date" value={dogForm.data_revacinacao_1} onChange={(e) => setDogForm({ ...dogForm, data_revacinacao_1: e.target.value })} /></div>
-                  <div><Label>2ª Revacinação</Label><Input type="date" value={dogForm.data_revacinacao_2} onChange={(e) => setDogForm({ ...dogForm, data_revacinacao_2: e.target.value })} /></div>
-                  <div><Label>3ª Revacinação</Label><Input type="date" value={dogForm.data_revacinacao_3} onChange={(e) => setDogForm({ ...dogForm, data_revacinacao_3: e.target.value })} /></div>
+                  <div><Label>1ª Revacinação</Label><DatePickerInput value={dogForm.data_revacinacao_1} onChange={(value) => setDogForm({ ...dogForm, data_revacinacao_1: value })} /></div>
+                  <div><Label>2ª Revacinação</Label><DatePickerInput value={dogForm.data_revacinacao_2} onChange={(value) => setDogForm({ ...dogForm, data_revacinacao_2: value })} /></div>
+                  <div><Label>3ª Revacinação</Label><DatePickerInput value={dogForm.data_revacinacao_3} onChange={(value) => setDogForm({ ...dogForm, data_revacinacao_3: value })} /></div>
 
                   <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Veterinário</h4></div>
                   <div><Label>Veterinário Responsável</Label><Input value={dogForm.veterinario_responsavel} onChange={(e) => setDogForm({ ...dogForm, veterinario_responsavel: e.target.value })} /></div>
@@ -198,7 +199,7 @@ export default function Cadastro() {
                     <React.Fragment key={n}>
                       <div className="col-span-full"><h5 className="text-sm font-medium text-gray-700 mt-2">{n}ª Refeição</h5></div>
                       <div><Label>Qnt (g)</Label><Input value={dogForm[`refeicao_${n}_qnt`]} onChange={(e) => setDogForm({ ...dogForm, [`refeicao_${n}_qnt`]: e.target.value })} /></div>
-                      <div><Label>Horário</Label><Input type="time" value={dogForm[`refeicao_${n}_horario`]} onChange={(e) => setDogForm({ ...dogForm, [`refeicao_${n}_horario`]: e.target.value })} /></div>
+                      <div><Label>Horário</Label><TimePickerInput value={dogForm[`refeicao_${n}_horario`]} onChange={(value) => setDogForm({ ...dogForm, [`refeicao_${n}_horario`]: value })} /></div>
                       <div><Label>Observação</Label><Input value={dogForm[`refeicao_${n}_obs`]} onChange={(e) => setDogForm({ ...dogForm, [`refeicao_${n}_obs`]: e.target.value })} /></div>
                     </React.Fragment>
                   ))}
@@ -278,7 +279,7 @@ export default function Cadastro() {
                   <div><Label>Email</Label><Input type="email" value={carteiraForm.email} onChange={(e) => setCarteiraForm({ ...carteiraForm, email: e.target.value })} /></div>
                   <div><Label>CEP</Label><Input value={carteiraForm.cep} onChange={(e) => setCarteiraForm({ ...carteiraForm, cep: formatCEP(e.target.value) })} maxLength={9} /></div>
                   <div><Label>Nº Residência</Label><Input value={carteiraForm.numero_residencia} onChange={(e) => setCarteiraForm({ ...carteiraForm, numero_residencia: e.target.value })} /></div>
-                  <div><Label>Vencimento Planos</Label><Input type="date" value={carteiraForm.vencimento_planos} onChange={(e) => setCarteiraForm({ ...carteiraForm, vencimento_planos: e.target.value })} /></div>
+                  <div><Label>Vencimento Planos</Label><DatePickerInput value={carteiraForm.vencimento_planos} onChange={(value) => setCarteiraForm({ ...carteiraForm, vencimento_planos: value })} /></div>
                   <div></div>
                   <div className="sm:col-span-2">
                     <Label>Vincular Cães (até 8)</Label>

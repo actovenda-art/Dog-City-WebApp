@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { ArrowUpCircle, Search, Wallet } from "lucide-react";
 import {
   formatCurrency,
   formatMovementDateTime,
+  getMovementComparableDate,
   getMovementBank,
   getMovementCounterparty,
   getMovementTransactionType,
@@ -47,7 +49,7 @@ export default function Receitas() {
     () =>
       (receitas || [])
         .map((item) => normalizeMovement(item))
-        .sort((a, b) => new Date(b.dataHora || b.data || 0) - new Date(a.dataHora || a.data || 0)),
+        .sort((a, b) => (b.dataOrdenacao?.getTime() || 0) - (a.dataOrdenacao?.getTime() || 0)),
     [receitas],
   );
 
@@ -66,7 +68,7 @@ export default function Receitas() {
       return false;
     }
 
-    const movementDate = item.dataHora ? new Date(item.dataHora) : null;
+    const movementDate = getMovementComparableDate(item);
     if (dateStart && movementDate && movementDate < new Date(`${dateStart}T00:00:00`)) {
       return false;
     }
@@ -156,8 +158,8 @@ export default function Receitas() {
                 placeholder="Buscar por remetente, carteira, banco ou referencia"
               />
             </div>
-            <Input type="date" value={dateStart} onChange={(event) => setDateStart(event.target.value)} />
-            <Input type="date" value={dateEnd} onChange={(event) => setDateEnd(event.target.value)} />
+            <DatePickerInput value={dateStart} onChange={setDateStart} />
+            <DatePickerInput value={dateEnd} onChange={setDateEnd} />
           </CardContent>
         </Card>
 
@@ -192,7 +194,7 @@ export default function Receitas() {
 
                         <div>
                           <p className="text-xs uppercase tracking-wide text-gray-500">Data e hora</p>
-                          <p className="mt-1 font-medium text-gray-900">{formatMovementDateTime(item.dataHora)}</p>
+                          <p className="mt-1 font-medium text-gray-900">{formatMovementDateTime(item)}</p>
                         </div>
 
                         <div>

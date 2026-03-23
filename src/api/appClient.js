@@ -25,6 +25,30 @@ function writeStorage(key, value) {
   localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
 }
 
+function toAppError(error, fallback = 'Erro no Supabase.') {
+  if (!error) return new Error(fallback);
+  if (error instanceof Error) return error;
+
+  const rawMessage = [
+    error.message,
+    error.details,
+    error.hint,
+  ].filter(Boolean).join(' | ') || fallback;
+
+  const missingLancamentoColumn = error.code === 'PGRST204'
+    && rawMessage.includes("column")
+    && rawMessage.includes("'lancamento'");
+
+  const message = missingLancamentoColumn
+    ? `${rawMessage}. Execute o arquivo supabase-schema-lancamento-contas-pagar.sql no Supabase.`
+    : rawMessage;
+
+  const wrapped = new Error(message);
+  if (error.code) wrapped.code = error.code;
+  wrapped.cause = error;
+  return wrapped;
+}
+
 function createMockEntity(name) {
   return {
     list: (sort, limit) => Promise.resolve(readStorage(name).slice(0, limit || undefined)),
@@ -207,7 +231,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       }
       if (typeof limit === 'number') query = query.limit(limit);
       const { data, error } = await query;
-      if (error) throw error;
+      if (error) throw toAppError(error, `Erro ao listar ${table}.`);
       return data || [];
     },
     filter: async (queryObj = {}, sort, limit) => {
@@ -220,22 +244,22 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       }
       if (typeof limit === 'number') query = query.limit(limit);
       const { data, error } = await query;
-      if (error) throw error;
+      if (error) throw toAppError(error, `Erro ao filtrar ${table}.`);
       return data || [];
     },
     create: async (payload) => {
       const { data, error } = await supabase.from(table).insert([payload]).select().single();
-      if (error) throw error;
+      if (error) throw toAppError(error, `Erro ao criar registro em ${table}.`);
       return data;
     },
     update: async (id, payload) => {
       const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single();
-      if (error) throw error;
+      if (error) throw toAppError(error, `Erro ao atualizar registro em ${table}.`);
       return data;
     },
     delete: async (id) => {
       const { data, error } = await supabase.from(table).delete().eq('id', id).select().single();
-      if (error) throw error;
+      if (error) throw toAppError(error, `Erro ao excluir registro em ${table}.`);
       return data;
     },
   });

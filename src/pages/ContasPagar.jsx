@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   Plus, Search, Pencil, Trash2, DollarSign, AlertTriangle, CheckCircle, 
@@ -149,7 +149,7 @@ export default function ContasPagar() {
       await loadData(); 
       setShowModal(false); 
       resetForm();
-    } catch (error) { alert("Erro ao salvar."); }
+    } catch (error) { alert(`Erro ao salvar: ${error?.message || "falha desconhecida"}`); }
     setIsSaving(false);
   };
 
@@ -845,7 +845,12 @@ export default function ContasPagar() {
       {/* Modal Nova/Editar Conta */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="w-[95vw] max-w-[700px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editingItem ? "Editar" : "Nova"} Conta a Pagar</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editingItem ? "Editar" : "Nova"} Conta a Pagar</DialogTitle>
+            <DialogDescription>
+              Preencha os dados do lançamento financeiro e salve para manter a conta em aberto ou vinculada a pagamentos.
+            </DialogDescription>
+          </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
             <div><Label>Categoria *</Label><Input value={formData.categoria} onChange={(e) => setFormData({ ...formData, categoria: e.target.value })} placeholder="Ex: Água, Energia" /></div>
             <div><Label>Recebedor *</Label><Input value={formData.recebedor} onChange={(e) => setFormData({ ...formData, recebedor: e.target.value })} placeholder="Fornecedor" /></div>

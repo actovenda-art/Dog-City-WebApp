@@ -1,0 +1,232 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import {
+  FINANCE_RATEIO_FIELDS,
+  formatCurrency,
+  fromDateTimeInputValue,
+  getRateioTotal,
+  normalizeMovement,
+  normalizeRateio,
+  toDateTimeInputValue,
+} from "@/utils/finance";
+
+export default function FinanceDetailDialog({
+  open,
+  onOpenChange,
+  movement,
+  mode,
+  onSave,
+  isSaving = false,
+}) {
+  const normalizedMovement = useMemo(() => normalizeMovement(movement || {}), [movement]);
+  const [formData, setFormData] = useState({
+    nome_contraparte: "",
+    carteira_nome: "",
+    data_hora_transacao: "",
+    banco_contraparte: "",
+    tipo_transacao_detalhado: "",
+    referencia: "",
+    observacoes: "",
+  });
+  const [rateio, setRateio] = useState(() => normalizeRateio({}));
+
+  useEffect(() => {
+    if (!movement) return;
+
+    setFormData({
+      nome_contraparte: normalizedMovement.contraparte || "",
+      carteira_nome: movement?.carteira_nome || "",
+      data_hora_transacao: toDateTimeInputValue(normalizedMovement.dataHora),
+      banco_contraparte: movement?.banco_contraparte || "",
+      tipo_transacao_detalhado: movement?.tipo_transacao_detalhado || "",
+      referencia: movement?.referencia || "",
+      observacoes: movement?.observacoes || "",
+    });
+    setRateio(normalizeRateio(movement?.rateio));
+  }, [movement, normalizedMovement]);
+
+  const totalRateado = getRateioTotal(rateio);
+  const diferencaRateio = (movement?.valor || 0) - totalRateado;
+  const isReceita = mode === "receita";
+
+  const handleRateioChange = (key, value) => {
+    const normalizedValue = Number(String(value || "").replace(",", "."));
+    setRateio((prev) => ({
+      ...prev,
+      [key]: Number.isFinite(normalizedValue) ? normalizedValue : 0,
+    }));
+  };
+
+  const handleSubmit = async () => {
+    if (!movement?.id || typeof onSave !== "function") return;
+
+    await onSave(movement.id, {
+      nome_contraparte: formData.nome_contraparte.trim() || null,
+      carteira_nome: isReceita ? formData.carteira_nome.trim() || null : null,
+      data_hora_transacao: fromDateTimeInputValue(formData.data_hora_transacao),
+      banco_contraparte: formData.banco_contraparte.trim() || null,
+      tipo_transacao_detalhado: formData.tipo_transacao_detalhado.trim() || null,
+      referencia: formData.referencia.trim() || null,
+      observacoes: formData.observacoes.trim() || null,
+      rateio: isReceita ? rateio : {},
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[95vw] max-w-[840px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {isReceita ? "Detalhes do recebimento" : "Detalhes da saida"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-6 py-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Valor</p>
+              <p className={`mt-2 text-2xl font-bold ${isReceita ? "text-green-600" : "text-red-600"}`}>
+                {formatCurrency(movement?.valor || 0)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Tipo</p>
+              <p className="mt-2 text-lg font-semibold text-gray-900">
+                {isReceita ? "Receita" : "Despesa"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Referencia</p>
+              <p className="mt-2 text-sm font-medium text-gray-900 break-all">
+                {formData.referencia || normalizedMovement.referenciaFinanceira}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>{isReceita ? "Nome do remetente" : "Quem pagamos"}</Label>
+              <Input
+                className="mt-2"
+                value={formData.nome_contraparte}
+                onChange={(event) => setFormData((prev) => ({ ...prev, nome_contraparte: event.target.value }))}
+              />
+            </div>
+
+            <div>
+              <Label>Data e hora da transacao</Label>
+              <Input
+                type="datetime-local"
+                className="mt-2"
+                value={formData.data_hora_transacao}
+                onChange={(event) => setFormData((prev) => ({ ...prev, data_hora_transacao: event.target.value }))}
+              />
+            </div>
+
+            {isReceita && (
+              <div>
+                <Label>Carteira que recebeu o valor</Label>
+                <Input
+                  className="mt-2"
+                  value={formData.carteira_nome}
+                  onChange={(event) => setFormData((prev) => ({ ...prev, carteira_nome: event.target.value }))}
+                  placeholder="Ex: Carteira principal"
+                />
+              </div>
+            )}
+
+            <div>
+              <Label>{isReceita ? "Banco que pagou" : "Banco que recebeu"}</Label>
+              <Input
+                className="mt-2"
+                value={formData.banco_contraparte}
+                onChange={(event) => setFormData((prev) => ({ ...prev, banco_contraparte: event.target.value }))}
+              />
+            </div>
+
+            <div>
+              <Label>Tipo da transacao</Label>
+              <Input
+                className="mt-2"
+                value={formData.tipo_transacao_detalhado}
+                onChange={(event) => setFormData((prev) => ({ ...prev, tipo_transacao_detalhado: event.target.value }))}
+                placeholder="Ex: PIX recebido, TED, transferencia"
+              />
+            </div>
+
+            <div>
+              <Label>Referencia</Label>
+              <Input
+                className="mt-2"
+                value={formData.referencia}
+                onChange={(event) => setFormData((prev) => ({ ...prev, referencia: event.target.value }))}
+              />
+            </div>
+          </div>
+
+          {isReceita && (
+            <div className="space-y-4 rounded-xl border border-green-200 bg-green-50/50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-gray-900">Distribuicao do valor</p>
+                  <p className="text-sm text-gray-500">
+                    Informe quanto desta entrada vai para cada finalidade.
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <Badge className="bg-green-100 text-green-700">
+                    Rateado {formatCurrency(totalRateado)}
+                  </Badge>
+                  <p className={`mt-2 text-sm font-medium ${Math.abs(diferencaRateio) < 0.01 ? "text-green-700" : "text-amber-700"}`}>
+                    Saldo livre: {formatCurrency(diferencaRateio)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {FINANCE_RATEIO_FIELDS.map((item) => (
+                  <div key={item.key}>
+                    <Label>{item.label}</Label>
+                    <Input
+                      className="mt-2"
+                      type="number"
+                      step="0.01"
+                      value={rateio[item.key] ?? 0}
+                      onChange={(event) => handleRateioChange(item.key, event.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <Label>Observacoes</Label>
+            <Textarea
+              className="mt-2"
+              rows={4}
+              value={formData.observacoes}
+              onChange={(event) => setFormData((prev) => ({ ...prev, observacoes: event.target.value }))}
+              placeholder={isReceita ? "Observacoes sobre o recebimento" : "Observacoes sobre a despesa"}
+            />
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Fechar
+          </Button>
+          <Button onClick={handleSubmit} disabled={isSaving}>
+            {isSaving ? "Salvando..." : "Salvar detalhes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

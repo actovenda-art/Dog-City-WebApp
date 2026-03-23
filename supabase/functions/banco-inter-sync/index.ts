@@ -45,10 +45,19 @@ type NormalizedTransaction = {
   tipo: "entrada" | "saida";
   valor: number;
   data: string;
+  data_hora_transacao: string;
   data_movimento: string;
   banco: string;
+  nome_contraparte: string | null;
+  banco_contraparte: string | null;
   forma_pagamento: string | null;
   categoria: string | null;
+  tipo_transacao_detalhado: string | null;
+  referencia: string | null;
+  carteira_nome: string | null;
+  observacoes: string | null;
+  rateio: Record<string, unknown>;
+  metadata_financeira: Record<string, unknown>;
   conciliado: boolean;
   status: string;
   source_provider: string;
@@ -103,12 +112,24 @@ function formatDateOnly(value: string | Date) {
   return normalizeDateInput(value).toISOString().slice(0, 10);
 }
 
+function formatDateTime(value: string | Date) {
+  return normalizeDateInput(value).toISOString();
+}
+
 function addMinutes(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60 * 1000);
 }
 
 function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function sanitizeText(value: unknown, fallback = "") {
@@ -125,6 +146,52 @@ function toNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object") {
+    const source = error as Record<string, unknown>;
+    const parts = [
+      sanitizeText(source.message),
+      sanitizeText(source.details),
+      sanitizeText(source.hint),
+    ].filter(Boolean);
+
+    const rawMessage = parts.join(" | ");
+    const code = sanitizeText(source.code);
+    const message = rawMessage || (() => {
+      try {
+        return JSON.stringify(error);
+      } catch {
+        return String(error);
+      }
+    })();
+
+    const financeSchemaColumns = [
+      "data_hora_transacao",
+      "nome_contraparte",
+      "banco_contraparte",
+      "tipo_transacao_detalhado",
+      "referencia",
+      "carteira_nome",
+      "observacoes",
+      "rateio",
+      "metadata_financeira",
+    ];
+
+    const missingFinanceColumn = financeSchemaColumns.find((column) => message.includes(column));
+    if (missingFinanceColumn) {
+      return `Schema financeiro do Supabase desatualizado. Execute o arquivo supabase-schema-finance-ledger.sql e tente novamente. Coluna ausente: ${missingFinanceColumn}.`;
+    }
+
+    return code ? `${message} (code: ${code})` : message;
+  }
+
+  return String(error);
 }
 
 async function sha256Hex(value: string) {
@@ -174,6 +241,50 @@ function getTransactionArray(payload: unknown): Record<string, unknown>[] {
 
 function countTransactions(payload: unknown) {
   return getTransactionArray(payload).length;
+}
+
+function inferCounterpartyName(
+  rawTransaction: Record<string, unknown>,
+  description: string,
+) {
+  const value = sanitizeText(firstDefined(
+    rawTransaction.nomeRemetente,
+    rawTransaction.nomePagador,
+    rawTransaction.nomeFavorecido,
+    rawTransaction.nomeRecebedor,
+    rawTransaction.contraparte,
+    rawTransaction.beneficiario,
+    rawTransaction.pagador,
+    rawTransaction.creditorName,
+    rawTransaction.debtorName,
+    rawTransaction.cliente,
+  ));
+  return value || description || null;
+}
+
+function inferCounterpartyBank(rawTransaction: Record<string, unknown>) {
+  return sanitizeText(firstDefined(
+    rawTransaction.banco,
+    rawTransaction.bancoDestino,
+    rawTransaction.bancoOrigem,
+    rawTransaction.nomeBanco,
+    rawTransaction.instituicao,
+    rawTransaction.bankName,
+    rawTransaction.bank,
+  )) || null;
+}
+
+function inferReference(rawTransaction: Record<string, unknown>, externalId: string) {
+  return sanitizeText(firstDefined(
+    rawTransaction.referencia,
+    rawTransaction.documento,
+    rawTransaction.identificador,
+    rawTransaction.codigoTransacao,
+    rawTransaction.transactionId,
+    rawTransaction.nsu,
+    rawTransaction.nsudoc,
+    externalId,
+  )) || null;
 }
 
 async function createHttpClient(config: IntegrationConfig) {
@@ -328,6 +439,9 @@ async function normalizeTransactions(
     const normalizedType = inferTipo(transaction, amount);
     const positiveAmount = Math.abs(amount);
     const rawDate = sanitizeText(firstDefined(
+      transaction.dataHora,
+      transaction.dataTransacao,
+      transaction.transactionDateTime,
       transaction.dataMovimento,
       transaction.dataLancamento,
       transaction.dataEntrada,
@@ -336,6 +450,7 @@ async function normalizeTransactions(
       transaction.createdAt,
     ), new Date().toISOString());
     const movementDate = formatDateOnly(rawDate);
+    const movementDateTime = formatDateTime(rawDate);
     const description = sanitizeText(firstDefined(
       transaction.descricao,
       transaction.historico,
@@ -357,6 +472,23 @@ async function normalizeTransactions(
 
     const fallbackKey = await sha256Hex(`${empresaId}|${movementDate}|${positiveAmount}|${description}|${normalizedType}`);
     const externalId = sourceId || fallbackKey;
+    const counterpartyName = inferCounterpartyName(transaction, description);
+    const counterpartyBank = inferCounterpartyBank(transaction);
+    const transactionDetailType = sanitizeText(firstDefined(
+      transaction.tipoDetalhado,
+      transaction.tipo,
+      transaction.natureza,
+      transaction.tipoOperacao,
+      transaction.transactionType,
+      transaction.operationType,
+    )) || null;
+    const reference = inferReference(transaction, externalId);
+    const notes = sanitizeText(firstDefined(
+      transaction.observacoes,
+      transaction.complemento,
+      transaction.descricaoDetalhada,
+      transaction.memo,
+    )) || null;
 
     return {
       empresa_id: empresaId,
@@ -364,10 +496,22 @@ async function normalizeTransactions(
       tipo: normalizedType,
       valor: positiveAmount,
       data: movementDate,
+      data_hora_transacao: movementDateTime,
       data_movimento: movementDate,
       banco: "Banco Inter",
+      nome_contraparte: counterpartyName,
+      banco_contraparte: counterpartyBank,
       forma_pagamento: sanitizeText(firstDefined(transaction.formaPagamento, transaction.tipoPagamento), "") || null,
       categoria: sanitizeText(firstDefined(transaction.categoria, transaction.tipoLancamento), "") || null,
+      tipo_transacao_detalhado: transactionDetailType,
+      referencia: reference,
+      carteira_nome: sanitizeText(firstDefined(transaction.carteiraNome, transaction.walletName), "") || null,
+      observacoes: notes,
+      rateio: {},
+      metadata_financeira: {
+        provider: "banco_inter",
+        imported_via: "edge_function",
+      },
       conciliado: false,
       status: "importado",
       source_provider: "banco_inter",
@@ -456,31 +600,43 @@ async function updateIntegrationStatus(configId: string, payload: Record<string,
 async function persistTransactions(empresaId: string, rows: NormalizedTransaction[]) {
   if (!rows.length) return { importedCount: 0, deduplicatedCount: 0 };
 
-  const externalIds = rows.map((row) => row.external_id);
+  const uniqueRowsByExternalId = new Map<string, NormalizedTransaction>();
+  for (const row of rows) {
+    if (!uniqueRowsByExternalId.has(row.external_id)) {
+      uniqueRowsByExternalId.set(row.external_id, row);
+    }
+  }
 
-  const { data: existingRows, error: existingError } = await supabase
+  const uniqueRows = Array.from(uniqueRowsByExternalId.values());
+  const duplicateRowsInPayload = rows.length - uniqueRows.length;
+  const countQuery = () => supabase
     .from("extratobancario")
-    .select("external_id")
+    .select("*", { count: "exact", head: true })
     .eq("empresa_id", empresaId)
-    .eq("source_provider", "banco_inter")
-    .in("external_id", externalIds);
+    .eq("source_provider", "banco_inter");
 
-  if (existingError) throw existingError;
+  const { count: beforeCount, error: beforeCountError } = await countQuery();
+  if (beforeCountError) throw beforeCountError;
 
-  const existingIds = new Set((existingRows || []).map((item) => item.external_id));
-  const deduplicatedCount = rows.filter((row) => existingIds.has(row.external_id)).length;
+  for (const rowChunk of chunkArray(uniqueRows, 100)) {
+    const { error } = await supabase
+      .from("extratobancario")
+      .upsert(rowChunk, {
+        onConflict: "empresa_id,source_provider,external_id",
+        ignoreDuplicates: true,
+      });
 
-  const { error } = await supabase
-    .from("extratobancario")
-    .upsert(rows, {
-      onConflict: "empresa_id,source_provider,external_id",
-      ignoreDuplicates: true,
-    });
+    if (error) throw error;
+  }
 
-  if (error) throw error;
+  const { count: afterCount, error: afterCountError } = await countQuery();
+  if (afterCountError) throw afterCountError;
+
+  const importedCount = Math.max(0, (afterCount || 0) - (beforeCount || 0));
+  const deduplicatedCount = Math.max(0, rows.length - importedCount);
 
   return {
-    importedCount: rows.length - deduplicatedCount,
+    importedCount,
     deduplicatedCount,
   };
 }
@@ -577,7 +733,7 @@ async function runSyncForConfig(
         : `Extrato importado com sucesso. ${persistence.importedCount} registro(s) novo(s).`,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = serializeError(error);
     const failedAt = new Date().toISOString();
 
     await finishSyncLog(log.id, {
@@ -706,7 +862,7 @@ Deno.serve(async (request) => {
 
     return jsonResponse({ error: `Acao nao suportada: ${action}` }, 400);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = serializeError(error);
     return jsonResponse({ error: "Falha na integracao com Banco Inter.", details: message }, 500);
   }
 });

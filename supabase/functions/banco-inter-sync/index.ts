@@ -188,6 +188,10 @@ function serializeError(error: unknown) {
       return `Schema financeiro do Supabase desatualizado. Execute o arquivo supabase-schema-finance-ledger.sql e tente novamente. Coluna ausente: ${missingFinanceColumn}.`;
     }
 
+    if (message.includes("ON CONFLICT") || code === "42P10") {
+      return "A constraint unica de deduplicacao do extrato nao existe no Supabase. Execute novamente o arquivo supabase-schema-banco-inter.sql e tente importar de novo.";
+    }
+
     return code ? `${message} (code: ${code})` : message;
   }
 

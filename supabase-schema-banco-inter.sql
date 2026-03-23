@@ -88,8 +88,7 @@ create index if not exists idx_extratobancario_provider
 
 drop index if exists idx_extratobancario_unique_external;
 create unique index if not exists idx_extratobancario_unique_external
-  on public.extratobancario(empresa_id, source_provider, external_id)
-  where external_id is not null;
+  on public.extratobancario(empresa_id, source_provider, external_id);
 
 create table if not exists public.integracao_sync_log (
   id text primary key default gen_random_uuid()::text,

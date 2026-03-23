@@ -124,6 +124,27 @@ function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
+function buildDateWindows(fromDate: string, toDate: string, maxRangeDays = 80) {
+  const windows: Array<{ from: string; to: string }> = [];
+  let cursor = normalizeDateInput(fromDate);
+  const finalDate = normalizeDateInput(toDate);
+
+  while (cursor.getTime() <= finalDate.getTime()) {
+    const windowStart = new Date(cursor);
+    const tentativeEnd = addDays(windowStart, maxRangeDays);
+    const windowEnd = tentativeEnd.getTime() > finalDate.getTime() ? finalDate : tentativeEnd;
+
+    windows.push({
+      from: formatDateOnly(windowStart),
+      to: formatDateOnly(windowEnd),
+    });
+
+    cursor = addDays(windowEnd, 1);
+  }
+
+  return windows;
+}
+
 function chunkArray<T>(items: T[], size: number) {
   const chunks: T[][] = [];
   for (let index = 0; index < items.length; index += size) {
@@ -701,6 +722,7 @@ async function runSyncForConfig(
       ? formatDateOnly(addDays(new Date(config.last_success_at), -1))
       : formatDateOnly(addDays(now, -backfillDays));
   const toDate = requestedTo ? formatDateOnly(requestedTo) : formatDateOnly(now);
+  const dateWindows = buildDateWindows(fromDate, toDate);
 
   const log = config.empresa_id === empresaId
     ? await startSyncLog(config, triggerSource, fromDate, toDate)
@@ -713,11 +735,26 @@ async function runSyncForConfig(
 
   try {
     const { accessToken, httpClient, tokenResponse, tokenStatus } = await getAccessToken(config);
-    const { payload, httpStatus } = await fetchExtrato(config, accessToken, httpClient, fromDate, toDate);
-    const rawCount = countTransactions(payload);
-    const normalizedRows = empresaId
-      ? await normalizeTransactions(empresaId, log.id, payload)
-      : [];
+    let rawCount = 0;
+    let normalizedRows: NormalizedTransaction[] = [];
+    let httpStatus = tokenStatus;
+
+    for (const window of dateWindows) {
+      try {
+        const { payload, httpStatus: windowHttpStatus } = await fetchExtrato(config, accessToken, httpClient, window.from, window.to);
+        rawCount += countTransactions(payload);
+        httpStatus = windowHttpStatus;
+
+        if (empresaId) {
+          const windowRows = await normalizeTransactions(empresaId, log.id, payload);
+          normalizedRows = normalizedRows.concat(windowRows);
+        }
+      } catch (error) {
+        const baseMessage = serializeError(error);
+        throw new Error(`Falha ao importar a janela ${window.from} ate ${window.to}: ${baseMessage}`);
+      }
+    }
+
     const persistence = persist
       ? await persistTransactions(empresaId, normalizedRows)
       : { importedCount: rawCount, deduplicatedCount: 0 };
@@ -732,6 +769,7 @@ async function runSyncForConfig(
         token_status: tokenStatus,
         token_type: tokenResponse?.token_type || null,
         range: { from: fromDate, to: toDate },
+        windows: dateWindows,
         received_count: rawCount,
       },
     });
@@ -757,9 +795,12 @@ async function runSyncForConfig(
       inseridas: persistence.importedCount,
       duplicadas: persistence.deduplicatedCount,
       received_count: rawCount,
+      windows_processed: dateWindows.length,
       message: action === "test"
         ? "Conexao com Banco Inter validada com sucesso."
-        : `Extrato importado com sucesso. ${persistence.importedCount} registro(s) novo(s).`,
+        : dateWindows.length > 1
+          ? `Extrato importado em ${dateWindows.length} janela(s). ${persistence.importedCount} registro(s) novo(s).`
+          : `Extrato importado com sucesso. ${persistence.importedCount} registro(s) novo(s).`,
     };
   } catch (error) {
     const message = serializeError(error);

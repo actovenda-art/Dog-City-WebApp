@@ -9,6 +9,7 @@ const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).sl
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const APP_SITE_URL = import.meta.env.VITE_SITE_URL;
 const SUPABASE_PUBLIC_BUCKET = import.meta.env.VITE_SUPABASE_PUBLIC_BUCKET || 'public-assets';
 const SUPABASE_PRIVATE_BUCKET = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'private-files';
 const DEFAULT_EMAIL_WEBHOOK_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/send-email` : '';
@@ -38,15 +39,25 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
   const missingLancamentoColumn = error.code === 'PGRST204'
     && rawMessage.includes("column")
     && rawMessage.includes("'lancamento'");
+  const lancamentoRlsBlocked = error.code === '42501'
+    && rawMessage.toLowerCase().includes('lancamento');
 
   const message = missingLancamentoColumn
     ? `${rawMessage}. Execute o arquivo supabase-schema-lancamento-contas-pagar.sql no Supabase.`
-    : rawMessage;
+    : lancamentoRlsBlocked
+      ? `${rawMessage}. Execute o arquivo supabase-policies-finance-unlock.sql no Supabase.`
+      : rawMessage;
 
   const wrapped = new Error(message);
   if (error.code) wrapped.code = error.code;
   wrapped.cause = error;
   return wrapped;
+}
+
+function getAppOrigin() {
+  if (APP_SITE_URL) return APP_SITE_URL.replace(/\/+$/, '');
+  if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
+  return SUPABASE_URL;
 }
 
 function createMockEntity(name) {
@@ -546,12 +557,11 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       if (!sessionError && sessionData?.session?.user) {
         return sessionData.session.user;
       }
-
-      const { data, error } = await supabase.auth.getUser();
-      if (error) throw error;
-      return data?.user || null;
+      return null;
     } catch (error) {
-      console.warn('getAuthenticatedUser error', error);
+      if (error?.name !== 'AuthSessionMissingError') {
+        console.warn('getAuthenticatedUser error', error);
+      }
       return null;
     }
   };
@@ -575,7 +585,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       return mergedUser;
     },
     signInWithGoogle: async ({ redirectTo, nextPath } = {}) => {
-      const origin = typeof window !== 'undefined' ? window.location.origin : SUPABASE_URL;
+      const origin = getAppOrigin();
       const callbackUrl = new URL(redirectTo || `${origin}/auth-callback`, origin);
 
       if (nextPath) {
@@ -593,7 +603,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       return data;
     },
     exchangeCodeForSession: async (currentUrl) => {
-      const origin = typeof window !== 'undefined' ? window.location.origin : SUPABASE_URL;
+      const origin = getAppOrigin();
       const url = new URL(currentUrl || `${origin}/auth-callback`, origin);
       const authCode = url.searchParams.get('code');
 

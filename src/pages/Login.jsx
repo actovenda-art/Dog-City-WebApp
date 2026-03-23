@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AlertTriangle, LoaderCircle, LogIn } from "lucide-react";
 
+const APP_SITE_URL = import.meta.env.VITE_SITE_URL;
+
 function getSafeNextPath(search) {
   const params = new URLSearchParams(search);
   const next = params.get("next");
@@ -45,7 +47,7 @@ export default function Login() {
 
     try {
       await User.signInWithGoogle({
-        redirectTo: `${window.location.origin}${createPageUrl("AuthCallback")}`,
+        redirectTo: `${(APP_SITE_URL || window.location.origin).replace(/\/+$/, "")}${createPageUrl("AuthCallback")}`,
         nextPath,
       });
     } catch (error) {

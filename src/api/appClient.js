@@ -3,6 +3,7 @@
 // - Otherwise fall back to a lightweight local mock (localStorage) so the app remains functional.
 
 import { createClient } from '@supabase/supabase-js';
+import { getStoredActiveUnitId, resolveDogCityUnit, setStoredActiveUnitId } from '@/lib/unit-context';
 
 const STORAGE_PREFIX = 'local_app_client_';
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -13,6 +14,32 @@ const APP_SITE_URL = import.meta.env.VITE_SITE_URL;
 const SUPABASE_PUBLIC_BUCKET = import.meta.env.VITE_SUPABASE_PUBLIC_BUCKET || 'public-assets';
 const SUPABASE_PRIVATE_BUCKET = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'private-files';
 const DEFAULT_EMAIL_WEBHOOK_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/send-email` : '';
+const UNIT_SCOPED_ENTITIES = new Set([
+  'Dog',
+  'Checkin',
+  'Schedule',
+  'Appointment',
+  'ServiceProvider',
+  'Lancamento',
+  'ExtratoBancario',
+  'Despesa',
+  'Responsavel',
+  'Carteira',
+  'Notificacao',
+  'Orcamento',
+  'TabelaPrecos',
+  'ServiceProvided',
+  'Transaction',
+  'ScheduledTransaction',
+  'Replacement',
+  'PlanConfig',
+  'IntegracaoConfig',
+  'Receita',
+  'ContaReceber',
+  'Client',
+  'PedidoInterno',
+  'ExtratoDuplicidade',
+]);
 
 function readStorage(key) {
   try {
@@ -60,19 +87,47 @@ function getAppOrigin() {
   return SUPABASE_URL;
 }
 
-function createMockEntity(name) {
+function withActiveUnitHeader(fetchImpl) {
+  return async (input, init = {}) => {
+    const headers = new Headers(init?.headers || {});
+    const activeUnitId = getStoredActiveUnitId();
+    if (activeUnitId) {
+      headers.set('x-active-unit-id', activeUnitId);
+    }
+    return fetchImpl(input, { ...init, headers });
+  };
+}
+
+function getMockScopedUnitId() {
+  return getStoredActiveUnitId() || 'empresa_demo';
+}
+
+function createMockEntity(name, options = {}) {
+  const { unitScoped = false } = options;
+
   return {
-    list: (sort, limit) => Promise.resolve(readStorage(name).slice(0, limit || undefined)),
-    filter: (query = {}, sort, limit) => Promise.resolve(
+    list: (sort, limit) => Promise.resolve(
       readStorage(name)
-        .filter((item) => Object.keys(query || {}).every((key) => {
-          return query[key] === null || query[key] === undefined || item[key] === query[key];
-        }))
+        .filter((item) => !unitScoped || !item.empresa_id || item.empresa_id === getMockScopedUnitId())
         .slice(0, limit || undefined)
     ),
+    filter: (query = {}, sort, limit) => {
+      const scopedQuery = { ...(query || {}) };
+      if (unitScoped && !Object.prototype.hasOwnProperty.call(scopedQuery, 'empresa_id')) {
+        scopedQuery.empresa_id = getMockScopedUnitId();
+      }
+      return Promise.resolve(
+        readStorage(name)
+        .filter((item) => Object.keys(scopedQuery || {}).every((key) => {
+          return scopedQuery[key] === null || scopedQuery[key] === undefined || item[key] === scopedQuery[key];
+        }))
+        .slice(0, limit || undefined)
+      );
+    },
     create: (data) => {
       const items = readStorage(name);
       const item = { ...data };
+      if (unitScoped && !item.empresa_id) item.empresa_id = getMockScopedUnitId();
       if (!item.id) item.id = makeId();
       if (!item.created_date) item.created_date = new Date().toISOString();
       items.push(item);
@@ -104,10 +159,10 @@ const defaultEntities = {};
   'Responsavel', 'Carteira', 'Notificacao', 'Orcamento', 'TabelaPrecos', 'Appointment',
   'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
-  'UserInvite', 'ExtratoDuplicidade',
+  'UserInvite', 'ExtratoDuplicidade', 'UserUnitAccess',
   'UserProfile', 'ContaReceber', 'Client', 'PedidoInterno',
 ].forEach((name) => {
-  defaultEntities[name] = createMockEntity(name);
+  defaultEntities[name] = createMockEntity(name, { unitScoped: UNIT_SCOPED_ENTITIES.has(name) });
 });
 
 const mockFunctions = {
@@ -206,12 +261,24 @@ const createMockAuth = () => {
     isEnabled: () => false,
     requiresLogin: () => false,
     getSession: async () => ({ user: currentUser }),
-    me: async () => currentUser,
+    me: async () => {
+      const activeUnitId = getStoredActiveUnitId() || currentUser.empresa_id;
+      return {
+        ...currentUser,
+        assigned_empresa_id: currentUser.empresa_id,
+        allowed_unit_ids: [currentUser.empresa_id],
+        active_unit_id: activeUnitId,
+        empresa_id: activeUnitId,
+      };
+    },
     list: async () => [currentUser],
     signInWithGoogle: async () => ({ provider: 'google', user: currentUser }),
     exchangeCodeForSession: async () => ({ session: { user: currentUser }, user: currentUser }),
     onAuthStateChange: () => ({ unsubscribe() {} }),
-    logout: async () => ({ ok: true }),
+    logout: async () => {
+      setStoredActiveUnitId('');
+      return { ok: true };
+    },
   };
 };
 
@@ -230,11 +297,85 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       detectSessionInUrl: false,
       flowType: 'pkce',
     },
+    global: {
+      fetch: withActiveUnitHeader(globalThis.fetch.bind(globalThis)),
+    },
   });
 
-  const createSupabaseEntity = (table) => ({
+  let cachedDefaultUnitId = '';
+
+  async function resolveAllowedUnitIds(authUser, profile) {
+    const unitAccessRows = await findUserUnitAccess(authUser);
+    const explicitUnitIds = unitAccessRows
+      .filter((item) => item?.ativo !== false)
+      .map((item) => item.empresa_id)
+      .filter(Boolean);
+
+    if (explicitUnitIds.length > 0) {
+      return [...new Set(explicitUnitIds)];
+    }
+
+    if (profile?.is_platform_admin) {
+      try {
+        const { data, error } = await supabase.from('empresa').select('id').order('created_date', { ascending: true }).limit(500);
+        if (!error) {
+          return [...new Set((data || []).map((item) => item.id).filter(Boolean))];
+        }
+      } catch (error) {
+        return [];
+      }
+    }
+
+    return profile?.empresa_id ? [profile.empresa_id] : [];
+  }
+
+  async function resolveScopedUnitId(preferredUnitId = '') {
+    const authUser = await getAuthenticatedUser();
+    if (!authUser) return preferredUnitId || '';
+
+    const profile = await findUserProfile(authUser);
+    const allowedUnitIds = await resolveAllowedUnitIds(authUser, profile);
+
+    if (preferredUnitId && allowedUnitIds.includes(preferredUnitId)) {
+      setStoredActiveUnitId(preferredUnitId);
+      return preferredUnitId;
+    }
+
+    const storedUnitId = getStoredActiveUnitId();
+    if (storedUnitId && allowedUnitIds.includes(storedUnitId)) {
+      return storedUnitId;
+    }
+
+    if (cachedDefaultUnitId && allowedUnitIds.includes(cachedDefaultUnitId)) {
+      setStoredActiveUnitId(cachedDefaultUnitId);
+      return cachedDefaultUnitId;
+    }
+
+    try {
+      const { data, error } = await supabase.from('empresa').select('*').order('created_date', { ascending: true }).limit(200);
+      if (error) return allowedUnitIds[0] || profile?.empresa_id || '';
+
+      const scopedUnits = (data || []).filter((item) => allowedUnitIds.length === 0 || allowedUnitIds.includes(item.id));
+      const defaultUnit = resolveDogCityUnit(scopedUnits);
+      const resolvedUnitId = defaultUnit?.id || scopedUnits?.[0]?.id || allowedUnitIds[0] || profile?.empresa_id || '';
+      if (resolvedUnitId) {
+        cachedDefaultUnitId = resolvedUnitId;
+        setStoredActiveUnitId(resolvedUnitId);
+      }
+      return resolvedUnitId;
+    } catch (error) {
+      return allowedUnitIds[0] || profile?.empresa_id || '';
+    }
+  }
+
+  const createSupabaseEntity = (table, options = {}) => ({
+    unitScoped: options.unitScoped || false,
     list: async (sort, limit) => {
       let query = supabase.from(table).select('*');
+      if (options.unitScoped) {
+        const unitId = await resolveScopedUnitId();
+        if (unitId) query = query.eq('empresa_id', unitId);
+      }
       if (sort && typeof sort === 'string') {
         const field = sort.replace(/^-/, '');
         const desc = sort.startsWith('-');
@@ -248,6 +389,10 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     filter: async (queryObj = {}, sort, limit) => {
       let query = supabase.from(table).select('*');
       if (queryObj && Object.keys(queryObj).length) query = query.match(queryObj);
+      if (options.unitScoped && !Object.prototype.hasOwnProperty.call(queryObj || {}, 'empresa_id')) {
+        const unitId = await resolveScopedUnitId();
+        if (unitId) query = query.eq('empresa_id', unitId);
+      }
       if (sort && typeof sort === 'string') {
         const field = sort.replace(/^-/, '');
         const desc = sort.startsWith('-');
@@ -259,17 +404,31 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       return data || [];
     },
     create: async (payload) => {
-      const { data, error } = await supabase.from(table).insert([payload]).select().single();
+      const insertPayload = { ...(payload || {}) };
+      if (options.unitScoped && !insertPayload.empresa_id) {
+        insertPayload.empresa_id = await resolveScopedUnitId();
+      }
+      const { data, error } = await supabase.from(table).insert([insertPayload]).select().single();
       if (error) throw toAppError(error, `Erro ao criar registro em ${table}.`);
       return data;
     },
     update: async (id, payload) => {
-      const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single();
+      let query = supabase.from(table).update(payload).eq('id', id);
+      if (options.unitScoped) {
+        const unitId = payload?.empresa_id || await resolveScopedUnitId();
+        if (unitId) query = query.eq('empresa_id', unitId);
+      }
+      const { data, error } = await query.select().single();
       if (error) throw toAppError(error, `Erro ao atualizar registro em ${table}.`);
       return data;
     },
     delete: async (id) => {
-      const { data, error } = await supabase.from(table).delete().eq('id', id).select().single();
+      let query = supabase.from(table).delete().eq('id', id);
+      if (options.unitScoped) {
+        const unitId = await resolveScopedUnitId();
+        if (unitId) query = query.eq('empresa_id', unitId);
+      }
+      const { data, error } = await query.select().single();
       if (error) throw toAppError(error, `Erro ao excluir registro em ${table}.`);
       return data;
     },
@@ -305,6 +464,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     Empresa: 'empresa',
     PerfilAcesso: 'perfil_acesso',
     UserInvite: 'user_invite',
+    UserUnitAccess: 'user_unit_access',
     UserProfile: 'users',
   };
 
@@ -313,7 +473,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
   const supabaseEntities = {};
   Object.keys(entityToTable).forEach((entityName) => {
     const table = entityToTable[entityName] || toSnake(entityName);
-    supabaseEntities[entityName] = createSupabaseEntity(table);
+    supabaseEntities[entityName] = createSupabaseEntity(table, { unitScoped: UNIT_SCOPED_ENTITIES.has(entityName) });
   });
 
   const supabaseFunctions = {
@@ -473,6 +633,24 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     return null;
   };
 
+  const findUserUnitAccess = async (authUser) => {
+    if (!authUser?.id) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('user_unit_access')
+        .select('*')
+        .eq('user_id', authUser.id)
+        .eq('ativo', true)
+        .order('created_date', { ascending: true });
+
+      if (error) return [];
+      return data || [];
+    } catch (error) {
+      return [];
+    }
+  };
+
   const findPendingInviteByEmail = async (email) => {
     if (!email) return null;
 
@@ -494,6 +672,38 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     } catch (error) {
       console.warn('findPendingInviteByEmail error', error);
       return null;
+    }
+  };
+
+  const syncUserUnitAccess = async ({ userId, empresaId, accessProfileId, companyRole, active, isPlatformAdmin }) => {
+    if (!userId || !empresaId || isPlatformAdmin) return;
+
+    try {
+      const { data: existingRows, error: existingError } = await supabase
+        .from('user_unit_access')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('empresa_id', empresaId)
+        .limit(1);
+
+      if (existingError) return;
+
+      const payload = {
+        user_id: userId,
+        empresa_id: empresaId,
+        access_profile_id: accessProfileId || null,
+        papel: companyRole || 'company_user',
+        ativo: active !== false,
+        is_default: true,
+      };
+
+      if (existingRows?.[0]) {
+        await supabase.from('user_unit_access').update(payload).eq('id', existingRows[0].id);
+      } else {
+        await supabase.from('user_unit_access').insert([payload]);
+      }
+    } catch (error) {
+      console.warn('syncUserUnitAccess error', error);
     }
   };
 
@@ -524,6 +734,14 @@ if (SUPABASE_URL && SUPABASE_ANON) {
           .single();
 
         if (error) throw error;
+        await syncUserUnitAccess({
+          userId: data.id,
+          empresaId: data.empresa_id,
+          accessProfileId: data.access_profile_id,
+          companyRole: data.company_role,
+          active: data.active,
+          isPlatformAdmin: data.is_platform_admin,
+        });
         return { ...authUser, ...data };
       }
 
@@ -545,6 +763,14 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         .single();
 
       if (error) throw error;
+      await syncUserUnitAccess({
+        userId: data.id,
+        empresaId: data.empresa_id,
+        accessProfileId: data.access_profile_id,
+        companyRole: data.company_role,
+        active: data.active,
+        isPlatformAdmin: data.is_platform_admin,
+      });
       return { ...authUser, ...data };
     } catch (error) {
       console.warn('syncUserProfile error', error);
@@ -582,8 +808,17 @@ if (SUPABASE_URL && SUPABASE_ANON) {
 
       const profile = await findUserProfile(authUser);
       const mergedUser = profile ? { ...authUser, ...profile } : authUser;
-      supabaseAuth.currentUser = mergedUser;
-      return mergedUser;
+      const allowedUnitIds = await resolveAllowedUnitIds(authUser, mergedUser);
+      const activeUnitId = await resolveScopedUnitId(mergedUser?.empresa_id || '');
+      const sessionUser = {
+        ...mergedUser,
+        assigned_empresa_id: mergedUser?.empresa_id || null,
+        allowed_unit_ids: allowedUnitIds,
+        active_unit_id: activeUnitId || mergedUser?.empresa_id || null,
+        empresa_id: activeUnitId || mergedUser?.empresa_id || null,
+      };
+      supabaseAuth.currentUser = sessionUser;
+      return sessionUser;
     },
     signInWithGoogle: async ({ redirectTo, nextPath } = {}) => {
       const origin = getAppOrigin();
@@ -645,6 +880,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       supabaseAuth.currentUser = null;
+      setStoredActiveUnitId('');
       return { ok: true };
     },
     list: async (sort, limit) => {

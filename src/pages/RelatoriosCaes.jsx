@@ -15,7 +15,7 @@ import { ptBR } from "date-fns/locale";
 import { useBranding } from "@/hooks/use-branding";
 
 export default function RelatoriosCaes() {
-  const { logoUrl } = useBranding();
+  const { logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [dogs, setDogs] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [isLoading, setIsLoading] = useState(true);

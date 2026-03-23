@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User } from "@/api/entities";
-import { UploadFile } from "@/api/integrations";
+import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { createPageUrl, openImageViewer } from "@/utils";
 import { notifyBrandingChanged } from "@/hooks/use-branding";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Image, KeyRound, Palette, Save, Settings, Tags } from "lucide-react";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
+import { Building2, FileText, Image, KeyRound, Palette, Pencil, Plus, Save, Settings, Tags } from "lucide-react";
 
 const EMPTY_PROFILE = {
   codigo: "",
@@ -30,11 +31,54 @@ const DEFAULT_BRANDING = {
   logoUrl: "",
 };
 
+const SERVICE_OPTIONS = [
+  "Day Care",
+  "Hospedagem",
+  "Banho",
+  "Tosa",
+  "Moradia",
+  "Adestramento",
+];
+
+const EMPTY_UNIT_FORM = {
+  nome_fantasia: "",
+  razao_social: "",
+  cnpj: "",
+  data_abertura: "",
+  contabilidade_responsavel: "",
+  contatos_contabilidade: "",
+  contrato_social_path: "",
+  contrato_social_label: "",
+  endereco: "",
+  servicos_prestados: [],
+  logo_url: "",
+  logo_path: "",
+  logo_label: "",
+};
+
 function parsePermissions(value) {
   return (value || "")
     .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function slugify(value) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function formatCNPJ(value) {
+  const digits = (value || "").replace(/\D/g, "").slice(0, 14);
+  return digits
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1/$2")
+    .replace(/(\d{4})(\d)/, "$1-$2");
 }
 
 function formatApiError(error, fallbackMessage) {
@@ -50,6 +94,30 @@ function isRowLevelSecurityError(error) {
   return error?.code === "42501" || /row-level security policy|violates row-level security policy/i.test(error?.message || "");
 }
 
+function cloneEmptyUnitForm() {
+  return {
+    ...EMPTY_UNIT_FORM,
+    servicos_prestados: [],
+  };
+}
+
+function formatDisplayDate(value) {
+  if (!value) return "-";
+
+  try {
+    return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T12:00:00`));
+  } catch (error) {
+    return value;
+  }
+}
+
+function getStatusBadgeClass(status) {
+  const normalized = String(status || "ativa").toLowerCase();
+  if (normalized === "inativa") return "bg-rose-100 text-rose-700";
+  if (normalized === "implantacao") return "bg-amber-100 text-amber-700";
+  return "bg-emerald-100 text-emerald-700";
+}
+
 export default function AdministracaoSistema() {
   const [currentUser, setCurrentUser] = useState(null);
   const [units, setUnits] = useState([]);
@@ -60,13 +128,16 @@ export default function AdministracaoSistema() {
   const [setupError, setSetupError] = useState("");
   const [selectedUnitId, setSelectedUnitId] = useState("");
   const [brandingForm, setBrandingForm] = useState(DEFAULT_BRANDING);
+  const [unitForm, setUnitForm] = useState(cloneEmptyUnitForm());
+  const [editingUnit, setEditingUnit] = useState(null);
   const [profileForm, setProfileForm] = useState(EMPTY_PROFILE);
   const [editingProfile, setEditingProfile] = useState(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showUnitPlaceholderModal, setShowUnitPlaceholderModal] = useState(false);
+  const [showUnitModal, setShowUnitModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isUploadingUnitAsset, setIsUploadingUnitAsset] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -93,7 +164,8 @@ export default function AdministracaoSistema() {
       setConfigs(configData || []);
       setAssets(assetData || []);
 
-      if (!selectedUnitId) {
+      const hasCurrentSelection = selectedUnitId && (unitRows || []).some((item) => item.id === selectedUnitId);
+      if (!hasCurrentSelection) {
         const preferredUnitId = me?.empresa_id && unitRows?.some((item) => item.id === me.empresa_id)
           ? me.empresa_id
           : unitRows?.[0]?.id || "";
@@ -130,10 +202,33 @@ export default function AdministracaoSistema() {
     [units, selectedUnitId]
   );
 
+  const selectedUnitMeta = selectedUnit?.metadata || {};
+
   const selectedUnitPricing = useMemo(
     () => pricingRows.filter((item) => item.empresa_id === selectedUnitId && item.ativo !== false),
     [pricingRows, selectedUnitId]
   );
+
+  function openUnitModal(unit = null) {
+    const metadata = unit?.metadata || {};
+    setEditingUnit(unit);
+    setUnitForm(unit ? {
+      nome_fantasia: unit.nome_fantasia || "",
+      razao_social: unit.razao_social || "",
+      cnpj: unit.cnpj || "",
+      data_abertura: metadata.data_abertura || "",
+      contabilidade_responsavel: metadata.contabilidade_responsavel || "",
+      contatos_contabilidade: metadata.contatos_contabilidade || "",
+      contrato_social_path: metadata.contrato_social_path || "",
+      contrato_social_label: metadata.contrato_social_label || "",
+      endereco: metadata.endereco || "",
+      servicos_prestados: Array.isArray(metadata.servicos_prestados) ? metadata.servicos_prestados : [],
+      logo_url: metadata.logo_url || "",
+      logo_path: metadata.logo_path || "",
+      logo_label: metadata.logo_label || "",
+    } : cloneEmptyUnitForm());
+    setShowUnitModal(true);
+  }
 
   function openProfileModal(profile = null) {
     setEditingProfile(profile);
@@ -146,6 +241,169 @@ export default function AdministracaoSistema() {
       ativo: profile.ativo !== false,
     } : EMPTY_PROFILE);
     setShowProfileModal(true);
+  }
+
+  function toggleUnitService(serviceName) {
+    setUnitForm((current) => ({
+      ...current,
+      servicos_prestados: current.servicos_prestados.includes(serviceName)
+        ? current.servicos_prestados.filter((item) => item !== serviceName)
+        : [...current.servicos_prestados, serviceName],
+    }));
+  }
+
+  async function handleUnitContractUpload(file) {
+    if (!file) return;
+
+    setIsUploadingUnitAsset(true);
+    try {
+      const draftUnitId = editingUnit?.id || `draft-${Date.now()}`;
+      const safeName = file.name.replace(/\s+/g, "_").toLowerCase();
+      const path = `${draftUnitId}/documentos-sociais/${Date.now()}-${safeName}`;
+      const { file_key } = await UploadPrivateFile({ file, path });
+      setUnitForm((current) => ({
+        ...current,
+        contrato_social_path: file_key,
+        contrato_social_label: file.name,
+      }));
+    } catch (error) {
+      console.error("Erro ao enviar contrato social:", error);
+      alert(formatApiError(error, "Nao foi possivel enviar o contrato social."));
+    } finally {
+      setIsUploadingUnitAsset(false);
+    }
+  }
+
+  async function handleUnitLogoUpload(file) {
+    if (!file) return;
+
+    setIsUploadingUnitAsset(true);
+    try {
+      const folderPrefix = editingUnit?.id || "temp";
+      const safeName = file.name.replace(/\s+/g, "-").toLowerCase();
+      const path = `${folderPrefix}/branding/${Date.now()}-${safeName}`;
+      const { file_key, file_url } = await UploadFile({ file, path });
+      setUnitForm((current) => ({
+        ...current,
+        logo_url: file_url || "",
+        logo_path: file_key || "",
+        logo_label: file.name,
+      }));
+    } catch (error) {
+      console.error("Erro ao enviar logo da unidade:", error);
+      alert(formatApiError(error, "Nao foi possivel enviar a logo da unidade."));
+    } finally {
+      setIsUploadingUnitAsset(false);
+    }
+  }
+
+  async function handleOpenContract(path) {
+    if (!path) return;
+
+    try {
+      const { signedUrl, url } = await CreateFileSignedUrl({ path });
+      window.open(signedUrl || url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      console.error("Erro ao abrir contrato social:", error);
+      alert(formatApiError(error, "Nao foi possivel abrir o contrato social."));
+    }
+  }
+
+  async function saveUnitLogoAsset(unit, logoUrl, logoPath, logoLabel) {
+    if (!unit?.id || !logoUrl) return;
+
+    const existingAsset = assets.find((item) => item.key === "branding.logo.primary" && item.empresa_id === unit.id);
+    const payload = {
+      key: "branding.logo.primary",
+      label: "Logo principal",
+      bucket: "public-assets",
+      storage_path: logoPath || existingAsset?.storage_path || unit.logo_asset_key || `unit/${unit.id}/logo`,
+      public_url: logoUrl,
+      mime_type: "image/*",
+      ativo: true,
+      empresa_id: unit.id,
+      metadata: { original_name: logoLabel || "logo-unidade" },
+    };
+
+    if (existingAsset) {
+      await AppAsset.update(existingAsset.id, payload);
+    } else {
+      await AppAsset.create(payload);
+    }
+  }
+
+  async function saveUnitBrandingConfig(unit, companyName) {
+    if (!unit?.id || !companyName) return;
+
+    const existingConfig = configs.find((item) => item.key === "branding.company_name" && item.empresa_id === unit.id);
+    const payload = {
+      key: "branding.company_name",
+      label: "Nome da unidade",
+      description: "Nome exibido no menu lateral e telas institucionais",
+      value: { text: companyName },
+      ativo: true,
+      empresa_id: unit.id,
+    };
+
+    if (existingConfig) {
+      await AppConfig.update(existingConfig.id, payload);
+    } else {
+      await AppConfig.create(payload);
+    }
+  }
+
+  async function handleSaveUnit() {
+    if (!unitForm.nome_fantasia || !unitForm.razao_social || !unitForm.cnpj) {
+      alert("Preencha nome fantasia, razao social e CNPJ.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const codeBase = slugify(unitForm.nome_fantasia).replace(/-/g, "").slice(0, 10).toUpperCase() || `UNIT${Date.now()}`;
+      const payload = {
+        codigo: editingUnit?.codigo || codeBase,
+        slug: editingUnit?.slug || slugify(unitForm.nome_fantasia),
+        nome_fantasia: unitForm.nome_fantasia,
+        razao_social: unitForm.razao_social,
+        cnpj: unitForm.cnpj,
+        status: editingUnit?.status || "ativa",
+        metadata: {
+          ...(editingUnit?.metadata || {}),
+          data_abertura: unitForm.data_abertura || null,
+          contabilidade_responsavel: unitForm.contabilidade_responsavel || "",
+          contatos_contabilidade: unitForm.contatos_contabilidade || "",
+          contrato_social_path: unitForm.contrato_social_path || "",
+          contrato_social_label: unitForm.contrato_social_label || "",
+          endereco: unitForm.endereco || "",
+          servicos_prestados: unitForm.servicos_prestados || [],
+          logo_url: unitForm.logo_url || "",
+          logo_path: unitForm.logo_path || "",
+          logo_label: unitForm.logo_label || "",
+        },
+      };
+
+      const savedUnit = editingUnit
+        ? await Empresa.update(editingUnit.id, payload)
+        : await Empresa.create(payload);
+
+      if (unitForm.logo_url) {
+        await saveUnitLogoAsset(savedUnit, unitForm.logo_url, unitForm.logo_path, unitForm.logo_label);
+      }
+
+      await saveUnitBrandingConfig(savedUnit, unitForm.nome_fantasia);
+      await loadData();
+      setSelectedUnitId(savedUnit.id);
+      setShowUnitModal(false);
+      setEditingUnit(null);
+      setUnitForm(cloneEmptyUnitForm());
+      notifyBrandingChanged();
+    } catch (error) {
+      console.error("Erro ao salvar unidade:", error);
+      alert(formatApiError(error, "Nao foi possivel salvar a unidade."));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   async function handleSaveProfile() {
@@ -288,8 +546,8 @@ export default function AdministracaoSistema() {
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" onClick={() => setShowUnitPlaceholderModal(true)}>
-              <Building2 className="w-4 h-4 mr-2" />
+            <Button variant="outline" onClick={() => openUnitModal()}>
+              <Plus className="w-4 h-4 mr-2" />
               Nova unidade
             </Button>
             <Link to={createPageUrl("ConfiguracoesPrecos")}>
@@ -340,30 +598,92 @@ export default function AdministracaoSistema() {
                   <Building2 className="w-5 h-5 text-blue-600" />
                   Unidades Dog City Brasil
                 </CardTitle>
-                <Button variant="outline" onClick={() => setShowUnitPlaceholderModal(true)}>
+                <Button variant="outline" onClick={() => openUnitModal()}>
                   Cadastrar unidade
                 </Button>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {units.map((unit) => (
-                  <div key={unit.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-gray-900">{unit.nome_fantasia}</p>
-                          <Badge variant="outline">{unit.status || "ativa"}</Badge>
+              <CardContent className="space-y-4">
+                {units.map((unit) => {
+                  const unitMeta = unit.metadata || {};
+                  const services = Array.isArray(unitMeta.servicos_prestados) ? unitMeta.servicos_prestados : [];
+                  const hasContract = Boolean(unitMeta.contrato_social_path);
+
+                  return (
+                    <div key={unit.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-gray-900">{unit.nome_fantasia}</p>
+                            <Badge className={getStatusBadgeClass(unit.status)}>{unit.status || "ativa"}</Badge>
+                            {selectedUnitId === unit.id && (
+                              <Badge className="bg-blue-100 text-blue-700">Unidade selecionada</Badge>
+                            )}
+                          </div>
+
+                          <div>
+                            <p className="text-sm text-gray-700">{unit.razao_social || "Razao social nao cadastrada"}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Codigo: {unit.codigo || "-"} | Slug: {unit.slug || "-"} | CNPJ: {unit.cnpj || "-"}
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600">
+                            <div className="rounded-lg border border-gray-200 bg-white p-3">
+                              <p className="text-xs uppercase tracking-wide text-gray-400">Data de abertura</p>
+                              <p className="mt-1 font-medium text-gray-900">{formatDisplayDate(unitMeta.data_abertura)}</p>
+                            </div>
+                            <div className="rounded-lg border border-gray-200 bg-white p-3">
+                              <p className="text-xs uppercase tracking-wide text-gray-400">Contabilidade</p>
+                              <p className="mt-1 font-medium text-gray-900">{unitMeta.contabilidade_responsavel || "Nao informada"}</p>
+                            </div>
+                            <div className="rounded-lg border border-gray-200 bg-white p-3">
+                              <p className="text-xs uppercase tracking-wide text-gray-400">Contato da contabilidade</p>
+                              <p className="mt-1 text-gray-700 whitespace-pre-line">{unitMeta.contatos_contabilidade || "Nao informado"}</p>
+                            </div>
+                            <div className="rounded-lg border border-gray-200 bg-white p-3">
+                              <p className="text-xs uppercase tracking-wide text-gray-400">Endereco</p>
+                              <p className="mt-1 text-gray-700 whitespace-pre-line">{unitMeta.endereco || "Nao informado"}</p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-gray-400">Servicos prestados</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {services.length > 0 ? services.map((service) => (
+                                <Badge key={service} variant="outline">{service}</Badge>
+                              )) : (
+                                <span className="text-sm text-gray-500">Nenhum servico vinculado.</span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">{unit.razao_social || "Razao social nao cadastrada"}</p>
-                        <p className="text-xs text-gray-500 mt-2">
-                          Codigo: {unit.codigo || "-"} • Slug: {unit.slug || "-"} • CNPJ: {unit.cnpj || "-"}
-                        </p>
+
+                        <div className="flex flex-col gap-2 xl:min-w-[180px]">
+                          <Button variant="outline" onClick={() => openUnitModal(unit)}>
+                            <Pencil className="w-4 h-4 mr-2" />
+                            Editar ficha
+                          </Button>
+                          {unitMeta.logo_url ? (
+                            <Button variant="outline" onClick={() => openImageViewer(unitMeta.logo_url, `Logo ${unit.nome_fantasia}`)}>
+                              <Image className="w-4 h-4 mr-2" />
+                              Ver logo
+                            </Button>
+                          ) : null}
+                          {hasContract ? (
+                            <Button variant="outline" onClick={() => handleOpenContract(unitMeta.contrato_social_path)}>
+                              <FileText className="w-4 h-4 mr-2" />
+                              Ver contrato social
+                            </Button>
+                          ) : (
+                            <div className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-2 text-sm text-gray-500">
+                              Contrato social nao anexado.
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {selectedUnitId === unit.id && (
-                        <Badge className="bg-blue-100 text-blue-700">Unidade selecionada</Badge>
-                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {units.length === 0 && (
                   <div className="rounded-lg border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
@@ -490,6 +810,11 @@ export default function AdministracaoSistema() {
                   </div>
 
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Endereco</p>
+                    <p className="mt-2 text-sm text-gray-700 whitespace-pre-line">{selectedUnitMeta.endereco || "Nao informado"}</p>
+                  </div>
+
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                     <p className="text-xs uppercase tracking-wide text-gray-500">Administrador atual</p>
                     <p className="mt-2 text-sm text-gray-700">{currentUser?.full_name || currentUser?.email || "Nao identificado"}</p>
                   </div>
@@ -565,19 +890,204 @@ export default function AdministracaoSistema() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showUnitPlaceholderModal} onOpenChange={setShowUnitPlaceholderModal}>
-        <DialogContent className="max-w-[520px]">
+      <Dialog
+        open={showUnitModal}
+        onOpenChange={(open) => {
+          setShowUnitModal(open);
+          if (!open) {
+            setEditingUnit(null);
+            setUnitForm(cloneEmptyUnitForm());
+          }
+        }}
+      >
+        <DialogContent className="max-w-[920px] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Cadastro de nova unidade</DialogTitle>
+            <DialogTitle>{editingUnit ? "Editar unidade" : "Cadastrar nova unidade"}</DialogTitle>
             <DialogDescription>
-              A ficha completa de cadastro de unidade sera montada na proxima etapa.
+              Cadastre a ficha institucional da unidade. Os dados extras ficam vinculados ao cadastro da unidade e sustentam branding, usuarios, precos e integracoes por contexto.
             </DialogDescription>
           </DialogHeader>
-          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-600">
-            A interface do botao ja foi preparada. Nesta etapa, o cadastro de novas unidades ainda nao recebe conteudo.
+          <div className="grid gap-5 py-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <Label>Nome Fantasia</Label>
+                <Input
+                  value={unitForm.nome_fantasia}
+                  onChange={(event) => setUnitForm((current) => ({ ...current, nome_fantasia: event.target.value }))}
+                  className="mt-2"
+                />
+              </div>
+              <div>
+                <Label>Razao Social</Label>
+                <Input
+                  value={unitForm.razao_social}
+                  onChange={(event) => setUnitForm((current) => ({ ...current, razao_social: event.target.value }))}
+                  className="mt-2"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <Label>CNPJ</Label>
+                <Input
+                  value={unitForm.cnpj}
+                  onChange={(event) => setUnitForm((current) => ({ ...current, cnpj: formatCNPJ(event.target.value) }))}
+                  className="mt-2"
+                  inputMode="numeric"
+                />
+              </div>
+              <div>
+                <Label>Data de abertura</Label>
+                <div className="mt-2">
+                  <DatePickerInput
+                    value={unitForm.data_abertura}
+                    onChange={(value) => setUnitForm((current) => ({ ...current, data_abertura: value }))}
+                    placeholder="Selecione a data"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <Label>Contabilidade responsavel</Label>
+                <Input
+                  value={unitForm.contabilidade_responsavel}
+                  onChange={(event) => setUnitForm((current) => ({ ...current, contabilidade_responsavel: event.target.value }))}
+                  className="mt-2"
+                />
+              </div>
+              <div>
+                <Label>Contatos da contabilidade</Label>
+                <Textarea
+                  value={unitForm.contatos_contabilidade}
+                  onChange={(event) => setUnitForm((current) => ({ ...current, contatos_contabilidade: event.target.value }))}
+                  className="mt-2"
+                  rows={3}
+                  placeholder="Telefone, email, responsavel, observacoes"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Endereco</Label>
+              <Textarea
+                value={unitForm.endereco}
+                onChange={(event) => setUnitForm((current) => ({ ...current, endereco: event.target.value }))}
+                className="mt-2"
+                rows={3}
+                placeholder="Rua, numero, bairro, cidade, estado e CEP"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="rounded-xl border border-gray-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label>Logo da unidade</Label>
+                    <p className="mt-1 text-xs text-gray-500">A logo da unidade aparece no shell do webapp apos a troca de unidade.</p>
+                  </div>
+                  {unitForm.logo_url ? (
+                    <Button type="button" variant="ghost" onClick={() => openImageViewer(unitForm.logo_url, `Logo ${unitForm.nome_fantasia || "unidade"}`)}>
+                      Ver
+                    </Button>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <input
+                    id="unit-logo-upload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => handleUnitLogoUpload(event.target.files?.[0])}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => document.getElementById("unit-logo-upload")?.click()}
+                    disabled={isUploadingUnitAsset}
+                  >
+                    <Image className="w-4 h-4 mr-2" />
+                    {isUploadingUnitAsset ? "Enviando..." : "Anexar logo"}
+                  </Button>
+                  <span className="text-sm text-gray-500">{unitForm.logo_label || "Nenhum arquivo selecionado"}</span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label>Contrato social</Label>
+                    <p className="mt-1 text-xs text-gray-500">O contrato social vai para o bucket privado e fica acessivel por link assinado.</p>
+                  </div>
+                  {unitForm.contrato_social_path ? (
+                    <Button type="button" variant="ghost" onClick={() => handleOpenContract(unitForm.contrato_social_path)}>
+                      Abrir
+                    </Button>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <input
+                    id="unit-contract-upload"
+                    type="file"
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                    className="hidden"
+                    onChange={(event) => handleUnitContractUpload(event.target.files?.[0])}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => document.getElementById("unit-contract-upload")?.click()}
+                    disabled={isUploadingUnitAsset}
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    {isUploadingUnitAsset ? "Enviando..." : "Anexar contrato"}
+                  </Button>
+                  <span className="text-sm text-gray-500">{unitForm.contrato_social_label || "Nenhum arquivo selecionado"}</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Label>Servicos prestados</Label>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {SERVICE_OPTIONS.map((service) => {
+                  const selected = unitForm.servicos_prestados.includes(service);
+                  return (
+                    <button
+                      key={service}
+                      type="button"
+                      onClick={() => toggleUnitService(service)}
+                      className={selected
+                        ? "rounded-full border border-blue-500 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700"
+                        : "rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 hover:border-gray-300"}
+                    >
+                      {service}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
+
           <DialogFooter>
-            <Button onClick={() => setShowUnitPlaceholderModal(false)}>Fechar</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUnitModal(false);
+                setEditingUnit(null);
+                setUnitForm(cloneEmptyUnitForm());
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveUnit} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white">
+              <Save className="w-4 h-4 mr-2" />
+              {isSaving ? "Salvando..." : "Salvar unidade"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

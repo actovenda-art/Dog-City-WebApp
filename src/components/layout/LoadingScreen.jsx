@@ -10,7 +10,7 @@ const LOADING_STEPS = [
 ];
 
 export default function LoadingScreen({ onComplete }) {
-  const { companyName, logoUrl } = useBranding();
+  const { companyName, logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);

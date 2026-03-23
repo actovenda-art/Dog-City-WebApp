@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Empresa, PerfilAcesso, User, UserInvite, UserProfile } from "@/api/entities";
+import { Empresa, PerfilAcesso, User, UserInvite, UserProfile, UserUnitAccess } from "@/api/entities";
 import { SendEmail } from "@/api/integrations";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ function formatApiError(error, fallbackMessage) {
 }
 
 function isMissingAdminTablesError(error) {
-  return error?.code === "PGRST205" || /public\.empresa|public\.perfil_acesso|public\.user_invite|schema cache/i.test(error?.message || "");
+  return error?.code === "PGRST205" || /public\.empresa|public\.perfil_acesso|public\.user_invite|public\.user_unit_access|schema cache/i.test(error?.message || "");
 }
 
 function isRowLevelSecurityError(error) {
@@ -79,15 +79,33 @@ function getAccessStatusMeta(user) {
   return { label: "Confirmado", className: "bg-emerald-100 text-emerald-700" };
 }
 
+function buildUnitAccessMap(rows = []) {
+  return (rows || []).reduce((accumulator, row) => {
+    if (!row?.user_id || !row?.empresa_id || row?.ativo === false) return accumulator;
+
+    if (!accumulator[row.user_id]) {
+      accumulator[row.user_id] = [];
+    }
+
+    if (!accumulator[row.user_id].includes(row.empresa_id)) {
+      accumulator[row.user_id].push(row.empresa_id);
+    }
+
+    return accumulator;
+  }, {});
+}
+
 export default function Dev_Dashboard() {
   const [currentUser, setCurrentUser] = useState(null);
   const [units, setUnits] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [users, setUsers] = useState([]);
   const [invites, setInvites] = useState([]);
+  const [unitAccessRows, setUnitAccessRows] = useState([]);
+  const [userUnitAccessMap, setUserUnitAccessMap] = useState({});
   const [setupError, setSetupError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedUnitId, setSelectedUnitId] = useState("__all__");
+  const [selectedUnitId, setSelectedUnitId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -104,12 +122,13 @@ export default function Dev_Dashboard() {
     setSetupError("");
 
     try {
-      const [me, unitRows, profileRows, userRows, inviteRows] = await Promise.all([
+      const [me, unitRows, profileRows, userRows, inviteRows, accessRows] = await Promise.all([
         User.me(),
         Empresa.list("-created_date", 200),
         PerfilAcesso.list("-created_date", 200),
         UserProfile.list("-created_date", 500),
         UserInvite.list("-created_date", 500),
+        UserUnitAccess.list("-created_date", 1000),
       ]);
 
       setCurrentUser(me);
@@ -117,9 +136,14 @@ export default function Dev_Dashboard() {
       setProfiles(profileRows || []);
       setUsers(userRows || []);
       setInvites(inviteRows || []);
+      setUnitAccessRows(accessRows || []);
+      setUserUnitAccessMap(buildUnitAccessMap(accessRows || []));
 
-      if (me?.empresa_id && unitRows?.some((item) => item.id === me.empresa_id)) {
-        setSelectedUnitId((current) => current === "__all__" ? me.empresa_id : current);
+      if (!selectedUnitId) {
+        const preferredUnitId = me?.empresa_id && unitRows?.some((item) => item.id === me.empresa_id)
+          ? me.empresa_id
+          : unitRows?.[0]?.id || "";
+        setSelectedUnitId(preferredUnitId);
       }
     } catch (error) {
       console.error("Erro ao carregar gestao de usuarios:", error);
@@ -141,7 +165,7 @@ export default function Dev_Dashboard() {
   const filteredInvites = useMemo(() => {
     return invites.filter((invite) => {
       const unit = units.find((item) => item.id === invite.empresa_id);
-      const matchesUnit = selectedUnitId === "__all__" ? true : invite.empresa_id === selectedUnitId;
+      const matchesUnit = !selectedUnitId ? true : invite.empresa_id === selectedUnitId;
       const haystack = [invite.full_name, invite.email, unit?.nome_fantasia].filter(Boolean).join(" ").toLowerCase();
       return matchesUnit && (!normalizedSearch || haystack.includes(normalizedSearch));
     });
@@ -150,7 +174,7 @@ export default function Dev_Dashboard() {
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
       const unit = units.find((item) => item.id === user.empresa_id);
-      const matchesUnit = selectedUnitId === "__all__" ? true : user.empresa_id === selectedUnitId;
+      const matchesUnit = !selectedUnitId ? true : user.empresa_id === selectedUnitId;
       const haystack = [user.full_name, user.email, unit?.nome_fantasia].filter(Boolean).join(" ").toLowerCase();
       return matchesUnit && (!normalizedSearch || haystack.includes(normalizedSearch));
     });
@@ -174,7 +198,7 @@ export default function Dev_Dashboard() {
   function openInviteModal() {
     setInviteForm({
       ...EMPTY_INVITE,
-      empresa_id: selectedUnitId !== "__all__" ? selectedUnitId : currentUser?.empresa_id || "",
+      empresa_id: selectedUnitId || currentUser?.empresa_id || "",
     });
     setShowInviteModal(true);
   }
@@ -359,16 +383,77 @@ export default function Dev_Dashboard() {
     setUsers((current) => current.map((item) => item.id === userId ? { ...item, ...patch } : item));
   }
 
+  function toggleUserUnitAccess(userId, unitId) {
+    setUserUnitAccessMap((current) => {
+      const currentUnits = current[userId] || [];
+      const nextUnits = currentUnits.includes(unitId)
+        ? currentUnits.filter((item) => item !== unitId)
+        : [...currentUnits, unitId];
+
+      return {
+        ...current,
+        [userId]: nextUnits,
+      };
+    });
+  }
+
   async function handleSaveUserAccess(user) {
     setIsSaving(true);
     try {
+      const selectedUnits = user.is_platform_admin
+        ? []
+        : Array.from(new Set((userUnitAccessMap[user.id] || [user.empresa_id]).filter(Boolean)));
+      const primaryUnitId = user.is_platform_admin ? null : (selectedUnits.includes(user.empresa_id) ? user.empresa_id : selectedUnits[0] || null);
+
+      if (!user.is_platform_admin && !primaryUnitId) {
+        alert("Selecione pelo menos uma unidade para este usuario.");
+        setIsSaving(false);
+        return;
+      }
+
       await UserProfile.update(user.id, {
-        empresa_id: user.is_platform_admin ? null : user.empresa_id || null,
+        empresa_id: primaryUnitId,
         access_profile_id: user.access_profile_id || null,
         company_role: user.is_platform_admin ? "platform_admin" : (user.company_role || "company_user"),
         is_platform_admin: !!user.is_platform_admin,
         active: user.active !== false,
       });
+
+      const existingAccessRows = unitAccessRows.filter((row) => row.user_id === user.id);
+      const selectedUnitSet = new Set(selectedUnits);
+
+      await Promise.all(existingAccessRows.map((row) => {
+        if (!selectedUnitSet.has(row.empresa_id) || user.is_platform_admin) {
+          return UserUnitAccess.update(row.id, {
+            ativo: false,
+            is_default: false,
+            access_profile_id: user.access_profile_id || null,
+            papel: user.company_role || "company_user",
+          });
+        }
+
+        return UserUnitAccess.update(row.id, {
+          ativo: true,
+          is_default: row.empresa_id === primaryUnitId,
+          access_profile_id: user.access_profile_id || null,
+          papel: user.company_role || "company_user",
+        });
+      }));
+
+      const existingUnitIds = new Set(existingAccessRows.map((row) => row.empresa_id));
+      const missingUnits = user.is_platform_admin
+        ? []
+        : selectedUnits.filter((unitId) => !existingUnitIds.has(unitId));
+
+      await Promise.all(missingUnits.map((unitId) => UserUnitAccess.create({
+        user_id: user.id,
+        empresa_id: unitId,
+        access_profile_id: user.access_profile_id || null,
+        papel: user.company_role || "company_user",
+        ativo: true,
+        is_default: unitId === primaryUnitId,
+      })));
+
       await loadData();
     } catch (error) {
       console.error("Erro ao salvar usuario:", error);
@@ -384,6 +469,8 @@ export default function Dev_Dashboard() {
     setIsSaving(true);
     try {
       await UserProfile.update(user.id, { active: false });
+      const relatedAccessRows = unitAccessRows.filter((row) => row.user_id === user.id && row.ativo !== false);
+      await Promise.all(relatedAccessRows.map((row) => UserUnitAccess.update(row.id, { ativo: false, is_default: false })));
       await loadData();
     } catch (error) {
       console.error("Erro ao cancelar acesso do usuario:", error);
@@ -397,6 +484,8 @@ export default function Dev_Dashboard() {
     setIsSaving(true);
     try {
       await UserProfile.update(user.id, { active: true });
+      const relatedAccessRows = unitAccessRows.filter((row) => row.user_id === user.id);
+      await Promise.all(relatedAccessRows.map((row) => UserUnitAccess.update(row.id, { ativo: true })));
       await loadData();
     } catch (error) {
       console.error("Erro ao reativar acesso do usuario:", error);
@@ -418,6 +507,9 @@ export default function Dev_Dashboard() {
         company_role: null,
         is_platform_admin: false,
       });
+
+      const relatedAccessRows = unitAccessRows.filter((row) => row.user_id === user.id);
+      await Promise.all(relatedAccessRows.map((row) => UserUnitAccess.update(row.id, { ativo: false, is_default: false })));
 
       const relatedInvites = invites.filter((invite) => invite.email?.toLowerCase() === user.email?.toLowerCase() && invite.status !== "concluido");
       await Promise.all(relatedInvites.map((invite) => UserInvite.update(invite.id, { status: "cancelado" })));
@@ -504,10 +596,9 @@ export default function Dev_Dashboard() {
             </div>
             <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
               <SelectTrigger className="w-full lg:w-[280px] bg-white">
-                <SelectValue placeholder="Filtrar por unidade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">Todas as unidades</SelectItem>
+              <SelectValue placeholder="Selecionar unidade" />
+            </SelectTrigger>
+            <SelectContent>
                 {units.map((unit) => (
                   <SelectItem key={unit.id} value={unit.id}>
                     {unit.nome_fantasia}
@@ -605,6 +696,7 @@ export default function Dev_Dashboard() {
 
               {filteredUsers.map((user) => {
                 const statusMeta = getAccessStatusMeta(user);
+                const selectedAccessUnits = Array.from(new Set((userUnitAccessMap[user.id] || [user.empresa_id]).filter(Boolean)));
 
                 return (
                   <div key={user.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
@@ -628,7 +720,16 @@ export default function Dev_Dashboard() {
                         <Label>Unidade</Label>
                         <Select
                           value={user.empresa_id || "__none__"}
-                          onValueChange={(value) => patchUserState(user.id, { empresa_id: value === "__none__" ? null : value })}
+                          onValueChange={(value) => {
+                            const nextUnitId = value === "__none__" ? null : value;
+                            patchUserState(user.id, { empresa_id: nextUnitId });
+                            if (nextUnitId) {
+                              setUserUnitAccessMap((current) => ({
+                                ...current,
+                                [user.id]: Array.from(new Set([...(current[user.id] || []), nextUnitId])),
+                              }));
+                            }
+                          }}
                           disabled={user.is_platform_admin}
                         >
                           <SelectTrigger className="mt-2 bg-white">
@@ -681,6 +782,30 @@ export default function Dev_Dashboard() {
                         />
                       </div>
                     </div>
+
+                    {!user.is_platform_admin && (
+                      <div className="rounded-lg border border-gray-200 bg-white p-3">
+                        <p className="text-sm font-medium text-gray-900">Unidades com acesso</p>
+                        <p className="text-xs text-gray-500 mt-1">Usuarios transversais continuam vendo uma unidade por vez, mas podem alternar entre as unidades liberadas.</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {units.map((unit) => {
+                            const selected = selectedAccessUnits.includes(unit.id);
+                            return (
+                              <button
+                                key={unit.id}
+                                type="button"
+                                onClick={() => toggleUserUnitAccess(user.id, unit.id)}
+                                className={selected
+                                  ? "rounded-full border border-blue-500 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700"
+                                  : "rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:border-gray-300"}
+                              >
+                                {unit.nome_fantasia}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex flex-wrap justify-end gap-2">
                       <Button variant="outline" onClick={() => handleSaveUserAccess(user)} disabled={isSaving}>

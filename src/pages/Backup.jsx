@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useBranding } from "@/hooks/use-branding";
 
 export default function Backup() {
-  const { companyName, logoUrl } = useBranding();
+  const { companyName, logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [notifyOpen, setNotifyOpen] = React.useState(false);
   const [notifyTitle, setNotifyTitle] = React.useState("");
   const [notifyMessage, setNotifyMessage] = React.useState("");

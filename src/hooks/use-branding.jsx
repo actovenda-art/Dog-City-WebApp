@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AppAsset, AppConfig, User } from "@/api/entities";
+import { AppAsset, AppConfig, Empresa, User } from "@/api/entities";
+import { getStoredActiveUnitId, resolveDogCityUnit } from "@/lib/unit-context";
 
 export const BRANDING_EVENT = "app-branding-updated";
 
@@ -55,7 +56,11 @@ function upsertMeta(name, content) {
   meta.setAttribute("content", content);
 }
 
-export function useBranding() {
+export function useBranding(options = {}) {
+  const {
+    variant = "active",
+    updateDocument = true,
+  } = options;
   const [branding, setBranding] = useState(DEFAULT_BRANDING);
 
   useEffect(() => {
@@ -63,30 +68,34 @@ export function useBranding() {
 
     async function loadBranding() {
       try {
-        const me = await User.me();
-        const empresaId = me?.empresa_id || null;
-
-        const [configRows, assetRows] = await Promise.all([
-          AppConfig.list("-created_date", 200),
-          AppAsset.list("-created_date", 200),
+        const [me, units, configRows, assetRows] = await Promise.all([
+          variant === "active" ? User.me() : Promise.resolve(null),
+          Empresa.list("-created_date", 200),
+          AppConfig.list("-created_date", 500),
+          AppAsset.list("-created_date", 500),
         ]);
 
         if (cancelled) return;
 
+        const baseUnit = resolveDogCityUnit(units || []);
+        const activeUnitId = variant === "base"
+          ? baseUnit?.id || ""
+          : (getStoredActiveUnitId() || me?.empresa_id || baseUnit?.id || "");
+
         const companyConfig = (configRows || []).find(
-          (item) => item.key === "branding.company_name" && item.empresa_id === empresaId
+          (item) => item.key === "branding.company_name" && item.empresa_id === activeUnitId
         ) || (configRows || []).find(
           (item) => item.key === "branding.company_name" && !item.empresa_id
         );
 
         const logoAsset = (assetRows || []).find(
-          (item) => item.key === "branding.logo.primary" && item.empresa_id === empresaId && item.ativo !== false
+          (item) => item.key === "branding.logo.primary" && item.empresa_id === activeUnitId && item.ativo !== false
         ) || (assetRows || []).find(
           (item) => item.key === "branding.logo.primary" && !item.empresa_id && item.ativo !== false
         );
 
         setBranding({
-          companyName: companyConfig?.value?.text || DEFAULT_BRANDING.companyName,
+          companyName: companyConfig?.value?.text || baseUnit?.nome_fantasia || DEFAULT_BRANDING.companyName,
           logoUrl: logoAsset?.public_url || DEFAULT_BRANDING.logoUrl,
         });
       } catch (error) {
@@ -101,9 +110,7 @@ export function useBranding() {
     }
 
     function handleVisibilityChange() {
-      if (!document.hidden) {
-        loadBranding();
-      }
+      if (!document.hidden) loadBranding();
     }
 
     loadBranding();
@@ -119,10 +126,10 @@ export function useBranding() {
       window.removeEventListener("storage", handleRefresh);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [variant]);
 
   useEffect(() => {
-    if (typeof document === "undefined") return;
+    if (typeof document === "undefined" || !updateDocument) return;
 
     const faviconType = getFaviconType(branding.logoUrl);
     const touchIconUrl = resolveTouchIconUrl(branding.logoUrl);
@@ -135,7 +142,7 @@ export function useBranding() {
     upsertMeta("application-name", branding.companyName || DEFAULT_BRANDING.companyName);
     upsertMeta("theme-color", "#ffffff");
     document.title = branding.companyName || DEFAULT_BRANDING.companyName;
-  }, [branding.companyName, branding.logoUrl]);
+  }, [branding.companyName, branding.logoUrl, updateDocument]);
 
   return branding;
 }

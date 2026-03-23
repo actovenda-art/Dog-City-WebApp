@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from "react";
-import { User } from "@/api/entities";
+import { Empresa, User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl, getPageNameFromPath } from "@/utils";
@@ -31,14 +31,18 @@ import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import NotificationBell from "@/components/layout/NotificationBell";
 import { useBranding } from "@/hooks/use-branding";
+import { getStoredActiveUnitId, resolveDogCityUnit, setStoredActiveUnitId } from "@/lib/unit-context";
 
 export default function Layout({ children, currentPageName }) {
   const [currentUser, setCurrentUser] = useState(null);
+  const [availableUnits, setAvailableUnits] = useState([]);
+  const [activeUnitId, setActiveUnitId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const brandTitleClass = "font-brand text-gray-900";
   const { companyName, logoUrl } = useBranding();
+  const showUnitSelector = availableUnits.length > 1;
   const [expandedSections, setExpandedSections] = useState({
     operacional: false,
     financeiro: false,
@@ -58,7 +62,35 @@ export default function Layout({ children, currentPageName }) {
   const loadUser = async () => {
     try {
       const user = await User.me();
-      setCurrentUser(user);
+      let resolvedUser = user;
+
+      if (user) {
+        const unitRows = await Empresa.list("-created_date", 200);
+        const baseUnit = resolveDogCityUnit(unitRows || []);
+        const allowedUnitIds = Array.isArray(user.allowed_unit_ids) && user.allowed_unit_ids.length > 0
+          ? user.allowed_unit_ids
+          : [user.empresa_id].filter(Boolean);
+        const storedUnitId = getStoredActiveUnitId();
+        const scopedUnits = (unitRows || []).filter((item) => allowedUnitIds.length === 0 || allowedUnitIds.includes(item.id));
+        const resolvedUnitId = (storedUnitId && scopedUnits.some((item) => item.id === storedUnitId))
+          ? storedUnitId
+          : (resolveDogCityUnit(scopedUnits)?.id || scopedUnits?.[0]?.id || user.empresa_id || "");
+
+        if (resolvedUnitId) {
+          setStoredActiveUnitId(resolvedUnitId);
+        }
+
+        setAvailableUnits(scopedUnits);
+        setActiveUnitId(resolvedUnitId);
+        resolvedUser = {
+          ...user,
+          allowed_unit_ids: allowedUnitIds,
+          active_unit_id: resolvedUnitId || null,
+          empresa_id: resolvedUnitId || user.empresa_id || null,
+        };
+      }
+
+      setCurrentUser(resolvedUser);
     } catch (error) {
       console.error("Erro ao carregar usuário:", error);
     }
@@ -67,6 +99,13 @@ export default function Layout({ children, currentPageName }) {
 
   const handleLogout = async () => {
     await User.logout();
+    window.location.reload();
+  };
+
+  const handleUnitChange = (value) => {
+    if (!value || value === activeUnitId) return;
+    setStoredActiveUnitId(value);
+    setActiveUnitId(value);
     window.location.reload();
   };
 
@@ -159,6 +198,24 @@ export default function Layout({ children, currentPageName }) {
               <h1 className={`${brandTitleClass} text-2xl leading-none`}>{companyName}</h1>
             </div>
           </div>
+          {showUnitSelector ? (
+            <div className="mt-4">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">Unidade ativa</p>
+              <select
+                value={activeUnitId}
+                onChange={(event) => handleUnitChange(event.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
+              >
+                {availableUnits.map((unit) => (
+                  <option key={unit.id} value={unit.id}>{unit.nome_fantasia}</option>
+                ))}
+              </select>
+            </div>
+          ) : activeUnitId ? (
+            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+              Unidade: {availableUnits.find((unit) => unit.id === activeUnitId)?.nome_fantasia || companyName}
+            </div>
+          ) : null}
         </div>
 
         {/* Menu Items */}
@@ -241,18 +298,23 @@ export default function Layout({ children, currentPageName }) {
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-50">
         <div className="flex items-center justify-between p-4">
-          <div className="flex items-center gap-3">
-            <img 
-              src={logoUrl}
-              alt={companyName}
-              className="h-8 w-8"
-            />
+          <div className="min-w-0">
             <div>
-              <h1 className={`${brandTitleClass} text-xl leading-none`}>{companyName}</h1>
+              <h1 className={`${brandTitleClass} truncate text-xl leading-none`}>{companyName}</h1>
+              {activeUnitId ? (
+                <p className="mt-1 truncate text-xs text-gray-500">
+                  {availableUnits.find((unit) => unit.id === activeUnitId)?.nome_fantasia || companyName}
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="flex items-center gap-2">
             {currentUser && <NotificationBell userId={currentUser.id} />}
+            <img
+              src={logoUrl}
+              alt={companyName}
+              className="h-8 w-8 rounded-full object-contain"
+            />
             <Button
               variant="ghost"
               size="icon"
@@ -319,6 +381,21 @@ export default function Layout({ children, currentPageName }) {
                                 );
                               })}
                             </nav>
+
+            {showUnitSelector && (
+              <div className="px-4 pb-4">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">Unidade ativa</p>
+                <select
+                  value={activeUnitId}
+                  onChange={(event) => handleUnitChange(event.target.value)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
+                >
+                  {availableUnits.map((unit) => (
+                    <option key={unit.id} value={unit.id}>{unit.nome_fantasia}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {currentUser && (
               <div className="p-4 border-t border-gray-200">

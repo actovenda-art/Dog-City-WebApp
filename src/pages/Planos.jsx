@@ -25,7 +25,7 @@ import { ptBR } from "date-fns/locale";
 import { useBranding } from "@/hooks/use-branding";
 
 export default function Planos() {
-  const { logoUrl } = useBranding();
+  const { logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [planos, setPlanos] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);

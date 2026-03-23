@@ -1,4 +1,7 @@
 -- Politicas para administracao multiempresa
+-- Arquivo legado de desbloqueio rapido.
+-- Nao execute este arquivo depois de aplicar `supabase-schema-unit-isolation.sql`,
+-- porque ele desabilita a separacao forte por unidade via RLS.
 -- Use APENAS uma das abordagens abaixo.
 
 -- =========================================================

@@ -31,7 +31,7 @@ function GoogleIcon() {
 
 export default function Login() {
   const location = useLocation();
-  const { companyName, logoUrl } = useBranding();
+  const { companyName, logoUrl } = useBranding({ variant: "base" });
   const nextPath = useMemo(() => getSafeNextPath(location.search), [location.search]);
   const isBlocked = useMemo(() => new URLSearchParams(location.search).get("blocked") === "1", [location.search]);
   const [isSubmitting, setIsSubmitting] = useState(false);

@@ -42,7 +42,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useBranding } from "@/hooks/use-branding";
 
 export default function Agenda_Comercial() {
-  const { companyName, logoUrl } = useBranding();
+  const { companyName, logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [schedules, setSchedules] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [clients, setClients] = useState([]);

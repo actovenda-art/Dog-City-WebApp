@@ -47,6 +47,8 @@ export const PlanConfig = appClient.entities.PlanConfig;
 
 export const IntegracaoConfig = appClient.entities.IntegracaoConfig;
 
+export const ExtratoDuplicidade = appClient.entities.ExtratoDuplicidade;
+
 export const Receita = appClient.entities.Receita;
 
 export const AppConfig = appClient.entities.AppConfig;

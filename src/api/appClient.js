@@ -104,7 +104,7 @@ const defaultEntities = {};
   'Responsavel', 'Carteira', 'Notificacao', 'Orcamento', 'TabelaPrecos', 'Appointment',
   'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
-  'UserInvite',
+  'UserInvite', 'ExtratoDuplicidade',
   'UserProfile', 'ContaReceber', 'Client', 'PedidoInterno',
 ].forEach((name) => {
   defaultEntities[name] = createMockEntity(name);
@@ -299,6 +299,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     Notificacao: 'notificacao',
     Checkin: 'checkins',
     IntegracaoConfig: 'integracao_config',
+    ExtratoDuplicidade: 'extrato_duplicidade',
     AppConfig: 'app_config',
     AppAsset: 'app_asset',
     Empresa: 'empresa',

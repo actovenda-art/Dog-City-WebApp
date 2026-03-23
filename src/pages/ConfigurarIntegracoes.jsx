@@ -723,16 +723,21 @@ export default function ConfigurarIntegracoes() {
                         {importResult.message}
                       </p>
 
-                      {importResult.success && importResult.details && (
-                        <div className="mt-2 text-sm text-green-700 space-y-1">
-                          <p>Total recebido: {importResult.details.total}</p>
-                          <p>Novas inseridas: {importResult.details.inseridas}</p>
-                          <p>Duplicadas ignoradas: {importResult.details.duplicadas}</p>
-                          <p>
-                            Periodo: {importResult.details.de} ate {importResult.details.ate}
-                          </p>
-                        </div>
-                      )}
+                       {importResult.success && importResult.details && (
+                          <div className="mt-2 text-sm text-green-700 space-y-1">
+                            <p>Total recebido: {importResult.details.total}</p>
+                            <p>Novas inseridas: {importResult.details.inseridas}</p>
+                            <p>Duplicadas ignoradas: {importResult.details.duplicadas}</p>
+                            <p>
+                              Periodo: {importResult.details.de} ate {importResult.details.ate}
+                            </p>
+                            {Number(importResult.details.duplicadas || 0) > 0 && (
+                              <p className="font-medium">
+                                Revise as suspeitas em Transacoes &gt; Duplicadas.
+                              </p>
+                            )}
+                          </div>
+                        )}
 
                       {!importResult.success && importResult.details && (
                         <p className="mt-1 text-xs text-red-600">

@@ -71,6 +71,24 @@ type NormalizedTransaction = {
   sync_run_id: string;
 };
 
+type DuplicateReviewRow = {
+  empresa_id: string;
+  sync_run_id: string;
+  source_provider: string;
+  duplicate_reason: string;
+  status: string;
+  external_id: string;
+  duplicate_count: number;
+  imported_tipo: string;
+  imported_valor: number;
+  imported_descricao: string;
+  imported_data_movimento: string;
+  imported_data_hora: string;
+  imported_payload: Record<string, unknown>;
+  existing_record_id: string | null;
+  existing_snapshot: Record<string, unknown>;
+};
+
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -250,19 +268,31 @@ async function sha256Hex(value: string) {
 }
 
 function inferTipo(rawTransaction: Record<string, unknown>, amount: number): "entrada" | "saida" {
+  const operationCode = sanitizeText(firstDefined(
+    rawTransaction.tipoOperacao,
+    rawTransaction.operationCode,
+    rawTransaction.dc,
+  ), "").toLowerCase();
+
+  if (["d", "debit", "debito", "débito"].includes(operationCode)) return "saida";
+  if (["c", "credit", "credito", "crédito"].includes(operationCode)) return "entrada";
+
   const rawType = sanitizeText(
     firstDefined(
       rawTransaction.tipo,
       rawTransaction.natureza,
       rawTransaction.tipoOperacao,
+      rawTransaction.tipoTransacao,
+      rawTransaction.titulo,
+      rawTransaction.descricao,
       rawTransaction.transactionType,
       rawTransaction.operationType,
     ),
     "",
   ).toLowerCase();
 
-  if (/(saida|debito|debit|pagamento|transferencia_saida)/.test(rawType)) return "saida";
-  if (/(entrada|credito|credit|recebimento|transferencia_entrada)/.test(rawType)) return "entrada";
+  if (/(saida|debito|débito|debit|pagamento|transferencia_saida|pix enviado|tarifa|saque)/.test(rawType)) return "saida";
+  if (/(entrada|credito|crédito|credit|recebimento|transferencia_entrada|pix recebido)/.test(rawType)) return "entrada";
   return amount < 0 ? "saida" : "entrada";
 }
 
@@ -647,18 +677,87 @@ async function updateIntegrationStatus(configId: string, payload: Record<string,
   if (error) throw error;
 }
 
+function buildDuplicateReviewRow(
+  row: NormalizedTransaction,
+  {
+    reason,
+    duplicateCount = 1,
+    existingRow = null,
+  }: {
+    reason: string;
+    duplicateCount?: number;
+    existingRow?: Record<string, unknown> | null;
+  },
+): DuplicateReviewRow {
+  return {
+    empresa_id: row.empresa_id,
+    sync_run_id: row.sync_run_id,
+    source_provider: row.source_provider,
+    duplicate_reason: reason,
+    status: "pendente",
+    external_id: row.external_id,
+    duplicate_count: duplicateCount,
+    imported_tipo: row.tipo,
+    imported_valor: row.valor,
+    imported_descricao: row.descricao,
+    imported_data_movimento: row.data_movimento,
+    imported_data_hora: row.data_hora_transacao,
+    imported_payload: row.raw_data,
+    existing_record_id: sanitizeText(existingRow?.id) || null,
+    existing_snapshot: existingRow || {},
+  };
+}
+
+async function persistDuplicateReviews(rows: DuplicateReviewRow[]) {
+  if (!rows.length) return;
+
+  for (const chunk of chunkArray(rows, 100)) {
+    const { error } = await supabase
+      .from("extrato_duplicidade")
+      .upsert(chunk, {
+        onConflict: "empresa_id,sync_run_id,external_id,duplicate_reason",
+      });
+
+    if (error) {
+      console.warn("persistDuplicateReviews warning", error);
+      return;
+    }
+  }
+}
+
 async function persistTransactions(empresaId: string, rows: NormalizedTransaction[]) {
   if (!rows.length) return { importedCount: 0, deduplicatedCount: 0 };
 
   const uniqueRowsByExternalId = new Map<string, NormalizedTransaction>();
+  const duplicateRowsInPayload = new Map<string, number>();
   for (const row of rows) {
     if (!uniqueRowsByExternalId.has(row.external_id)) {
       uniqueRowsByExternalId.set(row.external_id, row);
+    } else {
+      duplicateRowsInPayload.set(row.external_id, (duplicateRowsInPayload.get(row.external_id) || 0) + 1);
     }
   }
 
   const uniqueRows = Array.from(uniqueRowsByExternalId.values());
-  const duplicateRowsInPayload = rows.length - uniqueRows.length;
+  const existingRowsByExternalId = new Map<string, Record<string, unknown>>();
+
+  for (const externalIdChunk of chunkArray(uniqueRows.map((row) => row.external_id), 100)) {
+    const { data, error } = await supabase
+      .from("extratobancario")
+      .select("id, external_id, tipo, valor, descricao, data_movimento, data_hora_transacao, nome_contraparte, banco_contraparte, referencia")
+      .eq("empresa_id", empresaId)
+      .eq("source_provider", "banco_inter")
+      .in("external_id", externalIdChunk);
+
+    if (error) throw error;
+
+    for (const item of data || []) {
+      if (item?.external_id) {
+        existingRowsByExternalId.set(item.external_id, item);
+      }
+    }
+  }
+
   const countQuery = () => supabase
     .from("extratobancario")
     .select("*", { count: "exact", head: true })
@@ -667,6 +766,30 @@ async function persistTransactions(empresaId: string, rows: NormalizedTransactio
 
   const { count: beforeCount, error: beforeCountError } = await countQuery();
   if (beforeCountError) throw beforeCountError;
+
+  const duplicateReviews: DuplicateReviewRow[] = [];
+
+  duplicateRowsInPayload.forEach((count, externalId) => {
+    const row = uniqueRowsByExternalId.get(externalId);
+    if (!row) return;
+    duplicateReviews.push(buildDuplicateReviewRow(row, {
+      reason: "duplicada_no_payload",
+      duplicateCount: count,
+      existingRow: existingRowsByExternalId.get(externalId) || null,
+    }));
+  });
+
+  uniqueRows.forEach((row) => {
+    const existingRow = existingRowsByExternalId.get(row.external_id);
+    if (!existingRow) return;
+    duplicateReviews.push(buildDuplicateReviewRow(row, {
+      reason: "ja_existia_no_extrato",
+      duplicateCount: 1,
+      existingRow,
+    }));
+  });
+
+  await persistDuplicateReviews(duplicateReviews);
 
   for (const rowChunk of chunkArray(uniqueRows, 100)) {
     const { error } = await supabase
@@ -683,7 +806,9 @@ async function persistTransactions(empresaId: string, rows: NormalizedTransactio
   if (afterCountError) throw afterCountError;
 
   const importedCount = Math.max(0, (afterCount || 0) - (beforeCount || 0));
-  const deduplicatedCount = Math.max(0, rows.length - importedCount);
+  const payloadDuplicateCount = Array.from(duplicateRowsInPayload.values()).reduce((sum, current) => sum + current, 0);
+  const existingDuplicateCount = uniqueRows.filter((row) => existingRowsByExternalId.has(row.external_id)).length;
+  const deduplicatedCount = Math.max(0, payloadDuplicateCount + existingDuplicateCount);
 
   return {
     importedCount,

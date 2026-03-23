@@ -13,6 +13,7 @@ alter table if exists public.perfil_acesso disable row level security;
 alter table if exists public.integracao_config disable row level security;
 alter table if exists public.integracao_sync_log disable row level security;
 alter table if exists public.extratobancario disable row level security;
+alter table if exists public.extrato_duplicidade disable row level security;
 alter table if exists public.notificacao disable row level security;
 alter table if exists public.lancamento disable row level security;
 alter table if exists public.despesa disable row level security;

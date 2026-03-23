@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import { ArrowDownCircle, Landmark, Search } from "lucide-react";
 import {
+  dedupeOfficialImportedMovements,
   formatCurrency,
   formatMovementDateTime,
   getMovementComparableDate,
@@ -46,7 +47,7 @@ export default function Despesas() {
 
   const normalizedExpenses = useMemo(
     () =>
-      (despesas || [])
+      dedupeOfficialImportedMovements(despesas || [])
         .map((item) => normalizeMovement(item))
         .sort((a, b) => (b.dataOrdenacao?.getTime() || 0) - (a.dataOrdenacao?.getTime() || 0)),
     [despesas],

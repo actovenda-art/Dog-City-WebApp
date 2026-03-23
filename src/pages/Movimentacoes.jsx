@@ -29,6 +29,7 @@ import {
   Wallet,
 } from "lucide-react";
 import {
+  dedupeOfficialImportedMovements,
   formatCurrency,
   formatMovementDateTime,
   fromDateInputValue,
@@ -143,7 +144,7 @@ export default function Movimentacoes() {
 
   const normalizedMovements = useMemo(
     () =>
-      (movimentacoes || [])
+      dedupeOfficialImportedMovements(movimentacoes || [])
         .map((item) => normalizeMovement(item))
         .sort((a, b) => (b.dataOrdenacao?.getTime() || 0) - (a.dataOrdenacao?.getTime() || 0)),
     [movimentacoes],

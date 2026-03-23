@@ -19,6 +19,22 @@ export function formatCurrency(value) {
   }).format(value || 0);
 }
 
+function stableSerialize(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value)
+      .filter(([, current]) => current !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+
+    return `{${entries.map(([key, current]) => `${JSON.stringify(key)}:${stableSerialize(current)}`).join(",")}}`;
+  }
+
+  return JSON.stringify(value ?? null);
+}
+
 export function parseFinanceObject(value, fallback = {}) {
   if (!value) return { ...fallback };
   if (typeof value === "object") return { ...fallback, ...value };
@@ -121,6 +137,69 @@ function parseBancoInterDescription(record) {
     counterpartyCode: String(counterpartyCode || "").trim() || null,
     detailLabel: normalizeDisplayName(detailLabel),
   };
+}
+
+function buildBankMovementFingerprint(record) {
+  const rawData = record?.raw_data;
+  if (!rawData || typeof rawData !== "object") return null;
+
+  return [
+    record?.source_provider || "",
+    record?.tipo || "",
+    record?.data_movimento || record?.data || "",
+    String(record?.valor ?? ""),
+    stableSerialize(rawData),
+  ].join("|");
+}
+
+function getMovementDisplayScore(record) {
+  const rawDescription = String(record?.raw_data?.descricao || "").trim();
+  const parsedInter = parseBancoInterDescription(record);
+  let score = 0;
+
+  if (parsedInter?.counterpartyName && record?.nome_contraparte === parsedInter.counterpartyName) {
+    score += 3;
+  }
+
+  if (record?.descricao && rawDescription && record.descricao !== rawDescription) {
+    score += 2;
+  }
+
+  if (record?.descricao && /^(Pix (para|de)|Boleto Cobranca)/i.test(record.descricao)) {
+    score += 1;
+  }
+
+  return score;
+}
+
+export function dedupeOfficialImportedMovements(records) {
+  const groups = new Map();
+  const orderedKeys = [];
+
+  for (const record of records || []) {
+    const fingerprint = buildBankMovementFingerprint(record);
+
+    if (!fingerprint) {
+      orderedKeys.push(Symbol("manual"));
+      groups.set(orderedKeys.at(-1), record);
+      continue;
+    }
+
+    const current = groups.get(fingerprint);
+    if (!current) {
+      orderedKeys.push(fingerprint);
+      groups.set(fingerprint, record);
+      continue;
+    }
+
+    const currentScore = getMovementDisplayScore(current);
+    const nextScore = getMovementDisplayScore(record);
+    if (nextScore > currentScore) {
+      groups.set(fingerprint, record);
+    }
+  }
+
+  return orderedKeys.map((key) => groups.get(key)).filter(Boolean);
 }
 
 function hasTimeFragment(value) {

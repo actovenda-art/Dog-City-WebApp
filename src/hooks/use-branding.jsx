@@ -7,6 +7,8 @@ const DEFAULT_BRANDING = {
   companyName: "Dog City Brasil",
   logoUrl: "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' rx='24' fill='%23fff7ed'/%3E%3Cpath d='M34 79c0-11 9-20 20-20h12c11 0 20 9 20 20v7H34z' fill='%23ea580c'/%3E%3Ccircle cx='47' cy='42' r='7' fill='%23111827'/%3E%3Ccircle cx='73' cy='42' r='7' fill='%23111827'/%3E%3Cpath d='M40 18l14 18H38zM80 18l-14 18h16z' fill='%23fb923c'/%3E%3Ccircle cx='60' cy='66' r='9' fill='%23f59e0b'/%3E%3C/svg%3E",
 };
+const DEFAULT_FAVICON_URL = "/favicon.svg";
+const DEFAULT_TOUCH_ICON_URL = "/apple-touch-icon.png";
 
 export function notifyBrandingChanged() {
   if (typeof window === "undefined") return;
@@ -34,8 +36,23 @@ function upsertFaviconLink(id, rel, href, type) {
   }
 
   link.setAttribute("rel", rel);
-  link.setAttribute("href", href || "/favicon.svg");
+  link.setAttribute("href", href || DEFAULT_FAVICON_URL);
   link.setAttribute("type", type);
+}
+
+function resolveTouchIconUrl(url) {
+  const type = getFaviconType(url);
+  return type === "image/svg+xml" ? DEFAULT_TOUCH_ICON_URL : (url || DEFAULT_TOUCH_ICON_URL);
+}
+
+function upsertMeta(name, content) {
+  let meta = document.querySelector(`meta[name="${name}"]`);
+  if (!meta) {
+    meta = document.createElement("meta");
+    meta.setAttribute("name", name);
+    document.head.appendChild(meta);
+  }
+  meta.setAttribute("content", content);
 }
 
 export function useBranding() {
@@ -108,8 +125,15 @@ export function useBranding() {
     if (typeof document === "undefined") return;
 
     const faviconType = getFaviconType(branding.logoUrl);
+    const touchIconUrl = resolveTouchIconUrl(branding.logoUrl);
+    const touchIconType = getFaviconType(touchIconUrl);
     upsertFaviconLink("app-favicon", "icon", branding.logoUrl, faviconType);
     upsertFaviconLink("app-favicon-shortcut", "shortcut icon", branding.logoUrl, faviconType);
+    upsertFaviconLink("app-apple-touch-icon", "apple-touch-icon", touchIconUrl, touchIconType);
+    upsertFaviconLink("app-apple-touch-icon-precomposed", "apple-touch-icon-precomposed", touchIconUrl, touchIconType);
+    upsertMeta("apple-mobile-web-app-title", branding.companyName || DEFAULT_BRANDING.companyName);
+    upsertMeta("application-name", branding.companyName || DEFAULT_BRANDING.companyName);
+    upsertMeta("theme-color", "#ffffff");
     document.title = branding.companyName || DEFAULT_BRANDING.companyName;
   }, [branding.companyName, branding.logoUrl]);
 

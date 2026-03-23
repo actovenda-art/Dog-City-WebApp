@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import { ArrowUpCircle, Search, Wallet } from "lucide-react";
 import {
+  dedupeOfficialImportedMovements,
   formatCurrency,
   formatMovementDateTime,
   getMovementComparableDate,
@@ -47,7 +48,7 @@ export default function Receitas() {
 
   const normalizedReceipts = useMemo(
     () =>
-      (receitas || [])
+      dedupeOfficialImportedMovements(receitas || [])
         .map((item) => normalizeMovement(item))
         .sort((a, b) => (b.dataOrdenacao?.getTime() || 0) - (a.dataOrdenacao?.getTime() || 0)),
     [receitas],
@@ -79,7 +80,12 @@ export default function Receitas() {
     return true;
   });
 
-  const totalRecebido = filtered.reduce((sum, item) => sum + (item.valor || 0), 0);
+  const totalRecebidoBanco = filtered
+    .filter((item) => item.source_provider === "banco_inter")
+    .reduce((sum, item) => sum + (item.valor || 0), 0);
+  const totalRecebidoManual = filtered
+    .filter((item) => item.source_provider !== "banco_inter")
+    .reduce((sum, item) => sum + (item.valor || 0), 0);
   const totalRateado = filtered.reduce((sum, item) => sum + getRateioTotal(item.rateioNormalizado), 0);
   const totalCarteirasDefinidas = filtered.filter((item) => item.carteiraFinanceira && item.carteiraFinanceira !== "-").length;
 
@@ -126,11 +132,17 @@ export default function Receitas() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <Card className="border-green-200">
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Total recebido</p>
-              <p className="mt-2 text-2xl font-bold text-green-600">{formatCurrency(totalRecebido)}</p>
+              <p className="text-sm text-gray-500">Total oficial do banco</p>
+              <p className="mt-2 text-2xl font-bold text-green-600">{formatCurrency(totalRecebidoBanco)}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-emerald-200">
+            <CardContent className="p-4">
+              <p className="text-sm text-gray-500">Complementos manuais</p>
+              <p className="mt-2 text-2xl font-bold text-emerald-600">{formatCurrency(totalRecebidoManual)}</p>
             </CardContent>
           </Card>
           <Card className="border-blue-200">
@@ -215,6 +227,7 @@ export default function Receitas() {
                     <div className="flex flex-wrap gap-2 text-sm">
                       <Badge className="bg-blue-100 text-blue-700">{getMovementBank(item)}</Badge>
                       <Badge className="bg-gray-100 text-gray-700">{getMovementTransactionType(item)}</Badge>
+                      <Badge variant="outline">{item.source_provider === "banco_inter" ? "Banco Inter" : "Manual"}</Badge>
                       <Badge className="bg-green-100 text-green-700">
                         Rateado {formatCurrency(rateioTotal)}
                       </Badge>
@@ -223,13 +236,13 @@ export default function Receitas() {
                       )}
                     </div>
 
-                    <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                      <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <Wallet className="w-4 h-4 text-gray-400" />
                         <span>Saldo nao rateado: {formatCurrency((item.valor || 0) - rateioTotal)}</span>
                       </div>
                       <p className="text-xs text-gray-500 break-all">
-                        Referencia: {item.referenciaFinanceira}
+                        Referencia: {item.referenciaFinanceira} | Total oficial do periodo: {formatCurrency(totalRecebidoBanco)}
                       </p>
                     </div>
                   </CardContent>

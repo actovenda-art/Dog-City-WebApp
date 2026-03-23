@@ -314,6 +314,22 @@ async function sha256Hex(value: string) {
   return Array.from(new Uint8Array(hashBuffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .filter(([, current]) => current !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, current]) => `${JSON.stringify(key)}:${stableSerialize(current)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value ?? null);
+}
+
 function inferTipo(rawTransaction: Record<string, unknown>, amount: number): "entrada" | "saida" {
   const operationCode = sanitizeText(firstDefined(
     rawTransaction.tipoOperacao,
@@ -461,6 +477,52 @@ function parseBancoInterDescription(rawTransaction: Record<string, unknown>) {
     detailLabel: normalizeDisplayLabel(match[1]) || detailLabel,
     counterpartyCode: sanitizeText(match[2]) || null,
     counterpartyName: normalizeDisplayName(match[3]),
+  };
+}
+
+function buildStableTransactionFingerprintPayload(transaction: Record<string, unknown>) {
+  return {
+    id: sanitizeText(firstDefined(
+      transaction.id,
+      transaction.codigoTransacao,
+      transaction.transactionId,
+      transaction.identificador,
+      transaction.nsudoc,
+      transaction.documento,
+      transaction.nsu,
+    )),
+    valor: sanitizeText(firstDefined(
+      transaction.valor,
+      transaction.amount,
+      transaction.valorLancamento,
+      transaction.valorTransacao,
+      transaction.transactionAmount,
+    )),
+    dataHora: sanitizeText(firstDefined(
+      transaction.dataHora,
+      transaction.dataTransacao,
+      transaction.transactionDateTime,
+      transaction.dataMovimento,
+      transaction.dataLancamento,
+      transaction.dataEntrada,
+      transaction.data,
+      transaction.bookingDate,
+      transaction.createdAt,
+    )),
+    descricao: sanitizeText(firstDefined(
+      transaction.descricao,
+      transaction.historico,
+      transaction.titulo,
+      transaction.title,
+      transaction.complemento,
+    )),
+    titulo: sanitizeText(firstDefined(transaction.titulo, transaction.title)),
+    tipoOperacao: sanitizeText(firstDefined(transaction.tipoOperacao, transaction.operationCode, transaction.dc)),
+    tipoTransacao: sanitizeText(firstDefined(transaction.tipoTransacao, transaction.transactionType, transaction.operationType)),
+    contaOrigem: sanitizeText(firstDefined(transaction.contaOrigem, transaction.accountOrigin)),
+    contaDestino: sanitizeText(firstDefined(transaction.contaDestino, transaction.accountDestination)),
+    nomeRemetente: sanitizeText(firstDefined(transaction.nomeRemetente, transaction.nomePagador, transaction.pagador, transaction.debtorName)),
+    nomeFavorecido: sanitizeText(firstDefined(transaction.nomeFavorecido, transaction.nomeRecebedor, transaction.beneficiario, transaction.creditorName)),
   };
 }
 
@@ -820,8 +882,8 @@ async function normalizeTransactions(
       transaction.documento,
       transaction.nsu,
     ));
-
-    const fallbackKey = await sha256Hex(`${empresaId}|${movementDate}|${positiveAmount}|${rawDescription}|${resolvedTransactionType}|${normalizedType}`);
+    const stableFingerprintPayload = buildStableTransactionFingerprintPayload(transaction);
+    const fallbackKey = await sha256Hex(`${empresaId}|${stableSerialize(stableFingerprintPayload)}`);
     const externalId = sourceId || fallbackKey;
     const counterpartyBank = inferCounterpartyBank(transaction);
     const reference = inferReference(transaction, externalId);
@@ -854,6 +916,8 @@ async function normalizeTransactions(
         provider: "banco_inter",
         imported_via: "edge_function",
         api_locked: true,
+        external_id_source: sourceId ? "api" : "raw_payload_hash",
+        synthetic_occurrence: null,
         raw_description: rawDescription,
         counterparty_code: parsedDescription.counterpartyCode,
         direction_label: normalizedType === "saida" ? "Debitado" : "Creditado",

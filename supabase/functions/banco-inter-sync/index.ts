@@ -9,7 +9,8 @@ const corsHeaders = {
 const DEFAULT_TOKEN_URL = "https://cdpj.partners.bancointer.com.br/oauth/v2/token";
 const DEFAULT_API_BASE_URL = "https://cdpj.partners.bancointer.com.br";
 const DEFAULT_EXTRATO_PATH = "/banking/v2/extrato";
-const DEFAULT_SCOPE = "extrato.read";
+const DEFAULT_BALANCE_PATHS = ["/banking/v2/saldo", "/banking/v1/saldo"];
+const DEFAULT_SCOPE = "extrato.read saldo.read";
 
 type IntegrationConfig = {
   id: string;
@@ -31,12 +32,15 @@ type IntegrationConfig = {
   scope?: string | null;
   token_url?: string | null;
   api_base_url?: string | null;
+  balance_path?: string | null;
   config?: Record<string, unknown> | null;
   credenciais?: Record<string, unknown> | null;
   extra_headers?: Record<string, unknown> | null;
   metadata?: Record<string, unknown> | null;
   certificate_crt?: string | null;
   certificate_key?: string | null;
+  current_balance?: number | null;
+  current_balance_at?: string | null;
 };
 
 type NormalizedTransaction = {
@@ -285,6 +289,9 @@ function serializeError(error: unknown) {
       "observacoes",
       "rateio",
       "metadata_financeira",
+      "current_balance",
+      "current_balance_at",
+      "balance_path",
     ];
 
     const missingFinanceColumn = financeSchemaColumns.find((column) => message.includes(column));
@@ -405,6 +412,56 @@ function inferReference(rawTransaction: Record<string, unknown>, externalId: str
     rawTransaction.nsudoc,
     externalId,
   )) || null;
+}
+
+function toTitleCaseWord(value: string) {
+  const normalized = sanitizeText(value).toLowerCase();
+  const upperWords = new Set(["ltda", "ltda.", "mei", "me", "epp", "eireli", "sa", "s/a", "cpf", "cnpj"]);
+  if (upperWords.has(normalized)) {
+    return normalized.replace(".", "").toUpperCase();
+  }
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function normalizeDisplayName(value: unknown) {
+  const cleaned = sanitizeText(value).replace(/\s+/g, " ");
+  if (!cleaned) return "";
+
+  return cleaned
+    .split(" ")
+    .map((token) => token.includes("/") ? token.toUpperCase() : toTitleCaseWord(token))
+    .join(" ");
+}
+
+function normalizeDisplayLabel(value: unknown) {
+  return normalizeDisplayName(String(value || "").replace(/_/g, " "));
+}
+
+function parseBancoInterDescription(rawTransaction: Record<string, unknown>) {
+  const rawDescription = sanitizeText(firstDefined(rawTransaction.descricao, rawTransaction.historico));
+  const rawTitle = sanitizeText(firstDefined(rawTransaction.titulo, rawTransaction.tipoTransacao));
+  const method = normalizeDisplayLabel(firstDefined(rawTransaction.tipoTransacao, rawTransaction.formaPagamento, rawTransaction.tipoPagamento)) || null;
+  const detailLabel = normalizeDisplayLabel(rawTitle) || null;
+  const match = rawDescription.match(/^(pix\s+(?:enviado|recebido))\s*-\s*cp\s*:\s*([^-]+)-(.+)$/i);
+
+  if (!match) {
+    return {
+      rawDescription,
+      method,
+      detailLabel,
+      counterpartyCode: null,
+      counterpartyName: "",
+    };
+  }
+
+  return {
+    rawDescription,
+    method: method || "Pix",
+    detailLabel: normalizeDisplayLabel(match[1]) || detailLabel,
+    counterpartyCode: sanitizeText(match[2]) || null,
+    counterpartyName: normalizeDisplayName(match[3]),
+  };
 }
 
 async function createHttpClient(config: IntegrationConfig) {
@@ -591,6 +648,108 @@ async function fetchExtratoResilient(
   }
 }
 
+function extractBalanceValue(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null;
+  const source = payload as Record<string, unknown>;
+
+  const directCandidates = [
+    source.saldo,
+    source.balance,
+    source.disponivel,
+    source.saldoDisponivel,
+    source.availableBalance,
+    source.valor,
+  ];
+  const directValue = directCandidates.find((value) => value !== null && value !== undefined && value !== "");
+  if (directValue !== undefined) {
+    const numeric = toNumber(directValue);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  const arrayCandidates = [source.saldos, source.items, source.data];
+  for (const candidate of arrayCandidates) {
+    if (!Array.isArray(candidate) || !candidate.length) continue;
+    const value = extractBalanceValue(candidate[0]);
+    if (value !== null) return value;
+  }
+
+  return null;
+}
+
+async function fetchBalance(
+  config: IntegrationConfig,
+  accessToken: string,
+  httpClient: Deno.HttpClient,
+  balanceDate: string,
+) {
+  const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
+  const configuredBalancePath = sanitizeText(config.balance_path || getConfigValue(config, "balance_path"));
+  const pathCandidates = [configuredBalancePath, ...DEFAULT_BALANCE_PATHS].filter(Boolean);
+  const uniquePaths = Array.from(new Set(pathCandidates));
+  const extraHeaders = (config.extra_headers || getConfigValue<Record<string, unknown>>(config, "extra_headers") || {}) as Record<string, unknown>;
+  const queryBuilders = [
+    (url: URL) => url.searchParams.set("dataSaldo", balanceDate),
+    (url: URL) => {
+      url.searchParams.set("dataInicio", balanceDate);
+      url.searchParams.set("dataFim", balanceDate);
+    },
+    (_url: URL) => undefined,
+  ];
+  const errors: string[] = [];
+
+  for (const path of uniquePaths) {
+    for (const applyQuery of queryBuilders) {
+      const url = new URL(path, apiBaseUrl);
+      applyQuery(url);
+
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      };
+
+      Object.entries(extraHeaders).forEach(([key, value]) => {
+        if (value !== null && value !== undefined) {
+          headers[key] = String(value);
+        }
+      });
+
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers,
+        client: httpClient,
+      });
+
+      const rawText = await response.text();
+      let parsed: unknown = {};
+      try {
+        parsed = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        parsed = { raw: rawText };
+      }
+
+      if (!response.ok) {
+        errors.push(`${path}:${response.status}:${JSON.stringify(parsed)}`);
+        continue;
+      }
+
+      const balanceValue = extractBalanceValue(parsed);
+      if (balanceValue === null) {
+        errors.push(`${path}:${response.status}:saldo_nao_encontrado:${JSON.stringify(parsed)}`);
+        continue;
+      }
+
+      return {
+        balance: balanceValue,
+        payload: parsed,
+        httpStatus: response.status,
+        path,
+      };
+    }
+  }
+
+  throw new Error(`Falha ao consultar saldo no Banco Inter: ${errors.join(" | ")}`);
+}
+
 async function normalizeTransactions(
   empresaId: string,
   syncRunId: string,
@@ -601,8 +760,9 @@ async function normalizeTransactions(
   }
 
   const transactions = getTransactionArray(rawPayload);
+  const normalizedRows: NormalizedTransaction[] = [];
 
-  return await Promise.all(transactions.map(async (transaction) => {
+  for (const transaction of transactions) {
     const amount = toNumber(firstDefined(
       transaction.valor,
       transaction.amount,
@@ -626,7 +786,7 @@ async function normalizeTransactions(
     ), new Date().toISOString());
     const movementDate = formatDateOnly(rawDate);
     const movementDateTime = hasTimeFragment(rawDate) ? formatDateTime(rawDate) : null;
-    const description = sanitizeText(firstDefined(
+    const rawDescription = sanitizeText(firstDefined(
       transaction.descricao,
       transaction.historico,
       transaction.titulo,
@@ -635,6 +795,22 @@ async function normalizeTransactions(
       transaction.nomePagador,
       transaction.nomeFavorecido,
     ), "Movimentacao Banco Inter");
+    const parsedDescription = parseBancoInterDescription(transaction);
+    const counterpartyName = inferCounterpartyName(transaction, rawDescription);
+    const resolvedCounterpartyName = normalizeDisplayName(parsedDescription.counterpartyName || counterpartyName || rawDescription) || null;
+    const resolvedMethod = parsedDescription.method || normalizeDisplayLabel(firstDefined(transaction.tipoTransacao, transaction.formaPagamento, transaction.tipoPagamento)) || null;
+    const resolvedTransactionType = parsedDescription.detailLabel || normalizeDisplayLabel(firstDefined(
+      transaction.tipoDetalhado,
+      transaction.tipo,
+      transaction.natureza,
+      transaction.titulo,
+      transaction.tipoOperacao,
+      transaction.transactionType,
+      transaction.operationType,
+    )) || null;
+    const friendlyDescription = resolvedMethod && resolvedCounterpartyName
+      ? `${resolvedMethod} ${normalizedType === "saida" ? "para" : "de"} ${resolvedCounterpartyName}`
+      : resolvedCounterpartyName || rawDescription;
     const sourceId = sanitizeText(firstDefined(
       transaction.id,
       transaction.codigoTransacao,
@@ -645,18 +821,9 @@ async function normalizeTransactions(
       transaction.nsu,
     ));
 
-    const fallbackKey = await sha256Hex(`${empresaId}|${movementDate}|${positiveAmount}|${description}|${normalizedType}`);
+    const fallbackKey = await sha256Hex(`${empresaId}|${movementDate}|${positiveAmount}|${rawDescription}|${resolvedTransactionType}|${normalizedType}`);
     const externalId = sourceId || fallbackKey;
-    const counterpartyName = inferCounterpartyName(transaction, description);
     const counterpartyBank = inferCounterpartyBank(transaction);
-    const transactionDetailType = sanitizeText(firstDefined(
-      transaction.tipoDetalhado,
-      transaction.tipo,
-      transaction.natureza,
-      transaction.tipoOperacao,
-      transaction.transactionType,
-      transaction.operationType,
-    )) || null;
     const reference = inferReference(transaction, externalId);
     const notes = sanitizeText(firstDefined(
       transaction.observacoes,
@@ -665,20 +832,20 @@ async function normalizeTransactions(
       transaction.memo,
     )) || null;
 
-    return {
+    normalizedRows.push({
       empresa_id: empresaId,
-      descricao: description,
+      descricao: friendlyDescription,
       tipo: normalizedType,
       valor: positiveAmount,
       data: movementDate,
       data_hora_transacao: movementDateTime,
       data_movimento: movementDate,
       banco: "Banco Inter",
-      nome_contraparte: counterpartyName,
+      nome_contraparte: resolvedCounterpartyName,
       banco_contraparte: counterpartyBank,
-      forma_pagamento: sanitizeText(firstDefined(transaction.formaPagamento, transaction.tipoPagamento), "") || null,
+      forma_pagamento: resolvedMethod,
       categoria: sanitizeText(firstDefined(transaction.categoria, transaction.tipoLancamento), "") || null,
-      tipo_transacao_detalhado: transactionDetailType,
+      tipo_transacao_detalhado: resolvedTransactionType,
       referencia: reference,
       carteira_nome: sanitizeText(firstDefined(transaction.carteiraNome, transaction.walletName), "") || null,
       observacoes: notes,
@@ -686,6 +853,10 @@ async function normalizeTransactions(
       metadata_financeira: {
         provider: "banco_inter",
         imported_via: "edge_function",
+        api_locked: true,
+        raw_description: rawDescription,
+        counterparty_code: parsedDescription.counterpartyCode,
+        direction_label: normalizedType === "saida" ? "Debitado" : "Creditado",
       },
       conciliado: false,
       status: "importado",
@@ -700,8 +871,10 @@ async function normalizeTransactions(
       raw_data: transaction,
       imported_at: new Date().toISOString(),
       sync_run_id: syncRunId,
-    } satisfies NormalizedTransaction;
-  }));
+    } satisfies NormalizedTransaction);
+  }
+
+  return normalizedRows;
 }
 
 function buildDateDebugSample(rawPayload: unknown, normalizedRows: NormalizedTransaction[]) {
@@ -795,150 +968,161 @@ async function finishSyncLog(logId: string, payload: Record<string, unknown>) {
 }
 
 async function updateIntegrationStatus(configId: string, payload: Record<string, unknown>) {
-  const { error } = await supabase
+  let { error } = await supabase
     .from("integracao_config")
     .update(payload)
     .eq("id", configId);
 
-  if (error) throw error;
+  if (!error) return;
+
+  const message = serializeError(error);
+  const shouldRetryWithoutBalanceFields = [
+    "current_balance",
+    "current_balance_at",
+    "balance_path",
+  ].some((column) => message.includes(column));
+
+  if (!shouldRetryWithoutBalanceFields) {
+    throw error;
+  }
+
+  const fallbackPayload = { ...payload };
+  delete fallbackPayload.current_balance;
+  delete fallbackPayload.current_balance_at;
+
+  const retry = await supabase
+    .from("integracao_config")
+    .update(fallbackPayload)
+    .eq("id", configId);
+
+  if (retry.error) throw retry.error;
 }
 
-function buildDuplicateReviewRow(
-  row: NormalizedTransaction,
-  {
-    reason,
-    duplicateCount = 1,
-    existingRow = null,
-  }: {
-    reason: string;
-    duplicateCount?: number;
-    existingRow?: Record<string, unknown> | null;
-  },
-): DuplicateReviewRow {
+function mergeManualComplements(
+  incomingRow: NormalizedTransaction,
+  existingRow?: Record<string, unknown> | null,
+): NormalizedTransaction {
+  if (!existingRow) return incomingRow;
+
   return {
-    empresa_id: row.empresa_id,
-    sync_run_id: row.sync_run_id,
-    source_provider: row.source_provider,
-    duplicate_reason: reason,
-    status: "pendente",
-    external_id: row.external_id,
-    duplicate_count: duplicateCount,
-    imported_tipo: row.tipo,
-    imported_valor: row.valor,
-    imported_descricao: row.descricao,
-    imported_data_movimento: row.data_movimento,
-    imported_data_hora: row.data_hora_transacao,
-    imported_payload: row.raw_data,
-    existing_record_id: sanitizeText(existingRow?.id) || null,
-    existing_snapshot: existingRow || {},
+    ...incomingRow,
+    carteira_nome: sanitizeText(existingRow.carteira_nome) || incomingRow.carteira_nome,
+    observacoes: sanitizeText(existingRow.observacoes) || incomingRow.observacoes,
+    rateio: typeof existingRow.rateio === "object" && existingRow.rateio !== null ? existingRow.rateio as Record<string, unknown> : incomingRow.rateio,
+    conciliado: typeof existingRow.conciliado === "boolean" ? existingRow.conciliado : incomingRow.conciliado,
+    status: sanitizeText(existingRow.status) || incomingRow.status,
+    metadata_financeira: {
+      ...(typeof existingRow.metadata_financeira === "object" && existingRow.metadata_financeira !== null
+        ? existingRow.metadata_financeira as Record<string, unknown>
+        : {}),
+      ...incomingRow.metadata_financeira,
+      preserved_manual_data: true,
+    },
   };
 }
 
-async function persistDuplicateReviews(rows: DuplicateReviewRow[]) {
-  if (!rows.length) return;
-
-  for (const chunk of chunkArray(rows, 100)) {
-    const { error } = await supabase
-      .from("extrato_duplicidade")
-      .upsert(chunk, {
-        onConflict: "empresa_id,sync_run_id,external_id,duplicate_reason",
-      });
-
-    if (error) {
-      console.warn("persistDuplicateReviews warning", error);
-      return;
-    }
-  }
-}
-
-async function persistTransactions(empresaId: string, rows: NormalizedTransaction[]) {
-  if (!rows.length) return { importedCount: 0, deduplicatedCount: 0 };
-
+async function persistTransactions(
+  empresaId: string,
+  rows: NormalizedTransaction[],
+  {
+    refreshToday,
+  }: {
+    refreshToday: boolean;
+  },
+) {
+  const today = formatDateOnly(new Date());
   const uniqueRowsByExternalId = new Map<string, NormalizedTransaction>();
-  const duplicateRowsInPayload = new Map<string, number>();
+  let discardedInPayloadCount = 0;
+
   for (const row of rows) {
-    if (!uniqueRowsByExternalId.has(row.external_id)) {
-      uniqueRowsByExternalId.set(row.external_id, row);
-    } else {
-      duplicateRowsInPayload.set(row.external_id, (duplicateRowsInPayload.get(row.external_id) || 0) + 1);
+    if (!row.external_id) continue;
+    if (uniqueRowsByExternalId.has(row.external_id)) {
+      discardedInPayloadCount += 1;
+      continue;
     }
+    uniqueRowsByExternalId.set(row.external_id, row);
   }
 
   const uniqueRows = Array.from(uniqueRowsByExternalId.values());
-  const existingRowsByExternalId = new Map<string, Record<string, unknown>>();
+  const todayRows = refreshToday
+    ? uniqueRows.filter((row) => row.data_movimento === today)
+    : [];
+  const historicalRows = uniqueRows.filter((row) => !refreshToday || row.data_movimento !== today);
 
-  for (const externalIdChunk of chunkArray(uniqueRows.map((row) => row.external_id), 100)) {
-    const { data, error } = await supabase
-      .from("extratobancario")
-      .select("id, external_id, tipo, valor, descricao, data_movimento, data_hora_transacao, nome_contraparte, banco_contraparte, referencia")
-      .eq("empresa_id", empresaId)
-      .eq("source_provider", "banco_inter")
-      .in("external_id", externalIdChunk);
+  const historicalExistingIds = new Set<string>();
+  if (historicalRows.length) {
+    for (const externalIdChunk of chunkArray(historicalRows.map((row) => row.external_id), 100)) {
+      const { data, error } = await supabase
+        .from("extratobancario")
+        .select("external_id")
+        .eq("empresa_id", empresaId)
+        .eq("source_provider", "banco_inter")
+        .in("external_id", externalIdChunk);
 
-    if (error) throw error;
+      if (error) throw error;
 
-    for (const item of data || []) {
-      if (item?.external_id) {
-        existingRowsByExternalId.set(item.external_id, item);
+      for (const item of data || []) {
+        if (item?.external_id) historicalExistingIds.add(item.external_id);
       }
     }
   }
 
-  const countQuery = () => supabase
-    .from("extratobancario")
-    .select("*", { count: "exact", head: true })
-    .eq("empresa_id", empresaId)
-    .eq("source_provider", "banco_inter");
+  const historicalRowsToInsert = historicalRows.filter((row) => !historicalExistingIds.has(row.external_id));
 
-  const { count: beforeCount, error: beforeCountError } = await countQuery();
-  if (beforeCountError) throw beforeCountError;
+  let refreshedTodayCount = 0;
+  if (refreshToday) {
+    const { data: existingTodayRows, error: existingTodayError } = await supabase
+      .from("extratobancario")
+      .select("external_id, carteira_nome, observacoes, rateio, metadata_financeira, conciliado, status")
+      .eq("empresa_id", empresaId)
+      .eq("source_provider", "banco_inter")
+      .eq("data_movimento", today);
 
-  const duplicateReviews: DuplicateReviewRow[] = [];
+    if (existingTodayError) throw existingTodayError;
 
-  duplicateRowsInPayload.forEach((count, externalId) => {
-    const row = uniqueRowsByExternalId.get(externalId);
-    if (!row) return;
-    duplicateReviews.push(buildDuplicateReviewRow(row, {
-      reason: "duplicada_no_payload",
-      duplicateCount: count,
-      existingRow: existingRowsByExternalId.get(externalId) || null,
-    }));
-  });
+    const existingTodayMap = new Map<string, Record<string, unknown>>();
+    for (const row of existingTodayRows || []) {
+      if (row?.external_id) existingTodayMap.set(row.external_id, row);
+    }
 
-  uniqueRows.forEach((row) => {
-    const existingRow = existingRowsByExternalId.get(row.external_id);
-    if (!existingRow) return;
-    duplicateReviews.push(buildDuplicateReviewRow(row, {
-      reason: "ja_existia_no_extrato",
-      duplicateCount: 1,
-      existingRow,
-    }));
-  });
+    const mergedTodayRows = todayRows.map((row) => mergeManualComplements(row, existingTodayMap.get(row.external_id) || null));
 
-  await persistDuplicateReviews(duplicateReviews);
+    const { error: deleteTodayError } = await supabase
+      .from("extratobancario")
+      .delete()
+      .eq("empresa_id", empresaId)
+      .eq("source_provider", "banco_inter")
+      .eq("data_movimento", today);
 
-  for (const rowChunk of chunkArray(uniqueRows, 100)) {
+    if (deleteTodayError) throw deleteTodayError;
+
+    for (const chunk of chunkArray(mergedTodayRows, 100)) {
+      if (!chunk.length) continue;
+      const { error } = await supabase
+        .from("extratobancario")
+        .insert(chunk);
+
+      if (error) throw error;
+    }
+
+    refreshedTodayCount = mergedTodayRows.length;
+  }
+
+  for (const chunk of chunkArray(historicalRowsToInsert, 100)) {
+    if (!chunk.length) continue;
     const { error } = await supabase
       .from("extratobancario")
-      .upsert(rowChunk, {
-        onConflict: "empresa_id,source_provider,external_id",
-        ignoreDuplicates: true,
-      });
+      .insert(chunk);
 
     if (error) throw error;
   }
 
-  const { count: afterCount, error: afterCountError } = await countQuery();
-  if (afterCountError) throw afterCountError;
-
-  const importedCount = Math.max(0, (afterCount || 0) - (beforeCount || 0));
-  const payloadDuplicateCount = Array.from(duplicateRowsInPayload.values()).reduce((sum, current) => sum + current, 0);
-  const existingDuplicateCount = uniqueRows.filter((row) => existingRowsByExternalId.has(row.external_id)).length;
-  const deduplicatedCount = Math.max(0, payloadDuplicateCount + existingDuplicateCount);
-
   return {
-    importedCount,
-    deduplicatedCount,
+    importedCount: historicalRowsToInsert.length + refreshedTodayCount,
+    refreshedTodayCount,
+    historicalInsertedCount: historicalRowsToInsert.length,
+    discardedExistingCount: historicalExistingIds.size,
+    discardedInPayloadCount,
   };
 }
 
@@ -975,6 +1159,8 @@ async function runSyncForConfig(
       ? formatDateOnly(addDays(new Date(config.last_success_at), -1))
       : formatDateOnly(addDays(now, -backfillDays));
   const toDate = requestedTo ? formatDateOnly(requestedTo) : formatDateOnly(now);
+  const today = formatDateOnly(now);
+  const refreshToday = fromDate <= today && toDate >= today;
   const dateWindows = buildDateWindows(fromDate, toDate);
 
   const log = config.empresa_id === empresaId
@@ -988,11 +1174,24 @@ async function runSyncForConfig(
 
   try {
     const { accessToken, httpClient, tokenResponse, tokenStatus } = await getAccessToken(config);
+    let currentBalance = typeof config.current_balance === "number" ? config.current_balance : null;
+    let currentBalanceAt = config.current_balance_at || null;
+    let balanceWarning: string | null = null;
     let rawCount = 0;
     let normalizedRows: NormalizedTransaction[] = [];
     let httpStatus = tokenStatus;
     let processedWindowCount = 0;
     const debugWindows: unknown[] = [];
+
+    try {
+      const balanceResult = await fetchBalance(config, accessToken, httpClient, toDate);
+      currentBalance = balanceResult.balance;
+      currentBalanceAt = new Date().toISOString();
+      httpStatus = balanceResult.httpStatus || httpStatus;
+    } catch (error) {
+      balanceWarning = serializeError(error);
+      console.warn("Banco Inter balance warning", balanceWarning);
+    }
 
     for (const window of dateWindows) {
       try {
@@ -1022,14 +1221,20 @@ async function runSyncForConfig(
     }
 
     const persistence = persist
-      ? await persistTransactions(empresaId, normalizedRows)
-      : { importedCount: rawCount, deduplicatedCount: 0 };
+      ? await persistTransactions(empresaId, normalizedRows, { refreshToday })
+      : {
+        importedCount: rawCount,
+        refreshedTodayCount: refreshToday ? normalizedRows.filter((row) => row.data_movimento === today).length : 0,
+        historicalInsertedCount: rawCount,
+        discardedExistingCount: 0,
+        discardedInPayloadCount: 0,
+      };
 
     const finishedAt = new Date().toISOString();
     await finishSyncLog(log.id, {
       status: "success",
       imported_count: persistence.importedCount,
-      deduplicated_count: persistence.deduplicatedCount,
+      deduplicated_count: persistence.discardedExistingCount + persistence.discardedInPayloadCount,
       http_status: httpStatus,
       response_summary: {
         token_status: tokenStatus,
@@ -1039,6 +1244,12 @@ async function runSyncForConfig(
         requested_window_count: dateWindows.length,
         processed_window_count: processedWindowCount,
         received_count: rawCount,
+        refreshed_today_count: persistence.refreshedTodayCount,
+        discarded_existing_count: persistence.discardedExistingCount,
+        discarded_in_payload_count: persistence.discardedInPayloadCount,
+        current_balance: currentBalance,
+        current_balance_at: currentBalanceAt,
+        balance_warning: balanceWarning,
       },
     });
 
@@ -1049,6 +1260,8 @@ async function runSyncForConfig(
       last_http_status: httpStatus,
       last_error_at: null,
       last_error_message: null,
+      current_balance: currentBalance,
+      current_balance_at: currentBalanceAt,
       next_sync_at: addMinutes(now, intervalMinutes).toISOString(),
     });
 
@@ -1058,18 +1271,23 @@ async function runSyncForConfig(
       from: fromDate,
       to: toDate,
       imported_count: persistence.importedCount,
-      deduplicated_count: persistence.deduplicatedCount,
+      historical_inserted_count: persistence.historicalInsertedCount,
+      refreshed_today_count: persistence.refreshedTodayCount,
+      discarded_existing_count: persistence.discardedExistingCount,
+      discarded_in_payload_count: persistence.discardedInPayloadCount,
       total: rawCount,
-      inseridas: persistence.importedCount,
-      duplicadas: persistence.deduplicatedCount,
+      inseridas: persistence.historicalInsertedCount,
+      saldo_atual: currentBalance,
+      saldo_atualizado_em: currentBalanceAt,
+      balance_warning: balanceWarning,
       received_count: rawCount,
       windows_processed: processedWindowCount,
       debug_windows: debug ? debugWindows : undefined,
       message: action === "test"
         ? "Conexao com Banco Inter validada com sucesso."
         : processedWindowCount > 1
-          ? `Extrato importado em ${processedWindowCount} janela(s). ${persistence.importedCount} registro(s) novo(s).`
-          : `Extrato importado com sucesso. ${persistence.importedCount} registro(s) novo(s).`,
+          ? `Extrato importado em ${processedWindowCount} janela(s). Historico novo: ${persistence.historicalInsertedCount}. Hoje atualizado: ${persistence.refreshedTodayCount}.`
+          : `Extrato importado com sucesso. Historico novo: ${persistence.historicalInsertedCount}. Hoje atualizado: ${persistence.refreshedTodayCount}.`,
     };
   } catch (error) {
     const message = serializeError(error);

@@ -17,6 +17,7 @@ alter table if exists public.integracao_config
   add column if not exists scope text,
   add column if not exists token_url text,
   add column if not exists api_base_url text,
+  add column if not exists balance_path text,
   add column if not exists extra_headers jsonb default '{}'::jsonb,
   add column if not exists metadata jsonb default '{}'::jsonb,
   add column if not exists auto_sync_enabled boolean default true,
@@ -29,13 +30,16 @@ alter table if exists public.integracao_config
   add column if not exists last_success_at timestamptz,
   add column if not exists last_error_at timestamptz,
   add column if not exists last_error_message text,
-  add column if not exists last_http_status integer;
+  add column if not exists last_http_status integer,
+  add column if not exists current_balance decimal(12,2),
+  add column if not exists current_balance_at timestamptz;
 
 update public.integracao_config
 set
   nome = coalesce(nome, provider),
   provider = coalesce(provider, nome),
   credenciais = coalesce(credenciais, config, '{}'::jsonb),
+  balance_path = coalesce(balance_path, '/banking/v2/saldo'),
   next_sync_at = coalesce(next_sync_at, now()),
   sync_status = coalesce(sync_status, 'idle')
 where true;
@@ -123,6 +127,7 @@ insert into public.integracao_config (
   scope,
   token_url,
   api_base_url,
+  balance_path,
   auto_sync_enabled,
   auto_sync_interval_minutes,
   sync_backfill_days,
@@ -132,9 +137,10 @@ select
   'banco_inter',
   'banco_inter',
   false,
-  'extrato.read',
+  'extrato.read saldo.read',
   'https://cdpj.partners.bancointer.com.br/oauth/v2/token',
   'https://cdpj.partners.bancointer.com.br',
+  '/banking/v2/saldo',
   true,
   60,
   3,

@@ -75,6 +75,54 @@ export function fromDateInputValue(value) {
   return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
+function toTitleCaseWord(word) {
+  const normalized = String(word || "").toLowerCase();
+  const upperWords = new Set(["ltda", "ltda.", "mei", "me", "epp", "eireli", "sa", "s/a", "cpf", "cnpj"]);
+  if (upperWords.has(normalized)) {
+    return normalized.replace(".", "").toUpperCase();
+  }
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function normalizeDisplayName(value) {
+  const cleaned = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return "";
+
+  return cleaned
+    .split(" ")
+    .map((token) => token.includes("/") ? token.toUpperCase() : toTitleCaseWord(token))
+    .join(" ");
+}
+
+function parseBancoInterDescription(record) {
+  const rawDescription = String(record?.raw_data?.descricao || record?.descricao || "").trim();
+  if (!rawDescription) return null;
+
+  const match = rawDescription.match(/^(pix\s+(?:enviado|recebido))\s*-\s*cp\s*:\s*([^-]+)-(.+)$/i);
+  if (!match) {
+    return {
+      rawDescription,
+      method: record?.raw_data?.tipoTransacao ? normalizeDisplayName(record.raw_data.tipoTransacao) : null,
+      counterpartyName: "",
+      counterpartyCode: null,
+      detailLabel: record?.raw_data?.titulo ? normalizeDisplayName(record.raw_data.titulo) : null,
+    };
+  }
+
+  const [, detailLabel, counterpartyCode, counterpartyName] = match;
+  return {
+    rawDescription,
+    method: "Pix",
+    counterpartyName: normalizeDisplayName(counterpartyName),
+    counterpartyCode: String(counterpartyCode || "").trim() || null,
+    detailLabel: normalizeDisplayName(detailLabel),
+  };
+}
+
 function hasTimeFragment(value) {
   return typeof value === "string" && /\d{2}:\d{2}/.test(value);
 }
@@ -180,9 +228,31 @@ export function formatMovementDateTime(record) {
   return formatDateOnlyLabel(getMovementDateOnly(record) || getMovementDateTime(record));
 }
 
+export function isApiMovement(record) {
+  return Boolean(record?.source_provider && record.source_provider !== "manual");
+}
+
+export function getMovementMethod(record) {
+  const parsedInter = parseBancoInterDescription(record);
+  return (
+    record?.forma_pagamento ||
+    parsedInter?.method ||
+    record?.raw_data?.tipoTransacao ||
+    "-"
+  );
+}
+
+export function getMovementDirectionLabel(record) {
+  if (record?.tipo === "saida") return "Debitado";
+  if (record?.tipo === "entrada") return "Creditado";
+  return "-";
+}
+
 export function getMovementCounterparty(record) {
+  const parsedInter = parseBancoInterDescription(record);
   return (
     record?.nome_contraparte ||
+    parsedInter?.counterpartyName ||
     record?.raw_data?.nomeRemetente ||
     record?.raw_data?.nomeFavorecido ||
     record?.raw_data?.nomePagador ||
@@ -204,7 +274,8 @@ export function getMovementBank(record) {
 export function getMovementTransactionType(record) {
   return (
     record?.tipo_transacao_detalhado ||
-    record?.forma_pagamento ||
+    record?.raw_data?.titulo ||
+    getMovementMethod(record) ||
     record?.source_provider ||
     "-"
   );
@@ -226,6 +297,7 @@ export function normalizeMovement(record) {
   const dataHora = getMovementDateTime(record);
   const possuiHoraReal = hasExplicitMovementTime(record);
   const dataOrdenacao = getMovementComparableDate(record);
+  const parsedInter = parseBancoInterDescription(record);
 
   return {
     ...record,
@@ -233,11 +305,16 @@ export function normalizeMovement(record) {
     possuiHoraReal,
     dataOrdenacao,
     contraparte: getMovementCounterparty(record),
+    metodo: getMovementMethod(record),
+    direcaoLabel: getMovementDirectionLabel(record),
     bancoContraparte: getMovementBank(record),
     tipoDetalhado: getMovementTransactionType(record),
     referenciaFinanceira: getMovementReference(record),
     carteiraFinanceira: getMovementWallet(record),
     observacoesFinanceiras: getMovementObservations(record),
     rateioNormalizado: normalizeRateio(record?.rateio),
+    codigoContraparte: parsedInter?.counterpartyCode || record?.metadata_financeira?.counterparty_code || null,
+    descricaoOriginal: parsedInter?.rawDescription || record?.raw_data?.descricao || record?.descricao || "",
+    apiLocked: isApiMovement(record),
   };
 }

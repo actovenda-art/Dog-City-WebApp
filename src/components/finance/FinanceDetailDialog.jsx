@@ -61,6 +61,7 @@ export default function FinanceDetailDialog({
   const totalRateado = getRateioTotal(rateio);
   const diferencaRateio = (movement?.valor || 0) - totalRateado;
   const isReceita = mode === "receita";
+  const baseFieldsLocked = normalizedMovement.apiLocked;
 
   const handleRateioChange = (key, value) => {
     const normalizedValue = Number(String(value || "").replace(",", "."));
@@ -73,6 +74,15 @@ export default function FinanceDetailDialog({
   const handleSubmit = async () => {
     if (!movement?.id || typeof onSave !== "function") return;
     const movementDate = fromDateInputValue(formData.data_hora_transacao);
+
+    if (baseFieldsLocked) {
+      await onSave(movement.id, {
+        carteira_nome: isReceita ? formData.carteira_nome.trim() || null : movement?.carteira_nome || null,
+        observacoes: formData.observacoes.trim() || null,
+        rateio: isReceita ? rateio : movement?.rateio || {},
+      });
+      return;
+    }
 
     await onSave(movement.id, {
       nome_contraparte: formData.nome_contraparte.trim() || null,
@@ -101,6 +111,12 @@ export default function FinanceDetailDialog({
         </DialogHeader>
 
         <div className="space-y-6 py-2">
+          {baseFieldsLocked && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+              Este lancamento veio da API oficial do banco. Os dados-base ficam bloqueados e aqui voce complementa apenas carteira, rateio e observacoes.
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
               <p className="text-xs uppercase tracking-wide text-gray-500">Valor</p>
@@ -129,6 +145,7 @@ export default function FinanceDetailDialog({
                 className="mt-2"
                 value={formData.nome_contraparte}
                 onChange={(event) => setFormData((prev) => ({ ...prev, nome_contraparte: event.target.value }))}
+                disabled={baseFieldsLocked}
               />
             </div>
 
@@ -138,6 +155,7 @@ export default function FinanceDetailDialog({
                 className="mt-2"
                 value={formData.data_hora_transacao}
                 onChange={(value) => setFormData((prev) => ({ ...prev, data_hora_transacao: value }))}
+                disabled={baseFieldsLocked}
               />
             </div>
 
@@ -159,6 +177,7 @@ export default function FinanceDetailDialog({
                 className="mt-2"
                 value={formData.banco_contraparte}
                 onChange={(event) => setFormData((prev) => ({ ...prev, banco_contraparte: event.target.value }))}
+                disabled={baseFieldsLocked}
               />
             </div>
 
@@ -169,6 +188,7 @@ export default function FinanceDetailDialog({
                 value={formData.tipo_transacao_detalhado}
                 onChange={(event) => setFormData((prev) => ({ ...prev, tipo_transacao_detalhado: event.target.value }))}
                 placeholder="Ex: PIX recebido, TED, transferencia"
+                disabled={baseFieldsLocked}
               />
             </div>
 
@@ -178,6 +198,7 @@ export default function FinanceDetailDialog({
                 className="mt-2"
                 value={formData.referencia}
                 onChange={(event) => setFormData((prev) => ({ ...prev, referencia: event.target.value }))}
+                disabled={baseFieldsLocked}
               />
             </div>
           </div>

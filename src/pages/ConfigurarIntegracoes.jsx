@@ -28,7 +28,7 @@ const DEFAULT_FORM = {
   account_number: "",
   auto_sync_enabled: true,
   auto_sync_interval_minutes: 60,
-  scope: "extrato.read",
+  scope: "extrato.read saldo.read",
   token_url: "https://cdpj.partners.bancointer.com.br/oauth/v2/token",
   api_base_url: "https://cdpj.partners.bancointer.com.br",
 };
@@ -277,8 +277,9 @@ export default function ConfigurarIntegracoes() {
         message: data.message || "Extrato importado com sucesso.",
         details: {
           total: data.total ?? data.received_count ?? 0,
-          inseridas: data.inseridas ?? data.imported_count ?? 0,
-          duplicadas: data.duplicadas ?? data.deduplicated_count ?? 0,
+          inseridas: data.historical_inserted_count ?? data.inseridas ?? data.imported_count ?? 0,
+          atualizadasHoje: data.refreshed_today_count ?? 0,
+          saldoAtual: typeof data.saldo_atual === "number" ? data.saldo_atual : null,
           de: data.from || dataInicio,
           ate: data.to || dataFim,
         },
@@ -711,17 +712,15 @@ export default function ConfigurarIntegracoes() {
                           <div className="mt-2 text-sm text-green-700 space-y-1">
                             <p>Total recebido: {importResult.details.total}</p>
                             <p>Novas inseridas: {importResult.details.inseridas}</p>
-                            <p>Duplicadas ignoradas: {importResult.details.duplicadas}</p>
+                            <p>Movimentacoes de hoje recarregadas: {importResult.details.atualizadasHoje}</p>
+                            {typeof importResult.details.saldoAtual === "number" && (
+                              <p>Saldo atual retornado pela API: R$ {Number(importResult.details.saldoAtual).toFixed(2)}</p>
+                            )}
                             <p>
                               Periodo: {importResult.details.de} ate {importResult.details.ate}
                             </p>
-                            {Number(importResult.details.duplicadas || 0) > 0 && (
-                              <p className="font-medium">
-                                Revise as suspeitas em Transacoes &gt; Duplicadas.
-                              </p>
-                            )}
-                          </div>
-                        )}
+                        </div>
+                      )}
 
                       {!importResult.success && importResult.details && (
                         <p className="mt-1 text-xs text-red-600">
@@ -742,8 +741,8 @@ export default function ConfigurarIntegracoes() {
                 <li>Salve as credenciais e os certificados da conta Banco Inter.</li>
                 <li>Teste a conexao para validar OAuth e mTLS.</li>
                 <li>Importe um periodo manualmente sempre que precisar.</li>
-                <li>A rotina automatica roda no cron e atualiza status, proxima execucao e logs.</li>
-                <li>Duplicidades sao ignoradas pelo identificador externo da transacao.</li>
+                <li>A rotina automatica roda no cron e atualiza status, saldo, proxima execucao e logs.</li>
+                <li>Ao recarregar o extrato, o dia atual e substituido pela resposta mais recente da API; datas anteriores permanecem intactas.</li>
               </ol>
             </div>
           </CardContent>

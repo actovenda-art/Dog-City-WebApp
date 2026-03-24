@@ -336,14 +336,14 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     const profile = await findUserProfile(authUser);
     const allowedUnitIds = await resolveAllowedUnitIds(authUser, profile);
 
-    if (preferredUnitId && allowedUnitIds.includes(preferredUnitId)) {
-      setStoredActiveUnitId(preferredUnitId);
-      return preferredUnitId;
-    }
-
     const storedUnitId = getStoredActiveUnitId();
     if (storedUnitId && allowedUnitIds.includes(storedUnitId)) {
       return storedUnitId;
+    }
+
+    if (preferredUnitId && allowedUnitIds.includes(preferredUnitId)) {
+      setStoredActiveUnitId(preferredUnitId);
+      return preferredUnitId;
     }
 
     if (cachedDefaultUnitId && allowedUnitIds.includes(cachedDefaultUnitId)) {
@@ -809,7 +809,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const profile = await findUserProfile(authUser);
       const mergedUser = profile ? { ...authUser, ...profile } : authUser;
       const allowedUnitIds = await resolveAllowedUnitIds(authUser, mergedUser);
-      const activeUnitId = await resolveScopedUnitId(mergedUser?.empresa_id || '');
+      const activeUnitId = await resolveScopedUnitId(getStoredActiveUnitId() || mergedUser?.empresa_id || '');
       const sessionUser = {
         ...mergedUser,
         assigned_empresa_id: mergedUser?.empresa_id || null,

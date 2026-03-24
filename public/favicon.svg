@@ -1,8 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-  <rect width="120" height="120" rx="24" fill="#fff7ed"/>
-  <path d="M34 79c0-11 9-20 20-20h12c11 0 20 9 20 20v7H34z" fill="#ea580c"/>
-  <circle cx="47" cy="42" r="7" fill="#111827"/>
-  <circle cx="73" cy="42" r="7" fill="#111827"/>
-  <path d="M40 18l14 18H38zM80 18l-14 18h16z" fill="#fb923c"/>
-  <circle cx="60" cy="66" r="9" fill="#f59e0b"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="dogcityMark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6d28d9" />
+      <stop offset="22%" stop-color="#db2777" />
+      <stop offset="42%" stop-color="#f97316" />
+      <stop offset="62%" stop-color="#facc15" />
+      <stop offset="80%" stop-color="#22c55e" />
+      <stop offset="100%" stop-color="#0ea5e9" />
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="64" fill="#ffffff" />
+  <circle cx="128" cy="112" r="78" fill="url(#dogcityMark)" />
+  <g fill="#ffffff">
+    <path d="M139 60c21 6 36 21 41 41 6 22-1 46-18 62-10 10-24 16-38 16-7 0-14-1-21-4 7-5 14-12 18-21 5-11 5-24-1-35-7-14-20-22-36-25 9-17 31-27 55-22Z" />
+    <path d="M109 71c-20 3-37 18-45 39-9 23-5 49 10 68 9 12 23 20 38 23-6-7-10-15-11-25-1-12 3-24 12-32 10-10 25-14 42-12-3-19-22-34-46-39Z" opacity=".96" />
+    <path d="M127 104c-11 8-18 20-18 34 0 20 15 38 36 43-3 4-6 8-9 12-6 8-16 12-26 12-22 0-40-18-40-40 0-23 19-42 42-42 5 0 10 1 15 3Z" opacity=".94" />
+  </g>
 </svg>

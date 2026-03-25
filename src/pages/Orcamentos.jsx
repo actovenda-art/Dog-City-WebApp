@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Orcamento, Dog, Carteira, TabelaPrecos, User } from "@/api/entities";
+import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User } from "@/api/entities";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calculator, Dog as DogIcon, FileText, History, Plus, Save, Search, Send } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -100,6 +100,8 @@ const emptyCao = {
   transporte_viagens: [{ partida: "", destino: "", data: "", horario: "", km: "" }],
 };
 
+const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
+
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
 }
@@ -109,6 +111,20 @@ function normalizeBreedName(value) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
+}
+
+function normalizeSearchValue(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function getLinkedDogIds(record) {
+  return RELATION_SLOTS
+    .map((number) => record?.[`dog_id_${number}`])
+    .filter(Boolean);
 }
 
 function buildPricingConfig(precosRows, empresaId) {
@@ -338,6 +354,7 @@ export default function Orcamentos() {
   const location = useLocation();
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
+  const [responsaveis, setResponsaveis] = useState([]);
   const [orcamentos, setOrcamentos] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [precos, setPrecos] = useState(buildPricingConfig([], null));
@@ -416,9 +433,10 @@ export default function Orcamentos() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [dogsData, carteirasData, orcamentosData, precosData, userData] = await Promise.all([
+      const [dogsData, carteirasData, responsaveisData, orcamentosData, precosData, userData] = await Promise.all([
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
+        Responsavel.list("-created_date", 500),
         Orcamento.list("-created_date", 100),
         TabelaPrecos.list("-created_date", 1000),
         User.me(),
@@ -426,6 +444,7 @@ export default function Orcamentos() {
 
       setDogs((dogsData || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteirasData || []).filter((cliente) => cliente.ativo !== false));
+      setResponsaveis((responsaveisData || []).filter((responsavel) => responsavel.ativo !== false));
       setOrcamentos(orcamentosData || []);
       setCurrentUser(userData || null);
       setPrecos(buildPricingConfig(precosData || [], userData?.empresa_id || null));
@@ -446,19 +465,74 @@ export default function Orcamentos() {
 
   function getCaesDoCliente() {
     if (!clienteSelecionado) return dogs;
-    const dogIds = [1, 2, 3, 4, 5, 6, 7, 8]
-      .map((number) => clienteSelecionado[`dog_id_${number}`])
-      .filter(Boolean);
+    const dogIds = getLinkedDogIds(clienteSelecionado);
     if (dogIds.length === 0) return dogs;
     return dogs.filter((dog) => dogIds.includes(dog.id));
   }
 
-  const clientesFiltrados = carteiras.filter((cliente) =>
-    !searchCliente ||
-    cliente.nome_razao_social?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-    cliente.cpf_cnpj?.includes(searchCliente) ||
-    cliente.celular?.includes(searchCliente)
-  );
+  const searchTerm = normalizeSearchValue(searchCliente);
+
+  const clientesFiltrados = carteiras
+    .map((cliente) => {
+      const dogIds = getLinkedDogIds(cliente);
+      const dogsDoCliente = dogs.filter((dog) => dogIds.includes(dog.id));
+      const responsaveisDoCliente = responsaveis.filter((responsavel) =>
+        getLinkedDogIds(responsavel).some((dogId) => dogIds.includes(dogId))
+      );
+
+      if (!searchTerm) {
+        return {
+          cliente,
+          dogsDoCliente,
+          responsaveisDoCliente,
+          destaqueBusca: "",
+          prioridade: 0,
+        };
+      }
+
+      const carteiraMatched = [
+        cliente.nome_razao_social,
+        cliente.cpf_cnpj,
+        cliente.celular,
+        cliente.email,
+      ].some((value) => normalizeSearchValue(value).includes(searchTerm));
+
+      const matchedDogs = dogsDoCliente.filter((dog) =>
+        [dog.nome, dog.apelido, dog.raca].some((value) => normalizeSearchValue(value).includes(searchTerm))
+      );
+
+      const matchedResponsaveis = responsaveisDoCliente.filter((responsavel) =>
+        [responsavel.nome_completo, responsavel.cpf, responsavel.celular, responsavel.email]
+          .some((value) => normalizeSearchValue(value).includes(searchTerm))
+      );
+
+      if (!carteiraMatched && matchedDogs.length === 0 && matchedResponsaveis.length === 0) {
+        return null;
+      }
+
+      const destaqueBusca = [
+        carteiraMatched ? "Responsavel financeiro" : "",
+        matchedDogs.length ? `Cao: ${matchedDogs.map((dog) => dog.nome).join(", ")}` : "",
+        matchedResponsaveis.length ? `Responsavel: ${matchedResponsaveis.map((responsavel) => responsavel.nome_completo).join(", ")}` : "",
+      ].filter(Boolean).join(" | ");
+
+      const prioridade = carteiraMatched ? 0 : matchedDogs.length ? 1 : 2;
+
+      return {
+        cliente,
+        dogsDoCliente,
+        responsaveisDoCliente,
+        destaqueBusca,
+        prioridade,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (left.prioridade !== right.prioridade) return left.prioridade - right.prioridade;
+      return left.cliente.nome_razao_social.localeCompare(right.cliente.nome_razao_social);
+    });
+
+  const exigeConfirmacaoDestinatario = Boolean(searchTerm) && clientesFiltrados.length > 1;
 
   function addCao() {
     setCaes((prev) => [...prev, { ...emptyCao }]);
@@ -499,7 +573,7 @@ export default function Orcamentos() {
       resetForm();
     } catch (error) {
       console.error("Erro ao salvar orcamento:", error);
-      alert("Erro ao salvar orcamento.");
+      alert(error?.message || "Erro ao salvar orcamento.");
     }
     setIsSaving(false);
   }
@@ -636,6 +710,9 @@ export default function Orcamentos() {
               {etapa === "caes" && "Novo Orcamento - Servicos por Cao"}
               {etapa === "resumo" && "Novo Orcamento - Revisao Final"}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Fluxo de criacao de orcamento com busca ampla por destinatario financeiro, responsavel e cao.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="flex items-center gap-2 border-b border-gray-100 px-1 py-2">
@@ -660,16 +737,25 @@ export default function Orcamentos() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <Input
-                  placeholder="Buscar por nome, CPF/CNPJ ou celular..."
+                  placeholder="Buscar por responsavel financeiro, responsavel, cao, CPF/CNPJ ou celular..."
                   value={searchCliente}
                   onChange={(event) => setSearchCliente(event.target.value)}
                   className="pl-9"
                 />
               </div>
 
+              {exigeConfirmacaoDestinatario && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-sm text-amber-700">
+                    Encontramos mais de um destinatario financeiro para esta busca. Confirme para quem o orcamento sera destinado.
+                  </p>
+                </div>
+              )}
+
               <div className="max-h-[45vh] space-y-2 overflow-y-auto">
-                {clientesFiltrados.slice(0, 20).map((cliente) => {
-                  const numCaes = [1, 2, 3, 4, 5, 6, 7, 8].filter((number) => cliente[`dog_id_${number}`]).length;
+                {clientesFiltrados.slice(0, 20).map((resultado) => {
+                  const { cliente, dogsDoCliente, responsaveisDoCliente, destaqueBusca } = resultado;
+                  const numCaes = dogsDoCliente.length;
                   const selected = clienteSelecionado?.id === cliente.id;
 
                   return (
@@ -681,6 +767,19 @@ export default function Orcamentos() {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-medium text-gray-900">{cliente.nome_razao_social}</p>
+                          {destaqueBusca ? (
+                            <p className="mt-1 text-xs text-blue-700">{destaqueBusca}</p>
+                          ) : null}
+                          {dogsDoCliente.length > 0 ? (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Caes: {dogsDoCliente.map((dog) => dog.nome).join(", ")}
+                            </p>
+                          ) : null}
+                          {responsaveisDoCliente.length > 0 ? (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Responsaveis: {responsaveisDoCliente.map((responsavel) => responsavel.nome_completo).join(", ")}
+                            </p>
+                          ) : null}
                           <p className="text-sm text-gray-500">{cliente.celular} • {cliente.cpf_cnpj}</p>
                         </div>
                         <Badge variant="outline">{numCaes} cao(es)</Badge>

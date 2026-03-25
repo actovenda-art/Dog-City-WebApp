@@ -157,10 +157,25 @@ export default function Cadastro() {
     }
     setIsSaving(true);
     try {
-      await Responsavel.create({ ...responsavelForm, empresa_id: currentUser?.empresa_id || null });
+      await Responsavel.create({
+        empresa_id: currentUser?.empresa_id || null,
+        nome_completo: responsavelForm.nome_completo.trim(),
+        cpf: optional(responsavelForm.cpf),
+        celular: optional(responsavelForm.celular),
+        celular_alternativo: optional(responsavelForm.celular_alternativo),
+        email: optional(responsavelForm.email),
+        dog_id_1: optional(responsavelForm.dog_id_1),
+        dog_id_2: optional(responsavelForm.dog_id_2),
+        dog_id_3: optional(responsavelForm.dog_id_3),
+        dog_id_4: optional(responsavelForm.dog_id_4),
+        dog_id_5: optional(responsavelForm.dog_id_5),
+        dog_id_6: optional(responsavelForm.dog_id_6),
+        dog_id_7: optional(responsavelForm.dog_id_7),
+        dog_id_8: optional(responsavelForm.dog_id_8),
+      });
       setNotifyTitle("Sucesso"); setNotifyMessage("Responsável cadastrado!"); setNotifyOpen(true);
       setResponsavelForm(emptyResponsavel);
-    } catch (error) { setNotifyTitle("Erro"); setNotifyMessage("Erro ao cadastrar."); setNotifyOpen(true); }
+    } catch (error) { setNotifyTitle("Erro"); setNotifyMessage(error?.message || "Erro ao cadastrar."); setNotifyOpen(true); }
     setIsSaving(false);
   };
 
@@ -170,10 +185,27 @@ export default function Cadastro() {
     }
     setIsSaving(true);
     try {
-      await Carteira.create({ ...carteiraForm, empresa_id: currentUser?.empresa_id || null });
+      await Carteira.create({
+        empresa_id: currentUser?.empresa_id || null,
+        nome_razao_social: carteiraForm.nome_razao_social.trim(),
+        cpf_cnpj: optional(carteiraForm.cpf_cnpj),
+        celular: optional(carteiraForm.celular),
+        email: optional(carteiraForm.email),
+        cep: optional(carteiraForm.cep),
+        numero_residencia: optional(carteiraForm.numero_residencia),
+        vencimento_planos: optional(carteiraForm.vencimento_planos),
+        dog_id_1: optional(carteiraForm.dog_id_1),
+        dog_id_2: optional(carteiraForm.dog_id_2),
+        dog_id_3: optional(carteiraForm.dog_id_3),
+        dog_id_4: optional(carteiraForm.dog_id_4),
+        dog_id_5: optional(carteiraForm.dog_id_5),
+        dog_id_6: optional(carteiraForm.dog_id_6),
+        dog_id_7: optional(carteiraForm.dog_id_7),
+        dog_id_8: optional(carteiraForm.dog_id_8),
+      });
       setNotifyTitle("Sucesso"); setNotifyMessage("Carteira cadastrada!"); setNotifyOpen(true);
       setCarteiraForm(emptyCarteira);
-    } catch (error) { setNotifyTitle("Erro"); setNotifyMessage("Erro ao cadastrar."); setNotifyOpen(true); }
+    } catch (error) { setNotifyTitle("Erro"); setNotifyMessage(error?.message || "Erro ao cadastrar."); setNotifyOpen(true); }
     setIsSaving(false);
   };
 
@@ -314,7 +346,21 @@ export default function Cadastro() {
                   <div><Label>Email</Label><Input type="email" value={carteiraForm.email} onChange={(e) => setCarteiraForm({ ...carteiraForm, email: e.target.value })} /></div>
                   <div><Label>CEP</Label><Input value={carteiraForm.cep} onChange={(e) => setCarteiraForm({ ...carteiraForm, cep: formatCEP(e.target.value) })} maxLength={9} /></div>
                   <div><Label>Nº Residência</Label><Input value={carteiraForm.numero_residencia} onChange={(e) => setCarteiraForm({ ...carteiraForm, numero_residencia: e.target.value })} /></div>
-                  <div><Label>Vencimento Planos</Label><DatePickerInput value={carteiraForm.vencimento_planos} onChange={(value) => setCarteiraForm({ ...carteiraForm, vencimento_planos: value })} /></div>
+                  <div>
+                    <Label>Vencimento Planos</Label>
+                    <Select
+                      value={carteiraForm.vencimento_planos}
+                      onValueChange={(value) => setCarteiraForm({ ...carteiraForm, vencimento_planos: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o vencimento" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="05">Aos dias 05</SelectItem>
+                        <SelectItem value="20">Aos dias 20</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div></div>
                   <div className="sm:col-span-2">
                     <Label>Vincular Cães (até 8)</Label>

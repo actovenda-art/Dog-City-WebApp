@@ -62,12 +62,17 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
     error.hint,
   ].filter(Boolean).join(' | ') || fallback;
 
-  const missingLancamentoColumn = error.code === 'PGRST204'
+  const isMissingColumnFor = (table) => (
+    error.code === 'PGRST204'
     && rawMessage.includes("column")
-    && rawMessage.includes("'lancamento'");
-  const missingDogColumn = error.code === 'PGRST204'
-    && rawMessage.includes("column")
-    && rawMessage.includes("'dogs'");
+    && rawMessage.includes(`'${table}'`)
+  );
+
+  const missingLancamentoColumn = isMissingColumnFor('lancamento');
+  const missingDogColumn = isMissingColumnFor('dogs');
+  const missingResponsavelColumn = isMissingColumnFor('responsavel');
+  const missingCarteiraColumn = isMissingColumnFor('carteira');
+  const missingOrcamentoColumn = isMissingColumnFor('orcamento');
   const lancamentoRlsBlocked = error.code === '42501'
     && rawMessage.toLowerCase().includes('lancamento');
 
@@ -75,6 +80,8 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
     ? `${rawMessage}. Execute o arquivo supabase-schema-lancamento-contas-pagar.sql no Supabase.`
     : missingDogColumn
       ? `${rawMessage}. Execute o arquivo supabase-schema-dogs-extended-profile.sql no Supabase.`
+    : missingResponsavelColumn || missingCarteiraColumn || missingOrcamentoColumn
+      ? `${rawMessage}. Execute o arquivo supabase-schema-cadastros-orcamento.sql no Supabase.`
     : lancamentoRlsBlocked
       ? `${rawMessage}. Execute o arquivo supabase-policies-finance-unlock.sql no Supabase.`
       : rawMessage;

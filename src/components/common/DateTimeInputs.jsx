@@ -6,7 +6,7 @@ import { CalendarIcon, ChevronDown, Clock3, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const HOURS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
@@ -19,19 +19,19 @@ const pickerTriggerClassName = cn(
 
 const calendarClassNames = {
   months: "flex flex-col",
-  month: "space-y-4",
-  caption: "relative flex items-center justify-between px-3 pt-2",
-  caption_label: "text-2xl font-black tracking-tight text-slate-900 capitalize",
-  nav: "flex items-center gap-1",
-  nav_button: "h-9 w-9 rounded-full border border-slate-200 bg-white p-0 text-slate-700 opacity-100 shadow-sm hover:bg-slate-100",
-  nav_button_previous: "static",
-  nav_button_next: "static",
-  table: "w-full border-collapse",
+  month: "w-full space-y-3",
+  caption: "grid min-h-12 grid-cols-[2.5rem_1fr_2.5rem] items-center gap-2 px-2 pt-1",
+  caption_label: "col-start-2 text-center text-xl font-black tracking-tight text-slate-900 capitalize",
+  nav: "contents",
+  nav_button: "h-10 w-10 rounded-full border border-slate-200 bg-white p-0 text-slate-700 opacity-100 shadow-sm hover:bg-slate-100",
+  nav_button_previous: "col-start-1 justify-self-start",
+  nav_button_next: "col-start-3 justify-self-end",
+  table: "w-full table-fixed border-collapse",
   head_row: "flex w-full justify-between",
-  head_cell: "w-11 text-center text-xs font-semibold uppercase tracking-[0.2em] text-slate-400",
-  row: "mt-2 flex w-full justify-between",
-  cell: "h-11 w-11 p-0 text-center text-sm",
-  day: "h-11 w-11 rounded-full p-0 text-base font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900",
+  head_cell: "w-10 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400",
+  row: "mt-1 flex w-full justify-between",
+  cell: "h-10 w-10 p-0 text-center text-sm",
+  day: "h-10 w-10 rounded-full p-0 text-base font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900",
   day_selected: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white focus:bg-blue-500 focus:text-white",
   day_range_start: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
   day_range_end: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
@@ -53,6 +53,26 @@ function parseDateOnly(value) {
 
 function formatDateOnly(date) {
   return format(date, "yyyy-MM-dd");
+}
+
+function formatInputDate(date) {
+  return format(date, "dd/MM/yyyy", { locale: ptBR });
+}
+
+function parseDateInputString(value) {
+  if (!value) return null;
+  const normalized = String(value).trim();
+  const brMatch = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brMatch) {
+    const [, day, month, year] = brMatch;
+    const parsed = new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0, 0);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return parseDateOnly(normalized);
+}
+
+function extractDateTokens(value) {
+  return String(value || "").match(/\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2}/g) || [];
 }
 
 function parseTimeValue(value) {
@@ -161,18 +181,62 @@ function TimeList({ value, onChange }) {
   );
 }
 
-function PickerPopover({ children, content, className }) {
+function PickerPopover({ children, content, className, open, onOpenChange }) {
   return (
-    <Popover>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverAnchor asChild>{children}</PopoverAnchor>
       <PopoverContent
         align="start"
-        sideOffset={10}
-        className={cn("w-auto rounded-[28px] border border-slate-200 bg-white p-4 shadow-2xl", className)}
+        sideOffset={8}
+        collisionPadding={8}
+        className={cn(
+          "w-[360px] max-w-[calc(100vw-1rem)] max-h-[calc(100vh-1rem)] overflow-auto rounded-[28px] border border-slate-200 bg-white p-4 shadow-2xl",
+          className
+        )}
       >
         {content}
       </PopoverContent>
     </Popover>
+  );
+}
+
+function PickerTextTrigger({
+  icon,
+  textValue,
+  onTextChange,
+  placeholder,
+  disabled = false,
+  className,
+  onOpen,
+}) {
+  return (
+    <div
+      className={cn(
+        pickerTriggerClassName,
+        "gap-3 pr-3",
+        disabled && "cursor-not-allowed opacity-60",
+        className
+      )}
+      onClick={() => {
+        if (!disabled) onOpen?.();
+      }}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        {icon}
+        <input
+          type="text"
+          value={textValue}
+          disabled={disabled}
+          placeholder={placeholder}
+          onFocus={() => {
+            if (!disabled) onOpen?.();
+          }}
+          onChange={(event) => onTextChange?.(event.target.value)}
+          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400"
+        />
+      </div>
+      <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+    </div>
   );
 }
 
@@ -183,10 +247,31 @@ export function DatePickerInput({
   disabled = false,
   className,
 }) {
+  const [open, setOpen] = React.useState(false);
+  const [inputValue, setInputValue] = React.useState(formatDisplayDate(value) || "");
   const selectedDate = parseDateOnly(value);
+  const displayValue = formatDisplayDate(value) || "";
+
+  React.useEffect(() => {
+    setInputValue(displayValue);
+  }, [displayValue]);
+
+  const handleInputChange = (nextValue) => {
+    setInputValue(nextValue);
+    if (!nextValue.trim()) {
+      onChange?.("");
+      return;
+    }
+    const parsed = parseDateInputString(nextValue);
+    if (parsed) {
+      onChange?.(formatDateOnly(parsed));
+    }
+  };
 
   return (
     <PickerPopover
+      open={open}
+      onOpenChange={setOpen}
       className="p-3"
       content={
         <div className="space-y-3">
@@ -194,28 +279,39 @@ export function DatePickerInput({
             mode="single"
             locale={ptBR}
             selected={selectedDate || undefined}
-            onSelect={(date) => onChange?.(date ? formatDateOnly(date) : "")}
-            className="rounded-[24px] bg-white p-2"
+            onSelect={(date) => {
+              onChange?.(date ? formatDateOnly(date) : "");
+              setInputValue(date ? formatInputDate(date) : "");
+            }}
+            className="w-full rounded-[24px] bg-white p-2"
             classNames={calendarClassNames}
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-1">
             <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Data</span>
-            <Button type="button" variant="ghost" size="sm" onClick={() => onChange?.("")}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                onChange?.("");
+                setInputValue("");
+              }}
+            >
               Limpar
             </Button>
           </div>
         </div>
       }
     >
-      <Button type="button" variant="outline" disabled={disabled} className={cn(pickerTriggerClassName, className)}>
-        <span className="flex items-center gap-3">
-          <CalendarIcon className="h-4 w-4 text-blue-500" />
-          <span className={value ? "text-slate-900" : "text-slate-400"}>
-            {formatDisplayDate(value) || placeholder}
-          </span>
-        </span>
-        <ChevronDown className="h-4 w-4 text-slate-400" />
-      </Button>
+      <PickerTextTrigger
+        icon={<CalendarIcon className="h-4 w-4 shrink-0 text-blue-500" />}
+        textValue={inputValue}
+        onTextChange={handleInputChange}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={className}
+        onOpen={() => setOpen(true)}
+      />
     </PickerPopover>
   );
 }
@@ -229,6 +325,7 @@ export function DateRangePickerInput({
   disabled = false,
   className,
 }) {
+  const [open, setOpen] = React.useState(false);
   const rangeStart = parseDateOnly(startValue);
   const rangeEnd = parseDateOnly(endValue);
   const selectedRange = rangeStart || rangeEnd
@@ -238,10 +335,35 @@ export function DateRangePickerInput({
       }
     : undefined;
 
-  const hasSelection = Boolean(startValue || endValue);
+  const displayValue = formatDisplayDateRange(startValue, endValue) || "";
+  const [inputValue, setInputValue] = React.useState(displayValue);
+
+  React.useEffect(() => {
+    setInputValue(displayValue);
+  }, [displayValue]);
+
+  const handleInputChange = (nextValue) => {
+    setInputValue(nextValue);
+    if (!nextValue.trim()) {
+      onStartChange?.("");
+      onEndChange?.("");
+      return;
+    }
+
+    const [startToken, endToken] = extractDateTokens(nextValue);
+    const startDate = parseDateInputString(startToken);
+    const endDate = parseDateInputString(endToken);
+
+    if (startDate) {
+      onStartChange?.(formatDateOnly(startDate));
+      onEndChange?.(endDate ? formatDateOnly(endDate) : "");
+    }
+  };
 
   return (
     <PickerPopover
+      open={open}
+      onOpenChange={setOpen}
       className="p-3"
       content={
         <div className="space-y-3">
@@ -253,8 +375,12 @@ export function DateRangePickerInput({
             onSelect={(range) => {
               onStartChange?.(range?.from ? formatDateOnly(range.from) : "");
               onEndChange?.(range?.to ? formatDateOnly(range.to) : "");
+              setInputValue(formatDisplayDateRange(
+                range?.from ? formatDateOnly(range.from) : "",
+                range?.to ? formatDateOnly(range.to) : "",
+              ) || "");
             }}
-            className="rounded-[24px] bg-white p-2"
+            className="w-full rounded-[24px] bg-white p-2"
             classNames={calendarClassNames}
           />
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -272,6 +398,7 @@ export function DateRangePickerInput({
               onClick={() => {
                 onStartChange?.("");
                 onEndChange?.("");
+                setInputValue("");
               }}
             >
               Limpar
@@ -280,15 +407,15 @@ export function DateRangePickerInput({
         </div>
       }
     >
-      <Button type="button" variant="outline" disabled={disabled} className={cn(pickerTriggerClassName, className)}>
-        <span className="flex items-center gap-3">
-          <CalendarIcon className="h-4 w-4 text-blue-500" />
-          <span className={hasSelection ? "text-slate-900" : "text-slate-400"}>
-            {formatDisplayDateRange(startValue, endValue) || placeholder}
-          </span>
-        </span>
-        <ChevronDown className="h-4 w-4 text-slate-400" />
-      </Button>
+      <PickerTextTrigger
+        icon={<CalendarIcon className="h-4 w-4 shrink-0 text-blue-500" />}
+        textValue={inputValue}
+        onTextChange={handleInputChange}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={className}
+        onOpen={() => setOpen(true)}
+      />
     </PickerPopover>
   );
 }
@@ -300,8 +427,12 @@ export function TimePickerInput({
   disabled = false,
   className,
 }) {
+  const [open, setOpen] = React.useState(false);
+
   return (
     <PickerPopover
+      open={open}
+      onOpenChange={setOpen}
       className="w-[320px]"
       content={
         <div className="space-y-3">
@@ -311,14 +442,28 @@ export function TimePickerInput({
           </div>
           <TimeList value={value} onChange={onChange} />
           <div className="flex justify-end">
-            <Button type="button" variant="ghost" size="sm" onClick={() => onChange?.("")}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                onChange?.("");
+                setOpen(false);
+              }}
+            >
               Limpar
             </Button>
           </div>
         </div>
       }
     >
-      <Button type="button" variant="outline" disabled={disabled} className={cn(pickerTriggerClassName, className)}>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        className={cn(pickerTriggerClassName, className)}
+      >
         <span className="flex items-center gap-3">
           <Clock3 className="h-4 w-4 text-blue-500" />
           <span className={value ? "text-slate-900" : "text-slate-400"}>{value || placeholder}</span>
@@ -336,6 +481,7 @@ export function DateTimePickerInput({
   disabled = false,
   className,
 }) {
+  const [open, setOpen] = React.useState(false);
   const selectedDateTime = parseDateTimeLocal(value);
   const dateValue = selectedDateTime ? format(selectedDateTime, "yyyy-MM-dd") : "";
   const timeValue = selectedDateTime ? format(selectedDateTime, "HH:mm") : "09:00";
@@ -355,6 +501,8 @@ export function DateTimePickerInput({
 
   return (
     <PickerPopover
+      open={open}
+      onOpenChange={setOpen}
       className="w-[360px]"
       content={
         <div className="space-y-4">
@@ -366,7 +514,15 @@ export function DateTimePickerInput({
               </p>
             </div>
             {value ? (
-              <Button type="button" variant="ghost" size="icon" onClick={() => onChange?.("")}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  onChange?.("");
+                  setOpen(false);
+                }}
+              >
                 <X className="h-4 w-4" />
               </Button>
             ) : null}
@@ -385,7 +541,13 @@ export function DateTimePickerInput({
         </div>
       }
     >
-      <Button type="button" variant="outline" disabled={disabled} className={cn(pickerTriggerClassName, className)}>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        className={cn(pickerTriggerClassName, className)}
+      >
         <span className="flex items-center gap-3">
           <CalendarIcon className="h-4 w-4 text-blue-500" />
           <span className={value ? "text-slate-900" : "text-slate-400"}>

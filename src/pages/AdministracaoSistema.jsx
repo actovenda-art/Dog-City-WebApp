@@ -4,6 +4,7 @@ import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User } from "
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { createPageUrl, openImageViewer } from "@/utils";
 import { notifyBrandingChanged } from "@/hooks/use-branding";
+import { ACTIVE_UNIT_EVENT, getStoredActiveUnitId } from "@/lib/unit-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -40,16 +41,42 @@ const SERVICE_OPTIONS = [
   "Adestramento",
 ];
 
+const createEmptyAccountingPhone = () => ({
+  finalidade: "",
+  telefone: "",
+  nome: "",
+});
+
+const createEmptyAccountingEmail = () => ({
+  finalidade: "",
+  email: "",
+  nome: "",
+});
+
+const createEmptyAccountingContacts = () => ({
+  telefones: [createEmptyAccountingPhone()],
+  emails: [createEmptyAccountingEmail(), createEmptyAccountingEmail()],
+});
+
+const createEmptyUnitAddress = () => ({
+  cep: "",
+  street: "",
+  number: "",
+  neighborhood: "",
+  city: "",
+  state: "",
+});
+
 const EMPTY_UNIT_FORM = {
   nome_fantasia: "",
   razao_social: "",
   cnpj: "",
   data_abertura: "",
   contabilidade_responsavel: "",
-  contatos_contabilidade: "",
+  contatos_contabilidade: createEmptyAccountingContacts(),
   contrato_social_path: "",
   contrato_social_label: "",
-  endereco: "",
+  endereco: createEmptyUnitAddress(),
   servicos_prestados: [],
   logo_url: "",
   logo_path: "",
@@ -81,6 +108,23 @@ function formatCNPJ(value) {
     .replace(/(\d{4})(\d)/, "$1-$2");
 }
 
+function formatPhone(value) {
+  const digits = (value || "").replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 10) {
+    return digits
+      .replace(/(\d{2})(\d)/, "($1) $2")
+      .replace(/(\d{4})(\d)/, "$1-$2");
+  }
+
+  return digits
+    .replace(/(\d{2})(\d)/, "($1) $2")
+    .replace(/(\d{5})(\d)/, "$1-$2");
+}
+
+function formatCEP(value) {
+  return (value || "").replace(/\D/g, "").replace(/(\d{5})(\d)/, "$1-$2").slice(0, 9);
+}
+
 function formatApiError(error, fallbackMessage) {
   const details = error?.message || error?.details || error?.hint || "";
   return details ? `${fallbackMessage}\n${details}` : fallbackMessage;
@@ -97,8 +141,82 @@ function isRowLevelSecurityError(error) {
 function cloneEmptyUnitForm() {
   return {
     ...EMPTY_UNIT_FORM,
+    contatos_contabilidade: createEmptyAccountingContacts(),
+    endereco: createEmptyUnitAddress(),
     servicos_prestados: [],
   };
+}
+
+function normalizeAccountingContacts(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return createEmptyAccountingContacts();
+  }
+
+  const telefones = Array.isArray(value.telefones) && value.telefones.length > 0
+    ? value.telefones.map((item) => ({
+      finalidade: item?.finalidade || "",
+      telefone: item?.telefone || "",
+      nome: item?.nome || "",
+    }))
+    : [createEmptyAccountingPhone()];
+
+  const emails = Array.isArray(value.emails) && value.emails.length > 0
+    ? value.emails.map((item) => ({
+      finalidade: item?.finalidade || "",
+      email: item?.email || "",
+      nome: item?.nome || "",
+    }))
+    : [createEmptyAccountingEmail(), createEmptyAccountingEmail()];
+
+  return { telefones, emails };
+}
+
+function normalizeUnitAddress(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      ...createEmptyUnitAddress(),
+      street: typeof value === "string" ? value : "",
+    };
+  }
+
+  return {
+    cep: value.cep || "",
+    street: value.street || value.logradouro || "",
+    number: value.number || value.numero || "",
+    neighborhood: value.neighborhood || value.bairro || "",
+    city: value.city || value.cidade || "",
+    state: value.state || value.estado || "",
+  };
+}
+
+function formatAccountingSummary(value) {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  const contacts = normalizeAccountingContacts(value);
+  const lines = [
+    ...contacts.telefones
+      .filter((item) => item.telefone)
+      .map((item) => `${item.finalidade || "Telefone"}: ${item.telefone}${item.nome ? ` | ${item.nome}` : ""}`),
+    ...contacts.emails
+      .filter((item) => item.email)
+      .map((item) => `${item.finalidade || "Email"}: ${item.email}${item.nome ? ` | ${item.nome}` : ""}`),
+  ];
+
+  return lines.length > 0 ? lines.join("\n") : "Nao informado";
+}
+
+function formatAddressSummary(value) {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  const address = normalizeUnitAddress(value);
+  const mainLine = [address.street, address.number].filter(Boolean).join(", ");
+  const secondaryLine = [address.neighborhood, address.city, address.state].filter(Boolean).join(" - ");
+  const lines = [mainLine, secondaryLine, address.cep].filter(Boolean);
+  return lines.length > 0 ? lines.join("\n") : "Nao informado";
 }
 
 function formatDisplayDate(value) {
@@ -138,9 +256,22 @@ export default function AdministracaoSistema() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isUploadingUnitAsset, setIsUploadingUnitAsset] = useState(false);
+  const [unitAddressLoading, setUnitAddressLoading] = useState(false);
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  useEffect(() => {
+    const handleUnitChanged = (event) => {
+      const nextUnitId = event?.detail?.unitId || getStoredActiveUnitId();
+      if (nextUnitId) {
+        setSelectedUnitId(nextUnitId);
+      }
+    };
+
+    window.addEventListener(ACTIVE_UNIT_EVENT, handleUnitChanged);
+    return () => window.removeEventListener(ACTIVE_UNIT_EVENT, handleUnitChanged);
   }, []);
 
   async function loadData() {
@@ -166,8 +297,11 @@ export default function AdministracaoSistema() {
 
       const hasCurrentSelection = selectedUnitId && (unitRows || []).some((item) => item.id === selectedUnitId);
       if (!hasCurrentSelection) {
-        const preferredUnitId = me?.empresa_id && unitRows?.some((item) => item.id === me.empresa_id)
-          ? me.empresa_id
+        const storedUnitId = getStoredActiveUnitId();
+        const preferredUnitId = storedUnitId && unitRows?.some((item) => item.id === storedUnitId)
+          ? storedUnitId
+          : me?.empresa_id && unitRows?.some((item) => item.id === me.empresa_id)
+            ? me.empresa_id
           : unitRows?.[0]?.id || "";
         setSelectedUnitId(preferredUnitId);
       }
@@ -184,6 +318,45 @@ export default function AdministracaoSistema() {
       setIsLoading(false);
     }
   }
+
+  useEffect(() => {
+    const cepDigits = unitForm.endereco?.cep?.replace(/\D/g, "") || "";
+    if (cepDigits.length !== 8) return undefined;
+
+    let cancelled = false;
+
+    async function fetchAddress() {
+      setUnitAddressLoading(true);
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
+        const data = await response.json();
+        if (cancelled || data?.erro) return;
+
+        setUnitForm((current) => ({
+          ...current,
+          endereco: {
+            ...current.endereco,
+            street: data.logradouro || current.endereco.street,
+            neighborhood: data.bairro || current.endereco.neighborhood,
+            city: data.localidade || current.endereco.city,
+            state: data.uf || current.endereco.state,
+          },
+        }));
+      } catch (error) {
+        console.warn("Erro ao buscar CEP da unidade:", error);
+      } finally {
+        if (!cancelled) {
+          setUnitAddressLoading(false);
+        }
+      }
+    }
+
+    fetchAddress();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [unitForm.endereco?.cep]);
 
   useEffect(() => {
     const selectedNameConfig = configs.find((item) => item.key === "branding.company_name" && item.empresa_id === selectedUnitId)
@@ -218,10 +391,10 @@ export default function AdministracaoSistema() {
       cnpj: unit.cnpj || "",
       data_abertura: metadata.data_abertura || "",
       contabilidade_responsavel: metadata.contabilidade_responsavel || "",
-      contatos_contabilidade: metadata.contatos_contabilidade || "",
+      contatos_contabilidade: normalizeAccountingContacts(metadata.contatos_contabilidade),
       contrato_social_path: metadata.contrato_social_path || "",
       contrato_social_label: metadata.contrato_social_label || "",
-      endereco: metadata.endereco || "",
+      endereco: normalizeUnitAddress(metadata.endereco),
       servicos_prestados: Array.isArray(metadata.servicos_prestados) ? metadata.servicos_prestados : [],
       logo_url: metadata.logo_url || "",
       logo_path: metadata.logo_path || "",
@@ -249,6 +422,88 @@ export default function AdministracaoSistema() {
       servicos_prestados: current.servicos_prestados.includes(serviceName)
         ? current.servicos_prestados.filter((item) => item !== serviceName)
         : [...current.servicos_prestados, serviceName],
+    }));
+  }
+
+  function updateUnitAddress(field, value) {
+    setUnitForm((current) => ({
+      ...current,
+      endereco: {
+        ...current.endereco,
+        [field]: value,
+      },
+    }));
+  }
+
+  function updateAccountingPhone(index, field, value) {
+    setUnitForm((current) => ({
+      ...current,
+      contatos_contabilidade: {
+        ...current.contatos_contabilidade,
+        telefones: current.contatos_contabilidade.telefones.map((item, itemIndex) => (
+          itemIndex === index
+            ? { ...item, [field]: value }
+            : item
+        )),
+      },
+    }));
+  }
+
+  function addAccountingPhone() {
+    setUnitForm((current) => ({
+      ...current,
+      contatos_contabilidade: {
+        ...current.contatos_contabilidade,
+        telefones: [...current.contatos_contabilidade.telefones, createEmptyAccountingPhone()],
+      },
+    }));
+  }
+
+  function removeAccountingPhone(index) {
+    setUnitForm((current) => ({
+      ...current,
+      contatos_contabilidade: {
+        ...current.contatos_contabilidade,
+        telefones: current.contatos_contabilidade.telefones.length > 1
+          ? current.contatos_contabilidade.telefones.filter((_, itemIndex) => itemIndex !== index)
+          : [createEmptyAccountingPhone()],
+      },
+    }));
+  }
+
+  function updateAccountingEmail(index, field, value) {
+    setUnitForm((current) => ({
+      ...current,
+      contatos_contabilidade: {
+        ...current.contatos_contabilidade,
+        emails: current.contatos_contabilidade.emails.map((item, itemIndex) => (
+          itemIndex === index
+            ? { ...item, [field]: value }
+            : item
+        )),
+      },
+    }));
+  }
+
+  function addAccountingEmail() {
+    setUnitForm((current) => ({
+      ...current,
+      contatos_contabilidade: {
+        ...current.contatos_contabilidade,
+        emails: [...current.contatos_contabilidade.emails, createEmptyAccountingEmail()],
+      },
+    }));
+  }
+
+  function removeAccountingEmail(index) {
+    setUnitForm((current) => ({
+      ...current,
+      contatos_contabilidade: {
+        ...current.contatos_contabilidade,
+        emails: current.contatos_contabilidade.emails.length > 1
+          ? current.contatos_contabilidade.emails.filter((_, itemIndex) => itemIndex !== index)
+          : [createEmptyAccountingEmail()],
+      },
     }));
   }
 
@@ -361,6 +616,18 @@ export default function AdministracaoSistema() {
     setIsSaving(true);
     try {
       const codeBase = slugify(unitForm.nome_fantasia).replace(/-/g, "").slice(0, 10).toUpperCase() || `UNIT${Date.now()}`;
+      const normalizedContacts = {
+        telefones: unitForm.contatos_contabilidade.telefones.filter((item) => item.finalidade || item.telefone || item.nome),
+        emails: unitForm.contatos_contabilidade.emails.filter((item) => item.finalidade || item.email || item.nome),
+      };
+      const normalizedAddress = {
+        cep: unitForm.endereco.cep || "",
+        street: unitForm.endereco.street || "",
+        number: unitForm.endereco.number || "",
+        neighborhood: unitForm.endereco.neighborhood || "",
+        city: unitForm.endereco.city || "",
+        state: unitForm.endereco.state || "",
+      };
       const payload = {
         codigo: editingUnit?.codigo || codeBase,
         slug: editingUnit?.slug || slugify(unitForm.nome_fantasia),
@@ -372,10 +639,16 @@ export default function AdministracaoSistema() {
           ...(editingUnit?.metadata || {}),
           data_abertura: unitForm.data_abertura || null,
           contabilidade_responsavel: unitForm.contabilidade_responsavel || "",
-          contatos_contabilidade: unitForm.contatos_contabilidade || "",
+          contatos_contabilidade: normalizedContacts,
+          contatos_contabilidade_legacy: typeof editingUnit?.metadata?.contatos_contabilidade === "string"
+            ? editingUnit.metadata.contatos_contabilidade
+            : editingUnit?.metadata?.contatos_contabilidade_legacy || "",
           contrato_social_path: unitForm.contrato_social_path || "",
           contrato_social_label: unitForm.contrato_social_label || "",
-          endereco: unitForm.endereco || "",
+          endereco: normalizedAddress,
+          endereco_legacy: typeof editingUnit?.metadata?.endereco === "string"
+            ? editingUnit.metadata.endereco
+            : editingUnit?.metadata?.endereco_legacy || "",
           servicos_prestados: unitForm.servicos_prestados || [],
           logo_url: unitForm.logo_url || "",
           logo_path: unitForm.logo_path || "",
@@ -534,18 +807,10 @@ export default function AdministracaoSistema() {
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
-              <SelectTrigger className="w-full sm:w-[260px] bg-white">
-                <SelectValue placeholder="Selecionar unidade" />
-              </SelectTrigger>
-              <SelectContent>
-                {units.map((unit) => (
-                  <SelectItem key={unit.id} value={unit.id}>
-                    {unit.nome_fantasia}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
+              Unidade ativa no menu lateral
+              <div className="mt-1 font-semibold text-gray-900">{selectedUnit?.nome_fantasia || "Nenhuma unidade ativa"}</div>
+            </div>
             <Button variant="outline" onClick={() => openUnitModal()}>
               <Plus className="w-4 h-4 mr-2" />
               Nova unidade
@@ -638,11 +903,11 @@ export default function AdministracaoSistema() {
                             </div>
                             <div className="rounded-lg border border-gray-200 bg-white p-3">
                               <p className="text-xs uppercase tracking-wide text-gray-400">Contato da contabilidade</p>
-                              <p className="mt-1 text-gray-700 whitespace-pre-line">{unitMeta.contatos_contabilidade || "Nao informado"}</p>
+                              <p className="mt-1 text-gray-700 whitespace-pre-line">{formatAccountingSummary(unitMeta.contatos_contabilidade)}</p>
                             </div>
                             <div className="rounded-lg border border-gray-200 bg-white p-3">
                               <p className="text-xs uppercase tracking-wide text-gray-400">Endereco</p>
-                              <p className="mt-1 text-gray-700 whitespace-pre-line">{unitMeta.endereco || "Nao informado"}</p>
+                              <p className="mt-1 text-gray-700 whitespace-pre-line">{formatAddressSummary(unitMeta.endereco)}</p>
                             </div>
                           </div>
 
@@ -811,7 +1076,7 @@ export default function AdministracaoSistema() {
 
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                     <p className="text-xs uppercase tracking-wide text-gray-500">Endereco</p>
-                    <p className="mt-2 text-sm text-gray-700 whitespace-pre-line">{selectedUnitMeta.endereco || "Nao informado"}</p>
+                    <p className="mt-2 text-sm text-gray-700 whitespace-pre-line">{formatAddressSummary(selectedUnitMeta.endereco)}</p>
                   </div>
 
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -958,27 +1223,141 @@ export default function AdministracaoSistema() {
                   className="mt-2"
                 />
               </div>
-              <div>
-                <Label>Contatos da contabilidade</Label>
-                <Textarea
-                  value={unitForm.contatos_contabilidade}
-                  onChange={(event) => setUnitForm((current) => ({ ...current, contatos_contabilidade: event.target.value }))}
-                  className="mt-2"
-                  rows={3}
-                  placeholder="Telefone, email, responsavel, observacoes"
-                />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Label>Telefones da contabilidade</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addAccountingPhone}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Adicionar telefone
+                  </Button>
+                </div>
+                <div className="space-y-3">
+                  {unitForm.contatos_contabilidade.telefones.map((item, index) => (
+                    <div key={`phone-${index}`} className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 p-3 sm:grid-cols-[1.2fr,1.2fr,1fr,auto]">
+                      <Input
+                        value={item.finalidade}
+                        onChange={(event) => updateAccountingPhone(index, "finalidade", event.target.value)}
+                        placeholder="Tipo da demanda"
+                      />
+                      <Input
+                        value={item.telefone}
+                        onChange={(event) => updateAccountingPhone(index, "telefone", formatPhone(event.target.value))}
+                        placeholder="Telefone"
+                        inputMode="tel"
+                      />
+                      <Input
+                        value={item.nome}
+                        onChange={(event) => updateAccountingPhone(index, "nome", event.target.value)}
+                        placeholder="Nome"
+                      />
+                      <Button type="button" variant="outline" onClick={() => removeAccountingPhone(index)}>
+                        Remover
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div>
-              <Label>Endereco</Label>
-              <Textarea
-                value={unitForm.endereco}
-                onChange={(event) => setUnitForm((current) => ({ ...current, endereco: event.target.value }))}
-                className="mt-2"
-                rows={3}
-                placeholder="Rua, numero, bairro, cidade, estado e CEP"
-              />
+            <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <Label>Emails da contabilidade</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addAccountingEmail}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Adicionar email
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {unitForm.contatos_contabilidade.emails.map((item, index) => (
+                  <div key={`email-${index}`} className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 p-3 sm:grid-cols-[1.2fr,1.4fr,1fr,auto]">
+                    <Input
+                      value={item.finalidade}
+                      onChange={(event) => updateAccountingEmail(index, "finalidade", event.target.value)}
+                      placeholder="Tipo da demanda"
+                    />
+                    <Input
+                      type="email"
+                      value={item.email}
+                      onChange={(event) => updateAccountingEmail(index, "email", event.target.value)}
+                      placeholder="Email"
+                    />
+                    <Input
+                      value={item.nome}
+                      onChange={(event) => updateAccountingEmail(index, "nome", event.target.value)}
+                      placeholder="Nome"
+                    />
+                    <Button type="button" variant="outline" onClick={() => removeAccountingEmail(index)}>
+                      Remover
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4 rounded-xl border border-gray-200 p-4">
+              <div>
+                <Label>Endereco</Label>
+                <p className="mt-1 text-xs text-gray-500">
+                  {unitAddressLoading ? "Buscando endereco..." : "Rua, bairro, cidade e estado serao preenchidos pelo CEP."}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>CEP</Label>
+                  <Input
+                    value={unitForm.endereco.cep}
+                    onChange={(event) => updateUnitAddress("cep", formatCEP(event.target.value))}
+                    className="mt-2"
+                    inputMode="numeric"
+                    maxLength={9}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Rua</Label>
+                  <Input
+                    value={unitForm.endereco.street}
+                    onChange={(event) => updateUnitAddress("street", event.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>Numero</Label>
+                  <Input
+                    value={unitForm.endereco.number}
+                    onChange={(event) => updateUnitAddress("number", event.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label>Bairro</Label>
+                  <Input
+                    value={unitForm.endereco.neighborhood}
+                    onChange={(event) => updateUnitAddress("neighborhood", event.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label>Cidade</Label>
+                  <Input
+                    value={unitForm.endereco.city}
+                    onChange={(event) => updateUnitAddress("city", event.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>Estado</Label>
+                  <Input
+                    value={unitForm.endereco.state}
+                    onChange={(event) => updateUnitAddress("state", event.target.value)}
+                    className="mt-2"
+                    maxLength={2}
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

@@ -31,7 +31,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import NotificationBell from "@/components/layout/NotificationBell";
 import { useBranding } from "@/hooks/use-branding";
-import { getStoredActiveUnitId, getUnitDisplayName, resolveDogCityUnit, setStoredActiveUnitId } from "@/lib/unit-context";
+import { ACTIVE_UNIT_EVENT, getStoredActiveUnitId, getUnitDisplayName, resolveDogCityUnit, setStoredActiveUnitId } from "@/lib/unit-context";
 
 export default function Layout({ children, currentPageName }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -58,6 +58,23 @@ export default function Layout({ children, currentPageName }) {
 
   useEffect(() => {
     loadUser();
+  }, []);
+
+  useEffect(() => {
+    const handleUnitChanged = (event) => {
+      const nextUnitId = event?.detail?.unitId || getStoredActiveUnitId();
+      if (!nextUnitId) return;
+
+      setActiveUnitId(nextUnitId);
+      setCurrentUser((current) => current ? {
+        ...current,
+        active_unit_id: nextUnitId,
+        empresa_id: nextUnitId,
+      } : current);
+    };
+
+    window.addEventListener(ACTIVE_UNIT_EVENT, handleUnitChanged);
+    return () => window.removeEventListener(ACTIVE_UNIT_EVENT, handleUnitChanged);
   }, []);
 
   const loadUser = async () => {
@@ -107,6 +124,11 @@ export default function Layout({ children, currentPageName }) {
     if (!value || value === activeUnitId) return;
     setStoredActiveUnitId(value);
     setActiveUnitId(value);
+    setCurrentUser((current) => current ? {
+      ...current,
+      active_unit_id: value,
+      empresa_id: value,
+    } : current);
     setIsMobileMenuOpen(false);
     window.location.reload();
   };

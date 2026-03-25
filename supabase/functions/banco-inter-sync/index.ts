@@ -1351,9 +1351,7 @@ async function normalizeCsvTransactions(
   filename: string | null,
 ) {
   const parsed = parseBancoInterCsv(csvText);
-  const normalizedRows: NormalizedTransaction[] = [];
-
-  for (const row of parsed.rows) {
+  const normalizedRows = await Promise.all(parsed.rows.map(async (row) => {
     const normalizedType: "entrada" | "saida" = row.amount < 0 ? "saida" : "entrada";
     const absoluteAmount = Math.abs(row.amount);
     const externalId = await sha256Hex([
@@ -1366,7 +1364,7 @@ async function normalizeCsvTransactions(
       row.balance === null ? "" : row.balance.toFixed(2),
     ].join("|"));
 
-    normalizedRows.push({
+    return {
       empresa_id: empresaId,
       descricao: row.description,
       tipo: normalizedType,
@@ -1414,8 +1412,8 @@ async function normalizeCsvTransactions(
       },
       imported_at: new Date().toISOString(),
       sync_run_id: syncRunId,
-    } satisfies NormalizedTransaction);
-  }
+    } satisfies NormalizedTransaction;
+  }));
 
   return {
     parsed,
@@ -1445,17 +1443,17 @@ async function persistCsvTransactions(
   }
 
   const uniqueRows = Array.from(uniqueRowsByExternalId.values());
-  let replacedExistingCount = 0;
+  let replacedExistingCount: number | null = 0;
 
   if (replaceExistingCsv) {
-    const { count, error: deleteExistingError } = await supabase
+    const { error: deleteExistingError } = await supabase
       .from("extratobancario")
-      .delete({ count: "exact" })
+      .delete()
       .eq("empresa_id", empresaId)
       .eq("source_provider", "banco_inter_csv");
 
     if (deleteExistingError) throw deleteExistingError;
-    replacedExistingCount = count || 0;
+    replacedExistingCount = null;
   }
 
   const existingIds = new Set<string>();
@@ -1478,7 +1476,7 @@ async function persistCsvTransactions(
 
   const rowsToInsert = uniqueRows.filter((row) => !existingIds.has(row.external_id));
 
-  for (const chunk of chunkArray(rowsToInsert, 100)) {
+  for (const chunk of chunkArray(rowsToInsert, 500)) {
     if (!chunk.length) continue;
     const { error } = await supabase.from("extratobancario").insert(chunk);
     if (error) throw error;

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Search, Check } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
@@ -63,6 +63,7 @@ export default function Cadastro() {
     return n.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
   };
   const formatCEP = (v) => v.replace(/\D/g, '').replace(/(\d{5})(\d{3})/, '$1-$2').slice(0, 9);
+  const optional = (v) => v === "" ? null : v;
 
   const handleUpload = async (file, field) => {
     if (!file) return;
@@ -109,10 +110,44 @@ export default function Cadastro() {
     if (!dogForm.nome) { setNotifyTitle("Campo obrigatório"); setNotifyMessage("Informe o nome do cão."); setNotifyOpen(true); return; }
     setIsSaving(true);
     try {
-      await Dog.create({ ...dogForm, empresa_id: currentUser?.empresa_id || null, peso: dogForm.peso ? parseFloat(dogForm.peso) : null });
+      await Dog.create({
+        empresa_id: currentUser?.empresa_id || null,
+        nome: dogForm.nome.trim(),
+        apelido: optional(dogForm.apelido),
+        raca: optional(dogForm.raca),
+        cores_pelagem: optional(dogForm.cores_pelagem),
+        pelagem: optional(dogForm.pelagem),
+        peso: dogForm.peso ? parseFloat(dogForm.peso) : null,
+        data_nascimento: optional(dogForm.data_nascimento),
+        foto_url: optional(dogForm.foto_url),
+        foto_carteirinha_vacina_url: optional(dogForm.foto_carteirinha_vacina_url),
+        data_revacinacao_1: optional(dogForm.data_revacinacao_1),
+        data_revacinacao_2: optional(dogForm.data_revacinacao_2),
+        data_revacinacao_3: optional(dogForm.data_revacinacao_3),
+        veterinario_responsavel: optional(dogForm.veterinario_responsavel),
+        veterinario_horario_atendimento: optional(dogForm.veterinario_horario_atendimento),
+        veterinario_telefone: optional(dogForm.veterinario_telefone),
+        veterinario_clinica_telefone: optional(dogForm.veterinario_clinica_telefone),
+        veterinario_endereco: optional(dogForm.veterinario_endereco),
+        alimentacao_marca_racao: optional(dogForm.alimentacao_marca_racao),
+        alimentacao_sabor: optional(dogForm.alimentacao_sabor),
+        alimentacao_tipo: optional(dogForm.alimentacao_tipo),
+        refeicao_1_qnt: optional(dogForm.refeicao_1_qnt),
+        refeicao_1_horario: optional(dogForm.refeicao_1_horario),
+        refeicao_1_obs: optional(dogForm.refeicao_1_obs),
+        refeicao_2_qnt: optional(dogForm.refeicao_2_qnt),
+        refeicao_2_horario: optional(dogForm.refeicao_2_horario),
+        refeicao_2_obs: optional(dogForm.refeicao_2_obs),
+        refeicao_3_qnt: optional(dogForm.refeicao_3_qnt),
+        refeicao_3_horario: optional(dogForm.refeicao_3_horario),
+        refeicao_3_obs: optional(dogForm.refeicao_3_obs),
+        refeicao_4_qnt: optional(dogForm.refeicao_4_qnt),
+        refeicao_4_horario: optional(dogForm.refeicao_4_horario),
+        refeicao_4_obs: optional(dogForm.refeicao_4_obs),
+      });
       setNotifyTitle("Sucesso"); setNotifyMessage("Cão cadastrado com sucesso!"); setNotifyOpen(true);
       setDogForm(emptyDog); loadDogs();
-    } catch (error) { setNotifyTitle("Erro"); setNotifyMessage("Erro ao cadastrar."); setNotifyOpen(true); }
+    } catch (error) { setNotifyTitle("Erro"); setNotifyMessage(error?.message || "Erro ao cadastrar."); setNotifyOpen(true); }
     setIsSaving(false);
   };
 
@@ -331,7 +366,16 @@ export default function Cadastro() {
       </div>
 
       <Dialog open={notifyOpen} onOpenChange={setNotifyOpen}>
-        <DialogContent className="w-[92vw] max-w-[460px]"><DialogHeader><DialogTitle>{notifyTitle}</DialogTitle></DialogHeader><p className="text-sm text-gray-700 py-2">{notifyMessage}</p><DialogFooter><Button onClick={() => setNotifyOpen(false)} className="bg-blue-600 hover:bg-blue-700 text-white">OK</Button></DialogFooter></DialogContent>
+        <DialogContent className="w-[92vw] max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>{notifyTitle}</DialogTitle>
+            <DialogDescription className="sr-only">Mensagem de retorno do cadastro.</DialogDescription>
+          </DialogHeader>
+          <p className="py-2 text-sm text-gray-700">{notifyMessage}</p>
+          <DialogFooter>
+            <Button onClick={() => setNotifyOpen(false)} className="bg-blue-600 hover:bg-blue-700 text-white">OK</Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
   );

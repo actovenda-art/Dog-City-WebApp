@@ -1,0 +1,30 @@
+-- Perfil estendido de caes para a tela Cadastro.
+-- Execute este arquivo no SQL Editor do Supabase.
+
+alter table if exists public.dogs
+  add column if not exists cores_pelagem text,
+  add column if not exists pelagem text,
+  add column if not exists foto_carteirinha_vacina_url text,
+  add column if not exists data_revacinacao_1 date,
+  add column if not exists data_revacinacao_2 date,
+  add column if not exists data_revacinacao_3 date,
+  add column if not exists veterinario_responsavel text,
+  add column if not exists veterinario_horario_atendimento text,
+  add column if not exists veterinario_telefone text,
+  add column if not exists veterinario_clinica_telefone text,
+  add column if not exists veterinario_endereco text,
+  add column if not exists alimentacao_marca_racao text,
+  add column if not exists alimentacao_sabor text,
+  add column if not exists alimentacao_tipo text,
+  add column if not exists refeicao_1_qnt text,
+  add column if not exists refeicao_1_horario time,
+  add column if not exists refeicao_1_obs text,
+  add column if not exists refeicao_2_qnt text,
+  add column if not exists refeicao_2_horario time,
+  add column if not exists refeicao_2_obs text,
+  add column if not exists refeicao_3_qnt text,
+  add column if not exists refeicao_3_horario time,
+  add column if not exists refeicao_3_obs text,
+  add column if not exists refeicao_4_qnt text,
+  add column if not exists refeicao_4_horario time,
+  add column if not exists refeicao_4_obs text;

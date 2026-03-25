@@ -184,11 +184,14 @@ function TimeList({ value, onChange }) {
 function PickerPopover({ children, content, className, open, onOpenChange }) {
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverAnchor asChild>{children}</PopoverAnchor>
+      <PopoverAnchor asChild>
+        <div className="w-full">{children}</div>
+      </PopoverAnchor>
       <PopoverContent
         align="start"
         sideOffset={8}
         collisionPadding={8}
+        onOpenAutoFocus={(event) => event.preventDefault()}
         className={cn(
           "w-[360px] max-w-[calc(100vw-1rem)] max-h-[calc(100vh-1rem)] overflow-auto rounded-[28px] border border-slate-200 bg-white p-4 shadow-2xl",
           className

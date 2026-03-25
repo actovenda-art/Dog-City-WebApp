@@ -85,7 +85,7 @@ export default function OrcamentoResumo({ calculo }) {
 
           {calculo.subtotal_servicos > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Subtotal Servicos</span>
+              <span className="text-gray-600">Subtotal Day Care e Servicos</span>
               <span>{formatCurrency(calculo.subtotal_servicos)}</span>
             </div>
           )}

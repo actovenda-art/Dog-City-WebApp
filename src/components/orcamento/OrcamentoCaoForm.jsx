@@ -21,10 +21,14 @@ export default function OrcamentoCaoForm({
   cao,
   index,
   dogs,
+  precos,
   onUpdate,
   onRemove,
   canRemove,
 }) {
+  const formatCurrency = (value) =>
+    new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
+
   function handleChange(field, value) {
     onUpdate(index, { ...cao, [field]: value });
   }
@@ -103,6 +107,17 @@ export default function OrcamentoCaoForm({
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex items-center justify-between rounded-lg bg-emerald-50 p-3">
+            <div>
+              <Label className="text-sm font-medium">Day Care</Label>
+              <p className="text-xs text-gray-500">Avulso por cao</p>
+            </div>
+            <Switch
+              checked={cao.servicos?.day_care || false}
+              onCheckedChange={(checked) => handleServiceChange("day_care", checked)}
+            />
+          </div>
+
           <div className="flex items-center justify-between rounded-lg bg-blue-50 p-3">
             <div>
               <Label className="text-sm font-medium">Hospedagem</Label>
@@ -147,6 +162,66 @@ export default function OrcamentoCaoForm({
             />
           </div>
         </div>
+
+        {cao.servicos?.day_care && (
+          <div className="space-y-4 rounded-lg border border-emerald-100 bg-emerald-50/50 p-4">
+            <div className="rounded-lg bg-white p-3">
+              <p className="text-sm font-medium text-gray-900">Day Care Avulso</p>
+              <p className="mt-1 text-xs text-gray-500">
+                Sem pacote ativo: {formatCurrency(precos?.day_care_avulso_sem_pacote ?? precos?.day_care_avulso ?? 125)}
+                {" "}| Com pacote ativo: {formatCurrency(precos?.day_care_avulso_com_pacote ?? 110)}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-white p-3">
+              <div>
+                <Label className="text-sm font-medium">Cao com pacote de Day Care ativo?</Label>
+                <p className="text-xs text-gray-500">Aplica o valor avulso reduzido para clientes com pacote em vigor.</p>
+              </div>
+              <Switch
+                checked={cao.day_care_plano_ativo || false}
+                onCheckedChange={(checked) => handleChange("day_care_plano_ativo", checked)}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <Label>Data</Label>
+                <DatePickerInput
+                  className="mt-1"
+                  value={cao.day_care_data}
+                  onChange={(value) => handleChange("day_care_data", value)}
+                />
+              </div>
+              <div>
+                <Label>Horario de Entrada</Label>
+                <TimePickerInput
+                  className="mt-1"
+                  value={cao.day_care_horario_entrada}
+                  onChange={(value) => handleChange("day_care_horario_entrada", value)}
+                />
+              </div>
+              <div>
+                <Label>Horario de Saida</Label>
+                <TimePickerInput
+                  className="mt-1"
+                  value={cao.day_care_horario_saida}
+                  onChange={(value) => handleChange("day_care_horario_saida", value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Observacoes do Day Care</Label>
+              <Input
+                className="mt-1"
+                value={cao.day_care_observacoes || ""}
+                onChange={(event) => handleChange("day_care_observacoes", event.target.value)}
+                placeholder="Ex.: socializacao, gasto de energia, horario especial"
+              />
+            </div>
+          </div>
+        )}
 
         {cao.servicos?.hospedagem && (
           <div className="space-y-4 rounded-lg border border-blue-100 bg-blue-50/50 p-4">

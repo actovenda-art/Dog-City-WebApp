@@ -38,27 +38,29 @@ export default function NotificationBell({ userId }) {
     setIsLoading(false);
   };
 
+  const isRead = (notification) => notification?.lida ?? notification?.lido ?? false;
+
   const markAsRead = async (notif) => {
-    if (notif.lida) return;
+    if (isRead(notif)) return;
     try {
-      await Notificacao.update(notif.id, { lida: true });
-      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, lida: true } : n));
+      await Notificacao.update(notif.id, { lido: true });
+      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, lido: true, lida: true } : n));
     } catch (error) {
       console.error("Erro ao marcar como lida:", error);
     }
   };
 
   const markAllAsRead = async () => {
-    const unread = notifications.filter(n => !n.lida);
+    const unread = notifications.filter((notification) => !isRead(notification));
     try {
-      await Promise.all(unread.map(n => Notificacao.update(n.id, { lida: true })));
-      setNotifications(prev => prev.map(n => ({ ...n, lida: true })));
+      await Promise.all(unread.map((notification) => Notificacao.update(notification.id, { lido: true })));
+      setNotifications(prev => prev.map(n => ({ ...n, lido: true, lida: true })));
     } catch (error) {
       console.error("Erro ao marcar todas como lidas:", error);
     }
   };
 
-  const unreadCount = notifications.filter(n => !n.lida).length;
+  const unreadCount = notifications.filter((notification) => !isRead(notification)).length;
 
   const getNotificationIcon = (tipo) => {
     switch (tipo) {
@@ -155,18 +157,18 @@ export default function NotificationBell({ userId }) {
                       to={notif.link || createPageUrl("PedidosInternos")}
                       onClick={() => { markAsRead(notif); setIsOpen(false); }}
                       className={`flex items-start gap-3 px-4 py-3 hover:bg-slate-50 transition-colors border-b border-slate-50 ${
-                        !notif.lida ? 'bg-blue-50/50' : ''
+                        !isRead(notif) ? 'bg-blue-50/50' : ''
                       }`}
                     >
                       <div className={`mt-0.5 w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        !notif.lida 
+                        !isRead(notif)
                           ? 'bg-gradient-to-br from-blue-500 to-indigo-600' 
                           : 'bg-slate-100'
                       }`}>
-                        <Icon className={`w-4 h-4 ${!notif.lida ? 'text-white' : 'text-slate-500'}`} />
+                        <Icon className={`w-4 h-4 ${!isRead(notif) ? 'text-white' : 'text-slate-500'}`} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm truncate ${!notif.lida ? 'font-semibold text-slate-800' : 'text-slate-700'}`}>
+                        <p className={`text-sm truncate ${!isRead(notif) ? 'font-semibold text-slate-800' : 'text-slate-700'}`}>
                           {notif.titulo}
                         </p>
                         {notif.mensagem && (
@@ -174,7 +176,7 @@ export default function NotificationBell({ userId }) {
                         )}
                         <p className="text-xs text-slate-400 mt-1">{formatTime(notif.created_date)}</p>
                       </div>
-                      {!notif.lida && (
+                      {!isRead(notif) && (
                         <div className="w-2 h-2 rounded-full bg-blue-500 mt-2 flex-shrink-0"></div>
                       )}
                     </Link>

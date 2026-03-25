@@ -2,6 +2,9 @@ import React, { useState, useEffect } from "react";
 import { Orcamento } from "@/api/entities";
 import { Dog } from "@/api/entities";
 import { Carteira } from "@/api/entities";
+import { Appointment } from "@/api/entities";
+import { TabelaPrecos } from "@/api/entities";
+import { User } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +22,7 @@ import { ptBR } from "date-fns/locale";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { notificacoesOrcamento } from "@/api/functions";
+import { buildAppointmentsFromOrcamento, buildDogOwnerIndex, buildPricingConfig } from "@/lib/attendance";
 
 export default function HistoricoOrcamentos() {
   const [orcamentos, setOrcamentos] = useState([]);
@@ -103,6 +107,35 @@ export default function HistoricoOrcamentos() {
 
   const handleStatusChange = async (id, newStatus) => {
     await Orcamento.update(id, { status: newStatus });
+
+    const orcamento = orcamentos.find((item) => item.id === id);
+    if (newStatus === "aprovado" && orcamento) {
+      try {
+        const [pricingRows, currentUser, existingAppointments] = await Promise.all([
+          TabelaPrecos.list("-created_date", 1000),
+          User.me(),
+          Appointment.listAll("-created_date", 1000, 5000),
+        ]);
+
+        const ownerByDogId = buildDogOwnerIndex(carteiras, []);
+        const precos = buildPricingConfig(pricingRows || [], currentUser?.empresa_id || orcamento.empresa_id || null);
+        const plannedAppointments = buildAppointmentsFromOrcamento({
+          orcamento,
+          dogs,
+          precos,
+          ownerByDogId,
+        });
+
+        const existingKeys = new Set((existingAppointments || []).map((item) => item.source_key).filter(Boolean));
+        const appointmentsToCreate = plannedAppointments.filter((item) => !item.source_key || !existingKeys.has(item.source_key));
+
+        for (const appointment of appointmentsToCreate) {
+          await Appointment.create(appointment);
+        }
+      } catch (error) {
+        console.error("Erro ao gerar agendamentos do orcamento:", error);
+      }
+    }
     
     // Notificar sobre mudança de status
     try {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Orcamento, Dog, Carteira, TabelaPrecos, User } from "@/api/entities";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,9 @@ import OrcamentoResumo from "@/components/orcamento/OrcamentoResumo";
 const PRECOS_PADRAO = {
   diaria_normal: 150,
   diaria_mensalista: 120,
+  day_care_avulso_com_pacote: 110,
+  day_care_avulso_sem_pacote: 125,
+  day_care_avulso: 125,
   pernoite: 60,
   transporte_km: 6,
   desconto_canil: 0.3,
@@ -66,7 +69,12 @@ const PRECOS_TOSA_DETALHADA_PADRAO = {
 
 const emptyCao = {
   dog_id: "",
-  servicos: { hospedagem: false, banho: false, tosa: false, transporte: false },
+  servicos: { day_care: false, hospedagem: false, banho: false, tosa: false, transporte: false },
+  day_care_data: "",
+  day_care_plano_ativo: false,
+  day_care_horario_entrada: "08:00",
+  day_care_horario_saida: "18:00",
+  day_care_observacoes: "",
   hosp_data_entrada: "",
   hosp_horario_entrada: "",
   hosp_data_saida: "",
@@ -117,6 +125,28 @@ function buildPricingConfig(precosRows, empresaId) {
   return {
     diaria_normal: byConfigKey.diaria_normal ?? PRECOS_PADRAO.diaria_normal,
     diaria_mensalista: byConfigKey.diaria_mensalista ?? PRECOS_PADRAO.diaria_mensalista,
+    day_care_avulso_com_pacote:
+      byConfigKey.day_care_avulso_com_pacote ??
+      scopedRows.find(
+        (row) => row.tipo === "day_care_avulso_com_pacote" || row.config_key === "day_care_avulso_com_pacote"
+      )?.valor ??
+      PRECOS_PADRAO.day_care_avulso_com_pacote,
+    day_care_avulso_sem_pacote:
+      byConfigKey.day_care_avulso_sem_pacote ??
+      scopedRows.find(
+        (row) => row.tipo === "day_care_avulso_sem_pacote" || row.config_key === "day_care_avulso_sem_pacote"
+      )?.valor ??
+      byConfigKey.day_care_avulso ??
+      scopedRows.find((row) => row.tipo === "day_care_avulso" || row.config_key === "day_care_avulso")?.valor ??
+      PRECOS_PADRAO.day_care_avulso_sem_pacote,
+    day_care_avulso:
+      byConfigKey.day_care_avulso ??
+      scopedRows.find((row) => row.tipo === "day_care_avulso" || row.config_key === "day_care_avulso")?.valor ??
+      byConfigKey.day_care_avulso_sem_pacote ??
+      scopedRows.find(
+        (row) => row.tipo === "day_care_avulso_sem_pacote" || row.config_key === "day_care_avulso_sem_pacote"
+      )?.valor ??
+      PRECOS_PADRAO.day_care_avulso_sem_pacote,
     pernoite: byConfigKey.pernoite ?? PRECOS_PADRAO.pernoite,
     transporte_km: byConfigKey.transporte_km ?? PRECOS_PADRAO.transporte_km,
     desconto_canil: (byConfigKey.desconto_canil ?? (PRECOS_PADRAO.desconto_canil * 100)) / 100,
@@ -126,6 +156,13 @@ function buildPricingConfig(precosRows, empresaId) {
     tosa_geral: { ...PRECOS_TOSA_GERAL_PADRAO, ...breedMap("tosa_geral") },
     tosa_detalhada: { ...PRECOS_TOSA_DETALHADA_PADRAO, ...breedMap("tosa_detalhada") },
   };
+}
+
+function getDayCareStandaloneValue(cao, precos) {
+  if (cao?.day_care_plano_ativo) {
+    return precos.day_care_avulso_com_pacote ?? precos.day_care_avulso ?? PRECOS_PADRAO.day_care_avulso_com_pacote;
+  }
+  return precos.day_care_avulso_sem_pacote ?? precos.day_care_avulso ?? PRECOS_PADRAO.day_care_avulso_sem_pacote;
 }
 
 function calcularOrcamento(caes, dogs, precos) {
@@ -141,6 +178,17 @@ function calcularOrcamento(caes, dogs, precos) {
     const dog = dogs.find((item) => item.id === cao.dog_id);
     const linhas = [];
     let totalCao = 0;
+
+    if (cao.servicos?.day_care && cao.day_care_data) {
+      const valorDayCare = getDayCareStandaloneValue(cao, precos);
+      linhas.push({
+        tipo: "day_care",
+        descricao: `Day Care Avulso (${cao.day_care_plano_ativo ? "cao com pacote ativo" : "cao sem pacote ativo"})`,
+        valor: valorDayCare,
+      });
+      totalCao += valorDayCare;
+      subtotalServicos += valorDayCare;
+    }
 
     if (cao.servicos?.hospedagem && cao.hosp_data_entrada && cao.hosp_data_saida) {
       const entrada = new Date(cao.hosp_data_entrada);
@@ -287,12 +335,14 @@ function calcularOrcamento(caes, dogs, precos) {
 }
 
 export default function Orcamentos() {
+  const location = useLocation();
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
   const [orcamentos, setOrcamentos] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [precos, setPrecos] = useState(buildPricingConfig([], null));
   const [currentUser, setCurrentUser] = useState(null);
+  const [prefillApplied, setPrefillApplied] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [etapa, setEtapa] = useState("cliente");
@@ -312,6 +362,56 @@ export default function Orcamentos() {
       setCalculo(calcularOrcamento(caes, dogs, precos));
     }
   }, [caes, dogs, precos]);
+
+  useEffect(() => {
+    if (isLoading || prefillApplied || !dogs.length) return;
+
+    const params = new URLSearchParams(location.search);
+    const dogId = params.get("dogId");
+    const service = params.get("service");
+    const date = params.get("date") || new Date().toISOString().slice(0, 10);
+    const appointmentId = params.get("appointmentId");
+    if (!dogId || !service) return;
+
+    const selectedCarteira = carteiras.find((cliente) =>
+      [1, 2, 3, 4, 5, 6, 7, 8].some((index) => cliente[`dog_id_${index}`] === dogId)
+    ) || null;
+
+    const prefilledCao = {
+      ...emptyCao,
+      dog_id: dogId,
+      servicos: {
+        ...emptyCao.servicos,
+      },
+    };
+
+    if (service === "banho") {
+      prefilledCao.servicos.banho = true;
+      prefilledCao.banho_horario = "09:00";
+    } else if (service === "hospedagem") {
+      prefilledCao.servicos.hospedagem = true;
+      prefilledCao.hosp_data_entrada = date;
+      prefilledCao.hosp_horario_entrada = "09:00";
+      prefilledCao.hosp_data_saida = date;
+      prefilledCao.hosp_horario_saida = "18:00";
+    } else if (service === "day_care") {
+      prefilledCao.servicos.day_care = true;
+      prefilledCao.day_care_data = date;
+      prefilledCao.day_care_horario_entrada = "08:00";
+      prefilledCao.day_care_horario_saida = "18:00";
+    }
+
+    setClienteSelecionado(selectedCarteira);
+    setCaes([prefilledCao]);
+    setObservacoes(
+      appointmentId
+        ? `Origem: agendamento manual ${appointmentId}. Revise valores e confirmacoes antes de enviar.`
+        : "Origem: agendamento manual. Revise valores e confirmacoes antes de enviar."
+    );
+    setEtapa("caes");
+    setShowModal(true);
+    setPrefillApplied(true);
+  }, [caes.length, carteiras, dogs, isLoading, location.search, prefillApplied]);
 
   async function loadData() {
     setIsLoading(true);
@@ -515,7 +615,7 @@ export default function Orcamentos() {
                     <div className="mt-2 flex flex-wrap gap-2 pl-0 text-xs text-gray-500 sm:pl-13">
                       <span>Hospedagem: {formatCurrency(orcamento.subtotal_hospedagem)}</span>
                       <span>•</span>
-                      <span>Banho e Tosa: {formatCurrency(orcamento.subtotal_servicos)}</span>
+                      <span>Servicos: {formatCurrency(orcamento.subtotal_servicos)}</span>
                       <span>•</span>
                       <span>Transporte: {formatCurrency(orcamento.subtotal_transporte)}</span>
                     </div>
@@ -623,6 +723,7 @@ export default function Orcamentos() {
                       index={index}
                       allCaes={caes}
                       dogs={getCaesDoCliente()}
+                      precos={precos}
                       onUpdate={updateCao}
                       onRemove={removeCao}
                       canRemove={caes.length > 1}

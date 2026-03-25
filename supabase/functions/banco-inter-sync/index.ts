@@ -1018,7 +1018,7 @@ function buildDateDebugSample(rawPayload: unknown, normalizedRows: NormalizedTra
   }));
 }
 
-async function startSyncLog(config: IntegrationConfig, triggerSource: string, requestedFrom: string, requestedTo: string) {
+async function startSyncLog(config: IntegrationConfig, triggerSource: string, requestedFrom: string | null, requestedTo: string | null) {
   const { data, error } = await supabase
     .from("integracao_sync_log")
     .insert([{
@@ -1042,8 +1042,8 @@ async function startSyncLogForCompany(
   config: IntegrationConfig,
   empresaId: string | null,
   triggerSource: string,
-  requestedFrom: string,
-  requestedTo: string,
+  requestedFrom: string | null,
+  requestedTo: string | null,
 ) {
   const { data, error } = await supabase
     .from("integracao_sync_log")
@@ -1236,6 +1236,334 @@ async function persistTransactions(
   };
 }
 
+function parseBrazilianCsvNumber(value: unknown) {
+  return toNumber(String(value ?? "").replace(/\s/g, ""));
+}
+
+function normalizeCsvCell(value: string) {
+  return sanitizeText(value)
+    .replace(/\uFEFF/g, "")
+    .replace(/\r/g, "");
+}
+
+function parseCsvDateToIso(value: string) {
+  const match = normalizeCsvCell(value).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
+
+function splitSemicolonLine(line: string) {
+  return String(line || "").split(";").map((item) => normalizeCsvCell(item));
+}
+
+type ParsedCsvImport = {
+  accountNumber: string | null;
+  periodLabel: string | null;
+  closingBalance: number | null;
+  rows: Array<{
+    date: string;
+    history: string;
+    description: string;
+    amount: number;
+    balance: number | null;
+  }>;
+};
+
+function parseBancoInterCsv(csvText: string): ParsedCsvImport {
+  const lines = String(csvText || "")
+    .split(/\n/)
+    .map((line) => line.replace(/\r$/, ""))
+    .filter((line) => line.trim().length > 0);
+
+  if (!lines.length) {
+    throw new Error("Arquivo CSV vazio.");
+  }
+
+  let accountNumber: string | null = null;
+  let periodLabel: string | null = null;
+  let closingBalance: number | null = null;
+  let headerIndex = -1;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const columns = splitSemicolonLine(line);
+    const normalizedLabel = columns[0]
+      ?.normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+    if (normalizedLabel === "conta") {
+      accountNumber = columns[1] || null;
+      continue;
+    }
+
+    if (normalizedLabel === "periodo") {
+      periodLabel = columns[1] || null;
+      continue;
+    }
+
+    if (normalizedLabel === "saldo") {
+      closingBalance = parseBrazilianCsvNumber(columns[1]);
+      continue;
+    }
+
+    if (normalizedLabel === "data lancamento") {
+      headerIndex = index;
+      break;
+    }
+  }
+
+  if (headerIndex === -1) {
+    throw new Error("Cabecalho de lancamentos nao encontrado no CSV.");
+  }
+
+  const rows = lines
+    .slice(headerIndex + 1)
+    .map((line) => splitSemicolonLine(line))
+    .filter((columns) => columns.length >= 5 && columns[0] && columns[3])
+    .map((columns) => {
+      const date = parseCsvDateToIso(columns[0]);
+      if (!date) return null;
+
+      return {
+        date,
+        history: columns[1] || "Lancamento manual CSV",
+        description: columns[2] || columns[1] || "Sem descricao",
+        amount: parseBrazilianCsvNumber(columns[3]),
+        balance: columns[4] ? parseBrazilianCsvNumber(columns[4]) : null,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return {
+    accountNumber,
+    periodLabel,
+    closingBalance,
+    rows,
+  };
+}
+
+async function normalizeCsvTransactions(
+  empresaId: string,
+  syncRunId: string,
+  csvText: string,
+  filename: string | null,
+) {
+  const parsed = parseBancoInterCsv(csvText);
+  const normalizedRows: NormalizedTransaction[] = [];
+
+  for (const row of parsed.rows) {
+    const normalizedType: "entrada" | "saida" = row.amount < 0 ? "saida" : "entrada";
+    const absoluteAmount = Math.abs(row.amount);
+    const externalId = await sha256Hex([
+      "banco_inter_csv",
+      empresaId,
+      row.date,
+      row.history,
+      row.description,
+      absoluteAmount.toFixed(2),
+      row.balance === null ? "" : row.balance.toFixed(2),
+    ].join("|"));
+
+    normalizedRows.push({
+      empresa_id: empresaId,
+      descricao: row.description,
+      tipo: normalizedType,
+      valor: absoluteAmount,
+      data: row.date,
+      data_hora_transacao: null,
+      data_movimento: row.date,
+      banco: "Banco Inter",
+      nome_contraparte: normalizeDisplayName(row.description) || row.description,
+      banco_contraparte: null,
+      forma_pagamento: normalizeDisplayLabel(row.history) || "Extrato CSV",
+      categoria: null,
+      tipo_transacao_detalhado: normalizeDisplayLabel(row.history) || null,
+      referencia: externalId,
+      carteira_nome: null,
+      observacoes: null,
+      rateio: {},
+      metadata_financeira: {
+        provider: "banco_inter_csv",
+        imported_via: "manual_csv",
+        api_locked: true,
+        source_file: filename || null,
+        account_number: parsed.accountNumber,
+        csv_period: parsed.periodLabel,
+        direction_label: normalizedType === "saida" ? "Debitado" : "Creditado",
+      },
+      conciliado: false,
+      status: "importado",
+      source_provider: "banco_inter_csv",
+      external_id: externalId,
+      conta_origem: parsed.accountNumber,
+      conta_destino: null,
+      lancamento_id: externalId,
+      saldo: row.balance,
+      raw_data: {
+        source: "csv_manual",
+        filename: filename || null,
+        conta: parsed.accountNumber,
+        periodo: parsed.periodLabel,
+        dataLancamento: row.date,
+        historico: row.history,
+        descricao: row.description,
+        valor: row.amount,
+        saldo: row.balance,
+      },
+      imported_at: new Date().toISOString(),
+      sync_run_id: syncRunId,
+    } satisfies NormalizedTransaction);
+  }
+
+  return {
+    parsed,
+    normalizedRows,
+  };
+}
+
+async function persistCsvTransactions(
+  empresaId: string,
+  rows: NormalizedTransaction[],
+  {
+    replaceExistingCsv,
+  }: {
+    replaceExistingCsv?: boolean;
+  } = {},
+) {
+  const uniqueRowsByExternalId = new Map<string, NormalizedTransaction>();
+  let discardedInPayloadCount = 0;
+
+  for (const row of rows) {
+    if (!row.external_id) continue;
+    if (uniqueRowsByExternalId.has(row.external_id)) {
+      discardedInPayloadCount += 1;
+      continue;
+    }
+    uniqueRowsByExternalId.set(row.external_id, row);
+  }
+
+  const uniqueRows = Array.from(uniqueRowsByExternalId.values());
+  let replacedExistingCount = 0;
+
+  if (replaceExistingCsv) {
+    const { count, error: deleteExistingError } = await supabase
+      .from("extratobancario")
+      .delete({ count: "exact" })
+      .eq("empresa_id", empresaId)
+      .eq("source_provider", "banco_inter_csv");
+
+    if (deleteExistingError) throw deleteExistingError;
+    replacedExistingCount = count || 0;
+  }
+
+  const existingIds = new Set<string>();
+
+  if (!replaceExistingCsv) {
+    for (const externalIdChunk of chunkArray(uniqueRows.map((row) => row.external_id), 100)) {
+      const { data, error } = await supabase
+        .from("extratobancario")
+        .select("external_id")
+        .eq("empresa_id", empresaId)
+        .eq("source_provider", "banco_inter_csv")
+        .in("external_id", externalIdChunk);
+
+      if (error) throw error;
+      for (const item of data || []) {
+        if (item?.external_id) existingIds.add(item.external_id);
+      }
+    }
+  }
+
+  const rowsToInsert = uniqueRows.filter((row) => !existingIds.has(row.external_id));
+
+  for (const chunk of chunkArray(rowsToInsert, 100)) {
+    if (!chunk.length) continue;
+    const { error } = await supabase.from("extratobancario").insert(chunk);
+    if (error) throw error;
+  }
+
+  return {
+    importedCount: rowsToInsert.length,
+    discardedExistingCount: existingIds.size,
+    discardedInPayloadCount,
+    replacedExistingCount,
+  };
+}
+
+async function importCsvForConfig(
+  config: IntegrationConfig,
+  {
+    csvText,
+    filename,
+    triggerSource,
+    empresaIdOverride,
+    replaceExistingCsv,
+  }: {
+    csvText: string;
+    filename?: string | null;
+    triggerSource: string;
+    empresaIdOverride?: string;
+    replaceExistingCsv?: boolean;
+  },
+) {
+  const empresaId = sanitizeText(firstDefined(empresaIdOverride, config.empresa_id));
+  if (!empresaId) {
+    throw new Error("Informe a unidade para importar o CSV manualmente.");
+  }
+
+  const now = new Date().toISOString();
+  const log = config.empresa_id === empresaId
+    ? await startSyncLog(config, triggerSource, null, null)
+    : await startSyncLogForCompany(config, empresaId, triggerSource, null, null);
+
+  try {
+    const { parsed, normalizedRows } = await normalizeCsvTransactions(empresaId, log.id, csvText, filename || null);
+    const persistence = await persistCsvTransactions(empresaId, normalizedRows, { replaceExistingCsv });
+
+    await finishSyncLog(log.id, {
+      status: "success",
+      imported_count: persistence.importedCount,
+      deduplicated_count: persistence.discardedExistingCount + persistence.discardedInPayloadCount,
+      response_summary: {
+        source: "manual_csv",
+        filename: filename || null,
+        account_number: parsed.accountNumber,
+        period_label: parsed.periodLabel,
+        closing_balance: parsed.closingBalance,
+        received_count: normalizedRows.length,
+        inserted_count: persistence.importedCount,
+        replaced_existing_count: persistence.replacedExistingCount,
+        discarded_existing_count: persistence.discardedExistingCount,
+        discarded_in_payload_count: persistence.discardedInPayloadCount,
+      },
+    });
+
+    return {
+      success: true,
+      action: "importCsvManual",
+      imported_count: persistence.importedCount,
+      replaced_existing_count: persistence.replacedExistingCount,
+      discarded_existing_count: persistence.discardedExistingCount,
+      discarded_in_payload_count: persistence.discardedInPayloadCount,
+      total: normalizedRows.length,
+      saldo_final_csv: parsed.closingBalance,
+      conta_csv: parsed.accountNumber,
+      periodo_csv: parsed.periodLabel,
+      imported_at: now,
+      message: `CSV importado com sucesso. ${persistence.importedCount} lancamento(s) novo(s).`,
+    };
+  } catch (error) {
+    const message = serializeError(error);
+    await finishSyncLog(log.id, {
+      status: "error",
+      error_message: message,
+    });
+    throw error;
+  }
+}
+
 async function runSyncForConfig(
   config: IntegrationConfig,
   {
@@ -1270,6 +1598,7 @@ async function runSyncForConfig(
       : formatDateOnly(addDays(now, -backfillDays));
   const toDate = requestedTo ? formatDateOnly(requestedTo) : formatDateOnly(now);
   const today = formatDateOnly(now);
+  const currentBalanceReferenceDate = today;
   const refreshToday = fromDate <= today && toDate >= today;
   const dateWindows = buildDateWindows(fromDate, toDate);
 
@@ -1294,7 +1623,7 @@ async function runSyncForConfig(
     const debugWindows: unknown[] = [];
 
     try {
-      const balanceResult = await fetchBalance(config, accessToken, httpClient, toDate);
+      const balanceResult = await fetchBalance(config, accessToken, httpClient, currentBalanceReferenceDate);
       currentBalance = balanceResult.balance;
       currentBalanceAt = new Date().toISOString();
       httpStatus = balanceResult.httpStatus || httpStatus;
@@ -1359,6 +1688,9 @@ async function runSyncForConfig(
         discarded_in_payload_count: persistence.discardedInPayloadCount,
         current_balance: currentBalance,
         current_balance_at: currentBalanceAt,
+        current_balance_reference_date: currentBalanceReferenceDate,
+        imported_range_from: fromDate,
+        imported_range_to: toDate,
         balance_warning: balanceWarning,
       },
     });
@@ -1389,6 +1721,7 @@ async function runSyncForConfig(
       inseridas: persistence.historicalInsertedCount,
       saldo_atual: currentBalance,
       saldo_atualizado_em: currentBalanceAt,
+      saldo_atual_referencia: currentBalanceReferenceDate,
       balance_warning: balanceWarning,
       received_count: rawCount,
       windows_processed: processedWindowCount,
@@ -1525,6 +1858,22 @@ Deno.serve(async (request) => {
         persist: true,
         empresaIdOverride: sanitizeText(payload.empresa_id),
         debug: Boolean(payload.debug),
+      });
+      return jsonResponse(data);
+    }
+
+    if (action === "importCsvManual") {
+      const csvText = typeof payload.csv_text === "string" ? payload.csv_text : "";
+      if (!csvText.trim()) {
+        return jsonResponse({ error: "Forneca o conteudo do CSV em `csv_text`." }, 400);
+      }
+
+      const data = await importCsvForConfig(config, {
+        csvText,
+        filename: sanitizeText(payload.filename) || null,
+        triggerSource: "manual_csv",
+        empresaIdOverride: sanitizeText(payload.empresa_id),
+        replaceExistingCsv: Boolean(payload.replace_existing_csv),
       });
       return jsonResponse(data);
     }

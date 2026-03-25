@@ -461,7 +461,7 @@ export default function ConfigurarIntegracoes() {
                     <div>
                       <p className="font-medium text-gray-900">Sincronizacao automatica</p>
                       <p className="text-xs text-gray-500">
-                        A rotina em nuvem busca extrato, grava status e ignora duplicidades.
+                        A rotina em nuvem busca extrato, grava status, descarta apenas `external_id` repetido e recarrega o dia atual.
                       </p>
                     </div>
 

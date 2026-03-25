@@ -1,3 +1,8 @@
+-- LEGADO: revisao de duplicidades do extrato importado.
+-- Nao utilizar mais.
+-- O fluxo atual usa `external_id` como deduplicacao oficial e recarrega o dia atual.
+-- Para remover esta estrutura do banco, execute `supabase-drop-extrato-duplicidade.sql`.
+--
 -- Revisao de duplicidades do extrato importado.
 -- Execute apos:
 -- 1. supabase-schema-banco-inter.sql

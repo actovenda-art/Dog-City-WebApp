@@ -2,6 +2,7 @@
 -- Arquivo legado de desbloqueio rapido.
 -- Nao execute este arquivo depois de aplicar `supabase-schema-unit-isolation.sql`,
 -- porque ele desabilita a separacao forte por unidade via RLS.
+-- Em producao, ele tambem dispara alertas criticos do Supabase Security Advisor.
 -- Use APENAS uma das abordagens abaixo.
 
 -- =========================================================

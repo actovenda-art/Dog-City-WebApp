@@ -710,29 +710,75 @@ async function fetchExtratoResilient(
   }
 }
 
-function extractBalanceValue(payload: unknown) {
-  if (!payload || typeof payload !== "object") return null;
-  const source = payload as Record<string, unknown>;
+function extractBalancePrimitive(value: unknown) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
 
-  const directCandidates = [
-    source.saldo,
-    source.balance,
-    source.disponivel,
-    source.saldoDisponivel,
-    source.availableBalance,
-    source.valor,
-  ];
-  const directValue = directCandidates.find((value) => value !== null && value !== undefined && value !== "");
-  if (directValue !== undefined) {
-    const numeric = toNumber(directValue);
+  if (typeof value === "string") {
+    const cleaned = value.trim();
+    if (!cleaned) return null;
+    const numeric = toNumber(cleaned);
     return Number.isFinite(numeric) ? numeric : null;
   }
 
-  const arrayCandidates = [source.saldos, source.items, source.data];
-  for (const candidate of arrayCandidates) {
-    if (!Array.isArray(candidate) || !candidate.length) continue;
-    const value = extractBalanceValue(candidate[0]);
-    if (value !== null) return value;
+  return null;
+}
+
+function extractBalanceValue(payload: unknown, depth = 0): number | null {
+  if (depth > 5 || payload === null || payload === undefined) return null;
+
+  const primitive = extractBalancePrimitive(payload);
+  if (primitive !== null) {
+    return primitive;
+  }
+
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const nested = extractBalanceValue(item, depth + 1);
+      if (nested !== null) return nested;
+    }
+    return null;
+  }
+
+  if (typeof payload !== "object") return null;
+
+  const source = payload as Record<string, unknown>;
+  const preferredKeys = [
+    "disponivel",
+    "saldoDisponivel",
+    "availableBalance",
+    "saldo",
+    "balance",
+    "valor",
+  ];
+
+  for (const key of preferredKeys) {
+    const value = source[key];
+    const direct = extractBalancePrimitive(value);
+    if (direct !== null) return direct;
+  }
+
+  for (const key of preferredKeys) {
+    const value = source[key];
+    if (value && typeof value === "object") {
+      const nested = extractBalanceValue(value, depth + 1);
+      if (nested !== null) return nested;
+    }
+  }
+
+  const nestedCandidates = [
+    source.saldos,
+    source.items,
+    source.data,
+    source.result,
+    source.content,
+    source.response,
+  ];
+
+  for (const candidate of nestedCandidates) {
+    const nested = extractBalanceValue(candidate, depth + 1);
+    if (nested !== null) return nested;
   }
 
   return null;

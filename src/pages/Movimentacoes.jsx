@@ -100,7 +100,9 @@ export default function Movimentacoes() {
 
     try {
       const [movementsData, configs] = await Promise.all([
-        ExtratoBancario.list("-data_movimento", 1000),
+        (ExtratoBancario.listAll
+          ? ExtratoBancario.listAll("-data_movimento", 1000, 20000)
+          : ExtratoBancario.list("-data_movimento", 5000)),
         IntegracaoConfig.list("-created_date", 200).catch(() => []),
       ]);
 
@@ -159,6 +161,9 @@ export default function Movimentacoes() {
           item.referenciaFinanceira,
           item.bancoContraparte,
           item.descricaoOriginal,
+          item.data_movimento,
+          item.data,
+          formatMovementDateTime(item),
         ]
           .filter(Boolean)
           .join(" ")

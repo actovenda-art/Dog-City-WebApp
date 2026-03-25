@@ -38,7 +38,6 @@ const UNIT_SCOPED_ENTITIES = new Set([
   'ContaReceber',
   'Client',
   'PedidoInterno',
-  'ExtratoDuplicidade',
 ]);
 
 function readStorage(key) {
@@ -111,6 +110,11 @@ function createMockEntity(name, options = {}) {
         .filter((item) => !unitScoped || !item.empresa_id || item.empresa_id === getMockScopedUnitId())
         .slice(0, limit || undefined)
     ),
+    listAll: (sort, limit) => Promise.resolve(
+      readStorage(name)
+        .filter((item) => !unitScoped || !item.empresa_id || item.empresa_id === getMockScopedUnitId())
+        .slice(0, limit || undefined)
+    ),
     filter: (query = {}, sort, limit) => {
       const scopedQuery = { ...(query || {}) };
       if (unitScoped && !Object.prototype.hasOwnProperty.call(scopedQuery, 'empresa_id')) {
@@ -159,7 +163,7 @@ const defaultEntities = {};
   'Responsavel', 'Carteira', 'Notificacao', 'Orcamento', 'TabelaPrecos', 'Appointment',
   'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
-  'UserInvite', 'ExtratoDuplicidade', 'UserUnitAccess',
+  'UserInvite', 'UserUnitAccess',
   'UserProfile', 'ContaReceber', 'Client', 'PedidoInterno',
 ].forEach((name) => {
   defaultEntities[name] = createMockEntity(name, { unitScoped: UNIT_SCOPED_ENTITIES.has(name) });
@@ -386,6 +390,34 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       if (error) throw toAppError(error, `Erro ao listar ${table}.`);
       return data || [];
     },
+    listAll: async (sort, pageSize = 1000, maxRows = 10000) => {
+      const results = [];
+      let from = 0;
+
+      while (results.length < maxRows) {
+        let query = supabase.from(table).select('*');
+        if (options.unitScoped) {
+          const unitId = await resolveScopedUnitId();
+          if (unitId) query = query.eq('empresa_id', unitId);
+        }
+        if (sort && typeof sort === 'string') {
+          const field = sort.replace(/^-/, '');
+          const desc = sort.startsWith('-');
+          query = query.order(field, { ascending: !desc });
+        }
+
+        const to = Math.min(from + pageSize - 1, maxRows - 1);
+        const { data, error } = await query.range(from, to);
+        if (error) throw toAppError(error, `Erro ao listar ${table}.`);
+
+        const batch = data || [];
+        results.push(...batch);
+        if (batch.length < pageSize) break;
+        from += pageSize;
+      }
+
+      return results;
+    },
     filter: async (queryObj = {}, sort, limit) => {
       let query = supabase.from(table).select('*');
       if (queryObj && Object.keys(queryObj).length) query = query.match(queryObj);
@@ -458,7 +490,6 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     Notificacao: 'notificacao',
     Checkin: 'checkins',
     IntegracaoConfig: 'integracao_config',
-    ExtratoDuplicidade: 'extrato_duplicidade',
     AppConfig: 'app_config',
     AppAsset: 'app_asset',
     Empresa: 'empresa',

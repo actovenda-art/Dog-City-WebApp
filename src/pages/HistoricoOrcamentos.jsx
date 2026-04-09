@@ -100,7 +100,7 @@ export default function HistoricoOrcamentos() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm("Excluir este orçamento?")) return;
+    if (!confirm("Excluir este oramento?")) return;
     await Orcamento.delete(id);
     await loadData();
   };
@@ -133,7 +133,7 @@ export default function HistoricoOrcamentos() {
           await Appointment.create(appointment);
         }
       } catch (error) {
-        console.error("Erro ao gerar agendamentos do orcamento:", error);
+        console.error("Erro ao gerar agendamentos do orçamento:", error);
       }
     }
     
@@ -159,14 +159,14 @@ export default function HistoricoOrcamentos() {
     
     let matchPeriodo = true;
     if (filterPeriodo !== "all" && orc.data_criacao) {
-      const dataCriacao = new Date(orc.data_criacao);
+      const dataCriação = new Date(orc.data_criacao);
       const hoje = new Date();
       if (filterPeriodo === "7dias") {
-        matchPeriodo = (hoje - dataCriacao) / (1000 * 60 * 60 * 24) <= 7;
+        matchPeriodo = (hoje - dataCriação) / (1000 * 60 * 60 * 24) <= 7;
       } else if (filterPeriodo === "30dias") {
-        matchPeriodo = (hoje - dataCriacao) / (1000 * 60 * 60 * 24) <= 30;
+        matchPeriodo = (hoje - dataCriação) / (1000 * 60 * 60 * 24) <= 30;
       } else if (filterPeriodo === "90dias") {
-        matchPeriodo = (hoje - dataCriacao) / (1000 * 60 * 60 * 24) <= 90;
+        matchPeriodo = (hoje - dataCriação) / (1000 * 60 * 60 * 24) <= 90;
       }
     }
 

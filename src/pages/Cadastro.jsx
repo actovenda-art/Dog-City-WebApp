@@ -101,7 +101,7 @@ export default function Cadastro() {
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (error) {
       setNotifyTitle("Erro");
-      setNotifyMessage("Nao foi possivel abrir o documento.");
+      setNotifyMessage("Não foi possível abrir o documento.");
       setNotifyOpen(true);
     }
   };

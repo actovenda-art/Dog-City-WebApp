@@ -103,17 +103,17 @@ export default function FinanceDetailDialog({
       <DialogContent className="w-[95vw] max-w-[840px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isReceita ? "Detalhes do recebimento" : "Detalhes da saida"}
+            {isReceita ? "Detalhes do recebimento" : "Detalhes da saída"}
           </DialogTitle>
           <DialogDescription>
-            Revise os dados financeiros da movimentacao usando apenas a data da transacao.
+            Revise os dados financeiros da movimentação usando apenas a data da transação.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-2">
           {baseFieldsLocked && (
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-              Este lancamento veio da API oficial do banco. Os dados-base ficam bloqueados e aqui voce complementa apenas carteira, rateio e observacoes.
+              Este lançamento veio da API oficial do banco. Os dados-base ficam bloqueados e aqui você complementa apenas carteira, rateio e observações.
             </div>
           )}
 
@@ -131,7 +131,7 @@ export default function FinanceDetailDialog({
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-              <p className="text-xs uppercase tracking-wide text-gray-500">Transacao ID</p>
+              <p className="text-xs uppercase tracking-wide text-gray-500">Transação ID</p>
               <p className="mt-2 text-sm font-medium text-gray-900 break-all">
                 {formData.referencia || normalizedMovement.referenciaFinanceira}
               </p>
@@ -150,7 +150,7 @@ export default function FinanceDetailDialog({
             </div>
 
             <div>
-              <Label>Data da transacao</Label>
+              <Label>Data da transação</Label>
               <DatePickerInput
                 className="mt-2"
                 value={formData.data_hora_transacao}
@@ -182,18 +182,18 @@ export default function FinanceDetailDialog({
             </div>
 
             <div>
-              <Label>Tipo da transacao</Label>
+              <Label>Tipo da transação</Label>
               <Input
                 className="mt-2"
                 value={formData.tipo_transacao_detalhado}
                 onChange={(event) => setFormData((prev) => ({ ...prev, tipo_transacao_detalhado: event.target.value }))}
-                placeholder="Ex: PIX recebido, TED, transferencia"
+                placeholder="Ex: PIX recebido, TED, transferência"
                 disabled={baseFieldsLocked}
               />
             </div>
 
             <div>
-              <Label>Transacao ID</Label>
+              <Label>Transação ID</Label>
               <Input
                 className="mt-2"
                 value={formData.referencia}
@@ -207,7 +207,7 @@ export default function FinanceDetailDialog({
             <div className="space-y-4 rounded-xl border border-green-200 bg-green-50/50 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-semibold text-gray-900">Distribuicao do valor</p>
+                  <p className="font-semibold text-gray-900">Distribuição do valor</p>
                   <p className="text-sm text-gray-500">
                     Informe quanto desta entrada vai para cada finalidade.
                   </p>
@@ -241,13 +241,13 @@ export default function FinanceDetailDialog({
           )}
 
           <div>
-            <Label>Observacoes</Label>
+            <Label>Observações</Label>
             <Textarea
               className="mt-2"
               rows={4}
               value={formData.observacoes}
               onChange={(event) => setFormData((prev) => ({ ...prev, observacoes: event.target.value }))}
-              placeholder={isReceita ? "Observacoes sobre o recebimento" : "Observacoes sobre a despesa"}
+              placeholder={isReceita ? "Observações sobre o recebimento" : "Observações sobre a despesa"}
             />
           </div>
         </div>

@@ -167,7 +167,7 @@ export default function Receitas() {
                 className="pl-9"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Buscar por remetente, carteira, banco ou referencia"
+                placeholder="Buscar por remetente, carteira, banco ou referência"
               />
             </div>
             <DateRangePickerInput
@@ -232,17 +232,17 @@ export default function Receitas() {
                         Rateado {formatCurrency(rateioTotal)}
                       </Badge>
                       {item.observacoesFinanceiras && (
-                        <Badge variant="outline">Com observacoes</Badge>
+                        <Badge variant="outline">Com observações</Badge>
                       )}
                     </div>
 
                       <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <Wallet className="w-4 h-4 text-gray-400" />
-                        <span>Saldo nao rateado: {formatCurrency((item.valor || 0) - rateioTotal)}</span>
+                        <span>Saldo não rateado: {formatCurrency((item.valor || 0) - rateioTotal)}</span>
                       </div>
                       <p className="text-xs text-gray-500 break-all">
-                        Referencia: {item.referenciaFinanceira} | Total oficial do periodo: {formatCurrency(totalRecebidoBanco)}
+                        Referência: {item.referenciaFinanceira} | Total oficial do período: {formatCurrency(totalRecebidoBanco)}
                       </p>
                     </div>
                   </CardContent>

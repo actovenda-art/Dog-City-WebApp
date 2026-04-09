@@ -18,10 +18,10 @@ import { ptBR } from "date-fns/locale";
 
 const paymentOptions = [
   { value: "pix", label: "Pix" },
-  { value: "cartao", label: "Cartao" },
+  { value: "cartao", label: "Cartão" },
   { value: "dinheiro", label: "Dinheiro" },
   { value: "boleto", label: "Boleto" },
-  { value: "transferencia", label: "Transferencia" },
+  { value: "transferencia", label: "Transferência" },
 ];
 
 const fmtMoney = (value) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -32,7 +32,7 @@ const parseMeta = (value) => {
   if (typeof value === "object") return value;
   try { return JSON.parse(value); } catch { return {}; }
 };
-const getStatusKey = (conta) => conta.data_recebimento ? "pago" : conta.vencimento && new Date(conta.vencimento) < new Date() ? "vencido" : "pendente";
+const getStatusKey = (conta) => conta.data_recebimento ?"pago" : conta.vencimento && new Date(conta.vencimento) < new Date() ? "vencido" : "pendente";
 const getStatusBadge = (conta) => {
   const key = getStatusKey(conta);
   if (key === "pago") return <Badge className="bg-green-100 text-green-700">Pago</Badge>;
@@ -41,12 +41,12 @@ const getStatusBadge = (conta) => {
 };
 const getOriginLabel = (value) => ({
   manual_registrador: "Registrador manual",
-  orcamento_aprovado: "Orcamento aprovado",
+  orcamento_aprovado: "Orçamento aprovado",
   agendamento: "Agendamento",
 }[value] || value || "-");
 const getScheduleTypeLabel = (value) => ({
   agendamento_solto: "Agendamento solto",
-  orcamento: "Orcamento",
+  orcamento: "Orçamento",
 }[value] || value || "-");
 const getPackageCode = (...records) => {
   for (const record of records) {
@@ -203,8 +203,8 @@ export default function ContasReceber() {
       setSelectedConta((prev) => prev ? { ...prev, data_recebimento: null, forma_pagamento: null, status: "pendente" } : prev);
       setPaymentDate(""); setPaymentMethod("");
     } catch (error) {
-      console.error("Erro ao reabrir cobranca:", error);
-      alert("Erro ao reabrir cobranca.");
+      console.error("Erro ao reabrir cobrança:", error);
+      alert("Erro ao reabrir cobrança.");
     }
     setIsSaving(false);
   }
@@ -215,7 +215,7 @@ export default function ContasReceber() {
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3"><div className="mt-1 rounded-xl bg-blue-100 p-3"><DollarSign className="h-6 w-6 text-blue-600" /></div><div><h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Valores a Receber / Cobrancas</h1><p className="mt-1 text-sm text-gray-600">Cobrancas avulsas e conferencia das utilizacoes em pacote.</p></div></div>
+          <div className="flex items-start gap-3"><div className="mt-1 rounded-xl bg-blue-100 p-3"><DollarSign className="h-6 w-6 text-blue-600" /></div><div><h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Valores a Receber / Cobranças</h1><p className="mt-1 text-sm text-gray-600">Cobranças avulsas e conferência das utilizações em pacote.</p></div></div>
           <Button variant="outline" onClick={loadData}><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
         </div>
 
@@ -227,69 +227,69 @@ export default function ContasReceber() {
         </div>
 
         <Card className="border-gray-200 bg-white"><CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
-          <div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar cliente, cao, servico, pacote..." className="pl-9" /></div>
-          <Select value={filterServico} onValueChange={setFilterServico}><SelectTrigger><SelectValue placeholder="Servico" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os servicos</SelectItem>{serviceOptions.map((item) => <SelectItem key={item} value={item}>{getServiceLabel(item)}</SelectItem>)}</SelectContent></Select>
+          <div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar cliente, cão, serviço, pacote..." className="pl-9" /></div>
+          <Select value={filterServico} onValueChange={setFilterServico}><SelectTrigger><SelectValue placeholder="Serviço" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os serviços</SelectItem>{serviceOptions.map((item) => <SelectItem key={item} value={item}>{getServiceLabel(item)}</SelectItem>)}</SelectContent></Select>
           <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os status</SelectItem><SelectItem value="pendente">Pendente</SelectItem><SelectItem value="vencido">Vencido</SelectItem><SelectItem value="pago">Pago</SelectItem></SelectContent></Select>
-          <Select value={filterTipoCobranca} onValueChange={setFilterTipoCobranca}><SelectTrigger><SelectValue placeholder="Tipo de cobranca" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os tipos</SelectItem><SelectItem value="avulso">Avulso</SelectItem><SelectItem value="orcamento">Orcamento</SelectItem><SelectItem value="pacote">Pacote</SelectItem></SelectContent></Select>
-          <Select value={filterTipoAgendamento} onValueChange={setFilterTipoAgendamento}><SelectTrigger><SelectValue placeholder="Tipo de agendamento" /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="agendamento_solto">Agendamento solto</SelectItem><SelectItem value="orcamento">Orcamento</SelectItem></SelectContent></Select>
-          <Select value={filterOrigem} onValueChange={setFilterOrigem}><SelectTrigger><SelectValue placeholder="Origem" /></SelectTrigger><SelectContent><SelectItem value="all">Toda origem</SelectItem><SelectItem value="manual_registrador">Registrador manual</SelectItem><SelectItem value="orcamento_aprovado">Orcamento aprovado</SelectItem><SelectItem value="agendamento">Agendamento</SelectItem></SelectContent></Select>
-          <div><Label className="text-xs text-gray-500">Prestacao inicial</Label><DatePickerInput value={filterPrestacaoInicio} onChange={setFilterPrestacaoInicio} /></div>
-          <div><Label className="text-xs text-gray-500">Prestacao final</Label><DatePickerInput value={filterPrestacaoFim} onChange={setFilterPrestacaoFim} /></div>
+          <Select value={filterTipoCobranca} onValueChange={setFilterTipoCobranca}><SelectTrigger><SelectValue placeholder="Tipo de cobrança" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os tipos</SelectItem><SelectItem value="avulso">Avulso</SelectItem><SelectItem value="orcamento">Orçamento</SelectItem><SelectItem value="pacote">Pacote</SelectItem></SelectContent></Select>
+          <Select value={filterTipoAgendamento} onValueChange={setFilterTipoAgendamento}><SelectTrigger><SelectValue placeholder="Tipo de agendamento" /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="agendamento_solto">Agendamento solto</SelectItem><SelectItem value="orcamento">Orçamento</SelectItem></SelectContent></Select>
+          <Select value={filterOrigem} onValueChange={setFilterOrigem}><SelectTrigger><SelectValue placeholder="Origem" /></SelectTrigger><SelectContent><SelectItem value="all">Toda origem</SelectItem><SelectItem value="manual_registrador">Registrador manual</SelectItem><SelectItem value="orcamento_aprovado">Orçamento aprovado</SelectItem><SelectItem value="agendamento">Agendamento</SelectItem></SelectContent></Select>
+          <div><Label className="text-xs text-gray-500">Prestação inicial</Label><DatePickerInput value={filterPrestacaoInicio} onChange={setFilterPrestacaoInicio} /></div>
+          <div><Label className="text-xs text-gray-500">Prestação final</Label><DatePickerInput value={filterPrestacaoFim} onChange={setFilterPrestacaoFim} /></div>
           <div><Label className="text-xs text-gray-500">Vencimento inicial</Label><DatePickerInput value={filterVencimentoInicio} onChange={setFilterVencimentoInicio} /></div>
           <div><Label className="text-xs text-gray-500">Vencimento final</Label><DatePickerInput value={filterVencimentoFim} onChange={setFilterVencimentoFim} /></div>
         </CardContent></Card>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="cobrancas">Cobrancas</TabsTrigger><TabsTrigger value="pacotes">Utilizacoes de pacote</TabsTrigger></TabsList>
-          <TabsContent value="cobrancas"><Card className="overflow-hidden border-gray-200 bg-white"><div className="overflow-x-auto"><Table><TableHeader><TableRow className="bg-gray-50"><TableHead>Cliente</TableHead><TableHead>Cao</TableHead><TableHead>Servico</TableHead><TableHead>Prestacao</TableHead><TableHead>Vencimento</TableHead><TableHead>Tipo</TableHead><TableHead>Origem</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Ficha</TableHead></TableRow></TableHeader><TableBody>{filteredContas.length === 0 ? <TableRow><TableCell colSpan={10} className="py-12 text-center text-gray-500">Nenhuma cobranca encontrada para os filtros atuais.</TableCell></TableRow> : filteredContas.map((conta) => <TableRow key={conta.id} className="hover:bg-gray-50"><TableCell className="font-medium">{maps.clientsById[conta.cliente_id]?.nome_razao_social || maps.clientsById[conta.cliente_id]?.nome_completo || "-"}</TableCell><TableCell>{maps.dogsById[conta.dog_id]?.nome || "-"}</TableCell><TableCell>{getServiceLabel(conta.servico)}</TableCell><TableCell>{fmtDate(conta.data_prestacao)}</TableCell><TableCell>{fmtDate(conta.vencimento)}</TableCell><TableCell><Badge variant="outline">{getChargeTypeLabel(conta.tipo_cobranca)}</Badge></TableCell><TableCell>{getOriginLabel(conta.origem)}</TableCell><TableCell className="text-right font-medium">{fmtMoney(conta.valor)}</TableCell><TableCell>{getStatusBadge(conta)}</TableCell><TableCell className="text-center"><Button variant="ghost" size="icon" onClick={() => { setSelectedConta(conta); setDetailOpen(true); }}><Eye className="h-4 w-4" /></Button></TableCell></TableRow>)}</TableBody></Table></div></Card></TabsContent>
-          <TabsContent value="pacotes"><Card className="overflow-hidden border-gray-200 bg-white"><CardHeader><CardTitle>Utilizacoes em pacote</CardTitle></CardHeader><CardContent className="pt-0"><div className="mb-4 rounded-xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-800">Essas utilizacoes mostram as datas efetivas de uso para cobrancas recorrentes e conferencia de pacote.</div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="bg-gray-50"><TableHead>Cliente</TableHead><TableHead>Cao</TableHead><TableHead>Servico</TableHead><TableHead>Data de uso</TableHead><TableHead>Codigo do pacote</TableHead><TableHead>Responsavel</TableHead><TableHead className="text-right">Valor base</TableHead></TableRow></TableHeader><TableBody>{filteredUsages.length === 0 ? <TableRow><TableCell colSpan={7} className="py-12 text-center text-gray-500">Nenhuma utilizacao em pacote encontrada.</TableCell></TableRow> : filteredUsages.map((usage) => <TableRow key={usage.id} className="hover:bg-gray-50"><TableCell className="font-medium">{maps.clientsById[usage.cliente_id]?.nome_razao_social || maps.clientsById[usage.cliente_id]?.nome_completo || "-"}</TableCell><TableCell>{maps.dogsById[usage.dog_id]?.nome || "-"}</TableCell><TableCell>{getServiceLabel(usage.service_type)}</TableCell><TableCell>{fmtDate(usage.data_utilizacao || getAppointmentDateKey(maps.appointmentsById[usage.appointment_id]))}</TableCell><TableCell>{getPackageCode(usage, maps.appointmentsById[usage.appointment_id]) || "-"}</TableCell><TableCell>{usage.responsavel_nome || parseMeta(usage.metadata).owner_nome || "-"}</TableCell><TableCell className="text-right">{fmtMoney(usage.valor_cobrado || usage.preco || 0)}</TableCell></TableRow>)}</TableBody></Table></div></CardContent></Card></TabsContent>
+          <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="cobrancas">Cobranças</TabsTrigger><TabsTrigger value="pacotes">Utilizações de pacote</TabsTrigger></TabsList>
+          <TabsContent value="cobrancas"><Card className="overflow-hidden border-gray-200 bg-white"><div className="overflow-x-auto"><Table><TableHeader><TableRow className="bg-gray-50"><TableHead>Cliente</TableHead><TableHead>Cão</TableHead><TableHead>Serviço</TableHead><TableHead>Prestação</TableHead><TableHead>Vencimento</TableHead><TableHead>Tipo</TableHead><TableHead>Origem</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Ficha</TableHead></TableRow></TableHeader><TableBody>{filteredContas.length === 0 ? <TableRow><TableCell colSpan={10} className="py-12 text-center text-gray-500">Nenhuma cobrança encontrada para os filtros atuais.</TableCell></TableRow> : filteredContas.map((conta) => <TableRow key={conta.id} className="hover:bg-gray-50"><TableCell className="font-medium">{maps.clientsById[conta.cliente_id]?.nome_razao_social || maps.clientsById[conta.cliente_id]?.nome_completo || "-"}</TableCell><TableCell>{maps.dogsById[conta.dog_id]?.nome || "-"}</TableCell><TableCell>{getServiceLabel(conta.servico)}</TableCell><TableCell>{fmtDate(conta.data_prestacao)}</TableCell><TableCell>{fmtDate(conta.vencimento)}</TableCell><TableCell><Badge variant="outline">{getChargeTypeLabel(conta.tipo_cobranca)}</Badge></TableCell><TableCell>{getOriginLabel(conta.origem)}</TableCell><TableCell className="text-right font-medium">{fmtMoney(conta.valor)}</TableCell><TableCell>{getStatusBadge(conta)}</TableCell><TableCell className="text-center"><Button variant="ghost" size="icon" onClick={() => { setSelectedConta(conta); setDetailOpen(true); }}><Eye className="h-4 w-4" /></Button></TableCell></TableRow>)}</TableBody></Table></div></Card></TabsContent>
+          <TabsContent value="pacotes"><Card className="overflow-hidden border-gray-200 bg-white"><CardHeader><CardTitle>Utilizações em pacote</CardTitle></CardHeader><CardContent className="pt-0"><div className="mb-4 rounded-xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-800">Essas utilizações mostram as datas efetivas de uso para cobranças recorrentes e conferência de pacote.</div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="bg-gray-50"><TableHead>Cliente</TableHead><TableHead>Cão</TableHead><TableHead>Serviço</TableHead><TableHead>Data de uso</TableHead><TableHead>Código do pacote</TableHead><TableHead>Responsável</TableHead><TableHead className="text-right">Valor base</TableHead></TableRow></TableHeader><TableBody>{filteredUsages.length === 0 ? <TableRow><TableCell colSpan={7} className="py-12 text-center text-gray-500">Nenhuma utilização em pacote encontrada.</TableCell></TableRow> : filteredUsages.map((usage) => <TableRow key={usage.id} className="hover:bg-gray-50"><TableCell className="font-medium">{maps.clientsById[usage.cliente_id]?.nome_razao_social || maps.clientsById[usage.cliente_id]?.nome_completo || "-"}</TableCell><TableCell>{maps.dogsById[usage.dog_id]?.nome || "-"}</TableCell><TableCell>{getServiceLabel(usage.service_type)}</TableCell><TableCell>{fmtDate(usage.data_utilizacao || getAppointmentDateKey(maps.appointmentsById[usage.appointment_id]))}</TableCell><TableCell>{getPackageCode(usage, maps.appointmentsById[usage.appointment_id]) || "-"}</TableCell><TableCell>{usage.responsavel_nome || parseMeta(usage.metadata).owner_nome || "-"}</TableCell><TableCell className="text-right">{fmtMoney(usage.valor_cobrado || usage.preco || 0)}</TableCell></TableRow>)}</TableBody></Table></div></CardContent></Card></TabsContent>
         </Tabs>
       </div>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
-          <DialogHeader><DialogTitle>Ficha analitica por atendimento</DialogTitle><DialogDescription>Resumo operacional e financeiro do atendimento que gerou esta cobranca.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Ficha analítica por atendimento</DialogTitle><DialogDescription>Resumo operacional e financeiro do atendimento que gerou esta cobrança.</DialogDescription></DialogHeader>
           {selectedConta && <div className="space-y-6 py-2">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4"><p className="text-xs uppercase tracking-wide text-gray-500">Valor</p><p className="mt-2 text-2xl font-bold text-gray-900">{fmtMoney(selectedConta.valor)}</p></div>
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4"><p className="text-xs uppercase tracking-wide text-gray-500">Status</p><div className="mt-2">{getStatusBadge(selectedConta)}</div></div>
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4"><p className="text-xs uppercase tracking-wide text-gray-500">Servico</p><p className="mt-2 text-lg font-semibold text-gray-900">{getServiceLabel(selectedConta.servico)}</p></div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4"><p className="text-xs uppercase tracking-wide text-gray-500">Serviço</p><p className="mt-2 text-lg font-semibold text-gray-900">{getServiceLabel(selectedConta.servico)}</p></div>
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4"><p className="text-xs uppercase tracking-wide text-gray-500">Tipo</p><p className="mt-2 text-lg font-semibold text-gray-900">{getChargeTypeLabel(selectedConta.tipo_cobranca)}</p></div>
             </div>
 
-            <Card className="border-gray-200 bg-white"><CardHeader><CardTitle className="text-base">Atendimento e cobranca</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Card className="border-gray-200 bg-white"><CardHeader><CardTitle className="text-base">Atendimento e cobrança</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div><Label>Cliente</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.client?.nome_razao_social || selectedContext.client?.nome_completo || "-"}</p></div>
-              <div><Label>Responsavel</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.contaMeta.owner_nome || selectedContext.checkin?.responsavel_nome || selectedContext.usage?.responsavel_nome || selectedContext.appointmentMeta.owner_nome || "-"}</p></div>
-              <div><Label>Cao</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.dog?.nome || selectedContext.checkin?.dog_nome || "-"}</p></div>
-              <div><Label>Data da prestacao</Label><p className="mt-2 text-sm text-gray-800">{fmtDate(selectedConta.data_prestacao)}</p></div>
+              <div><Label>Responsável</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.contaMeta.owner_nome || selectedContext.checkin?.responsavel_nome || selectedContext.usage?.responsavel_nome || selectedContext.appointmentMeta.owner_nome || "-"}</p></div>
+              <div><Label>Cão</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.dog?.nome || selectedContext.checkin?.dog_nome || "-"}</p></div>
+              <div><Label>Data da prestação</Label><p className="mt-2 text-sm text-gray-800">{fmtDate(selectedConta.data_prestacao)}</p></div>
               <div><Label>Vencimento</Label><p className="mt-2 text-sm text-gray-800">{fmtDate(selectedConta.vencimento)}</p></div>
               <div><Label>Origem</Label><p className="mt-2 text-sm text-gray-800">{getOriginLabel(selectedConta.origem)}</p></div>
               <div><Label>Tipo de agendamento</Label><p className="mt-2 text-sm text-gray-800">{getScheduleTypeLabel(selectedConta.tipo_agendamento)}</p></div>
-              <div><Label>Codigo do pacote</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.packageCode || "-"}</p></div>
-              <div><Label>Orcamento</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.orcamento?.id || selectedConta.orcamento_id || "-"}</p></div>
+              <div><Label>Código do pacote</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.packageCode || "-"}</p></div>
+              <div><Label>Orçamento</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.orcamento?.id || selectedConta.orcamento_id || "-"}</p></div>
               <div><Label>Check-in</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.checkin?.checkin_datetime ? format(new Date(selectedContext.checkin.checkin_datetime), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}</p></div>
               <div><Label>Check-out</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.checkin?.checkout_datetime ? format(new Date(selectedContext.checkin.checkout_datetime), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}</p></div>
               <div><Label>Monitor</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.checkin?.checkin_monitor_nome || selectedContext.checkin?.checkout_monitor_nome || "-"}</p></div>
-              <div><Label>Refeicao prevista</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.checkin?.tem_refeicao ? "Sim" : "Nao"}</p></div>
-              <div><Label>Registros de refeicao</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.mealRecords?.length || 0}</p></div>
-              <div><Label>Horario agendado</Label><p className="mt-2 text-sm text-gray-800">{fmtDate(getAppointmentDateKey(selectedContext.appointment))}{selectedContext.appointment?.hora_entrada ? ` • ${selectedContext.appointment.hora_entrada}` : ""}</p></div>
-              <div className="sm:col-span-2 lg:col-span-3"><Label>Observacoes</Label><p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{selectedContext.checkin?.observacoes || selectedContext.appointment?.observacoes || selectedConta.observacoes || "-"}</p></div>
+              <div><Label>Refeição prevista</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.checkin?.tem_refeicao ? "Sim" : "Não"}</p></div>
+              <div><Label>Registros de refeição</Label><p className="mt-2 text-sm text-gray-800">{selectedContext.mealRecords?.length || 0}</p></div>
+              <div><Label>Horário agendado</Label><p className="mt-2 text-sm text-gray-800">{fmtDate(getAppointmentDateKey(selectedContext.appointment))}{selectedContext.appointment?.hora_entrada ? ` • ${selectedContext.appointment.hora_entrada}` : ""}</p></div>
+              <div className="sm:col-span-2 lg:col-span-3"><Label>Observações</Label><p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{selectedContext.checkin?.observacoes || selectedContext.appointment?.observacoes || selectedConta.observacoes || "-"}</p></div>
             </CardContent></Card>
 
             <Card className="border-gray-200 bg-white"><CardHeader><CardTitle className="text-base">Baixa de recebimento</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
               <div><Label>Data do recebimento</Label><DatePickerInput value={paymentDate} onChange={setPaymentDate} className="mt-2" /></div>
-              <div><Label>Forma de pagamento</Label><Select value={paymentMethod || "none"} onValueChange={(value) => setPaymentMethod(value === "none" ? "" : value)}><SelectTrigger className="mt-2"><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent><SelectItem value="none">Nao informado</SelectItem>{paymentOptions.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select></div>
-              <div className="sm:col-span-2"><Label>Observacoes da cobranca</Label><Textarea className="mt-2" rows={4} value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="Observacoes administrativas da cobranca" /></div>
+              <div><Label>Forma de pagamento</Label><Select value={paymentMethod || "none"} onValueChange={(value) => setPaymentMethod(value === "none" ? "" : value)}><SelectTrigger className="mt-2"><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent><SelectItem value="none">Não informado</SelectItem>{paymentOptions.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select></div>
+              <div className="sm:col-span-2"><Label>Observações da cobrança</Label><Textarea className="mt-2" rows={4} value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="Observações administrativas da cobrança" /></div>
             </CardContent></Card>
 
             <Card className="border-gray-200 bg-white"><CardHeader><CardTitle className="text-base">Rastreabilidade</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div><Label>Appointment ID</Label><p className="mt-2 break-all text-xs text-gray-800">{selectedConta.appointment_id || "-"}</p></div>
               <div><Label>Check-in ID</Label><p className="mt-2 break-all text-xs text-gray-800">{selectedConta.checkin_id || "-"}</p></div>
-              <div><Label>Orcamento ID</Label><p className="mt-2 break-all text-xs text-gray-800">{selectedConta.orcamento_id || "-"}</p></div>
+              <div><Label>Orçamento ID</Label><p className="mt-2 break-all text-xs text-gray-800">{selectedConta.orcamento_id || "-"}</p></div>
               <div><Label>Source key</Label><p className="mt-2 break-all text-xs text-gray-800">{selectedConta.source_key || "-"}</p></div>
             </CardContent></Card>
           </div>}
-          <DialogFooter className="gap-2"><Button variant="outline" onClick={() => setDetailOpen(false)}>Fechar</Button>{selectedConta && getStatusKey(selectedConta) === "pago" ? <Button variant="outline" onClick={reopenCharge} disabled={isSaving}>{isSaving ? "Salvando..." : "Reabrir cobranca"}</Button> : <Button onClick={markReceived} disabled={isSaving}><CreditCard className="mr-2 h-4 w-4" />{isSaving ? "Salvando..." : "Marcar recebido"}</Button>}</DialogFooter>
+          <DialogFooter className="gap-2"><Button variant="outline" onClick={() => setDetailOpen(false)}>Fechar</Button>{selectedConta && getStatusKey(selectedConta) === "pago" ? <Button variant="outline" onClick={reopenCharge} disabled={isSaving}>{isSaving ? "Salvando..." : "Reabrir cobrança"}</Button> : <Button onClick={markReceived} disabled={isSaving}><CreditCard className="mr-2 h-4 w-4" />{isSaving ? "Salvando..." : "Marcar recebido"}</Button>}</DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

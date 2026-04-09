@@ -28,12 +28,12 @@ export default function OrcamentoTransporteForm({ transporte, tipo, onUpdate }) 
         <CardContent className="space-y-4">
           <div>
             <Label className="flex items-center gap-1">
-              <MapPin className="h-3 w-3" /> Endereco
+              <MapPin className="h-3 w-3" /> Endereço
             </Label>
             <Input
               value={transporte.endereco}
               onChange={(event) => handleChange("endereco", event.target.value)}
-              placeholder="Endereco completo para coleta/entrega"
+              placeholder="Endereço completo para coleta/entrega"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -57,7 +57,7 @@ export default function OrcamentoTransporteForm({ transporte, tipo, onUpdate }) 
             </div>
             <div>
               <Label className="flex items-center gap-1">
-                <Clock className="h-3 w-3" /> Horario desejado
+                <Clock className="h-3 w-3" /> Horário desejado
               </Label>
               <TimePickerInput
                 value={transporte.horario}

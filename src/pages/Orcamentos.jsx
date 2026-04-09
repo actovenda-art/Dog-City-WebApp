@@ -80,8 +80,8 @@ const emptyCao = {
   hosp_data_saida: "",
   hosp_horario_saida: "12:00",
   hosp_is_mensalista: false,
-  hosp_dormitorio_compartilhado: false,
-  hosp_dormitorio_com: [],
+  hosp_dormitório_compartilhado: false,
+  hosp_dormitório_com: [],
   hosp_tem_daycare_ativo: false,
   hosp_datas_daycare: [],
   banho_plano_ativo: false,
@@ -238,11 +238,11 @@ function calcularOrcamento(caes, dogs, precos) {
       }
 
       let descDormitorio = 0;
-      if (cao.hosp_dormitorio_compartilhado && (cao.hosp_dormitorio_com || []).length > 0) {
+      if (cao.hosp_dormitório_compartilhado && (cao.hosp_dormitório_com || []).length > 0) {
         descDormitorio = subtotalDiarias * precos.desconto_canil;
         linhas.push({
           tipo: "desconto",
-          descricao: "Desc. dormitorio compartilhado (30%)",
+          descricao: "Desc. dormitório compartilhado (30%)",
           valor: -descDormitorio,
         });
         descontoTotal += descDormitorio;
@@ -314,7 +314,7 @@ function calcularOrcamento(caes, dogs, precos) {
         if (km <= 0) return;
         const valor = km * precos.transporte_km;
         transporteLinhas.push({
-          dog_nome: dog?.nome || "Cao",
+          dog_nome: dog?.nome || "Cão",
           viagem_num: index + 1,
           km,
           valor,
@@ -328,7 +328,7 @@ function calcularOrcamento(caes, dogs, precos) {
     if (totalCao > 0 || linhas.length > 0) {
       detalhes.push({
         dog_id: cao.dog_id,
-        dog_nome: dog?.nome || "Cao",
+        dog_nome: dog?.nome || "Cão",
         is_mensalista: cao.hosp_is_mensalista,
         linhas,
         total: totalCao,
@@ -444,12 +444,12 @@ export default function Orcamentos() {
 
       setDogs((dogsData || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteirasData || []).filter((cliente) => cliente.ativo !== false));
-      setResponsaveis((responsaveisData || []).filter((responsavel) => responsavel.ativo !== false));
+      setResponsaveis((responsaveisData || []).filter((responsavel) => responsável.ativo !== false));
       setOrcamentos(orcamentosData || []);
       setCurrentUser(userData || null);
       setPrecos(buildPricingConfig(precosData || [], userData?.empresa_id || null));
     } catch (error) {
-      console.error("Erro ao carregar orcamentos:", error);
+      console.error("Erro ao carregar orçamentos:", error);
     }
     setIsLoading(false);
   }
@@ -502,7 +502,7 @@ export default function Orcamentos() {
       );
 
       const matchedResponsaveis = responsaveisDoCliente.filter((responsavel) =>
-        [responsavel.nome_completo, responsavel.cpf, responsavel.celular, responsavel.email]
+        [responsavel.nome_completo, responsável.cpf, responsavel.celular, responsavel.email]
           .some((value) => normalizeSearchValue(value).includes(searchTerm))
       );
 
@@ -511,9 +511,9 @@ export default function Orcamentos() {
       }
 
       const destaqueBusca = [
-        carteiraMatched ? "Responsavel financeiro" : "",
-        matchedDogs.length ? `Cao: ${matchedDogs.map((dog) => dog.nome).join(", ")}` : "",
-        matchedResponsaveis.length ? `Responsavel: ${matchedResponsaveis.map((responsavel) => responsavel.nome_completo).join(", ")}` : "",
+        carteiraMatched ? "Responsável financeiro" : "",
+        matchedDogs.length ? `Cão: ${matchedDogs.map((dog) => dog.nome).join(", ")}` : "",
+        matchedResponsaveis.length ? `Responsável: ${matchedResponsaveis.map((responsavel) => responsavel.nome_completo).join(", ")}` : "",
       ].filter(Boolean).join(" | ");
 
       const prioridade = carteiraMatched ? 0 : matchedDogs.length ? 1 : 2;
@@ -548,7 +548,7 @@ export default function Orcamentos() {
 
   async function handleSave(status = "rascunho") {
     if (!calculo) {
-      alert("Preencha os dados do orcamento");
+      alert("Preencha os dados do orçamento");
       return;
     }
 
@@ -572,8 +572,8 @@ export default function Orcamentos() {
       setShowModal(false);
       resetForm();
     } catch (error) {
-      console.error("Erro ao salvar orcamento:", error);
-      alert(error?.message || "Erro ao salvar orcamento.");
+      console.error("Erro ao salvar orçamento:", error);
+      alert(error?.message || "Erro ao salvar orçamento.");
     }
     setIsSaving(false);
   }
@@ -611,20 +611,20 @@ export default function Orcamentos() {
               <Calculator className="h-6 w-6 text-blue-500" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Orcamentos</h1>
-              <p className="mt-1 text-sm text-gray-600">Geracao de orcamentos para servicos</p>
+              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Orçamentos</h1>
+              <p className="mt-1 text-sm text-gray-600">Geração de orçamentos para serviços</p>
             </div>
           </div>
           <div className="flex gap-2">
             <Link to={createPageUrl("HistoricoOrcamentos")}>
               <Button variant="outline">
                 <History className="mr-2 h-4 w-4" />
-                Historico
+                Histórico
               </Button>
             </Link>
             <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-blue-600 text-white hover:bg-blue-700">
               <Plus className="mr-2 h-4 w-4" />
-              Novo Orcamento
+              Novo Orçamento
             </Button>
           </div>
         </div>
@@ -652,17 +652,17 @@ export default function Orcamentos() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-blue-600" />
-              Orcamentos Recentes
+              Orçamentos Recentes
             </CardTitle>
           </CardHeader>
           <CardContent>
             {orcamentos.length === 0 ? (
               <div className="py-12 text-center">
                 <FileText className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-                <p className="text-gray-500">Nenhum orcamento criado</p>
+                <p className="text-gray-500">Nenhum orçamento criado</p>
                 <Button onClick={() => { resetForm(); setShowModal(true); }} className="mt-4 bg-blue-600 text-white hover:bg-blue-700">
                   <Plus className="mr-2 h-4 w-4" />
-                  Criar Primeiro Orcamento
+                  Criar Primeiro Orçamento
                 </Button>
               </div>
             ) : (
@@ -676,7 +676,7 @@ export default function Orcamentos() {
                         </div>
                         <div>
                           <p className="font-medium text-gray-900">
-                            {orcamento.caes?.length || 0} cao(es) • {formatDate(orcamento.data_criacao)}
+                            {orcamento.caes?.length || 0} cão(es) • {formatDate(orcamento.data_criacao)}
                           </p>
                           <p className="text-sm text-gray-500">Validade: {formatDate(orcamento.data_validade)}</p>
                         </div>
@@ -706,20 +706,20 @@ export default function Orcamentos() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Calculator className="h-5 w-5 text-blue-600" />
-              {etapa === "cliente" && "Novo Orcamento - Selecione o Cliente"}
-              {etapa === "caes" && "Novo Orcamento - Servicos por Cao"}
-              {etapa === "resumo" && "Novo Orcamento - Revisao Final"}
+              {etapa === "cliente" && "Novo Orçamento - Selecione o Cliente"}
+              {etapa === "caes" && "Novo Orçamento - Serviços por Cão"}
+              {etapa === "resumo" && "Novo Orçamento - Revisão Final"}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              Fluxo de criacao de orcamento com busca ampla por destinatario financeiro, responsavel e cao.
+              Fluxo de criacao de orçamento com busca ampla por destinatério financeiro, responsável e cão.
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex items-center gap-2 border-b border-gray-100 px-1 py-2">
             {[
               { id: "cliente", label: "1. Cliente" },
-              { id: "caes", label: "2. Servicos" },
-              { id: "resumo", label: "3. Revisao" },
+              { id: "caes", label: "2. Serviços" },
+              { id: "resumo", label: "3. Revisão" },
             ].map((step, index) => (
               <React.Fragment key={step.id}>
                 <div className={`rounded-full px-3 py-1 text-xs font-medium ${etapa === step.id ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500"}`}>
@@ -732,12 +732,12 @@ export default function Orcamentos() {
 
           {etapa === "cliente" && (
             <div className="flex-1 space-y-4 overflow-y-auto p-4">
-              <p className="text-sm text-gray-600">Selecione o cliente ou pule para criar orcamento avulso.</p>
+              <p className="text-sm text-gray-600">Selecione o cliente ou pule para criar orçamento avulso.</p>
 
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <Input
-                  placeholder="Buscar por responsavel financeiro, responsavel, cao, CPF/CNPJ ou celular..."
+                  placeholder="Buscar por responsável financeiro, responsável, cão, CPF/CNPJ ou celular..."
                   value={searchCliente}
                   onChange={(event) => setSearchCliente(event.target.value)}
                   className="pl-9"
@@ -747,7 +747,7 @@ export default function Orcamentos() {
               {exigeConfirmacaoDestinatario && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                   <p className="text-sm text-amber-700">
-                    Encontramos mais de um destinatario financeiro para esta busca. Confirme para quem o orcamento sera destinado.
+                    Encontramos mais de um destinatério financeiro para esta busca. Confirme para quem o orçamento será destinado.
                   </p>
                 </div>
               )}
@@ -770,19 +770,19 @@ export default function Orcamentos() {
                           {destaqueBusca ? (
                             <p className="mt-1 text-xs text-blue-700">{destaqueBusca}</p>
                           ) : null}
-                          {dogsDoCliente.length > 0 ? (
+                          {dogsDoCliente.length > 0 ?(
                             <p className="mt-1 text-xs text-gray-500">
-                              Caes: {dogsDoCliente.map((dog) => dog.nome).join(", ")}
+                              Cães: {dogsDoCliente.map((dog) => dog.nome).join(", ")}
                             </p>
                           ) : null}
-                          {responsaveisDoCliente.length > 0 ? (
+                          {responsaveisDoCliente.length > 0 ?(
                             <p className="mt-1 text-xs text-gray-500">
-                              Responsaveis: {responsaveisDoCliente.map((responsavel) => responsavel.nome_completo).join(", ")}
+                              Responsáveis: {responsaveisDoCliente.map((responsavel) => responsavel.nome_completo).join(", ")}
                             </p>
                           ) : null}
                           <p className="text-sm text-gray-500">{cliente.celular} • {cliente.cpf_cnpj}</p>
                         </div>
-                        <Badge variant="outline">{numCaes} cao(es)</Badge>
+                        <Badge variant="outline">{numCaes} cão(es)</Badge>
                       </div>
                     </div>
                   );
@@ -831,16 +831,16 @@ export default function Orcamentos() {
 
                   <Button variant="outline" onClick={addCao} className="w-full border-dashed">
                     <Plus className="mr-2 h-4 w-4" />
-                    Adicionar Outro Cao
+                    Adicionar Outro Cão
                   </Button>
 
                   <Card className="border-gray-200 bg-white">
                     <CardContent className="p-4">
-                      <Label className="text-sm font-medium">Observacoes Gerais</Label>
+                      <Label className="text-sm font-medium">Observações Gerais</Label>
                       <Textarea
                         value={observacoes}
                         onChange={(event) => setObservacoes(event.target.value)}
-                        placeholder="Informacoes adicionais sobre o orcamento..."
+                        placeholder="Informações adicionais sobre o orçamento..."
                         rows={2}
                         className="mt-2"
                       />
@@ -869,7 +869,7 @@ export default function Orcamentos() {
 
               {observacoes && (
                 <div className="rounded-lg border-l-4 border-yellow-400 bg-yellow-50 p-3">
-                  <p className="mb-1 text-xs font-semibold text-yellow-700">Observacoes</p>
+                  <p className="mb-1 text-xs font-semibold text-yellow-700">Observações</p>
                   <p className="text-sm text-gray-700">{observacoes}</p>
                 </div>
               )}
@@ -903,7 +903,7 @@ export default function Orcamentos() {
                 </Button>
                 <Button onClick={() => handleSave("enviado")} disabled={isSaving || !calculo} className="bg-green-600 text-white hover:bg-green-700">
                   <Send className="mr-2 h-4 w-4" />
-                  {isSaving ? "Salvando..." : "Enviar Orcamento"}
+                  {isSaving ? "Salvando..." : "Enviar Orçamento"}
                 </Button>
               </>
             )}

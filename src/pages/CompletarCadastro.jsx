@@ -172,7 +172,7 @@ export default function CompletarCadastro() {
       }
     } catch (error) {
       console.error("Erro ao carregar cadastro complementar:", error);
-      setErrorMessage(error?.message || "Nao foi possivel carregar os dados do convite.");
+      setErrorMessage(error?.message || "Não foi possível carregar os dados do convite.");
     } finally {
       setIsLoading(false);
     }
@@ -192,7 +192,7 @@ export default function CompletarCadastro() {
       setPhotoPreviewUrl(signed?.signedUrl || signed?.url || "");
     } catch (error) {
       console.error("Erro ao enviar foto de perfil:", error);
-      setErrorMessage("Nao foi possivel enviar a foto de perfil.");
+      setErrorMessage("Não foi possível enviar a foto de perfil.");
     } finally {
       setIsUploading(false);
     }
@@ -247,7 +247,7 @@ export default function CompletarCadastro() {
       window.location.replace(nextPath);
     } catch (error) {
       console.error("Erro ao concluir cadastro:", error);
-      setErrorMessage(error?.message || "Nao foi possivel concluir o cadastro.");
+      setErrorMessage(error?.message || "Não foi possível concluir o cadastro.");
     } finally {
       setIsSaving(false);
     }
@@ -331,7 +331,7 @@ export default function CompletarCadastro() {
                     onChange={(event) => setForm((current) => ({ ...current, cep: formatCEP(event.target.value) }))}
                     className="mt-2"
                   />
-                  <p className="mt-1 text-xs text-slate-500">{addressLoading ? "Buscando endereco..." : "Rua, bairro, cidade e estado serao preenchidos pelo CEP."}</p>
+                  <p className="mt-1 text-xs text-slate-500">{addressLoading ? "Buscando endereço..." : "Rua, bairro, cidade e estado seráo preenchidos pelo CEP."}</p>
                 </div>
               </div>
 
@@ -345,12 +345,12 @@ export default function CompletarCadastro() {
                   />
                 </div>
                 <div>
-                  <Label>Numero *</Label>
+                  <Label>Número *</Label>
                   <Input
                     value={form.number}
                     onChange={(event) => setForm((current) => ({ ...current, number: event.target.value }))}
                     className="mt-2"
-                    placeholder="Informe o numero"
+                    placeholder="Informe o número"
                   />
                 </div>
                 <div>
@@ -413,7 +413,7 @@ export default function CompletarCadastro() {
                   />
                 </div>
                 <div className="lg:col-span-2">
-                  <Label>Contato de emergencia *</Label>
+                  <Label>Contato de emergência *</Label>
                   <Input
                     value={form.emergency_contact}
                     onChange={(event) => setForm((current) => ({ ...current, emergency_contact: event.target.value }))}
@@ -454,7 +454,7 @@ export default function CompletarCadastro() {
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between sm:items-center pt-2">
                 <div className="flex items-center gap-2 text-sm text-slate-500">
                   <UserRound className="w-4 h-4" />
-                  <span>Seu acesso sera liberado apos concluir esta ficha.</span>
+                  <span>Seu acesso será liberado após concluir esta ficha.</span>
                 </div>
                 <Button type="submit" disabled={isSaving} className="bg-slate-900 hover:bg-slate-800 text-white">
                   {isSaving ? "Salvando..." : "Concluir cadastro"}

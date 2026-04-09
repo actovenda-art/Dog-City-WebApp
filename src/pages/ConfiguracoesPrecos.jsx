@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Bath, Home, Pencil, Percent, Plus, Save, Scissors, Settings, Trash2, Truck } from "lucide-react";
 
 const SERVICE_TYPES = [
-  { id: "hospedagem", label: "Hospedagem (Nao mensalista)", category: "hospitalidade" },
+  { id: "hospedagem", label: "Hospedagem (Não mensalista)", category: "hospitalidade" },
   { id: "hospedagem_mensalista", label: "Hospedagem (Mensalista)", category: "hospitalidade" },
   { id: "day_care_avulso_sem_pacote", label: "Day Care Avulso (Sem pacote ativo)", category: "hospitalidade" },
   { id: "day_care_avulso_com_pacote", label: "Day Care Avulso (Com pacote ativo)", category: "hospitalidade" },
@@ -62,7 +62,7 @@ const DEFAULT_DISCOUNTS = [
   {
     id: "desconto_canil",
     label: "Dormitorio compartilhado",
-    description: "Desconto aplicado ao cao que divide dormitorio.",
+    description: "Desconto aplicado ao cão que divide dormitório.",
     percent: 30,
   },
   {
@@ -125,7 +125,7 @@ export default function ConfiguracoesPrecos() {
         (rows || []).filter((item) => item.ativo !== false && (!item.empresa_id || item.empresa_id === me?.empresa_id))
       );
     } catch (error) {
-      console.error("Erro ao carregar configuracoes de precos:", error);
+      console.error("Erro ao carregar configurações de preços:", error);
     }
     setIsLoading(false);
   }
@@ -257,7 +257,7 @@ export default function ConfiguracoesPrecos() {
               <Settings className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Configuracoes de Precos</h1>
+              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Configurações de Preços</h1>
               <p className="text-sm text-gray-600">Gerencie Day Care, hospedagem, banho, tosa, transporte e descontos.</p>
             </div>
           </div>
@@ -431,7 +431,7 @@ export default function ConfiguracoesPrecos() {
 
           <div className="grid gap-4 py-4">
             <div>
-              <Label>Tipo de servico *</Label>
+              <Label>Tipo de serviço *</Label>
               <Select value={formData.tipo} onValueChange={(value) => setFormData((prev) => ({ ...prev, tipo: value, raca: "" }))}>
                 <SelectTrigger className="mt-2">
                   <SelectValue placeholder="Selecione o tipo" />
@@ -478,7 +478,7 @@ export default function ConfiguracoesPrecos() {
             </div>
 
             <div>
-              <Label>Descricao</Label>
+              <Label>Descrição</Label>
               <Input
                 className="mt-2"
                 value={formData.descricao}
@@ -490,7 +490,7 @@ export default function ConfiguracoesPrecos() {
             <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-3">
               <div>
                 <p className="font-medium text-gray-900">Preco ativo</p>
-                <p className="text-sm text-gray-500">Se desligado, o valor nao entra no calculo.</p>
+                <p className="text-sm text-gray-500">Se desligado, o valor não entra no cálculo.</p>
               </div>
               <Switch
                 checked={formData.ativo}

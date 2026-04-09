@@ -71,7 +71,7 @@ export default function PerfilCao() {
     const nasc = new Date(dataNasc);
     const anos = differenceInYears(hoje, nasc);
     const meses = differenceInMonths(hoje, nasc) % 12;
-    if (anos > 0) return `${anos} ano${anos > 1 ? 's' : ''} ${meses > 0 ? `e ${meses} mês${meses > 1 ? 'es' : ''}` : ''}`;
+    if (anos > 0) return `${anos} ano${anos > 1 ? 's' : ''} ${meses > 0 ?`e ${meses} mês${meses > 1 ? 'es' : ''}` : ''}`;
     return `${meses} mês${meses > 1 ? 'es' : ''}`;
   };
 

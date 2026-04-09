@@ -6,7 +6,7 @@ export const FINANCE_RATEIO_FIELDS = [
   { key: "hospedagem", label: "Hospedagem" },
   { key: "transporte", label: "Transporte" },
   { key: "adaptacao", label: "Adaptacao" },
-  { key: "credito", label: "Credito" },
+  { key: "credito", label: "Crédito" },
   { key: "banho", label: "Banho" },
   { key: "tosa", label: "Tosa" },
   { key: "reembolso_compras", label: "Reembolso de compras" },

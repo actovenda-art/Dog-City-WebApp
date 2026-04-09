@@ -112,7 +112,7 @@ export default function Movimentacoes() {
       setCurrentBalance(typeof resolvedConfig?.current_balance === "number" ? resolvedConfig.current_balance : null);
       setCurrentBalanceAt(resolvedConfig?.current_balance_at || null);
     } catch (error) {
-      console.error("Erro ao carregar movimentacoes:", error);
+      console.error("Erro ao carregar movimentações:", error);
     } finally {
       setIsInitialLoading(false);
       setIsSummaryLoading(false);
@@ -129,7 +129,7 @@ export default function Movimentacoes() {
         setCurrentUser(me || null);
         await loadData(me || null);
       } catch (error) {
-        console.warn("Nao foi possivel carregar o usuario atual:", error);
+        console.warn("Não foi possível carregar o usuário atual:", error);
         if (isMounted) {
           await loadData(null);
         }
@@ -291,7 +291,7 @@ export default function Movimentacoes() {
       await loadData(currentUser, { preserveVisibleData: true });
       setShowModal(false);
     } catch (error) {
-      alert(error?.message || "Erro ao salvar movimentacao.");
+      alert(error?.message || "Erro ao salvar movimentação.");
     } finally {
       setIsSaving(false);
     }
@@ -299,13 +299,13 @@ export default function Movimentacoes() {
 
   const handleDelete = async (movement) => {
     if (movement?.apiLocked) return;
-    if (!confirm("Excluir esta movimentacao manual?")) return;
+    if (!confirm("Excluir esta movimentação manual?")) return;
 
     try {
       await ExtratoBancario.delete(movement.id);
       await loadData(currentUser, { preserveVisibleData: true });
     } catch (error) {
-      alert(error?.message || "Erro ao excluir movimentacao.");
+      alert(error?.message || "Erro ao excluir movimentação.");
     }
   };
 
@@ -350,9 +350,9 @@ export default function Movimentacoes() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Transacoes</h1>
+            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Transações</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Extrato bancario importado da API oficial com complemento manual apenas nos campos auxiliares.
+              Extrato bancário importado da API oficial com complemento manual apenas nos campos auxiliares.
             </p>
           </div>
 
@@ -363,7 +363,7 @@ export default function Movimentacoes() {
             </Button>
             <Button onClick={() => openModal()} className="bg-blue-600 text-white hover:bg-blue-700">
               <Plus className="mr-2 h-4 w-4" />
-              Nova movimentacao manual
+              Nova movimentação manual
             </Button>
           </div>
         </div>
@@ -376,8 +376,8 @@ export default function Movimentacoes() {
               </p>
               {refreshResult.success && (
                 <div className="mt-1 space-y-1 text-sm text-blue-800">
-                  <p>Historico novo inserido: {refreshResult.imported}</p>
-                  <p>Movimentacoes de hoje recarregadas: {refreshResult.refreshedToday}</p>
+                  <p>Histórico novo inserido: {refreshResult.imported}</p>
+                  <p>Movimentações de hoje recarregadas: {refreshResult.refreshedToday}</p>
                   {typeof refreshResult.balance === "number" && (
                     <p>Saldo oficial retornado pela API: {formatCurrency(refreshResult.balance)}</p>
                   )}
@@ -400,7 +400,7 @@ export default function Movimentacoes() {
             isBlurred={isSummaryLoading}
           />
           <StatCard
-            label="Saidas"
+            label="Saídas"
             value={formatCurrency(totalSaidas)}
             className="border-red-200"
             valueClassName="text-red-600"
@@ -417,7 +417,7 @@ export default function Movimentacoes() {
             isBlurred={isSummaryLoading}
           />
           <StatCard
-            label="Movimentacoes"
+            label="Movimentações"
             value={String(filtered.length)}
             className="border-gray-200"
             valueClassName="text-gray-900"
@@ -434,7 +434,7 @@ export default function Movimentacoes() {
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 className="pl-9"
-                placeholder="Buscar por titular, metodo, banco ou transacao ID"
+                placeholder="Buscar por titular, metodo, banco ou transação ID"
               />
             </div>
 
@@ -445,7 +445,7 @@ export default function Movimentacoes() {
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="entrada">Entradas</SelectItem>
-                <SelectItem value="saida">Saidas</SelectItem>
+                <SelectItem value="saida">Saídas</SelectItem>
               </SelectContent>
             </Select>
 
@@ -462,7 +462,7 @@ export default function Movimentacoes() {
           {filtered.length === 0 ? (
             <Card className="border-gray-200 bg-white">
               <CardContent className="p-12 text-center text-gray-500">
-                {isInitialLoading ? "Carregando movimentacoes..." : "Nenhuma movimentacao encontrada."}
+                {isInitialLoading ? "Carregando movimentações..." : "Nenhuma movimentação encontrada."}
               </CardContent>
             </Card>
           ) : (
@@ -486,12 +486,12 @@ export default function Movimentacoes() {
                       </div>
 
                       <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Metodo</p>
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Método</p>
                         <p className="mt-1 font-medium text-gray-900">{movement.metodo}</p>
                       </div>
 
                       <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Data da transacao</p>
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Data da transação</p>
                         <p className="mt-1 font-medium text-gray-900">{formatMovementDateTime(movement)}</p>
                       </div>
 
@@ -542,11 +542,11 @@ export default function Movimentacoes() {
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="w-[95vw] max-w-[720px]">
           <DialogHeader>
-            <DialogTitle>{editingItem ? "Editar movimentacao" : "Nova movimentacao manual"}</DialogTitle>
+            <DialogTitle>{editingItem ? "Editar movimentação" : "Nova movimentação manual"}</DialogTitle>
             <DialogDescription>
               {editingItem?.apiLocked
-                ? "Lancamentos vindos da API oficial ficam bloqueados. Aqui voce adiciona apenas observacoes complementares."
-                : "Ajuste manualmente os dados financeiros exibidos na sessao de transacoes."}
+                ? "Lançamentos vindos da API oficial ficam bloqueados. Aqui você adiciona apenas observações complementares."
+                : "Ajuste manualmente os dados financeiros exibidos na sessão de transações."}
             </DialogDescription>
           </DialogHeader>
 
@@ -573,7 +573,7 @@ export default function Movimentacoes() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="entrada">Entrada</SelectItem>
-                  <SelectItem value="saida">Saida</SelectItem>
+                  <SelectItem value="saida">Saída</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -610,7 +610,7 @@ export default function Movimentacoes() {
             </div>
 
             <div>
-              <Label>Tipo da transacao</Label>
+              <Label>Tipo da transação</Label>
               <Input
                 className="mt-2"
                 value={formData.tipo_transacao_detalhado}
@@ -621,7 +621,7 @@ export default function Movimentacoes() {
             </div>
 
             <div className="md:col-span-2">
-              <Label>Transacao ID</Label>
+              <Label>Transao ID</Label>
               <Input
                 className="mt-2"
                 value={formData.referencia}
@@ -631,7 +631,7 @@ export default function Movimentacoes() {
             </div>
 
             <div className="md:col-span-2">
-              <Label>Observacoes</Label>
+              <Label>Observações</Label>
               <Textarea
                 className="mt-2"
                 rows={4}

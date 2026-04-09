@@ -25,7 +25,9 @@ const EMPTY_CHECKIN_FORM = {
   entregador_nome: "",
   observacoes: "",
   tarefa_lembrete: "",
+  tarefa_lembrete_setor: "",
   tarefa_lembrete_horario: "",
+  tarefa_lembrete_datetime: "",
   tem_refeicao: false,
   refeicao_observacao: "",
   pertences_entrada_foto_url: "",
@@ -88,7 +90,7 @@ function normalizeSearch(value) {
 }
 
 function getDogDisplayName(dog) {
-  return dog?.nome || dog?.nome_pet || "Cao";
+  return dog?.nome || dog?.nome_pet || "Cão";
 }
 
 function getDogBreed(dog) {
@@ -98,8 +100,8 @@ function getDogBreed(dog) {
 function getAppointmentDisplayTime(appointment) {
   const startTime = getAppointmentTimeValue(appointment, "entrada");
   const endTime = getAppointmentTimeValue(appointment, "saida");
-  if (startTime && endTime) return `${startTime} ate ${endTime}`;
-  return startTime || endTime || "Horario a confirmar";
+  if (startTime && endTime) return `${startTime} até ${endTime}`;
+  return startTime || endTime || "Horário a confirmar";
 }
 
 function isCommercialSalesUser(user, profilesById) {
@@ -114,6 +116,35 @@ function isCommercialSalesUser(user, profilesById) {
     ].join(" ")
   );
   return haystack.includes("comercial") || haystack.includes("venda");
+}
+
+function getUserAccessHaystack(user, profilesById) {
+  const profile = profilesById[user?.access_profile_id] || {};
+  return normalizeSearch(
+    [
+      user?.profile,
+      user?.company_role,
+      profile?.codigo,
+      profile?.nome,
+      profile?.descricao,
+    ].join(" ")
+  );
+}
+
+function isAdministrationUser(user, profilesById) {
+  const haystack = getUserAccessHaystack(user, profilesById);
+  return ["administracao", "administrativo", "financeiro", "financas", "contabilidade", "backoffice", "adm"].some((token) => haystack.includes(token));
+}
+
+function isOperationsUser(user, profilesById) {
+  const haystack = getUserAccessHaystack(user, profilesById);
+  return ["operacao", "operacional", "monitor", "banho", "tosa", "hospedagem", "day care", "daycare", "adestramento"].some((token) => haystack.includes(token));
+}
+
+function getReminderSectorLabel(value) {
+  if (value === "administracao") return "Administração";
+  if (value === "operacao") return "Operação";
+  return "Setor";
 }
 
 function buildAppointmentSourceKey({ dogId, serviceType, dateKey, mode }) {
@@ -171,6 +202,7 @@ export default function Registrador() {
   const monitors = useMemo(() => users.filter((user) => user.active !== false), [users]);
   const selectedDateTitle = selectedDate === TODAY_KEY ? "Hoje" : formatDateLabel(selectedDate);
   const canAddManualAppointment = selectedDate === TODAY_KEY;
+  const selectedAppointmentRequiresReminderDateTime = selectedAppointment?.service_type === "hospedagem";
 
   const activePetCheckins = useMemo(
     () => checkins.filter((item) => item.tipo === "pet" && item.status === "presente"),
@@ -265,7 +297,7 @@ export default function Registrador() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [dogRows, carteiraRows, responsavelRows, appointmentRows, checkinRows, userRows, profileRows, me] = await Promise.all([
+      const [dogRows, carteiraRows, responsávelRows, appointmentRows, checkinRows, userRows, profileRows, me] = await Promise.all([
         Dog.list("-created_date", 1000),
         Carteira.list("-created_date", 500),
         Responsavel.list("-created_date", 500),
@@ -278,7 +310,7 @@ export default function Registrador() {
 
       setDogs((dogRows || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteiraRows || []).filter((item) => item.ativo !== false));
-      setResponsaveis((responsavelRows || []).filter((item) => item.ativo !== false));
+      setResponsaveis((responsávelRows || []).filter((item) => item.ativo !== false));
       setAppointments(appointmentRows || []);
       setCheckins(checkinRows || []);
       setUsers(userRows || []);
@@ -286,7 +318,7 @@ export default function Registrador() {
       setCurrentUser(me || null);
     } catch (error) {
       console.error("Erro ao carregar registrador:", error);
-      openNotify("Erro", "Nao foi possivel carregar o Registrador.");
+      openNotify("Erro", "Não foi possível carregar o Registrador.");
     }
     setIsLoading(false);
   }
@@ -316,7 +348,7 @@ export default function Registrador() {
           appointment,
           dog,
           tipo: "agendamento_sem_presenca",
-          titulo: "Este cao realmente faltou?",
+          titulo: "Este cão realmente faltou?",
           mensagem: openAttendance
             ? `${getDogDisplayName(dog)} ficou com check-in aberto em ${formatDateLabel(dateKey)}. Confirme se precisa registrar o check-out ou marcar falta.`
             : `${getDogDisplayName(dog)} ficou sem check-in/check-out em ${formatDateLabel(dateKey)}. Confirme se houve falta ou se o atendimento precisa ser preenchido.`,
@@ -349,7 +381,9 @@ export default function Registrador() {
 
         const appointment = appointments.find((item) => item.id === checkin.appointment_id);
         const dog = dogsById[checkin.dog_id];
-        await notifyCommercialUsers({
+        const targetDate = getAppointmentDateKey(appointment) || (checkin.checkin_datetime || "").slice(0, 10) || TODAY_KEY;
+        const recipientsCount = await notifySectorUsers({
+          sector: checkin.tarefa_lembrete_setor || "operacao",
           appointment: appointment || {
             id: checkin.appointment_id,
             dog_id: checkin.dog_id,
@@ -358,20 +392,23 @@ export default function Registrador() {
           },
           dog,
           tipo: "lembrete_checkin",
-          titulo: "Lembrete do atendimento",
+          titulo: `Lembrete para ${getReminderSectorLabel(checkin.tarefa_lembrete_setor || "operacao")}`,
           mensagem: `${getDogDisplayName(dog)}: ${checkin.tarefa_lembrete}`,
-          link: createPageUrl("Registrador"),
+          link: `${createPageUrl("Registrador")}?date=${encodeURIComponent(targetDate)}&appointmentId=${encodeURIComponent(checkin.appointment_id || "")}`,
           payload: {
             checkin_id: checkin.id,
             reminder_text: checkin.tarefa_lembrete,
+            reminder_sector: checkin.tarefa_lembrete_setor || "operacao",
           },
         });
 
-        updates.push(
-          Checkin.update(checkin.id, {
-            tarefa_lembrete_notificado_em: now.toISOString(),
-          })
-        );
+        if (recipientsCount > 0) {
+          updates.push(
+            Checkin.update(checkin.id, {
+              tarefa_lembrete_notificado_em: now.toISOString(),
+            })
+          );
+        }
       }
 
       if (updates.length > 0) {
@@ -436,7 +473,7 @@ export default function Registrador() {
 
   function openManualDialogForDog(dog = null) {
     if (!canAddManualAppointment) {
-      openNotify("Data invalida", "A inclusao manual pelo Registrador fica disponivel apenas para o dia de hoje.");
+      openNotify("Data invalida", "A inclusao manual pelo Registrador fica disponível apenas para o dia de hoje.");
       return;
     }
     setSelectedDogForManual(dog || null);
@@ -469,22 +506,32 @@ export default function Registrador() {
       }
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (error) {
-      openNotify("Erro", "Nao foi possivel abrir o anexo.");
+      openNotify("Erro", "Não foi possível abrir o anexo.");
     }
   }
 
   async function submitCheckin() {
     if (!selectedAppointment) return;
     if (!checkinForm.monitor_id || !checkinForm.entregador_nome || !checkinForm.pertences_entrada_foto_url) {
-      openNotify("Campos obrigatorios", "Informe monitor, responsavel pela entrega e foto dos pertences.");
+      openNotify("Campos obrigatorios", "Informe monitor, responsável pela entrega e foto dos pertences.");
       return;
     }
-    if (checkinForm.tarefa_lembrete && !checkinForm.tarefa_lembrete_horario) {
-      openNotify("Campos obrigatorios", "Informe o horario para notificar o lembrete.");
+    if (checkinForm.tarefa_lembrete && !checkinForm.tarefa_lembrete_setor) {
+      openNotify("Campos obrigatorios", "Selecione o setor que deve receber o lembrete.");
       return;
     }
-    if (checkinForm.tarefa_lembrete_horario && !checkinForm.tarefa_lembrete) {
-      openNotify("Campos obrigatorios", "Escreva o lembrete antes de definir o horario.");
+    if (checkinForm.tarefa_lembrete) {
+      if (selectedAppointmentRequiresReminderDateTime && !checkinForm.tarefa_lembrete_datetime) {
+        openNotify("Campos obrigatorios", "Informe a data e o horário do lembrete para hospedagem.");
+        return;
+      }
+      if (!selectedAppointmentRequiresReminderDateTime && !checkinForm.tarefa_lembrete_horario) {
+        openNotify("Campos obrigatorios", "Informe o horário para notificar o lembrete.");
+        return;
+      }
+    }
+    if ((checkinForm.tarefa_lembrete_horario || checkinForm.tarefa_lembrete_datetime || checkinForm.tarefa_lembrete_setor) && !checkinForm.tarefa_lembrete) {
+      openNotify("Campos obrigatorios", "Escreva o lembrete antes de definir data, horário ou setor.");
       return;
     }
 
@@ -495,9 +542,22 @@ export default function Registrador() {
       const monitor = users.find((user) => user.id === checkinForm.monitor_id);
       const appointmentMeta = getAppointmentMeta(selectedAppointment);
       const reminderBaseDate = (checkinForm.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY;
-      const reminderNotificationAt = checkinForm.tarefa_lembrete && checkinForm.tarefa_lembrete_horario
-        ? buildDateTimeForDate(reminderBaseDate, checkinForm.tarefa_lembrete_horario)
+      const reminderNotificationAt = checkinForm.tarefa_lembrete
+        ? (
+          selectedAppointmentRequiresReminderDateTime
+            ? (checkinForm.tarefa_lembrete_datetime || null)
+            : (checkinForm.tarefa_lembrete_horario
+              ? buildDateTimeForDate(reminderBaseDate, checkinForm.tarefa_lembrete_horario)
+              : null)
+        )
         : null;
+      const reminderHour = checkinForm.tarefa_lembrete
+        ? (
+          selectedAppointmentRequiresReminderDateTime
+            ? (checkinForm.tarefa_lembrete_datetime || "").slice(11, 16)
+            : (checkinForm.tarefa_lembrete_horario || "")
+        )
+        : "";
 
       const createdCheckin = await Checkin.create({
         empresa_id: selectedAppointment.empresa_id || currentUser?.empresa_id || null,
@@ -519,7 +579,8 @@ export default function Registrador() {
         tem_refeicao: checkinForm.tem_refeicao,
         refeicao_observacao: checkinForm.refeicao_observacao || "",
         tarefa_lembrete: checkinForm.tarefa_lembrete || "",
-        tarefa_lembrete_horario: checkinForm.tarefa_lembrete_horario || "",
+        tarefa_lembrete_setor: checkinForm.tarefa_lembrete_setor || "",
+        tarefa_lembrete_horario: reminderHour,
         tarefa_lembrete_notificar_em: reminderNotificationAt,
         tarefa_lembrete_notificado_em: null,
         observacoes: checkinForm.observacoes || "",
@@ -541,7 +602,7 @@ export default function Registrador() {
       openNotify("Check-in realizado", `Check-in realizado com sucesso para ${getDogDisplayName(dog)}.`);
     } catch (error) {
       console.error("Erro ao realizar check-in:", error);
-      openNotify("Erro", error?.message || "Nao foi possivel concluir o check-in.");
+      openNotify("Erro", error?.message || "Não foi possível concluir o check-in.");
     }
     setIsSaving(false);
   }
@@ -631,7 +692,7 @@ export default function Registrador() {
       openNotify("Check-out realizado", "Entrega registrada com sucesso.");
     } catch (error) {
       console.error("Erro ao realizar check-out:", error);
-      openNotify("Erro", error?.message || "Nao foi possivel concluir o check-out.");
+      openNotify("Erro", error?.message || "Não foi possível concluir o check-out.");
     }
     setIsSaving(false);
   }
@@ -639,7 +700,7 @@ export default function Registrador() {
   async function submitMeal() {
     if (!selectedCheckin) return;
     if (!mealForm.monitor_id || !mealForm.percentual_consumido || !mealForm.foto_refeicao_url || !mealForm.selfie_monitor_url) {
-      openNotify("Campos obrigatorios", "Complete monitor, percentual consumido, foto da refeicao e selfie.");
+      openNotify("Campos obrigatorios", "Complete monitor, percentual consumido, foto da refeição e selfie.");
       return;
     }
 
@@ -665,10 +726,10 @@ export default function Registrador() {
 
       await loadData();
       setShowMealDialog(false);
-      openNotify("Refeicao registrada", "A refeicao foi registrada com sucesso.");
+      openNotify("Refeição registrada", "A refeição foi registrada com sucesso.");
     } catch (error) {
-      console.error("Erro ao registrar refeicao:", error);
-      openNotify("Erro", error?.message || "Nao foi possivel registrar a refeicao.");
+      console.error("Erro ao registrar refeição:", error);
+      openNotify("Erro", error?.message || "Não foi possível registrar a refeição.");
     }
     setIsSaving(false);
   }
@@ -697,12 +758,43 @@ export default function Registrador() {
     }
   }
 
+  async function notifySectorUsers({ sector, appointment, dog, tipo, titulo, mensagem, link, payload = {} }) {
+    const owner = ownerByDogId[appointment?.dog_id] || {};
+    const recipients = users.filter((user) => {
+      if (user.active === false) return false;
+      if (sector === "administracao") return isAdministrationUser(user, profilesById);
+      if (sector === "operacao") return isOperationsUser(user, profilesById);
+      return false;
+    });
+
+    for (const user of recipients) {
+      await Notificacao.create({
+        empresa_id: appointment?.empresa_id || currentUser?.empresa_id || null,
+        user_id: user.id,
+        tipo,
+        titulo,
+        mensagem,
+        link,
+        lido: false,
+        payload: {
+          appointment_id: appointment?.id || null,
+          dog_id: appointment?.dog_id || null,
+          owner_nome: owner.nome || "",
+          setor_destino: sector,
+          ...payload,
+        },
+      });
+    }
+
+    return recipients.length;
+  }
+
   async function createCommercialNotifications(appointment, dog) {
     await notifyCommercialUsers({
       appointment,
       dog,
       tipo: "agendamento_manual_pendente",
-      titulo: "Agendamento manual aguardando classificacao",
+      titulo: "Agendamento manual aguardando classificao",
       mensagem: `${getDogDisplayName(dog)} (${getServiceLabel(appointment.service_type)}) precisa ser classificado como pacote ou avulso.`,
       link: `${createPageUrl("Agendamentos")}?review=${appointment.id}`,
     });
@@ -710,11 +802,11 @@ export default function Registrador() {
 
   async function submitManualAppointment() {
     if (!manualForm.dog_id || !manualForm.service_type) {
-      openNotify("Campos obrigatorios", "Selecione o cao e o servico.");
+      openNotify("Campos obrigatorios", "Selecione o cão e o serviço.");
       return;
     }
     if (!canAddManualAppointment) {
-      openNotify("Data invalida", "A inclusao manual pelo Registrador fica disponivel apenas para o dia de hoje.");
+      openNotify("Data invalida", "A inclusao manual pelo Registrador fica disponível apenas para o dia de hoje.");
       return;
     }
 
@@ -757,7 +849,7 @@ export default function Registrador() {
       openNotify("Agendamento incluido", `${getDogDisplayName(dog)} foi incluido para atendimento em ${selectedDateTitle.toLowerCase()}.`);
     } catch (error) {
       console.error("Erro ao incluir agendamento manual:", error);
-      openNotify("Erro", error?.message || "Nao foi possivel incluir o agendamento.");
+      openNotify("Erro", error?.message || "Não foi possível incluir o agendamento.");
     }
     setIsSaving(false);
   }
@@ -773,7 +865,7 @@ export default function Registrador() {
     try {
       const provider = users.find((user) => (user.cpf || "").replace(/\D/g, "") === digits);
       if (!provider) {
-        openNotify("Prestador nao encontrado", "Nao localizamos um usuario com esse CPF.");
+        openNotify("Prestador não encontrado", "Não localizamos um usuário com esse CPF.");
         setIsSaving(false);
         return;
       }
@@ -800,7 +892,7 @@ export default function Registrador() {
       openNotify("Prestador registrado", "Registro realizado com sucesso.");
     } catch (error) {
       console.error("Erro ao registrar prestador:", error);
-      openNotify("Erro", error?.message || "Nao foi possivel registrar o prestador.");
+      openNotify("Erro", error?.message || "Não foi possível registrar o prestador.");
     }
     setIsSaving(false);
   }
@@ -818,7 +910,7 @@ export default function Registrador() {
       openNotify("Saida registrada", "Check-out do prestador concluido.");
     } catch (error) {
       console.error("Erro ao registrar saida do prestador:", error);
-      openNotify("Erro", error?.message || "Nao foi possivel concluir a saida.");
+      openNotify("Erro", error?.message || "Não foi possível concluir a saída.");
     }
     setIsSaving(false);
   }
@@ -830,7 +922,7 @@ export default function Registrador() {
       setIsSaving(true);
       const path = await uploadPrivateAsset(file, folder, file.name);
       if (!path) {
-        openNotify("Erro", "Nao foi possivel enviar o arquivo.");
+        openNotify("Erro", "Não foi possível enviar o arquivo.");
         return;
       }
       if (target === "checkin") {
@@ -844,7 +936,7 @@ export default function Registrador() {
       }
     } catch (error) {
       console.error("Erro ao fazer upload:", error);
-      openNotify("Erro", "Nao foi possivel enviar a imagem.");
+      openNotify("Erro", "Não foi possível enviar a imagem.");
     }
     setIsSaving(false);
     event.target.value = "";
@@ -872,7 +964,7 @@ export default function Registrador() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Registrador</h1>
               <p className="mt-1 text-sm text-gray-600">
-                Presencas do dia, check-in, refeicao, check-out e inclusoes manuais.
+                Presenças do dia, check-in, refeição, check-out e inclusões manuais.
               </p>
             </div>
           </div>
@@ -896,7 +988,7 @@ export default function Registrador() {
                     <Input
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
-                      placeholder="Buscar por nome do cao, raca ou responsavel..."
+                      placeholder="Buscar por nome do cão, raca ou responsável..."
                       className="h-12 pl-10"
                     />
                   </div>
@@ -958,7 +1050,7 @@ export default function Registrador() {
                               </Badge>
                             </div>
                             <p className="mt-1 text-sm text-gray-600">
-                              {getDogBreed(dog)} • {owner.nome || "Responsavel nao informado"}
+                              {getDogBreed(dog)} • {owner.nome || "Responsável não informado"}
                             </p>
                             <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
                               <span className="rounded-full bg-gray-100 px-2 py-1">
@@ -1021,7 +1113,7 @@ export default function Registrador() {
                       <div>
                         <p className="font-semibold text-blue-900">Nenhum agendamento encontrado para {selectedDateTitle.toLowerCase()}.</p>
                         <p className="mt-1 text-sm text-blue-800">
-                          Voce pode incluir manualmente o atendimento e liberar a classificacao comercial depois.
+                          Você pode incluir manualmente o atendimento e liberar a classificacao comercial depois.
                         </p>
                       </div>
                       <Button onClick={() => openManualDialogForDog(matchedDogsWithoutAppointments[0])} className="bg-green-600 text-white hover:bg-green-700">
@@ -1104,17 +1196,17 @@ export default function Registrador() {
           <DialogHeader>
             <DialogTitle>Confirmar check-in</DialogTitle>
             <DialogDescription>
-              Confirme horario, monitor, pertences e observacoes do atendimento.
+              Confirme horário, monitor, pertences e observações do atendimento.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label>Horario do check-in</Label>
+                <Label>Data e horário do check-in</Label>
                 <DateTimePickerInput value={checkinForm.checkin_datetime} onChange={(value) => setCheckinForm((current) => ({ ...current, checkin_datetime: value }))} />
               </div>
               <div>
-                <Label>Monitor responsavel</Label>
+                <Label>Monitor responsável</Label>
                 <Select value={checkinForm.monitor_id} onValueChange={(value) => setCheckinForm((current) => ({ ...current, monitor_id: value }))}>
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder="Selecione" />
@@ -1131,7 +1223,7 @@ export default function Registrador() {
             </div>
 
             <div>
-              <Label>Responsavel pela entrega</Label>
+              <Label>Responsável pela entrega</Label>
               <Input value={checkinForm.entregador_nome} onChange={(event) => setCheckinForm((current) => ({ ...current, entregador_nome: event.target.value }))} className="mt-2" />
             </div>
 
@@ -1159,21 +1251,21 @@ export default function Registrador() {
               <div className="space-y-3 rounded-xl border border-gray-200 p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-gray-900">Tem refeicao?</p>
-                    <p className="text-xs text-gray-500">Libera o registro posterior da refeicao.</p>
+                    <p className="font-medium text-gray-900">Tem refeição?</p>
+                    <p className="text-xs text-gray-500">Libera o registro posterior da refeição.</p>
                   </div>
                   <Switch checked={checkinForm.tem_refeicao} onCheckedChange={(checked) => setCheckinForm((current) => ({ ...current, tem_refeicao: checked }))} />
                 </div>
                 {checkinForm.tem_refeicao && (
                   <div>
-                    <Label>Observacao da refeicao</Label>
+                    <Label>Observação da refeição</Label>
                     <Textarea value={checkinForm.refeicao_observacao} onChange={(event) => setCheckinForm((current) => ({ ...current, refeicao_observacao: event.target.value }))} className="mt-2" rows={3} />
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
+            <div className={`grid gap-4 ${selectedAppointmentRequiresReminderDateTime ? "sm:grid-cols-[minmax(0,1fr)_220px_260px]" : "sm:grid-cols-[minmax(0,1fr)_220px_220px]"}`}>
               <div>
                 <Label>Lembrete ou tarefa</Label>
                 <Textarea
@@ -1185,22 +1277,52 @@ export default function Registrador() {
                 />
               </div>
               <div>
-                <Label>Horario para notificar</Label>
+                <Label>Setor a notificar</Label>
                 <div className="mt-2">
-                  <TimePickerInput
-                    value={checkinForm.tarefa_lembrete_horario}
-                    onChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_horario: value }))}
-                    placeholder="Defina o horario"
-                  />
+                  <Select
+                    value={checkinForm.tarefa_lembrete_setor}
+                    onValueChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_setor: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o setor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="administracao">Administração</SelectItem>
+                      <SelectItem value="operacao">Operação</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <p className="mt-2 text-xs text-gray-500">
-                  O lembrete sera enviado para usuarios com perfil de Atendente Comercial.
+                  O lembrete será enviado para os usuários com perfis vinculados ao setor selecionado.
+                </p>
+              </div>
+              <div>
+                <Label>{selectedAppointmentRequiresReminderDateTime ? "Data e horário do lembrete" : "Horário do lembrete"}</Label>
+                <div className="mt-2">
+                  {selectedAppointmentRequiresReminderDateTime ? (
+                    <DateTimePickerInput
+                      value={checkinForm.tarefa_lembrete_datetime}
+                      onChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_datetime: value }))}
+                      placeholder="Defina data e horário"
+                    />
+                  ) : (
+                    <TimePickerInput
+                      value={checkinForm.tarefa_lembrete_horario}
+                      onChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_horario: value }))}
+                      placeholder="Defina o horário"
+                    />
+                  )}
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  {selectedAppointmentRequiresReminderDateTime
+                    ? "Na hospedagem, você escolhe a data e o horário exatos da notificação."
+                    : "Nos demais serviços, o lembrete será enviado no mesmo dia do agendamento, no horário informado."}
                 </p>
               </div>
             </div>
 
             <div>
-              <Label>Observacoes gerais</Label>
+              <Label>Observações gerais</Label>
               <Textarea value={checkinForm.observacoes} onChange={(event) => setCheckinForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
             </div>
           </div>
@@ -1218,13 +1340,13 @@ export default function Registrador() {
           <DialogHeader>
             <DialogTitle>Confirmar check-out</DialogTitle>
             <DialogDescription>
-              Registre a entrega, a foto dos itens devolvidos e o monitor responsavel.
+              Registre a entrega, a foto dos itens devolvidos e o monitor responsável.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label>Horario do check-out</Label>
+                <Label>Data e horário do check-out</Label>
                 <DateTimePickerInput value={checkoutForm.checkout_datetime} onChange={(value) => setCheckoutForm((current) => ({ ...current, checkout_datetime: value }))} />
               </div>
               <div>
@@ -1266,7 +1388,7 @@ export default function Registrador() {
             </div>
 
             <div>
-              <Label>Observacoes</Label>
+              <Label>Observações</Label>
               <Textarea value={checkoutForm.observacoes} onChange={(event) => setCheckoutForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
             </div>
           </div>
@@ -1282,15 +1404,15 @@ export default function Registrador() {
       <Dialog open={showMealDialog} onOpenChange={setShowMealDialog}>
         <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Registrar refeicao</DialogTitle>
+            <DialogTitle>Registrar refeição</DialogTitle>
             <DialogDescription>
-              Tire a foto do pote, informe quanto o cao comeu e anexe a selfie do monitor.
+              Tire a foto do pote, informe quanto o cão comeu e anexe a selfie do monitor.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label>Monitor responsavel</Label>
+                <Label>Monitor responsável</Label>
                 <Select value={mealForm.monitor_id} onValueChange={(value) => setMealForm((current) => ({ ...current, monitor_id: value }))}>
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder="Selecione" />
@@ -1334,10 +1456,10 @@ export default function Registrador() {
                 />
                 <Button type="button" variant="outline" onClick={() => mealFoodPhotoInputRef.current?.click()} className="mt-2 w-full">
                   <Camera className="mr-2 h-4 w-4" />
-                  Tire foto do pote com a refeicao
+                  Tire foto do pote com a refeição
                 </Button>
                 {mealForm.foto_refeicao_url && (
-                  <button type="button" onClick={() => handleAttachmentPreview(mealForm.foto_refeicao_url, "Foto da refeicao")} className="mt-2 text-sm text-blue-600">
+                  <button type="button" onClick={() => handleAttachmentPreview(mealForm.foto_refeicao_url, "Foto da refeição")} className="mt-2 text-sm text-blue-600">
                     Ver imagem enviada
                   </button>
                 )}
@@ -1365,14 +1487,14 @@ export default function Registrador() {
             </div>
 
             <div>
-              <Label>Observacoes</Label>
+              <Label>Observações</Label>
               <Textarea value={mealForm.observacoes} onChange={(event) => setMealForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowMealDialog(false)}>Cancelar</Button>
             <Button onClick={submitMeal} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
-              {isSaving ? "Salvando..." : "Registrar refeicao"}
+              {isSaving ? "Salvando..." : "Registrar refeição"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1388,7 +1510,7 @@ export default function Registrador() {
             </DialogHeader>
           <div className="grid gap-4 py-2">
             <div>
-              <Label>Cao</Label>
+              <Label>Cão</Label>
               <Select value={manualForm.dog_id} onValueChange={(value) => setManualForm((current) => ({ ...current, dog_id: value }))}>
                 <SelectTrigger className="mt-2">
                   <SelectValue placeholder="Selecione" />
@@ -1396,7 +1518,7 @@ export default function Registrador() {
                 <SelectContent>
                   {(selectedDogForManual ? [selectedDogForManual] : dogs.filter((dog) => matchingDogIds.has(dog.id))).map((dog) => (
                     <SelectItem key={dog.id} value={dog.id}>
-                      {getDogDisplayName(dog)} - {getDogBreed(dog)} - {ownerByDogId[dog.id]?.nome || "Sem responsavel"}
+                      {getDogDisplayName(dog)} - {getDogBreed(dog)} - {ownerByDogId[dog.id]?.nome || "Sem responsável"}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1404,7 +1526,7 @@ export default function Registrador() {
             </div>
 
             <div>
-              <Label>Servico</Label>
+              <Label>Serviço</Label>
               <Select value={manualForm.service_type} onValueChange={(value) => setManualForm((current) => ({ ...current, service_type: value }))}>
                 <SelectTrigger className="mt-2">
                   <SelectValue placeholder="Selecione" />
@@ -1420,12 +1542,12 @@ export default function Registrador() {
             </div>
 
             <div>
-              <Label>Observacoes</Label>
+              <Label>Observações</Label>
               <Textarea value={manualForm.observacoes} onChange={(event) => setManualForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
             </div>
 
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-              Apos incluir, o Comercial recebe uma notificacao para decidir se este atendimento entra em pacote ou vira orcamento avulso.
+              Após incluir, o Comercial recebe uma notificação para decidir se este atendimento entra em pacote ou vira orçamento avulso.
             </div>
           </div>
           <DialogFooter>

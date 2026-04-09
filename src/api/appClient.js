@@ -529,18 +529,18 @@ if (SUPABASE_URL && SUPABASE_ANON) {
           const notificationPayload = payload.data || {};
           const action = payload.action || 'notificacao';
           const titleByAction = {
-            status_alterado: 'Status de orcamento atualizado',
-            orcamento_criado: 'Novo orcamento criado',
-            orcamento_enviado: 'Orcamento enviado',
+            status_alterado: 'Status de orçamento atualizado',
+            orcamento_criado: 'Novo orçamento criado',
+            orcamento_enviado: 'Orçamento enviado',
           };
           const defaultMessage = action === 'status_alterado'
             ? `Novo status: ${notificationPayload?.novo_status || 'atualizado'}`
-            : 'Voce recebeu uma nova notificacao.';
+            : 'Você recebeu uma nova notificação.';
           await supabase.from('notificacao').insert([{
             user_id: payload.user_id || notificationPayload.user_id || null,
             empresa_id: payload.empresa_id || notificationPayload.empresa_id || null,
             tipo: action,
-            titulo: payload.titulo || titleByAction[action] || 'Notificacao',
+            titulo: payload.titulo || titleByAction[action] || 'Notificação',
             mensagem: payload.mensagem || notificationPayload.mensagem || defaultMessage,
             link: payload.link || notificationPayload.link || null,
             payload: notificationPayload,

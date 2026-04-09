@@ -74,7 +74,7 @@ export default function OrcamentoCaoForm({
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Dog className="h-5 w-5 text-blue-600" />
-            Cao {index + 1}
+            Cão {index + 1}
           </CardTitle>
           {canRemove && (
             <Button
@@ -91,10 +91,10 @@ export default function OrcamentoCaoForm({
 
       <CardContent className="space-y-5">
         <div>
-          <Label>Selecionar Cao *</Label>
+          <Label>Selecionar Cão *</Label>
           <Select value={cao.dog_id} onValueChange={(value) => handleChange("dog_id", value)}>
             <SelectTrigger className="mt-1">
-              <SelectValue placeholder="Escolha o cao" />
+              <SelectValue placeholder="Escolha o cão" />
             </SelectTrigger>
             <SelectContent>
               {dogs.map((dog) => (
@@ -110,7 +110,7 @@ export default function OrcamentoCaoForm({
           <div className="flex items-center justify-between rounded-lg bg-emerald-50 p-3">
             <div>
               <Label className="text-sm font-medium">Day Care</Label>
-              <p className="text-xs text-gray-500">Avulso por cao</p>
+              <p className="text-xs text-gray-500">Avulso por cão</p>
             </div>
             <Switch
               checked={cao.servicos?.day_care || false}
@@ -132,7 +132,7 @@ export default function OrcamentoCaoForm({
           <div className="flex items-center justify-between rounded-lg bg-cyan-50 p-3">
             <div>
               <Label className="text-sm font-medium">Banho</Label>
-              <p className="text-xs text-gray-500">Servico por raca</p>
+              <p className="text-xs text-gray-500">Serviço por raca</p>
             </div>
             <Switch
               checked={cao.servicos?.banho || false}
@@ -175,7 +175,7 @@ export default function OrcamentoCaoForm({
 
             <div className="flex items-center justify-between rounded-lg bg-white p-3">
               <div>
-                <Label className="text-sm font-medium">Cao com pacote de Day Care ativo?</Label>
+                <Label className="text-sm font-medium">Cão com pacote de Day Care ativo?</Label>
                 <p className="text-xs text-gray-500">Aplica o valor avulso reduzido para clientes com pacote em vigor.</p>
               </div>
               <Switch
@@ -194,7 +194,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de Entrada</Label>
+                <Label>Horário de Entrada</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.day_care_horario_entrada}
@@ -202,7 +202,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de Saida</Label>
+                <Label>Horário de Saida</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.day_care_horario_saida}
@@ -212,12 +212,12 @@ export default function OrcamentoCaoForm({
             </div>
 
             <div>
-              <Label>Observacoes do Day Care</Label>
+              <Label>Observações do Day Care</Label>
               <Input
                 className="mt-1"
                 value={cao.day_care_observacoes || ""}
                 onChange={(event) => handleChange("day_care_observacoes", event.target.value)}
-                placeholder="Ex.: socializacao, gasto de energia, horario especial"
+                placeholder="Ex.: socialização, gasto de energia, horário especial"
               />
             </div>
           </div>
@@ -246,7 +246,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de Entrada</Label>
+                <Label>Horário de Entrada</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.hosp_horario_entrada}
@@ -262,7 +262,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de Saida</Label>
+                <Label>Horário de Saida</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.hosp_horario_saida}
@@ -274,11 +274,11 @@ export default function OrcamentoCaoForm({
             <div className="flex items-center justify-between rounded-lg bg-white p-3">
               <div>
                 <Label className="text-sm font-medium">Dormitorio compartilhado?</Label>
-                <p className="text-xs text-gray-500">Aplica desconto no proprio cao</p>
+                <p className="text-xs text-gray-500">Aplica desconto no próprio cão</p>
               </div>
               <Switch
-                checked={cao.hosp_dormitorio_compartilhado}
-                onCheckedChange={(checked) => handleChange("hosp_dormitorio_compartilhado", checked)}
+                checked={cao.hosp_dormitório_compartilhado}
+                onCheckedChange={(checked) => handleChange("hosp_dormitório_compartilhado", checked)}
               />
             </div>
 
@@ -339,7 +339,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario do Banho</Label>
+                <Label>Horário do Banho</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.banho_horario}
@@ -431,12 +431,12 @@ export default function OrcamentoCaoForm({
             </div>
 
             <div>
-              <Label>Observacoes da Tosa</Label>
+              <Label>Observações da Tosa</Label>
               <Input
                 className="mt-1"
                 value={cao.tosa_obs}
                 onChange={(event) => handleChange("tosa_obs", event.target.value)}
-                placeholder="Observacoes especificas"
+                placeholder="Observações específicas"
               />
             </div>
           </div>

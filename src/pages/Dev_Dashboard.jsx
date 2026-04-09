@@ -146,13 +146,13 @@ export default function Dev_Dashboard() {
         setSelectedUnitId(preferredUnitId);
       }
     } catch (error) {
-      console.error("Erro ao carregar gestao de usuarios:", error);
+      console.error("Erro ao carregar gestão de usuários:", error);
       if (isMissingAdminTablesError(error)) {
-        setSetupError("As tabelas administrativas ainda nao existem no Supabase. Execute `supabase-schema-admin-multiempresa.sql`, `supabase-schema-user-invite-onboarding.sql` e `supabase-seed-admin-config.sql`.");
+        setSetupError("As tabelas administrativas ainda não existem no Supabase. Execute `supabase-schema-admin-multiempresa.sql`, `supabase-schema-user-invite-onboarding.sql` e `supabase-seed-admin-config.sql`.");
       } else if (isRowLevelSecurityError(error)) {
-        setSetupError("O Supabase bloqueou leitura ou escrita por RLS nas tabelas de usuarios, convites ou unidades. Ajuste as policies antes de continuar.");
+        setSetupError("O Supabase bloqueou leitura ou escrita por RLS nas tabelas de usuários, convites ou unidades. Ajuste as policies antes de continuar.");
       } else {
-        setSetupError(error?.message || "Nao foi possivel carregar a gestao de usuarios.");
+        setSetupError(error?.message || "Não foi possível carregar a gestão de usuários.");
       }
     } finally {
       setIsLoading(false);
@@ -186,8 +186,8 @@ export default function Dev_Dashboard() {
   const blockedUsersCount = users.filter((user) => user.active === false).length;
 
   function getUnitName(unitId) {
-    if (!unitId) return "Administracao Central";
-    return units.find((item) => item.id === unitId)?.nome_fantasia || "Unidade nao identificada";
+    if (!unitId) return "Administração Central";
+    return units.find((item) => item.id === unitId)?.nome_fantasia || "Unidade não identificada";
   }
 
   function buildInviteLink(token) {
@@ -211,7 +211,7 @@ export default function Dev_Dashboard() {
       description,
       fieldLabel: "Link do convite",
       fieldValue: link,
-      note: "Compartilhe este link apenas com o usuario convidado. O login deve ser feito com o mesmo email do convite.",
+      note: "Compartilhe este link apenas com o usuário convidado. O login deve ser feito com o mesmo email do convite.",
     });
   }
 
@@ -224,7 +224,7 @@ export default function Dev_Dashboard() {
       window.setTimeout(() => setHasCopiedFeedbackValue(false), 2000);
     } catch (error) {
       console.error("Erro ao copiar valor do modal:", error);
-      alert("Nao foi possivel copiar o link.");
+      alert("Não foi possível copiar o link.");
     }
   }
 
@@ -234,14 +234,14 @@ export default function Dev_Dashboard() {
       alert("Link do convite copiado.");
     } catch (error) {
       console.error("Erro ao copiar convite:", error);
-      alert("Nao foi possivel copiar o link.");
+      alert("Não foi possível copiar o link.");
     }
   }
 
   function buildInviteEmail(invite) {
     const inviteLink = buildInviteLink(invite.token);
     const destinationLabel = invite.is_platform_admin
-      ? "a administracao central da Dog City Brasil"
+      ? "a administração central da Dog City Brasil"
       : `a unidade ${getUnitName(invite.empresa_id)} da Dog City Brasil`;
 
     return {
@@ -250,7 +250,7 @@ export default function Dev_Dashboard() {
       body: [
         `Ola, ${invite.full_name}.`,
         "",
-        `Voce recebeu um convite para acessar ${destinationLabel}.`,
+        `Você recebeu um convite para acessar ${destinationLabel}.`,
         "Entre com o mesmo email convidado e conclua sua ficha cadastral no link abaixo:",
         inviteLink,
         "",
@@ -258,7 +258,7 @@ export default function Dev_Dashboard() {
       ].join("\n"),
       html: [
         `<p>Ola, ${invite.full_name}.</p>`,
-        `<p>Voce recebeu um convite para acessar <strong>${destinationLabel}</strong>.</p>`,
+        `<p>Você recebeu um convite para acessar <strong>${destinationLabel}</strong>.</p>`,
         `<p><a href="${inviteLink}">Clique aqui para acessar e concluir seu cadastro</a>.</p>`,
         "<p>Use o mesmo email convidado para fazer login.</p>",
       ].join(""),
@@ -272,7 +272,7 @@ export default function Dev_Dashboard() {
     }
 
     if (!inviteForm.is_platform_admin && !inviteForm.empresa_id) {
-      alert("Selecione a unidade ou marque o usuario como ADM do Sistema Pet.");
+      alert("Selecione a unidade ou marque o usuário como ADM do Sistema Pet.");
       return;
     }
 
@@ -343,7 +343,7 @@ export default function Dev_Dashboard() {
       });
     } catch (error) {
       console.error("Erro ao reenviar convite:", error);
-      alert(formatApiError(error, "Nao foi possivel reenviar o convite."));
+      alert(formatApiError(error, "Não foi possível reenviar o convite."));
     } finally {
       setIsSaving(false);
     }
@@ -358,14 +358,14 @@ export default function Dev_Dashboard() {
       await loadData();
     } catch (error) {
       console.error("Erro ao cancelar convite:", error);
-      alert(formatApiError(error, "Nao foi possivel cancelar o acesso pendente."));
+      alert(formatApiError(error, "Não foi possível cancelar o acesso pendente."));
     } finally {
       setIsSaving(false);
     }
   }
 
   async function handleDeleteInvite(invite) {
-    if (!window.confirm(`Excluir o acesso pendente de ${invite.full_name}? Esta acao nao pode ser desfeita.`)) return;
+    if (!window.confirm(`Excluir o acesso pendente de ${invite.full_name}? Esta ação não pode ser desfeita.`)) return;
 
     setIsSaving(true);
     try {
@@ -373,7 +373,7 @@ export default function Dev_Dashboard() {
       await loadData();
     } catch (error) {
       console.error("Erro ao excluir convite:", error);
-      alert(formatApiError(error, "Nao foi possivel excluir o acesso."));
+      alert(formatApiError(error, "Não foi possível excluir o acesso."));
     } finally {
       setIsSaving(false);
     }
@@ -406,7 +406,7 @@ export default function Dev_Dashboard() {
       const primaryUnitId = user.is_platform_admin ? null : (selectedUnits.includes(user.empresa_id) ? user.empresa_id : selectedUnits[0] || null);
 
       if (!user.is_platform_admin && !primaryUnitId) {
-        alert("Selecione pelo menos uma unidade para este usuario.");
+        alert("Selecione pelo menos uma unidade para este usuário.");
         setIsSaving(false);
         return;
       }
@@ -456,8 +456,8 @@ export default function Dev_Dashboard() {
 
       await loadData();
     } catch (error) {
-      console.error("Erro ao salvar usuario:", error);
-      alert(formatApiError(error, "Nao foi possivel salvar o acesso do usuario."));
+      console.error("Erro ao salvar usuário:", error);
+      alert(formatApiError(error, "Não foi possível salvar o acesso do usuário."));
     } finally {
       setIsSaving(false);
     }
@@ -473,8 +473,8 @@ export default function Dev_Dashboard() {
       await Promise.all(relatedAccessRows.map((row) => UserUnitAccess.update(row.id, { ativo: false, is_default: false })));
       await loadData();
     } catch (error) {
-      console.error("Erro ao cancelar acesso do usuario:", error);
-      alert(formatApiError(error, "Nao foi possivel cancelar o acesso do usuario."));
+      console.error("Erro ao cancelar acesso do usuário:", error);
+      alert(formatApiError(error, "Não foi possível cancelar o acesso do usuário."));
     } finally {
       setIsSaving(false);
     }
@@ -488,15 +488,15 @@ export default function Dev_Dashboard() {
       await Promise.all(relatedAccessRows.map((row) => UserUnitAccess.update(row.id, { ativo: true })));
       await loadData();
     } catch (error) {
-      console.error("Erro ao reativar acesso do usuario:", error);
-      alert(formatApiError(error, "Nao foi possivel reativar o acesso do usuario."));
+      console.error("Erro ao reativar acesso do usuário:", error);
+      alert(formatApiError(error, "Não foi possível reativar o acesso do usuário."));
     } finally {
       setIsSaving(false);
     }
   }
 
   async function handleDeleteUserAccess(user) {
-    if (!window.confirm(`Excluir o acesso de ${user.full_name || user.email}? O vinculo sera removido da unidade e o usuario ficara sem acesso.`)) return;
+    if (!window.confirm(`Excluir o acesso de ${user.full_name || user.email}? O vínculo será removido da unidade e o usuário ficará sem acesso.`)) return;
 
     setIsSaving(true);
     try {
@@ -516,8 +516,8 @@ export default function Dev_Dashboard() {
 
       await loadData();
     } catch (error) {
-      console.error("Erro ao excluir acesso do usuario:", error);
-      alert(formatApiError(error, "Nao foi possivel excluir o acesso do usuario."));
+      console.error("Erro ao excluir acesso do usuário:", error);
+      alert(formatApiError(error, "Não foi possível excluir o acesso do usuário."));
     } finally {
       setIsSaving(false);
     }
@@ -540,7 +540,7 @@ export default function Dev_Dashboard() {
               <Shield className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestao de Usuarios</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestão de Usuários</h1>
               <p className="text-sm text-gray-600 mt-1">Convites, confirmacoes e acessos das unidades da Dog City Brasil.</p>
             </div>
           </div>
@@ -548,12 +548,12 @@ export default function Dev_Dashboard() {
             <Link to={createPageUrl("AdministracaoSistema")}>
               <Button variant="outline">
                 <Settings className="w-4 h-4 mr-2" />
-                Abrir administracao central
+                Abrir administração central
               </Button>
             </Link>
             <Button onClick={openInviteModal} className="bg-blue-600 hover:bg-blue-700 text-white">
               <UserPlus className="w-4 h-4 mr-2" />
-              Convidar usuario
+              Convidar usuário
             </Button>
           </div>
         </div>
@@ -566,7 +566,7 @@ export default function Dev_Dashboard() {
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: "Usuarios ativos", value: activeUsersCount, tone: "text-blue-600", border: "border-blue-200" },
+            { label: "Usuários ativos", value: activeUsersCount, tone: "text-blue-600", border: "border-blue-200" },
             { label: "Convites pendentes", value: pendingInvitesCount, tone: "text-amber-600", border: "border-amber-200" },
             { label: "Acessos confirmados", value: confirmedUsersCount, tone: "text-emerald-600", border: "border-emerald-200" },
             { label: "Acessos bloqueados", value: blockedUsersCount, tone: "text-rose-600", border: "border-rose-200" },
@@ -685,12 +685,12 @@ export default function Dev_Dashboard() {
                 <Building2 className="w-5 h-5 text-blue-600" />
                 Acessos por unidade
               </CardTitle>
-              <Badge variant="outline">{filteredUsers.length} usuario(s)</Badge>
+              <Badge variant="outline">{filteredUsers.length} usuário(s)</Badge>
             </CardHeader>
             <CardContent className="space-y-4">
               {filteredUsers.length === 0 && (
                 <div className="rounded-lg border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
-                  Nenhum usuario localizado para o filtro atual.
+                  Nenhum usuário localizado para o filtro atual.
                 </div>
               )}
 
@@ -771,7 +771,7 @@ export default function Dev_Dashboard() {
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-medium text-gray-900">ADM do Sistema Pet</p>
-                          <p className="text-xs text-gray-500">Acesso transversal para a administracao central.</p>
+                          <p className="text-xs text-gray-500">Acesso transversal para a administração central.</p>
                         </div>
                         <Switch
                           checked={!!user.is_platform_admin}
@@ -786,7 +786,7 @@ export default function Dev_Dashboard() {
                     {!user.is_platform_admin && (
                       <div className="rounded-lg border border-gray-200 bg-white p-3">
                         <p className="text-sm font-medium text-gray-900">Unidades com acesso</p>
-                        <p className="text-xs text-gray-500 mt-1">Usuarios transversais continuam vendo uma unidade por vez, mas podem alternar entre as unidades liberadas.</p>
+                        <p className="text-xs text-gray-500 mt-1">Usuários transversais continuam vendo uma unidade por vez, mas podem alternar entre as unidades liberadas.</p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {units.map((unit) => {
                             const selected = selectedAccessUnits.includes(unit.id);
@@ -839,9 +839,9 @@ export default function Dev_Dashboard() {
       <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
         <DialogContent className="max-w-[640px]">
           <DialogHeader>
-            <DialogTitle>Convidar usuario</DialogTitle>
+            <DialogTitle>Convidar usuário</DialogTitle>
             <DialogDescription>
-              Convide um usuario para uma unidade da Dog City Brasil ou para a administracao central.
+              Convide um usuário para uma unidade da Dog City Brasil ou para a administração central.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -875,7 +875,7 @@ export default function Dev_Dashboard() {
               />
               <div>
                 <p className="text-sm font-medium text-gray-900">ADM do Sistema Pet</p>
-                <p className="text-xs text-gray-500">Nao vincula a uma unidade especifica e libera acesso transversal.</p>
+                <p className="text-xs text-gray-500">Não vincula a uma unidade específica e libera acesso transversal.</p>
               </div>
             </div>
 
@@ -921,7 +921,7 @@ export default function Dev_Dashboard() {
             </div>
 
             <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
-              O convite envia o link de acesso e o usuario conclui a ficha cadastral com nome, CPF, nascimento, endereco, PIX, contato de emergencia e foto de perfil.
+              O convite envia o link de acesso e o usuário conclui a ficha cadastral com nome, CPF, nascimento, endereço, PIX, contato de emergência e foto de perfil.
             </div>
           </div>
           <DialogFooter>

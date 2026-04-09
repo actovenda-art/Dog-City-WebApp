@@ -41,8 +41,8 @@ export default function Layout({ children, currentPageName }) {
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const brandTitleClass = "font-brand text-gray-900";
-  const { companyName: brandName } = useBranding({ variant: "base" });
-  const { companyName: activeUnitBrandName, logoUrl: activeUnitLogoUrl } = useBranding({ variant: "active", updateDocument: false });
+  const { companyName: brandName } = useBranding({ variant: "base", updateDocument: false });
+  const { companyName: activeUnitBrandName, logoUrl: activeUnitLogoUrl } = useBranding({ variant: "active" });
   const showUnitSelector = availableUnits.length > 1;
   const [expandedSections, setExpandedSections] = useState({
     operacional: false,
@@ -191,7 +191,7 @@ export default function Layout({ children, currentPageName }) {
           icon: Settings,
           items: [
             { title: "Gestão de Usuários", url: createPageUrl("Dev_Dashboard"), icon: Shield },
-            { title: "AdministraÃ§Ã£o", url: createPageUrl("AdministracaoSistema"), icon: Building2 },
+            { title: "Administração", url: createPageUrl("AdministracaoSistema"), icon: Building2 },
             { title: "Backup", url: createPageUrl("Backup"), icon: Database },
             { title: "Tarefas", url: createPageUrl("PedidosInternos"), icon: FileText },
             { title: "Integrações", url: createPageUrl("ConfigurarIntegracoes"), icon: Settings },

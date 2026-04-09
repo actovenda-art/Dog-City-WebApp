@@ -37,6 +37,7 @@ alter table if exists public.checkins
   add column if not exists refeicao_observacao text,
   add column if not exists refeicao_registros jsonb default '[]'::jsonb,
   add column if not exists tarefa_lembrete text,
+  add column if not exists tarefa_lembrete_setor text,
   add column if not exists tarefa_lembrete_horario text,
   add column if not exists tarefa_lembrete_notificar_em timestamptz,
   add column if not exists tarefa_lembrete_notificado_em timestamptz,

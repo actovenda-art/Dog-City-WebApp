@@ -39,7 +39,7 @@ export default function Login() {
 
   const handleGoogleLogin = async () => {
     if (!User.isEnabled?.()) {
-      setErrorMessage("Supabase nao configurado para autenticacao neste ambiente.");
+      setErrorMessage("Supabase não configurado para autenticação neste ambiente.");
       return;
     }
 
@@ -53,7 +53,7 @@ export default function Login() {
       });
     } catch (error) {
       console.error("Erro ao iniciar login Google:", error);
-      setErrorMessage(error?.message || "Nao foi possivel iniciar o login com Google.");
+      setErrorMessage(error?.message || "Não foi possível iniciar o login com Google.");
       setIsSubmitting(false);
     }
   };
@@ -74,7 +74,7 @@ export default function Login() {
           <div className="mt-8 space-y-4">
             {isBlocked && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-                Este acesso foi cancelado ou desativado. Fale com a administracao central para liberar uma nova vinculacao.
+                Este acesso foi cancelado ou desativado. Fale com a administração central para liberar uma nova vinculação.
               </div>
             )}
 

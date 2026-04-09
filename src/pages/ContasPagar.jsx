@@ -339,7 +339,7 @@ export default function ContasPagar() {
   };
 
   const removerVinculacao = async (conta, indexVinculacao) => {
-    if (!confirm("Remover esta vinculação?")) return;
+    if (!confirm("Remover esta vinculao?")) return;
 
     const vinculacoes = [...(conta.vinculacoes || [])];
     const vinculacaoRemovida = vinculacoes[indexVinculacao];

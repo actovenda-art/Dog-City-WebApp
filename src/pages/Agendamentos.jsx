@@ -193,7 +193,7 @@ export default function Agendamentos() {
         `${createPageUrl("Orcamentos")}?dogId=${encodeURIComponent(appointment.dog_id)}&service=${encodeURIComponent(appointment.service_type || "")}&date=${encodeURIComponent(getAppointmentDateKey(appointment) || "")}&appointmentId=${encodeURIComponent(appointment.id)}&owner=${encodeURIComponent(ownerByDogId[appointment.dog_id]?.nome || dog?.nome || "")}`
       );
     } catch (error) {
-      console.error("Erro ao preparar orcamento avulso:", error);
+      console.error("Erro ao preparar orçamento avulso:", error);
     }
     setIsSaving(false);
   }
@@ -275,7 +275,7 @@ export default function Agendamentos() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-rose-900">
                 <AlertTriangle className="h-5 w-5" />
-                Confirmacao de faltas pendente
+                Confirmação de faltas pendente
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -289,18 +289,18 @@ export default function Agendamentos() {
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <p className="font-semibold text-gray-900">
-                          {dog?.nome || "Cao"} - {getServiceLabel(appointment.service_type)}
+                          {dog?.nome || "Cão"} - {getServiceLabel(appointment.service_type)}
                         </p>
                         <p className="mt-1 text-sm text-gray-600">
-                          {owner.nome || "Responsavel nao identificado"} - {formatDate(getAppointmentDateKey(appointment))}
+                          {owner.nome || "Responsável não identificado"} - {formatDate(getAppointmentDateKey(appointment))}
                         </p>
                         <p className="mt-2 text-sm text-rose-900">
-                          {meta.checkin_id ? "Existe check-in aberto sem check-out. Revise no Registrador antes de confirmar a falta." : "Nao houve check-in/check-out registrado para esse atendimento."}
+                          {meta.checkin_id ? "Existe check-in aberto sem check-out. Revise no Registrador antes de confirmar a falta." : "Não houve check-in/check-out registrado para esse atendimento."}
                         </p>
                         <p className="mt-2 text-xs text-gray-500">
                           {appointment.charge_type === "pacote"
-                            ? "Se confirmar a falta, o atendimento fica marcado para reposicao em ate 30 dias."
-                            : "Se confirmar a falta, o financeiro continua com a analise de pagamento ou credito."}
+                            ? "Se confirmar a falta, o atendimento fica marcado para reposição em até 30 dias."
+                            : "Se confirmar a falta, o financeiro continua com a análise de pagamento ou crédito."}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -324,7 +324,7 @@ export default function Agendamentos() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-amber-900">
                 <ClipboardList className="h-5 w-5" />
-                Classificacao comercial pendente
+                Classificação comercial pendente
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -337,10 +337,10 @@ export default function Agendamentos() {
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <p className="font-semibold text-gray-900">
-                          {dog?.nome || "Cao"} • {getServiceLabel(appointment.service_type)}
+                          {dog?.nome || "Cão"} • {getServiceLabel(appointment.service_type)}
                         </p>
                         <p className="mt-1 text-sm text-gray-600">
-                          {owner.nome || "Responsavel nao identificado"} • {formatDate(getAppointmentDateKey(appointment))}
+                          {owner.nome || "Responsável não identificado"} • {formatDate(getAppointmentDateKey(appointment))}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -349,7 +349,7 @@ export default function Agendamentos() {
                           Marcar pacote
                         </Button>
                         <Button onClick={() => handleCreateOrcamento(appointment)} className="bg-blue-600 text-white hover:bg-blue-700">
-                          Criar orcamento
+                          Criar orçamento
                         </Button>
                       </div>
                     </div>
@@ -368,9 +368,9 @@ export default function Agendamentos() {
             </div>
             <DatePickerInput value={filterDate} onChange={setFilterDate} />
             <Select value={filterService} onValueChange={setFilterService}>
-              <SelectTrigger><SelectValue placeholder="Servico" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Serviço" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos os servicos</SelectItem>
+                <SelectItem value="all">Todos os serviços</SelectItem>
                 {["day_care", "hospedagem", "banho", "tosa", "transporte", "adestramento"].map((service) => (
                   <SelectItem key={service} value={service}>{getServiceLabel(service)}</SelectItem>
                 ))}
@@ -401,7 +401,7 @@ export default function Agendamentos() {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-gray-900">{dog?.nome || "Cao"}</p>
+                        <p className="font-semibold text-gray-900">{dog?.nome || "Cão"}</p>
                         <Badge variant="outline">{getServiceLabel(appointment.service_type)}</Badge>
                         <Badge className="bg-gray-100 text-gray-700">{appointment.status || "agendado"}</Badge>
                         <Badge className={appointment.charge_type === "pacote" ? "bg-emerald-100 text-emerald-700" : appointment.charge_type === "avulso" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}>
@@ -409,7 +409,7 @@ export default function Agendamentos() {
                         </Badge>
                       </div>
                       <p className="mt-1 text-sm text-gray-600">
-                        {owner.nome || "Responsavel nao identificado"} • {formatDate(getAppointmentDateKey(appointment))}
+                        {owner.nome || "Responsável não identificado"} • {formatDate(getAppointmentDateKey(appointment))}
                       </p>
                       <p className="mt-1 text-xs text-gray-500">
                         Origem: {appointment.source_type || "manual"} {appointment.valor_previsto ? `• Previsto ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(appointment.valor_previsto)}` : ""}
@@ -419,7 +419,7 @@ export default function Agendamentos() {
                       <div className="flex flex-wrap gap-2">
                         <Button variant="outline" onClick={() => openPackageDialog(appointment)}>Pacote</Button>
                         <Button onClick={() => handleCreateOrcamento(appointment)} className="bg-blue-600 text-white hover:bg-blue-700">
-                          Criar orcamento
+                          Criar orçamento
                         </Button>
                       </div>
                     )}
@@ -444,16 +444,16 @@ export default function Agendamentos() {
           <DialogHeader>
             <DialogTitle>Classificar como pacote</DialogTitle>
             <DialogDescription>
-              Informe o codigo do pacote para que a cobranca siga o contrato recorrente.
+              Informe o código do pacote para que a cobrança siga o contrato recorrente.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div>
-              <Label>Codigo do pacote</Label>
+              <Label>Código do pacote</Label>
               <Input value={packageCode} onChange={(event) => setPackageCode(event.target.value)} className="mt-2" placeholder="Ex.: PAC-DAYCARE-2026" />
             </div>
             <div>
-              <Label>Observacoes comerciais</Label>
+              <Label>Observações comerciais</Label>
               <Input value={packageNotes} onChange={(event) => setPackageNotes(event.target.value)} className="mt-2" placeholder="Opcional" />
             </div>
           </div>

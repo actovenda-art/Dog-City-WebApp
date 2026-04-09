@@ -13,7 +13,7 @@ const HOURS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2,
 const MINUTES = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0"));
 
 const pickerTriggerClassName = cn(
-  "h-11 w-full justify-between rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-medium text-slate-900 shadow-sm",
+  "flex h-11 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-medium text-slate-900 shadow-sm",
   "hover:bg-slate-50 hover:text-slate-900",
 );
 
@@ -109,9 +109,9 @@ function formatDisplayDateRange(startValue, endValue) {
   const startLabel = formatDisplayDate(startValue);
   const endLabel = formatDisplayDate(endValue);
 
-  if (startLabel && endLabel) return `${startLabel} ate ${endLabel}`;
+  if (startLabel && endLabel) return `${startLabel} até ${endLabel}`;
   if (startLabel) return `A partir de ${startLabel}`;
-  if (endLabel) return `Ate ${endLabel}`;
+  if (endLabel) return `At? ${endLabel}`;
   return null;
 }
 
@@ -210,7 +210,8 @@ function PickerTextTrigger({
   placeholder,
   disabled = false,
   className,
-  onOpen,
+  open = false,
+  onToggle,
 }) {
   return (
     <div
@@ -221,7 +222,7 @@ function PickerTextTrigger({
         className
       )}
       onClick={() => {
-        if (!disabled) onOpen?.();
+        if (!disabled) onToggle?.();
       }}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -231,14 +232,15 @@ function PickerTextTrigger({
           value={textValue}
           disabled={disabled}
           placeholder={placeholder}
-          onFocus={() => {
-            if (!disabled) onOpen?.();
+          onClick={(event) => {
+            event.stopPropagation();
+            if (!disabled) onToggle?.();
           }}
           onChange={(event) => onTextChange?.(event.target.value)}
           className="min-w-0 flex-1 bg-transparent text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400"
         />
       </div>
-      <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+      <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
     </div>
   );
 }
@@ -285,6 +287,7 @@ export function DatePickerInput({
             onSelect={(date) => {
               onChange?.(date ? formatDateOnly(date) : "");
               setInputValue(date ? formatInputDate(date) : "");
+              setOpen(false);
             }}
             className="w-full rounded-[24px] bg-white p-2"
             classNames={calendarClassNames}
@@ -313,7 +316,8 @@ export function DatePickerInput({
         placeholder={placeholder}
         disabled={disabled}
         className={className}
-        onOpen={() => setOpen(true)}
+        open={open}
+        onToggle={() => setOpen((current) => !current)}
       />
     </PickerPopover>
   );
@@ -324,7 +328,7 @@ export function DateRangePickerInput({
   endValue,
   onStartChange,
   onEndChange,
-  placeholder = "Selecione o periodo",
+  placeholder = "Selecione o período",
   disabled = false,
   className,
 }) {
@@ -382,12 +386,15 @@ export function DateRangePickerInput({
                 range?.from ? formatDateOnly(range.from) : "",
                 range?.to ? formatDateOnly(range.to) : "",
               ) || "");
+              if (range?.from && range?.to) {
+                setOpen(false);
+              }
             }}
             className="w-full rounded-[24px] bg-white p-2"
             classNames={calendarClassNames}
           />
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Periodo</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Período</p>
             <p className="mt-2 text-sm font-semibold text-slate-900">
               {formatDisplayDateRange(startValue, endValue) || "Defina a data inicial e final"}
             </p>
@@ -417,7 +424,8 @@ export function DateRangePickerInput({
         placeholder={placeholder}
         disabled={disabled}
         className={className}
-        onOpen={() => setOpen(true)}
+        open={open}
+        onToggle={() => setOpen((current) => !current)}
       />
     </PickerPopover>
   );
@@ -426,7 +434,7 @@ export function DateRangePickerInput({
 export function TimePickerInput({
   value,
   onChange,
-  placeholder = "Selecione o horario",
+  placeholder = "Selecione o horário",
   disabled = false,
   className,
 }) {
@@ -440,7 +448,7 @@ export function TimePickerInput({
       content={
         <div className="space-y-3">
           <div className="px-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Horario</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Horário</p>
             <p className="mt-1 text-2xl font-black text-slate-900">{value || "--:--"}</p>
           </div>
           <TimeList value={value} onChange={onChange} />
@@ -484,7 +492,6 @@ export function DateTimePickerInput({
   disabled = false,
   className,
 }) {
-  const [open, setOpen] = React.useState(false);
   const selectedDateTime = parseDateTimeLocal(value);
   const dateValue = selectedDateTime ? format(selectedDateTime, "yyyy-MM-dd") : "";
   const timeValue = selectedDateTime ? format(selectedDateTime, "HH:mm") : "09:00";
@@ -503,62 +510,32 @@ export function DateTimePickerInput({
   };
 
   return (
-    <PickerPopover
-      open={open}
-      onOpenChange={setOpen}
-      className="w-[360px]"
-      content={
-        <div className="space-y-4">
-          <div className="flex items-start justify-between gap-3 px-1">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Agendamento</p>
-              <p className="mt-1 text-xl font-black text-slate-900">
-                {formatDisplayDateTime(value) || "Defina data e hora"}
-              </p>
-            </div>
-            {value ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  onChange?.("");
-                  setOpen(false);
-                }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            ) : null}
-          </div>
-
-          <Calendar
-            mode="single"
-            locale={ptBR}
-            selected={selectedDateTime || undefined}
-            onSelect={(date) => handleDateChange(date ? formatDateOnly(date) : "")}
-            className="rounded-[24px] bg-white p-2"
-            classNames={calendarClassNames}
-          />
-
-          <TimeList value={timeValue} onChange={handleTimeChange} />
-        </div>
-      }
-    >
-      <Button
-        type="button"
-        variant="outline"
+    <div className={cn("space-y-3", className)}>
+      <DatePickerInput
+        value={dateValue}
+        onChange={handleDateChange}
+        placeholder={placeholder}
         disabled={disabled}
-        onClick={() => setOpen(true)}
-        className={cn(pickerTriggerClassName, className)}
-      >
-        <span className="flex items-center gap-3">
-          <CalendarIcon className="h-4 w-4 text-blue-500" />
-          <span className={value ? "text-slate-900" : "text-slate-400"}>
-            {formatDisplayDateTime(value) || placeholder}
-          </span>
-        </span>
-        <ChevronDown className="h-4 w-4 text-slate-400" />
-      </Button>
-    </PickerPopover>
+      />
+      <TimePickerInput
+        value={timeValue}
+        onChange={handleTimeChange}
+        placeholder="Selecione o horário"
+        disabled={disabled}
+      />
+      {value ? (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onChange?.("")}
+          >
+            <X className="mr-2 h-4 w-4" />
+            Limpar data e horario
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }

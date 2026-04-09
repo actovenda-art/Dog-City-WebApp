@@ -120,7 +120,7 @@ export default function Despesas() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Despesas</h1>
             <p className="text-sm text-gray-600 mt-1">
-              Todas as saidas com banco de destino, tipo da transacao, referencia e observacoes detalhadas.
+              Todas as saídas com banco de destino, tipo da transação, referencia e observações detalhadas.
             </p>
           </div>
         </div>
@@ -134,7 +134,7 @@ export default function Despesas() {
           </Card>
           <Card className="border-amber-200">
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Com observacoes</p>
+              <p className="text-sm text-gray-500">Com observações</p>
               <p className="mt-2 text-2xl font-bold text-amber-600">{comObservacoes}</p>
             </CardContent>
           </Card>
@@ -154,7 +154,7 @@ export default function Despesas() {
                 className="pl-9"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Buscar por favorecido, banco, referencia ou observacoes"
+                placeholder="Buscar por favorecido, banco, referência ou observações"
               />
             </div>
             <DateRangePickerInput
@@ -215,7 +215,7 @@ export default function Despesas() {
                       <Landmark className="w-3 h-3 mr-1" />
                       {getMovementReference(item)}
                     </Badge>
-                    {item.observacoesFinanceiras && <Badge variant="outline">Com observacoes</Badge>}
+                    {item.observacoesFinanceiras && <Badge variant="outline">Com observações</Badge>}
                   </div>
                 </CardContent>
               </Card>

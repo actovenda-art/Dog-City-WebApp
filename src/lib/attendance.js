@@ -221,11 +221,11 @@ export function getChargeTypeLabel(chargeType) {
     case "avulso":
       return "Avulso";
     case "orcamento":
-      return "Orcamento";
+      return "Orçamento";
     case "pendente_comercial":
       return "Pendente comercial";
     default:
-      return chargeType || "Nao definido";
+      return chargeType || "Não definido";
   }
 }
 
@@ -263,7 +263,7 @@ export function buildDogOwnerIndex(carteiras = [], responsaveis = []) {
       const dogId = responsavel?.[key];
       if (!dogId || byDogId[dogId]) return;
       byDogId[dogId] = {
-        nome: responsavel.nome_completo || "Responsavel",
+        nome: responsavel.nome_completo || "Responsável",
         celular: responsavel.celular || "",
         email: responsavel.email || "",
         tipo: "responsavel",
@@ -318,7 +318,7 @@ function calculateHospedagemCharges(cao, precos) {
   const subtotalPernoite = numDayCare * precos.pernoite;
 
   let descDormitorio = 0;
-  if (cao.hosp_dormitorio_compartilhado && (cao.hosp_dormitorio_com || []).length > 0) {
+  if (cao.hosp_dormitório_compartilhado && (cao.hosp_dormitório_com || []).length > 0) {
     descDormitorio = subtotalDiarias * precos.desconto_canil;
   }
 
@@ -596,7 +596,7 @@ export function buildReceivablePayload({
     appointment_id: appointment.id,
     checkin_id: checkin?.id || null,
     orcamento_id: appointment.orcamento_id || null,
-    descricao: `${getServiceLabel(appointment.service_type)} - ${checkin?.dog_nome || meta.owner_nome || "Servico"}`,
+    descricao: `${getServiceLabel(appointment.service_type)} - ${checkin?.dog_nome || meta.owner_nome || "Serviço"}`,
     servico: appointment.service_type,
     valor: Number.parseFloat(valueOverride ?? appointment.valor_previsto ?? 0) || 0,
     vencimento: dueDate || serviceDate,

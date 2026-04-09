@@ -80,7 +80,7 @@ function FullScreenAuthLoader() {
     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
       <div className="text-center text-white">
         <LoaderCircle className="w-10 h-10 mx-auto animate-spin text-orange-400" />
-        <p className="mt-4 text-sm text-slate-300">Carregando sessao...</p>
+        <p className="mt-4 text-sm text-slate-300">Carregando sessão...</p>
       </div>
     </div>
   );
@@ -170,7 +170,7 @@ function PagesContent() {
           setCurrentUser(user);
         }
       } catch (error) {
-        console.error("Erro ao carregar sessao:", error);
+        console.error("Erro ao carregar sessão:", error);
         if (mounted) {
           setCurrentUser(null);
         }

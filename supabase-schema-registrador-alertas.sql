@@ -3,6 +3,7 @@
 
 alter table if exists public.checkins
   add column if not exists monitor_id text,
+  add column if not exists tarefa_lembrete_setor text,
   add column if not exists tarefa_lembrete_horario text,
   add column if not exists tarefa_lembrete_notificar_em timestamptz,
   add column if not exists tarefa_lembrete_notificado_em timestamptz;

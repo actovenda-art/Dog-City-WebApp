@@ -126,7 +126,7 @@ export default function ConfigurarIntegracoes() {
       setConfigSource(companyConfig ? "empresa" : globalConfig ? "global" : "none");
       setFormData(buildFormData(resolvedConfig));
     } catch (error) {
-      console.error("Erro ao carregar configuracao Banco Inter:", error);
+      console.error("Erro ao carregar configuração Banco Inter:", error);
     } finally {
       setIsLoading(false);
     }
@@ -195,7 +195,7 @@ export default function ConfigurarIntegracoes() {
       setTestResult({
         success: true,
         message: shouldCreateScopedCopy
-          ? "Configuracao da empresa salva com base no padrao global."
+          ? "Configuração da empresa salva com base no padrão global."
           : "Credenciais do Banco Inter salvas com sucesso.",
       });
     } catch (error) {
@@ -212,7 +212,7 @@ export default function ConfigurarIntegracoes() {
     if (!config?.id) {
       setTestResult({
         success: false,
-        message: "Salve a configuracao antes de testar a conexao.",
+        message: "Salve a configuração antes de testar a conexão.",
       });
       return;
     }
@@ -229,13 +229,13 @@ export default function ConfigurarIntegracoes() {
 
       setTestResult({
         success: true,
-        message: data.message || "Conexao validada com sucesso.",
+        message: data.message || "Conexão validada com sucesso.",
       });
       await loadConfig();
     } catch (error) {
       setTestResult({
         success: false,
-        message: error?.message || "Erro ao testar conexao com o Banco Inter.",
+        message: error?.message || "Erro ao testar conexão com o Banco Inter.",
         details: error?.details || null,
       });
     } finally {
@@ -247,7 +247,7 @@ export default function ConfigurarIntegracoes() {
     if (!config?.id) {
       setImportResult({
         success: false,
-        message: "Salve a configuracao antes de importar o extrato.",
+        message: "Salve a configuração antes de importar o extrato.",
       });
       return;
     }
@@ -255,7 +255,7 @@ export default function ConfigurarIntegracoes() {
     if (!dataInicio || !dataFim) {
       setImportResult({
         success: false,
-        message: "Selecione o periodo para importar o extrato.",
+        message: "Selecione o período para importar o extrato.",
       });
       return;
     }
@@ -322,7 +322,7 @@ export default function ConfigurarIntegracoes() {
             <Settings className="w-6 h-6 text-blue-500" />
           </div>
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Configurar Integracoes</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Configurar Integraes</h1>
             <p className="text-sm text-gray-600 mt-1">
               Banco Inter com importacao automatica de extrato, status e deduplicacao.
             </p>
@@ -387,8 +387,8 @@ export default function ConfigurarIntegracoes() {
           <CardContent className="p-6 space-y-6">
             {isUsingGlobalFallback && (
               <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
-                Voce esta usando a configuracao global como base. Ao salvar, sera criada uma
-                configuracao propria para a empresa atual.
+                Você está usando a configuração global como base. Ao salvar, será criada uma
+                configuração própria para a empresa atual.
               </div>
             )}
 
@@ -407,7 +407,7 @@ export default function ConfigurarIntegracoes() {
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="font-semibold text-gray-900">Credenciais da integracao</h3>
+                  <h3 className="font-semibold text-gray-900">Credenciais da integrao</h3>
                   <p className="text-sm text-gray-500">
                     Configure client id, segredo e certificado mTLS do Banco Inter.
                   </p>
@@ -446,7 +446,7 @@ export default function ConfigurarIntegracoes() {
                 </div>
 
                 <div>
-                  <Label>Numero da conta (opcional)</Label>
+                  <Label>Número da conta (opcional)</Label>
                   <Input
                     value={formData.account_number}
                     onChange={(event) => setFormData({ ...formData, account_number: event.target.value })}
@@ -584,7 +584,7 @@ export default function ConfigurarIntegracoes() {
                     className="bg-blue-600 hover:bg-blue-700 text-white"
                   >
                     <Save className="w-4 h-4 mr-2" />
-                    {isSaving ? "Salvando..." : "Salvar configuracao"}
+                    {isSaving ? "Salvando..." : "Salvar configuração"}
                   </Button>
 
                   {config && (
@@ -607,18 +607,18 @@ export default function ConfigurarIntegracoes() {
             <Separator />
 
             <div>
-              <h3 className="font-semibold text-gray-900 mb-3">1. Testar conexao</h3>
+              <h3 className="font-semibold text-gray-900 mb-3">1. Testar conexão</h3>
               <Button
                 onClick={testarConexao}
                 disabled={isTesting || !canUseIntegration}
                 className="w-full bg-orange-600 hover:bg-orange-700 text-white"
               >
-                {isTesting ? "Testando..." : "Testar conexao com Banco Inter"}
+                {isTesting ? "Testando..." : "Testar conexão com Banco Inter"}
               </Button>
 
               {!canUseIntegration && (
                 <p className="mt-2 text-xs text-gray-500">
-                  Salve a configuracao antes de testar a integracao.
+                  Salve a configuração antes de testar a integração.
                 </p>
               )}
 
@@ -665,7 +665,7 @@ export default function ConfigurarIntegracoes() {
               <h3 className="font-semibold text-gray-900 mb-3">2. Importar extrato bancario</h3>
 
               <div className="mb-3">
-                <Label className="text-sm">Periodo</Label>
+                <Label className="text-sm">Período</Label>
                 <DateRangePickerInput
                   startValue={dataInicio}
                   endValue={dataFim}
@@ -681,7 +681,7 @@ export default function ConfigurarIntegracoes() {
                 className="w-full bg-green-600 hover:bg-green-700 text-white"
               >
                 <Download className="w-4 h-4 mr-2" />
-                {isImporting ? "Sincronizando..." : "Importar transacoes"}
+                {isImporting ? "Sincronizando..." : "Importar transações"}
               </Button>
 
               {importResult && (
@@ -712,12 +712,12 @@ export default function ConfigurarIntegracoes() {
                           <div className="mt-2 text-sm text-green-700 space-y-1">
                             <p>Total recebido: {importResult.details.total}</p>
                             <p>Novas inseridas: {importResult.details.inseridas}</p>
-                            <p>Movimentacoes de hoje recarregadas: {importResult.details.atualizadasHoje}</p>
+                            <p>Movimentações de hoje recarregadas: {importResult.details.atualizadasHoje}</p>
                             {typeof importResult.details.saldoAtual === "number" && (
                               <p>Saldo atual retornado pela API: R$ {Number(importResult.details.saldoAtual).toFixed(2)}</p>
                             )}
                             <p>
-                              Periodo: {importResult.details.de} ate {importResult.details.ate}
+                              Período: {importResult.details.de} até {importResult.details.ate}
                             </p>
                         </div>
                       )}
@@ -739,9 +739,9 @@ export default function ConfigurarIntegracoes() {
               <p className="font-medium text-gray-900 mb-2">Como funciona</p>
               <ol className="space-y-1 list-decimal list-inside">
                 <li>Salve as credenciais e os certificados da conta Banco Inter.</li>
-                <li>Teste a conexao para validar OAuth e mTLS.</li>
-                <li>Importe um periodo manualmente sempre que precisar.</li>
-                <li>A rotina automatica roda no cron e atualiza status, saldo, proxima execucao e logs.</li>
+                <li>Teste a conexão para validar OAuth e mTLS.</li>
+                <li>Importe um período manualmente sempre que precisar.</li>
+                <li>A rotina automática roda no cron e atualiza status, saldo, próxima execução e logs.</li>
                 <li>Ao recarregar o extrato, o dia atual e substituido pela resposta mais recente da API; datas anteriores permanecem intactas.</li>
               </ol>
             </div>
@@ -750,10 +750,10 @@ export default function ConfigurarIntegracoes() {
 
         <Card className="border-gray-200 bg-white opacity-60">
           <CardHeader className="border-b bg-gray-50">
-            <CardTitle className="text-lg text-gray-500">Outras integracoes</CardTitle>
+            <CardTitle className="text-lg text-gray-500">Outras integraes</CardTitle>
           </CardHeader>
           <CardContent className="p-6 text-center">
-            <p className="text-gray-500">Mais integracoes em breve...</p>
+            <p className="text-gray-500">Mais integraes em breve...</p>
           </CardContent>
         </Card>
       </div>

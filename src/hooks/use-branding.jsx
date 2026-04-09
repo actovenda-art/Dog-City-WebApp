@@ -100,12 +100,13 @@ export function useBranding(options = {}) {
         const logoAsset = (assetRows || []).find(
           (item) => item.key === "branding.logo.primary" && item.empresa_id === activeUnitId && item.ativo !== false
         );
+        const resolvedLogoUrl = logoAsset?.public_url || DEFAULT_BRANDING.logoUrl;
 
         setBranding({
           companyName: companyConfig?.value?.text || getUnitDisplayName(activeUnit) || DEFAULT_BRANDING.companyName,
-          logoUrl: logoAsset?.public_url || DEFAULT_BRANDING.logoUrl,
-          iconUrl: BASE_BRANDING.iconUrl,
-          touchIconUrl: BASE_BRANDING.touchIconUrl,
+          logoUrl: resolvedLogoUrl,
+          iconUrl: resolvedLogoUrl || BASE_BRANDING.iconUrl,
+          touchIconUrl: resolveTouchIconUrl(resolvedLogoUrl),
         });
       } catch (error) {
         if (!cancelled) {

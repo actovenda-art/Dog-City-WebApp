@@ -44,7 +44,7 @@ export default function TableFilters({
         </PopoverTrigger>
         <PopoverContent className="w-80">
           <div className="space-y-3">
-            <label className="text-xs font-medium text-gray-700">Selecionar periodo</label>
+            <label className="text-xs font-medium text-gray-700">Selecionar período</label>
             <DateRangePickerInput
               startValue={dateStart}
               endValue={dateEnd}

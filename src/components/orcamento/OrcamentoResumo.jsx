@@ -13,7 +13,7 @@ export default function OrcamentoResumo({ calculo }) {
       <Card className="border-gray-200 bg-gray-50">
         <CardContent className="p-6 text-center text-gray-500">
           <Receipt className="mx-auto mb-3 h-12 w-12 text-gray-300" />
-          <p>Preencha as informacoes para ver o orcamento</p>
+          <p>Preencha as informações para ver o orçamento</p>
         </CardContent>
       </Card>
     );
@@ -24,7 +24,7 @@ export default function OrcamentoResumo({ calculo }) {
       <CardHeader className="rounded-t-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white">
         <CardTitle className="flex items-center gap-2">
           <Receipt className="h-5 w-5" />
-          Resumo do Orcamento
+          Resumo do Orçamento
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 p-4">
@@ -32,7 +32,7 @@ export default function OrcamentoResumo({ calculo }) {
           <div key={`${detalhe.dog_id || "dog"}-${index}`} className="rounded-lg bg-gray-50 p-3">
             <div className="mb-2 flex items-center gap-2">
               <Dog className="h-4 w-4 text-blue-600" />
-              <span className="font-semibold text-gray-900">{detalhe.dog_nome || `Cao ${index + 1}`}</span>
+              <span className="font-semibold text-gray-900">{detalhe.dog_nome || `Cão ${index + 1}`}</span>
             </div>
 
             <div className="space-y-1 text-sm">
@@ -85,7 +85,7 @@ export default function OrcamentoResumo({ calculo }) {
 
           {calculo.subtotal_servicos > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Subtotal Day Care e Servicos</span>
+              <span className="text-gray-600">Subtotal Day Care e Serviços</span>
               <span>{formatCurrency(calculo.subtotal_servicos)}</span>
             </div>
           )}

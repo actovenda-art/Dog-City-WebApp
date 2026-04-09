@@ -41,8 +41,8 @@ export default function Layout({ children, currentPageName }) {
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const brandTitleClass = "font-brand text-gray-900";
-  const { companyName: brandName } = useBranding({ variant: "base", updateDocument: false });
-  const { companyName: activeUnitBrandName, logoUrl: activeUnitLogoUrl } = useBranding({ variant: "active" });
+  const { companyName: brandName, logoUrl: brandLogoUrl } = useBranding({ variant: "base", updateDocument: false });
+  const { companyName: activeUnitBrandName } = useBranding({ variant: "active" });
   const showUnitSelector = availableUnits.length > 1;
   const [expandedSections, setExpandedSections] = useState({
     operacional: false,
@@ -139,7 +139,7 @@ export default function Layout({ children, currentPageName }) {
 
   const activeUnit = availableUnits.find((unit) => unit.id === activeUnitId) || null;
   const activeUnitName = activeUnit?.nome_fantasia || activeUnitBrandName || getUnitDisplayName(activeUnit);
-  const displayUnitLogoUrl = activeUnitLogoUrl || "/dog-city-brand.svg";
+  const displayUnitLogoUrl = brandLogoUrl || "/dog-city-brand.svg?v=20260409";
 
   const menuSections = [
         {

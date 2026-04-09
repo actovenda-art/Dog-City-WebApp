@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
-import { AppAsset, AppConfig, Empresa, User } from "@/api/entities";
-import { ACTIVE_UNIT_EVENT, getStoredActiveUnitId, getUnitDisplayName, resolveDogCityUnit } from "@/lib/unit-context";
 
 export const BRANDING_EVENT = "app-branding-updated";
 
 const BASE_BRANDING = {
   companyName: "Dog City Brasil",
-  logoUrl: "/dog-city-brand.svg",
-  iconUrl: "/favicon.svg",
-  touchIconUrl: "/apple-touch-icon.png",
+  logoUrl: "/dog-city-brand.svg?v=20260409",
+  iconUrl: "/favicon.svg?v=20260409",
+  touchIconUrl: "/apple-touch-icon.png?v=20260409",
 };
 const DEFAULT_BRANDING = BASE_BRANDING;
 const DEFAULT_FAVICON_URL = BASE_BRANDING.iconUrl;
@@ -49,6 +47,15 @@ function resolveTouchIconUrl(url) {
   return type === "image/svg+xml" ? DEFAULT_TOUCH_ICON_URL : (url || DEFAULT_TOUCH_ICON_URL);
 }
 
+function buildBranding() {
+  return {
+    companyName: BASE_BRANDING.companyName,
+    logoUrl: BASE_BRANDING.logoUrl,
+    iconUrl: BASE_BRANDING.iconUrl,
+    touchIconUrl: BASE_BRANDING.touchIconUrl,
+  };
+}
+
 function upsertMeta(name, content) {
   let meta = document.querySelector(`meta[name="${name}"]`);
   if (!meta) {
@@ -70,49 +77,7 @@ export function useBranding(options = {}) {
     let cancelled = false;
 
     async function loadBranding() {
-      if (variant === "base") {
-        setBranding(BASE_BRANDING);
-        return;
-      }
-
-      try {
-        const [me, units, configRows, assetRows] = await Promise.all([
-          User.me(),
-          Empresa.list("-created_date", 200),
-          AppConfig.list("-created_date", 500),
-          AppAsset.list("-created_date", 500),
-        ]);
-
-        if (cancelled) return;
-
-        const baseUnit = resolveDogCityUnit(units || []);
-        const activeUnitId = variant === "base"
-          ? baseUnit?.id || ""
-          : (getStoredActiveUnitId() || me?.empresa_id || baseUnit?.id || "");
-        const activeUnit = (units || []).find((item) => item.id === activeUnitId) || baseUnit || null;
-
-        const companyConfig = (configRows || []).find(
-          (item) => item.key === "branding.company_name" && item.empresa_id === activeUnitId
-        ) || (configRows || []).find(
-          (item) => item.key === "branding.company_name" && item.empresa_id === activeUnit?.id
-        );
-
-        const logoAsset = (assetRows || []).find(
-          (item) => item.key === "branding.logo.primary" && item.empresa_id === activeUnitId && item.ativo !== false
-        );
-        const resolvedLogoUrl = logoAsset?.public_url || DEFAULT_BRANDING.logoUrl;
-
-        setBranding({
-          companyName: companyConfig?.value?.text || getUnitDisplayName(activeUnit) || DEFAULT_BRANDING.companyName,
-          logoUrl: resolvedLogoUrl,
-          iconUrl: resolvedLogoUrl || BASE_BRANDING.iconUrl,
-          touchIconUrl: resolveTouchIconUrl(resolvedLogoUrl),
-        });
-      } catch (error) {
-        if (!cancelled) {
-          setBranding(DEFAULT_BRANDING);
-        }
-      }
+      if (!cancelled) setBranding(buildBranding());
     }
 
     function handleRefresh() {
@@ -125,7 +90,6 @@ export function useBranding(options = {}) {
 
     loadBranding();
     window.addEventListener(BRANDING_EVENT, handleRefresh);
-    window.addEventListener(ACTIVE_UNIT_EVENT, handleRefresh);
     window.addEventListener("focus", handleRefresh);
     window.addEventListener("storage", handleRefresh);
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -133,7 +97,6 @@ export function useBranding(options = {}) {
     return () => {
       cancelled = true;
       window.removeEventListener(BRANDING_EVENT, handleRefresh);
-      window.removeEventListener(ACTIVE_UNIT_EVENT, handleRefresh);
       window.removeEventListener("focus", handleRefresh);
       window.removeEventListener("storage", handleRefresh);
       document.removeEventListener("visibilitychange", handleVisibilityChange);

@@ -1,31 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360" role="img" aria-labelledby="title desc">
   <title id="title">Dog City Brasil</title>
-  <desc id="desc">Marca principal da Dog City Brasil.</desc>
+  <desc id="desc">Logo oficial padrão da Dog City Brasil.</desc>
   <defs>
-    <linearGradient id="dogcitySpectrum" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#6d28d9" />
-      <stop offset="22%" stop-color="#db2777" />
-      <stop offset="42%" stop-color="#f97316" />
-      <stop offset="62%" stop-color="#facc15" />
-      <stop offset="80%" stop-color="#22c55e" />
-      <stop offset="100%" stop-color="#0ea5e9" />
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.15" />
+    <radialGradient id="warm" cx="66%" cy="28%" r="82%">
+      <stop offset="0" stop-color="#ffe45c" />
+      <stop offset=".32" stop-color="#ff7a1a" />
+      <stop offset=".58" stop-color="#df2f85" />
+      <stop offset="1" stop-color="#6638b6" />
+    </radialGradient>
+    <radialGradient id="cool" cx="82%" cy="64%" r="72%">
+      <stop offset="0" stop-color="#2fd7a9" />
+      <stop offset=".5" stop-color="#0798d8" />
+      <stop offset="1" stop-color="#31408f" stop-opacity="0" />
+    </radialGradient>
+    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#1f2d44" flood-opacity=".16" />
     </filter>
   </defs>
-  <rect width="320" height="320" fill="#ffffff" />
-  <g filter="url(#shadow)">
-    <circle cx="160" cy="100" r="74" fill="url(#dogcitySpectrum)" />
+
+  <rect width="360" height="360" fill="#fff" />
+
+  <g filter="url(#softShadow)">
+    <circle cx="180" cy="88" r="73" fill="url(#warm)" />
+    <circle cx="199" cy="101" r="62" fill="url(#cool)" opacity=".9" />
+    <path d="M122 54c28-35 88-41 124-8-36-10-88-2-124 8Z" fill="#ff3a54" opacity=".62" />
+    <path d="M119 116c22 37 84 57 123 25-36 12-86 2-123-25Z" fill="#08a7c8" opacity=".45" />
   </g>
-  <g fill="#ffffff">
-    <path d="M171 53c21 6 36 21 41 41 6 22-1 46-18 62-10 10-24 16-38 16-7 0-14-1-21-4 7-5 14-12 18-21 5-11 5-24-1-35-7-14-20-22-36-25 9-17 31-27 55-22Z" />
-    <path d="M141 64c-20 3-37 18-45 39-9 23-5 49 10 68 9 12 23 20 38 23-6-7-10-15-11-25-1-12 3-24 12-32 10-10 25-14 42-12-3-19-22-34-46-39Z" opacity=".96" />
-    <path d="M159 98c-11 8-18 20-18 34 0 20 15 38 36 43-3 4-6 8-9 12-6 8-16 12-26 12-22 0-40-18-40-40 0-23 19-42 42-42 5 0 10 1 15 3Z" opacity=".94" />
+
+  <g fill="#fff">
+    <path d="M191 36c19 8 34 24 39 45 7 29-7 62-35 78-15 9-35 12-55 5 16-10 27-23 31-39 5-20-5-40-27-55 11-24 29-35 47-34Z" />
+    <path d="M155 53c-26 9-45 35-45 65 0 31 21 57 50 64-7-11-9-24-5-37 5-18 20-33 43-41-9-25-25-42-43-51Z" opacity=".97" />
+    <path d="M169 104c-10 12-14 27-10 42 5 20 23 35 46 38-10 12-25 20-43 20-30 0-55-25-55-55 0-31 25-56 56-56 2 0 4 0 6 1Z" opacity=".94" />
   </g>
-  <g fill="#1e293b">
-    <text x="160" y="228" text-anchor="middle" font-family="Trebuchet MS, Arial, sans-serif" font-size="42" font-weight="700" letter-spacing="2">DOG CITY</text>
-    <path d="M98 245h124v5H98z" fill="#334155" opacity=".85" />
-    <text x="160" y="276" text-anchor="middle" font-family="Trebuchet MS, Arial, sans-serif" font-size="24" letter-spacing="6" font-weight="700">BRASIL</text>
+
+  <g fill="#273a5a" text-anchor="middle">
+    <text x="180" y="235" font-family="'Segoe Print','Comic Sans MS','Trebuchet MS',cursive" font-size="58" font-weight="700" letter-spacing="-4">Dog City</text>
+    <g transform="translate(180 271)">
+      <path d="M-63 0h126" stroke="#273a5a" stroke-width="5" stroke-linecap="round" opacity=".9" />
+      <text y="35" font-family="Trebuchet MS, Arial, sans-serif" font-size="28" font-weight="800" letter-spacing="5">BRASIL</text>
+    </g>
   </g>
 </svg>

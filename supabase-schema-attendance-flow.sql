@@ -19,6 +19,7 @@ alter table if exists public.checkins
   add column if not exists appointment_id text,
   add column if not exists service_type text,
   add column if not exists cliente_id text,
+  add column if not exists monitor_id text,
   add column if not exists dog_nome text,
   add column if not exists dog_raca text,
   add column if not exists responsavel_nome text,
@@ -36,6 +37,9 @@ alter table if exists public.checkins
   add column if not exists refeicao_observacao text,
   add column if not exists refeicao_registros jsonb default '[]'::jsonb,
   add column if not exists tarefa_lembrete text,
+  add column if not exists tarefa_lembrete_horario text,
+  add column if not exists tarefa_lembrete_notificar_em timestamptz,
+  add column if not exists tarefa_lembrete_notificado_em timestamptz,
   add column if not exists source_type text default 'manual',
   add column if not exists metadata jsonb default '{}'::jsonb,
   add column if not exists status text default 'presente';
@@ -97,6 +101,8 @@ create index if not exists idx_appointment_cliente_id on public.appointment(clie
 create index if not exists idx_checkins_appointment_id on public.checkins(appointment_id);
 create index if not exists idx_checkins_checkin_datetime on public.checkins(checkin_datetime desc);
 create index if not exists idx_checkins_status on public.checkins(status);
+create index if not exists idx_checkins_monitor_id on public.checkins(monitor_id);
+create index if not exists idx_checkins_reminder_due on public.checkins(tarefa_lembrete_notificar_em);
 create index if not exists idx_serviceprovided_data_utilizacao on public.serviceprovided(data_utilizacao desc);
 create index if not exists idx_serviceprovided_checkin_id on public.serviceprovided(checkin_id);
 create index if not exists idx_conta_receber_data_prestacao on public.conta_receber(data_prestacao desc);

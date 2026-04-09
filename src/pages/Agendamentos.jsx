@@ -11,11 +11,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
-import { Calendar, ClipboardList, RefreshCw, Search, Tag } from "lucide-react";
+import { AlertTriangle, Calendar, ClipboardList, RefreshCw, Search, Tag } from "lucide-react";
 
 function formatDate(value) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(value));
+}
+
+function addDays(dateKey, days) {
+  if (!dateKey) return "";
+  const base = new Date(`${dateKey}T12:00:00`);
+  base.setDate(base.getDate() + days);
+  return base.toISOString().slice(0, 10);
 }
 
 function appointmentMatchesSearch(appointment, dog, owner, query) {
@@ -52,6 +59,7 @@ export default function Agendamentos() {
   const dogsById = useMemo(() => Object.fromEntries(dogs.map((dog) => [dog.id, dog])), [dogs]);
   const ownerByDogId = useMemo(() => buildDogOwnerIndex(carteiras, []), [carteiras]);
   const reviewAppointmentId = searchParams.get("review");
+  const absenceReviewAppointmentId = searchParams.get("absenceReview");
 
   useEffect(() => {
     loadData();
@@ -83,6 +91,13 @@ export default function Agendamentos() {
         appointment.charge_type === "pendente_comercial" ||
         meta.commercial_review_pending
       );
+    });
+  }, [appointments]);
+
+  const pendingAbsenceAppointments = useMemo(() => {
+    return appointments.filter((appointment) => {
+      const meta = getAppointmentMeta(appointment);
+      return meta.absence_review_pending;
     });
   }, [appointments]);
 
@@ -183,6 +198,35 @@ export default function Agendamentos() {
     setIsSaving(false);
   }
 
+  function openRegistradorForAppointment(appointment) {
+    navigate(
+      `${createPageUrl("Registrador")}?date=${encodeURIComponent(getAppointmentDateKey(appointment) || "")}&appointmentId=${encodeURIComponent(appointment.id)}`
+    );
+  }
+
+  async function handleMarkAbsence(appointment) {
+    setIsSaving(true);
+    try {
+      const currentMeta = getAppointmentMeta(appointment);
+      const serviceDate = getAppointmentDateKey(appointment);
+      await Appointment.update(appointment.id, {
+        status: "faltou",
+        metadata: {
+          ...currentMeta,
+          absence_review_pending: false,
+          absence_confirmed_at: new Date().toISOString(),
+          replacement_deadline: appointment.charge_type === "pacote" ? (currentMeta.suggested_replacement_deadline || addDays(serviceDate, 30)) : null,
+          finance_review_required: appointment.charge_type !== "pacote",
+          finance_follow_up: appointment.charge_type === "pacote" ? null : "avaliar_pagamento_ou_credito",
+        },
+      });
+      await loadData();
+    } catch (error) {
+      console.error("Erro ao marcar falta:", error);
+    }
+    setIsSaving(false);
+  }
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -225,6 +269,55 @@ export default function Agendamentos() {
             </Card>
           ))}
         </div>
+
+        {pendingAbsenceAppointments.length > 0 && (
+          <Card className={`border-rose-300 bg-rose-50 ${absenceReviewAppointmentId ? "ring-2 ring-rose-300" : ""}`}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-rose-900">
+                <AlertTriangle className="h-5 w-5" />
+                Confirmacao de faltas pendente
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {pendingAbsenceAppointments.map((appointment) => {
+                const dog = dogsById[appointment.dog_id];
+                const owner = ownerByDogId[appointment.dog_id] || {};
+                const meta = getAppointmentMeta(appointment);
+                const highlighted = absenceReviewAppointmentId === appointment.id;
+                return (
+                  <div key={appointment.id} className={`rounded-xl border bg-white p-4 ${highlighted ? "border-rose-400" : "border-rose-200"}`}>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {dog?.nome || "Cao"} - {getServiceLabel(appointment.service_type)}
+                        </p>
+                        <p className="mt-1 text-sm text-gray-600">
+                          {owner.nome || "Responsavel nao identificado"} - {formatDate(getAppointmentDateKey(appointment))}
+                        </p>
+                        <p className="mt-2 text-sm text-rose-900">
+                          {meta.checkin_id ? "Existe check-in aberto sem check-out. Revise no Registrador antes de confirmar a falta." : "Nao houve check-in/check-out registrado para esse atendimento."}
+                        </p>
+                        <p className="mt-2 text-xs text-gray-500">
+                          {appointment.charge_type === "pacote"
+                            ? "Se confirmar a falta, o atendimento fica marcado para reposicao em ate 30 dias."
+                            : "Se confirmar a falta, o financeiro continua com a analise de pagamento ou credito."}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" onClick={() => openRegistradorForAppointment(appointment)}>
+                          Abrir no registrador
+                        </Button>
+                        <Button onClick={() => handleMarkAbsence(appointment)} disabled={isSaving} className="bg-rose-600 text-white hover:bg-rose-700">
+                          Confirmar falta
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
 
         {pendingCommercialAppointments.length > 0 && (
           <Card className={`border-amber-300 bg-amber-50 ${reviewAppointmentId ? "ring-2 ring-amber-300" : ""}`}>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Appointment, Carteira, Checkin, ContaReceber, Dog, Notificacao, PerfilAcesso, Responsavel, ServiceProvided, User } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import { buildDogOwnerIndex, buildReceivablePayload, getAppointmentDateKey, getAppointmentMeta, getAppointmentStatus, getAppointmentTimeValue, getChargeTypeLabel, getCheckinMealRecords, getServiceLabel, MANUAL_REGISTRADOR_SERVICES, MEAL_CONSUMPTION_OPTIONS } from "@/lib/attendance";
@@ -13,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { DateTimePickerInput } from "@/components/common/DateTimeInputs";
+import { DatePickerInput, DateTimePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import { BellRing, CalendarClock, Camera, Dog as DogIcon, LogIn, LogOut, Plus, Search, UserRound, UtensilsCrossed } from "lucide-react";
 
 const TODAY_KEY = new Date().toISOString().slice(0, 10);
@@ -24,6 +25,7 @@ const EMPTY_CHECKIN_FORM = {
   entregador_nome: "",
   observacoes: "",
   tarefa_lembrete: "",
+  tarefa_lembrete_horario: "",
   tem_refeicao: false,
   refeicao_observacao: "",
   pertences_entrada_foto_url: "",
@@ -49,12 +51,32 @@ function nowDateTimeValue() {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
 }
 
+function buildDateTimeForDate(dateKey, timeValue = "09:00") {
+  if (!dateKey) return nowDateTimeValue();
+  return `${dateKey}T${String(timeValue || "09:00").slice(0, 5)}:00`;
+}
+
+function addDays(dateKey, days) {
+  const base = new Date(`${dateKey}T12:00:00`);
+  base.setDate(base.getDate() + days);
+  return base.toISOString().slice(0, 10);
+}
+
+function formatDateLabel(value) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(`${value}T12:00:00`));
+}
+
 function formatDateTime(value) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function sanitizeDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : "";
 }
 
 function normalizeSearch(value) {
@@ -99,6 +121,7 @@ function buildAppointmentSourceKey({ dogId, serviceType, dateKey, mode }) {
 }
 
 export default function Registrador() {
+  const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [dogs, setDogs] = useState([]);
@@ -109,7 +132,10 @@ export default function Registrador() {
   const [users, setUsers] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const requestedDate = sanitizeDateKey(searchParams.get("date"));
+  const highlightedAppointmentId = searchParams.get("appointmentId") || "";
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDate, setSelectedDate] = useState(requestedDate || TODAY_KEY);
   const [providerCpf, setProviderCpf] = useState("");
   const [petMode, setPetMode] = useState("pets");
 
@@ -137,11 +163,14 @@ export default function Registrador() {
   const checkoutPhotoInputRef = useRef(null);
   const mealFoodPhotoInputRef = useRef(null);
   const mealSelfieInputRef = useRef(null);
+  const alertSyncRef = useRef(false);
 
   const ownerByDogId = useMemo(() => buildDogOwnerIndex(carteiras, responsaveis), [carteiras, responsaveis]);
   const dogsById = useMemo(() => Object.fromEntries(dogs.map((dog) => [dog.id, dog])), [dogs]);
   const profilesById = useMemo(() => Object.fromEntries(profiles.map((profile) => [profile.id, profile])), [profiles]);
   const monitors = useMemo(() => users.filter((user) => user.active !== false), [users]);
+  const selectedDateTitle = selectedDate === TODAY_KEY ? "Hoje" : formatDateLabel(selectedDate);
+  const canAddManualAppointment = selectedDate === TODAY_KEY;
 
   const activePetCheckins = useMemo(
     () => checkins.filter((item) => item.tipo === "pet" && item.status === "presente"),
@@ -155,21 +184,36 @@ export default function Registrador() {
     () => Object.fromEntries(activePetCheckins.filter((item) => item.appointment_id).map((item) => [item.appointment_id, item])),
     [activePetCheckins]
   );
+  const finalizedCheckinByAppointmentId = useMemo(
+    () => Object.fromEntries(
+      checkins
+        .filter((item) => item.tipo === "pet" && item.appointment_id && (item.status === "finalizado" || item.checkout_datetime || item.data_checkout))
+        .map((item) => [item.appointment_id, item])
+    ),
+    [checkins]
+  );
   const presentProviders = useMemo(() => {
     return activeProviderCheckins
       .map((checkin) => ({ checkin, user: users.find((user) => user.id === checkin.user_id) }))
       .filter((item) => item.user);
   }, [activeProviderCheckins, users]);
 
-  const todayAppointments = useMemo(() => {
+  const dayAppointments = useMemo(() => {
     return appointments
-      .filter((appointment) => getAppointmentDateKey(appointment) === TODAY_KEY && appointment.status !== "cancelado")
+      .filter((appointment) => {
+        if (getAppointmentDateKey(appointment) !== selectedDate) return false;
+        if (appointment.status === "cancelado" || appointment.status === "desconsiderado") return false;
+        if (selectedDate < TODAY_KEY) {
+          return Boolean(finalizedCheckinByAppointmentId[appointment.id] || appointment.status === "finalizado");
+        }
+        return appointment.status !== "faltou";
+      })
       .sort((left, right) => {
         const leftTime = getAppointmentTimeValue(left, "entrada") || "00:00";
         const rightTime = getAppointmentTimeValue(right, "entrada") || "00:00";
         return leftTime.localeCompare(rightTime);
       });
-  }, [appointments]);
+  }, [appointments, finalizedCheckinByAppointmentId, selectedDate]);
 
   const matchingDogIds = useMemo(() => {
     if (!searchTerm.trim()) return new Set(dogs.map((dog) => dog.id));
@@ -191,20 +235,32 @@ export default function Registrador() {
   }, [dogs, ownerByDogId, searchTerm]);
 
   const filteredAppointments = useMemo(() => {
-    return todayAppointments.filter((appointment) => matchingDogIds.has(appointment.dog_id));
-  }, [matchingDogIds, todayAppointments]);
+    return dayAppointments.filter((appointment) => matchingDogIds.has(appointment.dog_id));
+  }, [dayAppointments, matchingDogIds]);
 
   const matchedDogsWithoutAppointments = useMemo(() => {
     if (!searchTerm.trim()) return [];
+    if (!canAddManualAppointment) return [];
     return dogs.filter((dog) => {
       if (!matchingDogIds.has(dog.id)) return false;
-      return !todayAppointments.some((appointment) => appointment.dog_id === dog.id);
+      return !dayAppointments.some((appointment) => appointment.dog_id === dog.id);
     });
-  }, [dogs, matchingDogIds, searchTerm, todayAppointments]);
+  }, [canAddManualAppointment, dayAppointments, dogs, matchingDogIds, searchTerm]);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (requestedDate) {
+      setSelectedDate(requestedDate);
+    }
+  }, [requestedDate]);
+
+  useEffect(() => {
+    if (isLoading || !users.length || (!appointments.length && !checkins.length)) return;
+    syncCommercialAlerts();
+  }, [appointments, checkins, isLoading, users]);
 
   async function loadData() {
     setIsLoading(true);
@@ -235,6 +291,100 @@ export default function Registrador() {
     setIsLoading(false);
   }
 
+  async function syncCommercialAlerts() {
+    if (alertSyncRef.current) return;
+    alertSyncRef.current = true;
+
+    try {
+      const now = new Date();
+      const updates = [];
+
+      for (const appointment of appointments) {
+        const dateKey = getAppointmentDateKey(appointment);
+        if (!dateKey || dateKey >= TODAY_KEY) continue;
+        if (["cancelado", "finalizado", "faltou", "desconsiderado"].includes(appointment.status)) continue;
+
+        const finalizedAttendance = finalizedCheckinByAppointmentId[appointment.id];
+        const openAttendance = activeCheckinByAppointmentId[appointment.id];
+        if (finalizedAttendance) continue;
+
+        const meta = getAppointmentMeta(appointment);
+        if (meta.absence_notified_at) continue;
+
+        const dog = dogsById[appointment.dog_id];
+        await notifyCommercialUsers({
+          appointment,
+          dog,
+          tipo: "agendamento_sem_presenca",
+          titulo: "Este cao realmente faltou?",
+          mensagem: openAttendance
+            ? `${getDogDisplayName(dog)} ficou com check-in aberto em ${formatDateLabel(dateKey)}. Confirme se precisa registrar o check-out ou marcar falta.`
+            : `${getDogDisplayName(dog)} ficou sem check-in/check-out em ${formatDateLabel(dateKey)}. Confirme se houve falta ou se o atendimento precisa ser preenchido.`,
+          link: `${createPageUrl("Agendamentos")}?absenceReview=${appointment.id}`,
+          payload: {
+            absence_review_pending: true,
+            service_type: appointment.service_type,
+            checkin_id: openAttendance?.id || null,
+          },
+        });
+
+        updates.push(
+          Appointment.update(appointment.id, {
+            metadata: {
+              ...meta,
+              absence_review_pending: true,
+              absence_notified_at: now.toISOString(),
+              checkin_id: openAttendance?.id || null,
+              suggested_replacement_deadline: appointment.charge_type === "pacote" ? addDays(dateKey, 30) : null,
+            },
+          })
+        );
+      }
+
+      for (const checkin of checkins) {
+        if (!checkin?.tarefa_lembrete || !checkin?.tarefa_lembrete_notificar_em || checkin?.tarefa_lembrete_notificado_em) {
+          continue;
+        }
+        if (new Date(checkin.tarefa_lembrete_notificar_em) > now) continue;
+
+        const appointment = appointments.find((item) => item.id === checkin.appointment_id);
+        const dog = dogsById[checkin.dog_id];
+        await notifyCommercialUsers({
+          appointment: appointment || {
+            id: checkin.appointment_id,
+            dog_id: checkin.dog_id,
+            empresa_id: checkin.empresa_id,
+            service_type: checkin.service_type,
+          },
+          dog,
+          tipo: "lembrete_checkin",
+          titulo: "Lembrete do atendimento",
+          mensagem: `${getDogDisplayName(dog)}: ${checkin.tarefa_lembrete}`,
+          link: createPageUrl("Registrador"),
+          payload: {
+            checkin_id: checkin.id,
+            reminder_text: checkin.tarefa_lembrete,
+          },
+        });
+
+        updates.push(
+          Checkin.update(checkin.id, {
+            tarefa_lembrete_notificado_em: now.toISOString(),
+          })
+        );
+      }
+
+      if (updates.length > 0) {
+        await Promise.all(updates);
+        await loadData();
+      }
+    } catch (error) {
+      console.error("Erro ao sincronizar alertas do Registrador:", error);
+    } finally {
+      alertSyncRef.current = false;
+    }
+  }
+
   function openNotify(title, message) {
     setNotifyState({ title, message });
     setShowNotifyDialog(true);
@@ -242,17 +392,21 @@ export default function Registrador() {
 
   function resetCheckinDialog(appointment) {
     const owner = ownerByDogId[appointment?.dog_id] || {};
+    const appointmentDate = getAppointmentDateKey(appointment) || selectedDate || TODAY_KEY;
+    const appointmentTime = getAppointmentTimeValue(appointment, "entrada") || "09:00";
     setCheckinForm({
       ...EMPTY_CHECKIN_FORM,
-      checkin_datetime: nowDateTimeValue(),
+      checkin_datetime: buildDateTimeForDate(appointmentDate, appointmentTime),
       entregador_nome: owner.nome || "",
     });
   }
 
-  function resetCheckoutDialog() {
+  function resetCheckoutDialog(appointment) {
+    const appointmentDate = getAppointmentDateKey(appointment) || selectedDate || TODAY_KEY;
+    const appointmentTime = getAppointmentTimeValue(appointment, "saida") || "18:00";
     setCheckoutForm({
       ...EMPTY_CHECKOUT_FORM,
-      checkout_datetime: nowDateTimeValue(),
+      checkout_datetime: buildDateTimeForDate(appointmentDate, appointmentTime),
     });
   }
 
@@ -269,7 +423,7 @@ export default function Registrador() {
   function openCheckoutDialogForCheckin(appointment, checkin) {
     setSelectedAppointment(appointment);
     setSelectedCheckin(checkin);
-    resetCheckoutDialog();
+    resetCheckoutDialog(appointment);
     setShowCheckoutDialog(true);
   }
 
@@ -281,6 +435,10 @@ export default function Registrador() {
   }
 
   function openManualDialogForDog(dog = null) {
+    if (!canAddManualAppointment) {
+      openNotify("Data invalida", "A inclusao manual pelo Registrador fica disponivel apenas para o dia de hoje.");
+      return;
+    }
     setSelectedDogForManual(dog || null);
     setManualForm({
       dog_id: dog?.id || "",
@@ -321,6 +479,14 @@ export default function Registrador() {
       openNotify("Campos obrigatorios", "Informe monitor, responsavel pela entrega e foto dos pertences.");
       return;
     }
+    if (checkinForm.tarefa_lembrete && !checkinForm.tarefa_lembrete_horario) {
+      openNotify("Campos obrigatorios", "Informe o horario para notificar o lembrete.");
+      return;
+    }
+    if (checkinForm.tarefa_lembrete_horario && !checkinForm.tarefa_lembrete) {
+      openNotify("Campos obrigatorios", "Escreva o lembrete antes de definir o horario.");
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -328,6 +494,10 @@ export default function Registrador() {
       const owner = ownerByDogId[selectedAppointment.dog_id] || {};
       const monitor = users.find((user) => user.id === checkinForm.monitor_id);
       const appointmentMeta = getAppointmentMeta(selectedAppointment);
+      const reminderBaseDate = (checkinForm.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY;
+      const reminderNotificationAt = checkinForm.tarefa_lembrete && checkinForm.tarefa_lembrete_horario
+        ? buildDateTimeForDate(reminderBaseDate, checkinForm.tarefa_lembrete_horario)
+        : null;
 
       const createdCheckin = await Checkin.create({
         empresa_id: selectedAppointment.empresa_id || currentUser?.empresa_id || null,
@@ -349,6 +519,9 @@ export default function Registrador() {
         tem_refeicao: checkinForm.tem_refeicao,
         refeicao_observacao: checkinForm.refeicao_observacao || "",
         tarefa_lembrete: checkinForm.tarefa_lembrete || "",
+        tarefa_lembrete_horario: checkinForm.tarefa_lembrete_horario || "",
+        tarefa_lembrete_notificar_em: reminderNotificationAt,
+        tarefa_lembrete_notificado_em: null,
         observacoes: checkinForm.observacoes || "",
         source_type: selectedAppointment.source_type || "agendamento",
         status: "presente",
@@ -500,27 +673,39 @@ export default function Registrador() {
     setIsSaving(false);
   }
 
-  async function createCommercialNotifications(appointment, dog) {
-    const owner = ownerByDogId[appointment.dog_id] || {};
+  async function notifyCommercialUsers({ appointment, dog, tipo, titulo, mensagem, link, payload = {} }) {
+    const owner = ownerByDogId[appointment?.dog_id] || {};
     const commercialUsers = users.filter((user) => user.active !== false && isCommercialSalesUser(user, profilesById));
     if (!commercialUsers.length) return;
 
     for (const user of commercialUsers) {
       await Notificacao.create({
-        empresa_id: appointment.empresa_id || currentUser?.empresa_id || null,
+        empresa_id: appointment?.empresa_id || currentUser?.empresa_id || null,
         user_id: user.id,
-        tipo: "agendamento_manual_pendente",
-        titulo: "Agendamento manual aguardando classificacao",
-        mensagem: `${getDogDisplayName(dog)} (${getServiceLabel(appointment.service_type)}) precisa ser classificado como pacote ou avulso.`,
-        link: `${createPageUrl("Agendamentos")}?review=${appointment.id}`,
+        tipo,
+        titulo,
+        mensagem,
+        link,
         lido: false,
         payload: {
-          appointment_id: appointment.id,
-          dog_id: appointment.dog_id,
+          appointment_id: appointment?.id || null,
+          dog_id: appointment?.dog_id || null,
           owner_nome: owner.nome || "",
+          ...payload,
         },
       });
     }
+  }
+
+  async function createCommercialNotifications(appointment, dog) {
+    await notifyCommercialUsers({
+      appointment,
+      dog,
+      tipo: "agendamento_manual_pendente",
+      titulo: "Agendamento manual aguardando classificacao",
+      mensagem: `${getDogDisplayName(dog)} (${getServiceLabel(appointment.service_type)}) precisa ser classificado como pacote ou avulso.`,
+      link: `${createPageUrl("Agendamentos")}?review=${appointment.id}`,
+    });
   }
 
   async function submitManualAppointment() {
@@ -528,12 +713,16 @@ export default function Registrador() {
       openNotify("Campos obrigatorios", "Selecione o cao e o servico.");
       return;
     }
+    if (!canAddManualAppointment) {
+      openNotify("Data invalida", "A inclusao manual pelo Registrador fica disponivel apenas para o dia de hoje.");
+      return;
+    }
 
     setIsSaving(true);
     try {
       const dog = dogsById[manualForm.dog_id];
       const owner = ownerByDogId[manualForm.dog_id] || {};
-      const now = nowDateTimeValue();
+      const now = buildDateTimeForDate(selectedDate || TODAY_KEY, "09:00");
       const appointment = await Appointment.create({
         empresa_id: currentUser?.empresa_id || null,
         cliente_id: owner.cliente_id || null,
@@ -543,14 +732,14 @@ export default function Registrador() {
         charge_type: "pendente_comercial",
         source_type: "manual_registrador",
         valor_previsto: 0,
-        data_referencia: TODAY_KEY,
+        data_referencia: selectedDate,
         data_hora_entrada: now,
         hora_entrada: now.slice(11, 16),
         observacoes: manualForm.observacoes || "",
         source_key: buildAppointmentSourceKey({
           dogId: manualForm.dog_id,
           serviceType: manualForm.service_type,
-          dateKey: TODAY_KEY,
+          dateKey: selectedDate,
           mode: "manual",
         }),
         metadata: {
@@ -565,7 +754,7 @@ export default function Registrador() {
       await loadData();
       setShowManualDialog(false);
       setSearchTerm(getDogDisplayName(dog));
-      openNotify("Agendamento incluido", `${getDogDisplayName(dog)} foi incluido para atendimento hoje.`);
+      openNotify("Agendamento incluido", `${getDogDisplayName(dog)} foi incluido para atendimento em ${selectedDateTitle.toLowerCase()}.`);
     } catch (error) {
       console.error("Erro ao incluir agendamento manual:", error);
       openNotify("Erro", error?.message || "Nao foi possivel incluir o agendamento.");
@@ -701,7 +890,7 @@ export default function Registrador() {
           <TabsContent value="pets" className="space-y-6">
             <Card className="border-gray-200 bg-white">
               <CardContent className="p-4 sm:p-6">
-                <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_240px_140px]">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                     <Input
@@ -711,6 +900,12 @@ export default function Registrador() {
                       className="h-12 pl-10"
                     />
                   </div>
+                  <DatePickerInput
+                    value={selectedDate}
+                    onChange={(value) => setSelectedDate(value || TODAY_KEY)}
+                    placeholder="Selecione o dia"
+                    className="h-12"
+                  />
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -723,7 +918,7 @@ export default function Registrador() {
                   </Button>
                 </div>
                 <p className="mt-3 text-xs text-gray-500">
-                  Hoje: {filteredAppointments.length} agendamento(s) encontrado(s) para a busca atual.
+                  {selectedDateTitle}: {filteredAppointments.length} agendamento(s) encontrado(s) para a busca atual.
                 </p>
               </CardContent>
             </Card>
@@ -736,9 +931,10 @@ export default function Registrador() {
                 const status = getAppointmentStatus(appointment, activeCheckinByAppointmentId);
                 const mealEnabled = activeCheckin?.tem_refeicao;
                 const mealCount = getCheckinMealRecords(activeCheckin).length;
+                const highlighted = highlightedAppointmentId === appointment.id;
 
                 return (
-                  <Card key={appointment.id} className="border-gray-200 bg-white shadow-sm">
+                  <Card key={appointment.id} className={`bg-white shadow-sm ${highlighted ? "border-blue-300 ring-2 ring-blue-200" : "border-gray-200"}`}>
                     <CardContent className="p-4 sm:p-5">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="flex min-w-0 items-start gap-4">
@@ -766,7 +962,7 @@ export default function Registrador() {
                             </p>
                             <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
                               <span className="rounded-full bg-gray-100 px-2 py-1">
-                                {TODAY_KEY === getAppointmentDateKey(appointment) ? "Hoje" : getAppointmentDateKey(appointment)}
+                                {TODAY_KEY === getAppointmentDateKey(appointment) ? "Hoje" : formatDateLabel(getAppointmentDateKey(appointment))}
                               </span>
                               <span className="rounded-full bg-gray-100 px-2 py-1">{getAppointmentDisplayTime(appointment)}</span>
                               <span className="rounded-full bg-gray-100 px-2 py-1">{getChargeTypeLabel(appointment.charge_type)}</span>
@@ -818,12 +1014,12 @@ export default function Registrador() {
                 );
               })}
 
-              {!filteredAppointments.length && !!searchTerm.trim() && !!matchedDogsWithoutAppointments.length && (
+              {!filteredAppointments.length && !!searchTerm.trim() && !!matchedDogsWithoutAppointments.length && canAddManualAppointment && (
                 <Card className="border-dashed border-blue-300 bg-blue-50">
                   <CardContent className="p-5">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <p className="font-semibold text-blue-900">Nenhum agendamento encontrado para hoje.</p>
+                        <p className="font-semibold text-blue-900">Nenhum agendamento encontrado para {selectedDateTitle.toLowerCase()}.</p>
                         <p className="mt-1 text-sm text-blue-800">
                           Voce pode incluir manualmente o atendimento e liberar a classificacao comercial depois.
                         </p>
@@ -848,7 +1044,11 @@ export default function Registrador() {
                 <Card className="border-gray-200 bg-white">
                   <CardContent className="p-10 text-center">
                     <CalendarClock className="mx-auto mb-3 h-10 w-10 text-gray-300" />
-                    <p className="text-gray-500">Nenhum agendamento localizado para hoje.</p>
+                    <p className="text-gray-500">
+                      {selectedDate < TODAY_KEY
+                        ? `Nenhum atendimento finalizado localizado para ${selectedDateTitle.toLowerCase()}.`
+                        : `Nenhum agendamento localizado para ${selectedDateTitle.toLowerCase()}.`}
+                    </p>
                   </CardContent>
                 </Card>
               )}
@@ -973,9 +1173,30 @@ export default function Registrador() {
               </div>
             </div>
 
-            <div>
-              <Label>Lembrete ou tarefa</Label>
-              <Input value={checkinForm.tarefa_lembrete} onChange={(event) => setCheckinForm((current) => ({ ...current, tarefa_lembrete: event.target.value }))} className="mt-2" placeholder="Ex.: avisar comercial sobre banho extra" />
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
+              <div>
+                <Label>Lembrete ou tarefa</Label>
+                <Textarea
+                  value={checkinForm.tarefa_lembrete}
+                  onChange={(event) => setCheckinForm((current) => ({ ...current, tarefa_lembrete: event.target.value }))}
+                  className="mt-2"
+                  rows={3}
+                  placeholder="Ex.: avisar comercial sobre banho extra"
+                />
+              </div>
+              <div>
+                <Label>Horario para notificar</Label>
+                <div className="mt-2">
+                  <TimePickerInput
+                    value={checkinForm.tarefa_lembrete_horario}
+                    onChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_horario: value }))}
+                    placeholder="Defina o horario"
+                  />
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  O lembrete sera enviado para usuarios com perfil de Atendente Comercial.
+                </p>
+              </div>
             </div>
 
             <div>
@@ -1159,12 +1380,12 @@ export default function Registrador() {
 
       <Dialog open={showManualDialog} onOpenChange={setShowManualDialog}>
         <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Incluir manualmente</DialogTitle>
-            <DialogDescription>
-              Selecione o cao e o servico para incluir um agendamento avulso de hoje.
-            </DialogDescription>
-          </DialogHeader>
+            <DialogHeader>
+              <DialogTitle>Incluir manualmente</DialogTitle>
+              <DialogDescription>
+                Selecione o cao e o servico para incluir um agendamento avulso em {selectedDateTitle.toLowerCase()}.
+              </DialogDescription>
+            </DialogHeader>
           <div className="grid gap-4 py-2">
             <div>
               <Label>Cao</Label>

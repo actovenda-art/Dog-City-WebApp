@@ -60,6 +60,13 @@ function buildBranding() {
   };
 }
 
+function withAssetVersion(url, asset) {
+  if (!url) return "";
+  const version = asset?.updated_date || asset?.created_date || asset?.id || "1";
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}brand_v=${encodeURIComponent(version)}`;
+}
+
 async function loadFranchiseLogoUrl() {
   try {
     const assets = await AppAsset.list("-created_date", 100);
@@ -69,7 +76,7 @@ async function loadFranchiseLogoUrl() {
       && !item?.empresa_id
       && item?.public_url
     ));
-    return franchiseLogo?.public_url || "";
+    return withAssetVersion(franchiseLogo?.public_url || "", franchiseLogo);
   } catch {
     return "";
   }

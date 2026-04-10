@@ -41,7 +41,7 @@ export default function Layout({ children, currentPageName }) {
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const brandTitleClass = "font-brand text-gray-900";
-  const { companyName: brandName, logoUrl: franchiseLogoUrl } = useBranding({ variant: "base", updateDocument: false });
+  const { companyName: brandName, logoUrl: franchiseLogoUrl } = useBranding({ variant: "base" });
   const showUnitSelector = availableUnits.length > 1;
   const [expandedSections, setExpandedSections] = useState({
     operacional: false,

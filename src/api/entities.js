@@ -18,6 +18,8 @@ export const Client = appClient.entities.Client;
 
 export const PedidoInterno = appClient.entities.PedidoInterno;
 
+export const CentroCusto = appClient.entities.CentroCusto;
+
 export const Despesa = appClient.entities.Despesa;
 
 export const Responsavel = appClient.entities.Responsavel;

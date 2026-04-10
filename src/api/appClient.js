@@ -38,6 +38,7 @@ const UNIT_SCOPED_ENTITIES = new Set([
   'ContaReceber',
   'Client',
   'PedidoInterno',
+  'CentroCusto',
 ]);
 
 function readStorage(key) {
@@ -74,17 +75,25 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
   const missingCarteiraColumn = isMissingColumnFor('carteira');
   const missingOrcamentoColumn = isMissingColumnFor('orcamento');
   const missingCheckinColumn = isMissingColumnFor('checkins');
+  const missingExtratoColumn = isMissingColumnFor('extratobancario');
+  const missingCentroCustoTable = rawMessage.includes('centro_custo') && (
+    error.code === 'PGRST205' || rawMessage.toLowerCase().includes('schema cache')
+  );
   const lancamentoRlsBlocked = error.code === '42501'
     && rawMessage.toLowerCase().includes('lancamento');
 
   const message = missingLancamentoColumn
-    ? `${rawMessage}. Execute o arquivo supabase-schema-lancamento-contas-pagar.sql no Supabase.`
+    ? `${rawMessage}. Execute os arquivos supabase-schema-lancamento-contas-pagar.sql e supabase-schema-controle-gerencial.sql no Supabase.`
     : missingDogColumn
       ? `${rawMessage}. Execute o arquivo supabase-schema-dogs-extended-profile.sql no Supabase.`
     : missingResponsavelColumn || missingCarteiraColumn || missingOrcamentoColumn
       ? `${rawMessage}. Execute o arquivo supabase-schema-cadastros-orcamento.sql no Supabase.`
     : missingCheckinColumn
       ? `${rawMessage}. Execute o arquivo supabase-schema-registrador-alertas.sql no Supabase.`
+    : missingExtratoColumn
+      ? `${rawMessage}. Execute os arquivos supabase-schema-finance-ledger.sql e supabase-schema-controle-gerencial.sql no Supabase.`
+    : missingCentroCustoTable
+      ? `${rawMessage}. Execute o arquivo supabase-schema-controle-gerencial.sql no Supabase.`
     : lancamentoRlsBlocked
       ? `${rawMessage}. Execute o arquivo supabase-policies-finance-unlock.sql no Supabase.`
       : rawMessage;
@@ -180,6 +189,7 @@ const defaultEntities = {};
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
   'UserInvite', 'UserUnitAccess',
   'UserProfile', 'ContaReceber', 'Client', 'PedidoInterno',
+  'CentroCusto',
 ].forEach((name) => {
   defaultEntities[name] = createMockEntity(name, { unitScoped: UNIT_SCOPED_ENTITIES.has(name) });
 });
@@ -512,6 +522,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     UserInvite: 'user_invite',
     UserUnitAccess: 'user_unit_access',
     UserProfile: 'users',
+    CentroCusto: 'centro_custo',
   };
 
   const toSnake = (name) => name.replace(/([A-Z])/g, '_$1').replace(/^_/, '').toLowerCase();

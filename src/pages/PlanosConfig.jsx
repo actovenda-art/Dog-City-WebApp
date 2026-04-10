@@ -3,11 +3,12 @@ import { PlanConfig } from "@/api/entities";
 import { Dog } from "@/api/entities";
 import { Carteira } from "@/api/entities";
 import { Appointment } from "@/api/entities";
-import { ScheduledTransaction } from "@/api/entities";
+import { ContaReceber } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -67,7 +68,7 @@ export default function PlanosConfig() {
 
   const [formData, setFormData] = useState({
     client_name: "", client_id: "", dog_id: "", service: "", frequency: "",
-    weekdays: [], monthly_value: "", due_day: "", status: "ativo", observacoes: ""
+    weekdays: [], monthly_value: "", due_day: "", data_renovacao: "", status: "ativo", observacoes: ""
   });
 
   useEffect(() => { loadData(); }, []);
@@ -105,14 +106,25 @@ export default function PlanosConfig() {
         
         // Só criar se for no futuro
         if (targetDate > hoje) {
+          const dateKey = format(targetDate, 'yyyy-MM-dd');
+          const valuePerUse = plan.monthly_value / (plan.weekdays.length * 4);
           appointments.push({
             dog_id: plan.dog_id,
+            cliente_id: plan.client_id || plan.carteira_id || null,
             client_name: plan.client_name,
             service: plan.service,
-            date: format(targetDate, 'yyyy-MM-dd'),
-            value: plan.monthly_value / (plan.weekdays.length * 4), // Valor por sessão
+            service_type: plan.service,
+            date: dateKey,
+            data_referencia: dateKey,
+            data_hora_entrada: `${dateKey}T08:00:00`,
+            data_hora_saida: `${dateKey}T18:00:00`,
+            value: valuePerUse,
             payment_status: "pendente",
-            plan_id: plan.id
+            valor_previsto: valuePerUse,
+            charge_type: "pacote",
+            source_type: "plano_recorrente",
+            plan_id: plan.id,
+            source_key: `plano_recorrente|${plan.id}|${plan.service}|${dateKey}`
           });
         }
       }
@@ -121,11 +133,7 @@ export default function PlanosConfig() {
     // Criar todos os agendamentos
     for (const appt of appointments) {
       // Verificar se já existe
-      const existingAppts = await Appointment.filter({ 
-        dog_id: appt.dog_id, 
-        date: appt.date, 
-        service: appt.service 
-      });
+      const existingAppts = await Appointment.filter({ source_key: appt.source_key });
       if (existingAppts.length === 0) {
         await Appointment.create(appt);
       }
@@ -146,19 +154,34 @@ export default function PlanosConfig() {
       dueDate.setMonth(dueDate.getMonth() + 1);
     }
     
-    await ScheduledTransaction.create({
-      due_date: format(dueDate, 'yyyy-MM-dd'),
-      type: "entrada",
-      value: plan.monthly_value,
-      description: `Mensalidade ${plan.service} - ${plan.client_name}`,
-      party: plan.client_name,
-      status: "pendente",
-      linked_plan: plan.id
-    });
+    const dueDateKey = format(dueDate, 'yyyy-MM-dd');
+    const sourceKey = `plano_recorrente|${plan.id}|${dueDateKey}`;
+    const existingCharges = await ContaReceber.filter({ source_key: sourceKey });
+    if (existingCharges.length === 0) {
+      await ContaReceber.create({
+        cliente_id: plan.client_id || plan.carteira_id || null,
+        dog_id: plan.dog_id || null,
+        descricao: `Mensalidade ${plan.service} - ${plan.client_name}`,
+        servico: plan.service,
+        valor: plan.monthly_value,
+        vencimento: dueDateKey,
+        status: "pendente",
+        origem: "plano_recorrente",
+        tipo_agendamento: "recorrente",
+        tipo_cobranca: "pacote",
+        data_prestacao: dueDateKey,
+        source_key: sourceKey,
+        metadata: {
+          plan_id: plan.id,
+          client_name: plan.client_name,
+          due_day: plan.due_day,
+        },
+      });
+    }
     
     // Atualizar próxima data de cobrança no plano
     await PlanConfig.update(plan.id, {
-      next_billing_date: format(dueDate, 'yyyy-MM-dd')
+      next_billing_date: dueDateKey
     });
   };
 
@@ -198,7 +221,7 @@ export default function PlanosConfig() {
   const resetForm = () => {
     setFormData({
       client_name: "", client_id: "", dog_id: "", service: "", frequency: "",
-      weekdays: [], monthly_value: "", due_day: "", status: "ativo", observacoes: ""
+      weekdays: [], monthly_value: "", due_day: "", data_renovacao: "", status: "ativo", observacoes: ""
     });
     setEditingItem(null);
   };
@@ -214,6 +237,7 @@ export default function PlanosConfig() {
       weekdays: item.weekdays || [],
       monthly_value: item.monthly_value?.toString() || "",
       due_day: item.due_day?.toString() || "",
+      data_renovacao: item.data_renovacao || "",
       status: item.status || "ativo",
       observacoes: item.observacoes || ""
     });
@@ -228,8 +252,12 @@ export default function PlanosConfig() {
     try {
       const dataToSave = {
         ...formData,
+        cliente_fixo: true,
+        carteira_id: formData.client_id || null,
         monthly_value: parseFloat(formData.monthly_value) || 0,
-        due_day: parseInt(formData.due_day) || 10
+        due_day: parseInt(formData.due_day) || 10,
+        renovacao_dia: parseInt(formData.due_day) || 10,
+        data_renovacao: formData.data_renovacao || null
       };
       if (editingItem) await PlanConfig.update(editingItem.id, dataToSave);
       else await PlanConfig.create(dataToSave);
@@ -406,6 +434,10 @@ export default function PlanosConfig() {
                   <span className="text-gray-600">Vencimento:</span>
                   <span>Dia {plan.due_day}</span>
                 </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Renovação:</span>
+                  <span>{plan.data_renovacao ? format(parseISO(plan.data_renovacao), "dd/MM/yyyy", { locale: ptBR }) : `Dia ${plan.renovacao_dia || plan.due_day || "-"}`}</span>
+                </div>
                 
                 <div className="flex gap-2 pt-3 border-t">
                   <Button variant="outline" size="sm" className="flex-1" onClick={() => runAutomations(plan)} disabled={isGenerating}>
@@ -505,6 +537,10 @@ export default function PlanosConfig() {
             <div>
               <Label>Dia de Vencimento *</Label>
               <Input type="number" min="1" max="31" value={formData.due_day} onChange={(e) => setFormData({ ...formData, due_day: e.target.value })} placeholder="10" />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Data de renovação</Label>
+              <DatePickerInput value={formData.data_renovacao} onChange={(value) => setFormData({ ...formData, data_renovacao: value })} />
             </div>
             <div className="sm:col-span-2">
               <Label>Status</Label>

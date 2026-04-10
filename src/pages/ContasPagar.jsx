@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Lancamento, User, ExtratoBancario, Despesa } from "@/api/entities";
+import { CentroCusto, Lancamento, User, ExtratoBancario, Despesa } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import { isImagePreviewable, openImageViewer } from "@/utils";
 export default function ContasPagar() {
   const [lancamentos, setLancamentos] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [centrosCusto, setCentrosCusto] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -48,7 +49,8 @@ export default function ContasPagar() {
   
   const [formData, setFormData] = useState({ 
     categoria: "", recebedor: "", referencia: "", vencimento: "", valor: "", 
-    juros_multa: "", forma_pagamento: "", anexo_url: "", negociacao: "", status: "pendente" 
+    juros_multa: "", forma_pagamento: "", centro_custo_nome: "", prioridade: "media",
+    valor_anterior: "", anexo_url: "", negociacao: "", status: "pendente" 
   });
 
   useEffect(() => { loadData(); }, []);
@@ -56,13 +58,15 @@ export default function ContasPagar() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [lancData, transData, me] = await Promise.all([
+      const [lancData, transData, centrosData, me] = await Promise.all([
         Lancamento.list("-vencimento", 500),
         ExtratoBancario.filter({ tipo: "saida" }),
+        CentroCusto.list("nome", 500).catch(() => []),
         User.me()
       ]);
       setLancamentos(lancData);
       setTransactions(transData);
+      setCentrosCusto(centrosData || []);
       setCurrentUser(me);
     } catch (error) { console.error("Erro:", error); }
     setIsLoading(false);
@@ -83,7 +87,8 @@ export default function ContasPagar() {
   const resetForm = () => { 
     setFormData({ 
       categoria: "", recebedor: "", referencia: "", vencimento: "", valor: "", 
-      juros_multa: "", forma_pagamento: "", anexo_url: "", negociacao: "", status: "pendente" 
+      juros_multa: "", forma_pagamento: "", centro_custo_nome: "", prioridade: "media",
+      valor_anterior: "", anexo_url: "", negociacao: "", status: "pendente" 
     }); 
     setEditingItem(null); 
   };
@@ -94,6 +99,9 @@ export default function ContasPagar() {
       categoria: item.categoria || "", recebedor: item.recebedor || "", referencia: item.referencia || "", 
       vencimento: item.vencimento || "", valor: item.valor?.toString() || "", 
       juros_multa: item.juros_multa?.toString() || "", forma_pagamento: item.forma_pagamento || "", 
+      centro_custo_nome: item.centro_custo_nome || "",
+      prioridade: item.prioridade || "media",
+      valor_anterior: item.valor_anterior?.toString() || "",
       anexo_url: item.anexo_url || "", negociacao: item.negociacao || "", status: item.status || "pendente" 
     });
     setShowModal(true);
@@ -142,6 +150,9 @@ export default function ContasPagar() {
         empresa_id: currentUser?.empresa_id || null,
         valor: parseFloat(formData.valor.replace(",", ".")) || 0, 
         juros_multa: formData.juros_multa ? parseFloat(formData.juros_multa.replace(",", ".")) : 0,
+        valor_anterior: formData.valor_anterior ? parseFloat(formData.valor_anterior.replace(",", ".")) : null,
+        prioridade: formData.prioridade || "media",
+        centro_custo_nome: formData.centro_custo_nome || formData.categoria || null,
         valor_quitado: editingItem?.valor_quitado || 0,
         vinculacoes: editingItem?.vinculacoes || []
       };
@@ -316,6 +327,7 @@ export default function ContasPagar() {
           subcategoria: vinculandoConta.referencia,
           descricao: `${vinculandoConta.categoria} - ${vinculandoConta.recebedor}`,
           valor: (vinculandoConta.valor || 0) + (vinculandoConta.juros_multa || 0),
+          centro_custo_nome: vinculandoConta.centro_custo_nome || vinculandoConta.categoria || null,
           forma_pagamento: vinculandoConta.forma_pagamento,
           fornecedor: vinculandoConta.recebedor,
           observacoes: JSON.stringify({
@@ -391,6 +403,8 @@ export default function ContasPagar() {
       l.referencia?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       l.negociacao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       l.forma_pagamento?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      l.centro_custo_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      l.prioridade?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       formatDate(l.vencimento).includes(searchTerm) ||
       formatDate(l.data_quitacao).includes(searchTerm) ||
       l.vencimento?.includes(searchTerm) ||
@@ -536,6 +550,8 @@ export default function ContasPagar() {
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                               <span><strong>Favorecido:</strong> {l.recebedor}</span>
                               <span><strong>Ref:</strong> {l.referencia}</span>
+                              <span><strong>Centro:</strong> {l.centro_custo_nome || l.categoria || "-"}</span>
+                              <span><strong>Prioridade:</strong> {l.prioridade || "media"}</span>
                               <span><strong>Vencimento:</strong> {formatDate(l.vencimento)}</span>
                               <span className={differenceInDays(new Date(), new Date(l.vencimento)) > 0 ? "text-red-600 font-medium" : "text-blue-600"}>
                                 {getDiasVencimento(l.vencimento)}
@@ -793,6 +809,8 @@ export default function ContasPagar() {
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                               <span><strong>Favorecido:</strong> {l.recebedor}</span>
                               <span><strong>Ref:</strong> {l.referencia}</span>
+                              <span><strong>Centro:</strong> {l.centro_custo_nome || l.categoria || "-"}</span>
+                              <span><strong>Prioridade:</strong> {l.prioridade || "media"}</span>
                               <span><strong>Vencimento:</strong> {formatDate(l.vencimento)}</span>
                               <span><strong>Quitação:</strong> {formatDate(l.data_quitacao)}</span>
                             </div>
@@ -855,9 +873,34 @@ export default function ContasPagar() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
             <div><Label>Categoria *</Label><Input value={formData.categoria} onChange={(e) => setFormData({ ...formData, categoria: e.target.value })} placeholder="Ex: Água, Energia" /></div>
             <div><Label>Recebedor *</Label><Input value={formData.recebedor} onChange={(e) => setFormData({ ...formData, recebedor: e.target.value })} placeholder="Fornecedor" /></div>
+            <div>
+              <Label>Centro de custo</Label>
+              <Input
+                list="centros-custo-contas-pagar"
+                value={formData.centro_custo_nome}
+                onChange={(e) => setFormData({ ...formData, centro_custo_nome: e.target.value })}
+                placeholder="Ex: Operação, Marketing"
+              />
+              <datalist id="centros-custo-contas-pagar">
+                {centrosCusto.map((centro) => <option key={centro.id} value={centro.nome} />)}
+              </datalist>
+            </div>
+            <div>
+              <Label>Prioridade</Label>
+              <Select value={formData.prioridade} onValueChange={(v) => setFormData({ ...formData, prioridade: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="baixa">Baixa</SelectItem>
+                  <SelectItem value="media">Média</SelectItem>
+                  <SelectItem value="alta">Alta</SelectItem>
+                  <SelectItem value="urgente">Urgente</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div><Label>Referência</Label><Input value={formData.referencia} onChange={(e) => setFormData({ ...formData, referencia: e.target.value })} placeholder="Mês/Ano" /></div>
             <div><Label>Vencimento *</Label><DatePickerInput value={formData.vencimento} onChange={(value) => setFormData({ ...formData, vencimento: value })} /></div>
             <div><Label>Valor *</Label><Input value={formData.valor} onChange={(e) => setFormData({ ...formData, valor: e.target.value })} placeholder="0,00" /></div>
+            <div><Label>Valor anterior</Label><Input value={formData.valor_anterior} onChange={(e) => setFormData({ ...formData, valor_anterior: e.target.value })} placeholder="0,00" /></div>
             <div><Label>Juros/Multa</Label><Input value={formData.juros_multa} onChange={(e) => setFormData({ ...formData, juros_multa: e.target.value })} placeholder="0,00" /></div>
             <div><Label>Forma Pagamento</Label>
               <Select value={formData.forma_pagamento} onValueChange={(v) => setFormData({ ...formData, forma_pagamento: v })}>

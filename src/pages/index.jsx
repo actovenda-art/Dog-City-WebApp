@@ -15,6 +15,7 @@ import Agenda_Comercial from "./Agenda_Comercial";
 import Cadastro from "./Cadastro";
 import Planos from "./Planos";
 import Cockpit from "./Cockpit";
+import ControleGerencial from "./ControleGerencial";
 import ContasReceber from "./ContasReceber";
 import PedidosInternos from "./PedidosInternos";
 import Movimentacoes from "./Movimentacoes";
@@ -44,6 +45,7 @@ const PAGES = {
   Cadastro,
   Planos,
   Cockpit,
+  ControleGerencial,
   ContasReceber,
   PedidosInternos,
   Movimentacoes,

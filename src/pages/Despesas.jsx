@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ExtratoBancario } from "@/api/entities";
+import { CentroCusto, ExtratoBancario } from "@/api/entities";
 import FinanceDetailDialog from "@/components/finance/FinanceDetailDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,6 +21,7 @@ import {
 
 export default function Despesas() {
   const [despesas, setDespesas] = useState([]);
+  const [centrosCusto, setCentrosCusto] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [dateStart, setDateStart] = useState("");
@@ -36,8 +37,12 @@ export default function Despesas() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const data = await ExtratoBancario.filter({ tipo: "saida" }, "-data_movimento", 1000);
+      const [data, centrosData] = await Promise.all([
+        ExtratoBancario.filter({ tipo: "saida" }, "-data_movimento", 1000),
+        CentroCusto.list("nome", 500).catch(() => []),
+      ]);
       setDespesas(data || []);
+      setCentrosCusto(centrosData || []);
     } catch (error) {
       console.error("Erro ao carregar despesas:", error);
     } finally {
@@ -58,6 +63,7 @@ export default function Despesas() {
       item.contraparte,
       item.bancoContraparte,
       item.referenciaFinanceira,
+      item.centro_custo_nome,
       item.observacoesFinanceiras,
     ]
       .filter(Boolean)
@@ -215,6 +221,9 @@ export default function Despesas() {
                       <Landmark className="w-3 h-3 mr-1" />
                       {getMovementReference(item)}
                     </Badge>
+                    <Badge className="bg-orange-100 text-orange-700">
+                      {item.centro_custo_nome || "Sem centro de custo"}
+                    </Badge>
                     {item.observacoesFinanceiras && <Badge variant="outline">Com observações</Badge>}
                   </div>
                 </CardContent>
@@ -229,9 +238,10 @@ export default function Despesas() {
         onOpenChange={setDetailOpen}
         movement={selectedMovement}
         mode="despesa"
-        onSave={handleSaveDetails}
-        isSaving={isSavingDetails}
-      />
+      onSave={handleSaveDetails}
+      isSaving={isSavingDetails}
+      costCenters={centrosCusto}
+    />
     </div>
   );
 }

@@ -41,7 +41,7 @@ export default function Layout({ children, currentPageName }) {
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const brandTitleClass = "font-brand text-gray-900";
-  const { companyName: brandName } = useBranding({ variant: "base", updateDocument: false });
+  const { companyName: brandName, logoUrl: franchiseLogoUrl } = useBranding({ variant: "base", updateDocument: false });
   const showUnitSelector = availableUnits.length > 1;
   const [expandedSections, setExpandedSections] = useState({
     operacional: false,
@@ -138,7 +138,7 @@ export default function Layout({ children, currentPageName }) {
 
   const activeUnit = availableUnits.find((unit) => unit.id === activeUnitId) || null;
   const activeUnitName = activeUnit?.nome_fantasia || getUnitDisplayName(activeUnit);
-  const officialLogoUrl = OFFICIAL_DOG_CITY_LOGO_URL;
+  const webappLogoUrl = franchiseLogoUrl || OFFICIAL_DOG_CITY_LOGO_URL;
 
   const menuSections = [
         {
@@ -218,7 +218,7 @@ export default function Layout({ children, currentPageName }) {
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <img 
-              src={officialLogoUrl}
+              src={webappLogoUrl}
               alt={brandName}
               className="h-12 w-12 rounded-2xl border border-gray-100 bg-white p-1 object-contain shadow-sm"
             />
@@ -340,7 +340,7 @@ export default function Layout({ children, currentPageName }) {
           <div className="flex items-center gap-2">
             {currentUser && <NotificationBell userId={currentUser.id} />}
             <img
-              src={officialLogoUrl}
+              src={webappLogoUrl}
               alt={brandName}
               className="h-8 w-8 rounded-full object-contain"
             />

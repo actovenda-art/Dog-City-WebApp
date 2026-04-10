@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User } from "@/api/entities";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { createPageUrl, openImageViewer } from "@/utils";
-import { notifyBrandingChanged } from "@/hooks/use-branding";
+import { OFFICIAL_DOG_CITY_LOGO_URL, notifyBrandingChanged } from "@/hooks/use-branding";
 import { ACTIVE_UNIT_EVENT, getStoredActiveUnitId } from "@/lib/unit-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +31,13 @@ const DEFAULT_BRANDING = {
   companyName: "",
   logoUrl: "",
 };
+
+const DEFAULT_FRANCHISE_BRANDING = {
+  logoUrl: "",
+  logoLabel: "",
+};
+
+const FRANCHISE_LOGO_KEY = "branding.franchise.logo";
 
 const SERVICE_OPTIONS = [
   "Day Care",
@@ -246,6 +253,7 @@ export default function AdministracaoSistema() {
   const [setupError, setSetupError] = useState("");
   const [selectedUnitId, setSelectedUnitId] = useState("");
   const [brandingForm, setBrandingForm] = useState(DEFAULT_BRANDING);
+  const [franchiseBrandingForm, setFranchiseBrandingForm] = useState(DEFAULT_FRANCHISE_BRANDING);
   const [unitForm, setUnitForm] = useState(cloneEmptyUnitForm());
   const [editingUnit, setEditingUnit] = useState(null);
   const [profileForm, setProfileForm] = useState(EMPTY_PROFILE);
@@ -255,6 +263,7 @@ export default function AdministracaoSistema() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isUploadingFranchiseLogo, setIsUploadingFranchiseLogo] = useState(false);
   const [isUploadingUnitAsset, setIsUploadingUnitAsset] = useState(false);
   const [unitAddressLoading, setUnitAddressLoading] = useState(false);
 
@@ -359,10 +368,17 @@ export default function AdministracaoSistema() {
   }, [unitForm.endereco?.cep]);
 
   useEffect(() => {
+    const franchiseLogoAsset = assets.find((item) => item.key === FRANCHISE_LOGO_KEY && !item.empresa_id && item.ativo !== false);
+    setFranchiseBrandingForm({
+      logoUrl: franchiseLogoAsset?.public_url || "",
+      logoLabel: franchiseLogoAsset?.metadata?.original_name || franchiseLogoAsset?.label || "",
+    });
+  }, [assets]);
+
+  useEffect(() => {
     const selectedNameConfig = configs.find((item) => item.key === "branding.company_name" && item.empresa_id === selectedUnitId)
       || configs.find((item) => item.key === "branding.company_name" && !item.empresa_id);
-    const selectedLogoAsset = assets.find((item) => item.key === "branding.logo.primary" && item.empresa_id === selectedUnitId && item.ativo !== false)
-      || assets.find((item) => item.key === "branding.logo.primary" && !item.empresa_id && item.ativo !== false);
+    const selectedLogoAsset = assets.find((item) => item.key === "branding.logo.primary" && item.empresa_id === selectedUnitId && item.ativo !== false);
 
     setBrandingForm({
       companyName: selectedNameConfig?.value?.text || "",
@@ -748,6 +764,44 @@ export default function AdministracaoSistema() {
     }
   }
 
+  async function handleFranchiseLogoUpload(file) {
+    if (!file) return;
+
+    setIsUploadingFranchiseLogo(true);
+    try {
+      const safeName = file.name.replace(/\s+/g, "-").toLowerCase();
+      const path = `franquia/branding/${Date.now()}-${safeName}`;
+      const { file_key, file_url } = await UploadFile({ file, path });
+      const existingAsset = assets.find((item) => item.key === FRANCHISE_LOGO_KEY && !item.empresa_id);
+      const payload = {
+        key: FRANCHISE_LOGO_KEY,
+        label: "Logo da franquia",
+        bucket: "public-assets",
+        storage_path: file_key,
+        public_url: file_url,
+        mime_type: file.type || "image/*",
+        ativo: true,
+        empresa_id: null,
+        metadata: { original_name: file.name, usage: "webapp_global_branding" },
+      };
+
+      if (existingAsset) {
+        await AppAsset.update(existingAsset.id, payload);
+      } else {
+        await AppAsset.create(payload);
+      }
+
+      setFranchiseBrandingForm({ logoUrl: file_url || "", logoLabel: file.name });
+      await loadData();
+      notifyBrandingChanged();
+    } catch (error) {
+      console.error("Erro ao enviar logo da franquia:", error);
+      alert(formatApiError(error, "Não foi possível enviar a logo da franquia."));
+    } finally {
+      setIsUploadingFranchiseLogo(false);
+    }
+  }
+
   async function handleLogoUpload(file) {
     if (!file || !selectedUnitId) return;
 
@@ -835,7 +889,7 @@ export default function AdministracaoSistema() {
             { label: "Unidades", value: units.length, tone: "text-blue-600", border: "border-blue-200" },
             { label: "Perfis ativos", value: profiles.filter((profile) => profile.ativo !== false).length, tone: "text-emerald-600", border: "border-emerald-200" },
             { label: "Itens de preco", value: selectedUnitPricing.length, tone: "text-amber-600", border: "border-amber-200" },
-            { label: "Branding atual", value: brandingForm.companyName ? 1 : 0, tone: "text-purple-600", border: "border-purple-200" },
+            { label: "Branding franquia", value: franchiseBrandingForm.logoUrl ? 1 : 0, tone: "text-purple-600", border: "border-purple-200" },
           ].map((stat) => (
             <Card key={stat.label} className={`bg-white ${stat.border}`}>
               <CardContent className="p-4 flex items-center justify-between">
@@ -994,12 +1048,70 @@ export default function AdministracaoSistema() {
           </TabsContent>
 
           <TabsContent value="branding">
+            <Card className="mb-6 border-purple-200 bg-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Palette className="w-5 h-5 text-purple-600" />
+                  Branding da franquia
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-5 lg:grid-cols-[180px_1fr] lg:items-center">
+                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <img
+                    src={franchiseBrandingForm.logoUrl || OFFICIAL_DOG_CITY_LOGO_URL}
+                    alt="Logo da franquia Dog City Brasil"
+                    className="mx-auto h-28 w-28 object-contain"
+                  />
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Logo usada no webapp</p>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Esta é a logo global da Dog City Brasil. Ela é usada no menu lateral, login, carregamento, favicon e ícone do app.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <input
+                      id="franchise-logo-upload"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => handleFranchiseLogoUpload(event.target.files?.[0])}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => document.getElementById("franchise-logo-upload")?.click()}
+                      disabled={isUploadingFranchiseLogo}
+                    >
+                      <Image className="w-4 h-4 mr-2" />
+                      {isUploadingFranchiseLogo ? "Enviando..." : "Enviar logo da franquia"}
+                    </Button>
+                    {franchiseBrandingForm.logoUrl ? (
+                      <button
+                        type="button"
+                        className="text-sm text-blue-600 hover:underline"
+                        onClick={() => openImageViewer(franchiseBrandingForm.logoUrl, "Logo da franquia")}
+                      >
+                        Ver logo atual
+                      </button>
+                    ) : (
+                      <span className="text-sm text-gray-500">Usando a logo oficial local como padrão.</span>
+                    )}
+                  </div>
+                  {franchiseBrandingForm.logoLabel ? (
+                    <p className="text-xs text-gray-500">Arquivo atual: {franchiseBrandingForm.logoLabel}</p>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               <Card className="bg-white border-gray-200 xl:col-span-2">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Palette className="w-5 h-5 text-purple-600" />
-                    Branding por unidade
+                    Identificação da unidade
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-5">
@@ -1011,7 +1123,7 @@ export default function AdministracaoSistema() {
                   </div>
 
                   <div>
-                    <Label>Nome exibido no webapp</Label>
+                    <Label>Nome da unidade</Label>
                     <Input
                       value={brandingForm.companyName}
                       onChange={(event) => setBrandingForm((current) => ({ ...current, companyName: event.target.value }))}
@@ -1021,7 +1133,8 @@ export default function AdministracaoSistema() {
                   </div>
 
                   <div>
-                    <Label>Logo da unidade</Label>
+                    <Label>Logo cadastral da unidade</Label>
+                    <p className="mt-1 text-xs text-gray-500">Esta logo fica apenas no cadastro da unidade. Ela não altera o menu, login, favicon ou ícone do app.</p>
                     <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-3">
                       <input
                         id="branding-logo-upload"
@@ -1037,7 +1150,7 @@ export default function AdministracaoSistema() {
                         disabled={isUploading || !selectedUnitId}
                       >
                         <Image className="w-4 h-4 mr-2" />
-                        {isUploading ? "Enviando..." : "Enviar logo"}
+                        {isUploading ? "Enviando..." : "Enviar logo cadastral"}
                       </Button>
                       {brandingForm.logoUrl ? (
                         <button type="button" className="text-sm text-blue-600 hover:underline" onClick={() => openImageViewer(brandingForm.logoUrl, "Logo da unidade")}>
@@ -1052,7 +1165,7 @@ export default function AdministracaoSistema() {
                   <div className="flex justify-end">
                     <Button onClick={handleSaveBranding} disabled={isSaving || !selectedUnitId} className="bg-blue-600 hover:bg-blue-700 text-white">
                       <Save className="w-4 h-4 mr-2" />
-                      Salvar branding
+                      Salvar identificação
                     </Button>
                   </div>
                 </CardContent>
@@ -1365,7 +1478,7 @@ export default function AdministracaoSistema() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <Label>Logo da unidade</Label>
-                    <p className="mt-1 text-xs text-gray-500">A logo da unidade aparece no shell do webapp após a troca de unidade.</p>
+                    <p className="mt-1 text-xs text-gray-500">Logo cadastral da unidade. O webapp usa sempre o Branding da franquia.</p>
                   </div>
                   {unitForm.logo_url ? (
                     <Button type="button" variant="ghost" onClick={() => openImageViewer(unitForm.logo_url, `Logo ${unitForm.nome_fantasia || "unidade"}`)}>

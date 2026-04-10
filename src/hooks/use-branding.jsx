@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AppAsset } from "@/api/entities";
 
 export const BRANDING_EVENT = "app-branding-updated";
 export const OFFICIAL_DOG_CITY_LOGO_URL = "/dog-city-brand.svg?v=20260410";
@@ -59,6 +60,33 @@ function buildBranding() {
   };
 }
 
+async function loadFranchiseLogoUrl() {
+  try {
+    const assets = await AppAsset.list("-created_date", 100);
+    const franchiseLogo = (assets || []).find((item) => (
+      item?.key === "branding.franchise.logo"
+      && item?.ativo !== false
+      && !item?.empresa_id
+      && item?.public_url
+    ));
+    return franchiseLogo?.public_url || "";
+  } catch {
+    return "";
+  }
+}
+
+async function buildFranchiseBranding() {
+  const logoUrl = await loadFranchiseLogoUrl();
+  if (!logoUrl) return buildBranding();
+
+  return {
+    companyName: BASE_BRANDING.companyName,
+    logoUrl,
+    iconUrl: logoUrl,
+    touchIconUrl: logoUrl,
+  };
+}
+
 function upsertMeta(name, content) {
   let meta = document.querySelector(`meta[name="${name}"]`);
   if (!meta) {
@@ -80,7 +108,8 @@ export function useBranding(options = {}) {
     let cancelled = false;
 
     async function loadBranding() {
-      if (!cancelled) setBranding(buildBranding());
+      const nextBranding = await buildFranchiseBranding();
+      if (!cancelled) setBranding(nextBranding);
     }
 
     function handleRefresh() {

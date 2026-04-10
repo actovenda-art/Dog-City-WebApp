@@ -22,7 +22,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  AlertTriangle,
   ArrowDownCircle,
   BarChart3,
   CalendarClock,
@@ -778,12 +777,6 @@ export default function ControleGerencial() {
           </TabsContent>
         </Tabs>
 
-        <Card className="border-blue-200 bg-blue-50">
-          <CardContent className="flex gap-3 p-4 text-sm text-blue-900">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>O módulo de plano de ação ficou de fora conforme solicitado. Esta tela consolida gestão financeira, clientes fixos, cobranças, custos e ausências, respeitando a unidade ativa.</p>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

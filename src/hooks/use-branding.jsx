@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 
 export const BRANDING_EVENT = "app-branding-updated";
+export const OFFICIAL_DOG_CITY_LOGO_URL = "/dog-city-brand.svg?v=20260410";
+export const OFFICIAL_DOG_CITY_ICON_URL = "/favicon.svg?v=20260410";
+export const OFFICIAL_DOG_CITY_TOUCH_ICON_URL = "/apple-touch-icon.png?v=20260410";
 
 const BASE_BRANDING = {
   companyName: "Dog City Brasil",
-  logoUrl: "/dog-city-brand.svg?v=20260409",
-  iconUrl: "/favicon.svg?v=20260409",
-  touchIconUrl: "/apple-touch-icon.png?v=20260409",
+  logoUrl: OFFICIAL_DOG_CITY_LOGO_URL,
+  iconUrl: OFFICIAL_DOG_CITY_ICON_URL,
+  touchIconUrl: OFFICIAL_DOG_CITY_TOUCH_ICON_URL,
 };
 const DEFAULT_BRANDING = BASE_BRANDING;
 const DEFAULT_FAVICON_URL = BASE_BRANDING.iconUrl;

@@ -38,6 +38,21 @@ function buildSelectionState(input = {}) {
   };
 }
 
+function areSelectionsEqual(left, right) {
+  if ((left?.primaryUnitId || "") !== (right?.primaryUnitId || "")) {
+    return false;
+  }
+
+  const leftIds = Array.isArray(left?.selectedUnitIds) ? left.selectedUnitIds : [];
+  const rightIds = Array.isArray(right?.selectedUnitIds) ? right.selectedUnitIds : [];
+
+  if (leftIds.length !== rightIds.length) {
+    return false;
+  }
+
+  return leftIds.every((value, index) => value === rightIds[index]);
+}
+
 export function getStoredUnitSelection() {
   if (typeof window === "undefined") {
     return buildSelectionState();
@@ -73,6 +88,8 @@ export function setStoredUnitSelection(selection) {
   if (typeof window === "undefined") return;
 
   const normalized = buildSelectionState(selection);
+  const current = getStoredUnitSelection();
+  const hasChanged = !areSelectionsEqual(current, normalized);
 
   if (normalized.primaryUnitId) {
     window.localStorage.setItem(ACTIVE_UNIT_STORAGE_KEY, normalized.primaryUnitId);
@@ -81,6 +98,8 @@ export function setStoredUnitSelection(selection) {
     window.localStorage.removeItem(ACTIVE_UNIT_STORAGE_KEY);
     window.localStorage.removeItem(ACTIVE_UNIT_SELECTION_STORAGE_KEY);
   }
+
+  if (!hasChanged) return;
 
   window.dispatchEvent(new CustomEvent(ACTIVE_UNIT_EVENT, {
     detail: {

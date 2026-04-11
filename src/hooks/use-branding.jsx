@@ -1,23 +1,19 @@
-import { useEffect, useState } from "react";
-import { AppAsset } from "@/api/entities";
+import { useEffect } from "react";
 
 export const BRANDING_EVENT = "app-branding-updated";
-const BRANDING_CACHE_KEY = "dogcity_franchise_branding_v1";
-
-const MISSING_BRANDING_IMAGE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#fff4f2"/><text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-size="58">\u25b6\ufe0f</text></svg>';
-
-export const MISSING_BRANDING_IMAGE_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(MISSING_BRANDING_IMAGE_SVG)}`;
+export const OFFICIAL_DOG_CITY_LOGO_URL = "/dog-city-brand.png?v=20260411";
+export const OFFICIAL_DOG_CITY_ICON_URL = "/favicon.png?v=20260411";
+export const OFFICIAL_DOG_CITY_TOUCH_ICON_URL = "/apple-touch-icon.png?v=20260411";
 
 const BASE_BRANDING = {
   companyName: "Dog City Brasil",
-  logoUrl: MISSING_BRANDING_IMAGE_URL,
-  iconUrl: MISSING_BRANDING_IMAGE_URL,
-  touchIconUrl: MISSING_BRANDING_IMAGE_URL,
+  logoUrl: OFFICIAL_DOG_CITY_LOGO_URL,
+  iconUrl: OFFICIAL_DOG_CITY_ICON_URL,
+  touchIconUrl: OFFICIAL_DOG_CITY_TOUCH_ICON_URL,
+  hasConfiguredLogo: false,
 };
-const DEFAULT_BRANDING = BASE_BRANDING;
-const DEFAULT_FAVICON_URL = BASE_BRANDING.iconUrl;
-const DEFAULT_TOUCH_ICON_URL = BASE_BRANDING.touchIconUrl;
-let dynamicManifestUrl = "";
+
+export const MISSING_BRANDING_IMAGE_URL = OFFICIAL_DOG_CITY_LOGO_URL;
 
 export function notifyBrandingChanged() {
   if (typeof window === "undefined") return;
@@ -25,10 +21,7 @@ export function notifyBrandingChanged() {
 }
 
 function getFaviconType(url) {
-  if (!url) return "image/svg+xml";
-  if (url.startsWith("data:image/")) {
-    return url.slice(5, url.indexOf(";")) || "image/png";
-  }
+  if (!url) return "image/png";
   if (url.includes(".svg")) return "image/svg+xml";
   if (url.includes(".ico")) return "image/x-icon";
   if (url.includes(".jpg") || url.includes(".jpeg")) return "image/jpeg";
@@ -45,135 +38,8 @@ function upsertFaviconLink(id, rel, href, type) {
   }
 
   link.setAttribute("rel", rel);
-  link.setAttribute("href", href || DEFAULT_FAVICON_URL);
+  link.setAttribute("href", href || OFFICIAL_DOG_CITY_ICON_URL);
   link.setAttribute("type", type);
-}
-
-function upsertManifestLink(branding) {
-  let link = document.getElementById("app-manifest");
-  if (!link) {
-    link = document.querySelector('link[rel="manifest"]') || document.createElement("link");
-    link.id = "app-manifest";
-    document.head.appendChild(link);
-  }
-
-  const iconUrl = branding.touchIconUrl || branding.iconUrl || branding.logoUrl || DEFAULT_FAVICON_URL;
-  const iconType = getFaviconType(iconUrl);
-  const manifest = {
-    name: branding.companyName || BASE_BRANDING.companyName,
-    short_name: "Dog City",
-    description: "Gestao operacional e financeira da Dog City Brasil.",
-    id: "/",
-    start_url: "/",
-    scope: "/",
-    display_override: ["standalone", "minimal-ui"],
-    display: "standalone",
-    background_color: "#ffffff",
-    theme_color: "#ffffff",
-    orientation: "portrait",
-    icons: [
-      {
-        src: iconUrl,
-        sizes: iconType === "image/svg+xml" ? "any" : "512x512",
-        type: iconType,
-        purpose: "any maskable",
-      },
-    ],
-  };
-
-  if (typeof Blob !== "undefined" && typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
-    if (dynamicManifestUrl) URL.revokeObjectURL(dynamicManifestUrl);
-    dynamicManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" }));
-    link.setAttribute("href", dynamicManifestUrl);
-  } else {
-    link.setAttribute("href", `data:application/manifest+json;charset=utf-8,${encodeURIComponent(JSON.stringify(manifest))}`);
-  }
-
-  link.setAttribute("rel", "manifest");
-}
-
-function resolveTouchIconUrl(url) {
-  const type = getFaviconType(url);
-  return type === "image/svg+xml" ? DEFAULT_TOUCH_ICON_URL : (url || DEFAULT_TOUCH_ICON_URL);
-}
-
-function buildBranding() {
-  return {
-    companyName: BASE_BRANDING.companyName,
-    logoUrl: BASE_BRANDING.logoUrl,
-    iconUrl: BASE_BRANDING.iconUrl,
-    touchIconUrl: BASE_BRANDING.touchIconUrl,
-    hasConfiguredLogo: false,
-  };
-}
-
-function buildConfiguredBranding(logoUrl) {
-  if (!logoUrl) return buildBranding();
-  return {
-    companyName: BASE_BRANDING.companyName,
-    logoUrl,
-    iconUrl: logoUrl,
-    touchIconUrl: logoUrl,
-    hasConfiguredLogo: true,
-  };
-}
-
-function withAssetVersion(url, asset) {
-  if (!url) return "";
-  const version = asset?.updated_date || asset?.created_date || asset?.id || "1";
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}brand_v=${encodeURIComponent(version)}`;
-}
-
-function readCachedBranding() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(BRANDING_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed?.logoUrl || typeof parsed.logoUrl !== "string") return null;
-    return buildConfiguredBranding(parsed.logoUrl);
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedBranding(branding) {
-  if (typeof window === "undefined" || !branding?.hasConfiguredLogo || !branding?.logoUrl) return;
-  try {
-    window.localStorage.setItem(BRANDING_CACHE_KEY, JSON.stringify({ logoUrl: branding.logoUrl }));
-  } catch {
-    // Ignore cache persistence failures.
-  }
-}
-
-function clearCachedBranding() {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.removeItem(BRANDING_CACHE_KEY);
-  } catch {
-    // Ignore cache cleanup failures.
-  }
-}
-
-async function loadFranchiseLogoUrl() {
-  try {
-    const assets = await AppAsset.list("-created_date", 100);
-    const franchiseLogo = (assets || []).find((item) => (
-      item?.key === "branding.franchise.logo"
-      && item?.ativo !== false
-      && !item?.empresa_id
-      && item?.public_url
-    ));
-    return withAssetVersion(franchiseLogo?.public_url || "", franchiseLogo);
-  } catch {
-    return "";
-  }
-}
-
-async function buildFranchiseBranding() {
-  const logoUrl = await loadFranchiseLogoUrl();
-  return buildConfiguredBranding(logoUrl);
 }
 
 function upsertMeta(name, content) {
@@ -186,78 +52,45 @@ function upsertMeta(name, content) {
   meta.setAttribute("content", content);
 }
 
+function buildManifestHref() {
+  return "/manifest.webmanifest?v=20260411";
+}
+
 export function useBranding(options = {}) {
   const {
-    variant = "active",
     updateDocument = true,
   } = options;
-  const [branding, setBranding] = useState(() => readCachedBranding() || DEFAULT_BRANDING);
-  const [isResolved, setIsResolved] = useState(() => Boolean(readCachedBranding()));
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadBranding() {
-      const nextBranding = await buildFranchiseBranding();
-      if (nextBranding.hasConfiguredLogo) {
-        writeCachedBranding(nextBranding);
-      } else {
-        clearCachedBranding();
-      }
-
-      if (!cancelled) {
-        setBranding(nextBranding);
-        setIsResolved(true);
-      }
-    }
-
-    function handleRefresh() {
-      loadBranding();
-    }
-
-    function handleVisibilityChange() {
-      if (!document.hidden) loadBranding();
-    }
-
-    loadBranding();
-    window.addEventListener(BRANDING_EVENT, handleRefresh);
-    window.addEventListener("focus", handleRefresh);
-    window.addEventListener("storage", handleRefresh);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener(BRANDING_EVENT, handleRefresh);
-      window.removeEventListener("focus", handleRefresh);
-      window.removeEventListener("storage", handleRefresh);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [variant]);
 
   useEffect(() => {
     if (typeof document === "undefined" || !updateDocument) return;
 
-    const faviconUrl = branding.iconUrl || branding.logoUrl || DEFAULT_FAVICON_URL;
-    const touchIconUrl = branding.touchIconUrl || resolveTouchIconUrl(faviconUrl);
+    const faviconUrl = BASE_BRANDING.iconUrl;
+    const touchIconUrl = BASE_BRANDING.touchIconUrl;
     const faviconType = getFaviconType(faviconUrl);
     const touchIconType = getFaviconType(touchIconUrl);
+
     upsertFaviconLink("app-favicon", "icon", faviconUrl, faviconType);
     upsertFaviconLink("app-favicon-shortcut", "shortcut icon", faviconUrl, faviconType);
     upsertFaviconLink("app-apple-touch-icon", "apple-touch-icon", touchIconUrl, touchIconType);
     upsertFaviconLink("app-apple-touch-icon-precomposed", "apple-touch-icon-precomposed", touchIconUrl, touchIconType);
-    upsertManifestLink({
-      ...branding,
-      iconUrl: faviconUrl,
-      touchIconUrl,
-    });
-    upsertMeta("apple-mobile-web-app-title", branding.companyName || BASE_BRANDING.companyName);
-    upsertMeta("application-name", branding.companyName || BASE_BRANDING.companyName);
+
+    let manifest = document.getElementById("app-manifest");
+    if (!manifest) {
+      manifest = document.querySelector('link[rel="manifest"]') || document.createElement("link");
+      manifest.id = "app-manifest";
+      document.head.appendChild(manifest);
+    }
+    manifest.setAttribute("rel", "manifest");
+    manifest.setAttribute("href", buildManifestHref());
+
+    upsertMeta("apple-mobile-web-app-title", BASE_BRANDING.companyName);
+    upsertMeta("application-name", BASE_BRANDING.companyName);
     upsertMeta("theme-color", "#ffffff");
-    document.title = branding.companyName || BASE_BRANDING.companyName;
-  }, [branding.companyName, branding.iconUrl, branding.logoUrl, branding.touchIconUrl, updateDocument]);
+    document.title = BASE_BRANDING.companyName;
+  }, [updateDocument]);
 
   return {
-    ...branding,
-    isResolved,
+    ...BASE_BRANDING,
+    isResolved: true,
   };
 }

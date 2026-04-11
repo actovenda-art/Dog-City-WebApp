@@ -28,6 +28,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import NotificationBell from "@/components/layout/NotificationBell";
+import { isPageBlockedInMergedMode } from "@/lib/unit-page-policy";
 import {
   ACTIVE_UNIT_EVENT,
   getStoredUnitSelection,
@@ -376,21 +377,28 @@ export default function Layout({ children, currentPageName }) {
                     {section.items.map((item) => {
                       const Icon = item.icon;
                       const isActive = currentPageName === getPageNameFromPath(item.url);
+                      const itemPageName = getPageNameFromPath(item.url);
+                      const isPolicyBlocked = isUnitUnionActive && isPageBlockedInMergedMode(itemPageName);
+                      const isDisabled = Boolean(item.disabled || isPolicyBlocked);
                       const baseClass = isActive
                         ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm"
                         : "text-gray-700 hover:bg-orange-50 hover:text-orange-600";
 
-                      if (item.disabled) {
+                      if (isDisabled) {
                         return (
                           <div
                             key={item.title}
                             className="flex cursor-not-allowed items-center gap-3 rounded-lg border border-dashed border-amber-200 bg-amber-50 px-3 py-2 text-amber-700"
-                            title="Integrações ficam bloqueadas com unidades unificadas."
+                            title={item.disabled
+                              ? "Integrações ficam bloqueadas com unidades unificadas."
+                              : "Esta tela opera apenas com uma unidade por vez."}
                           >
                             <Icon className="h-4 w-4" />
                             <div className="min-w-0">
                               <span className="block text-sm font-medium">{item.title}</span>
-                              <span className="block text-[11px]">Bloqueado na visão unificada</span>
+                              <span className="block text-[11px]">
+                                {item.disabled ? "Bloqueado na visão unificada" : "Exige unidade única"}
+                              </span>
                             </div>
                           </div>
                         );

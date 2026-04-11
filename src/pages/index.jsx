@@ -5,6 +5,7 @@ import { User } from "@/api/entities";
 import { createPageUrl, getPageNameFromPath } from "@/utils";
 
 import Layout from "./Layout.jsx";
+import UnitModeGuard from "@/components/layout/UnitModeGuard";
 import Login from "./Login.jsx";
 import AuthCallback from "./AuthCallback.jsx";
 import CompletarCadastro from "./CompletarCadastro.jsx";
@@ -98,7 +99,9 @@ function PageFrame({ pageName, currentPageName }) {
 
   return (
     <Layout currentPageName={currentPageName}>
-      <PageComponent />
+      <UnitModeGuard pageName={pageName}>
+        <PageComponent />
+      </UnitModeGuard>
     </Layout>
   );
 }

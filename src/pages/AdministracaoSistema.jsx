@@ -1143,7 +1143,7 @@ export default function AdministracaoSistema() {
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Logo usada no webapp</p>
                     <p className="mt-1 text-sm text-gray-600">
-                      Esta é a logo global da Dog City Brasil. Ela vem apenas das configurações e é usada no menu lateral, login, carregamento, favicon e ícone do app.
+                      A marca institucional do app é fixa na franquia. A única logo variável dentro do webapp é a da unidade exibida no menu lateral.
                     </p>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -1172,7 +1172,7 @@ export default function AdministracaoSistema() {
                         Ver logo atual
                       </button>
                     ) : (
-                      <span className="text-sm text-amber-700">Nenhuma logo de franquia cadastrada. Exibindo indicador de erro.</span>
+                      <span className="text-sm text-gray-500">Este arquivo não altera favicon, login nem carregamento do app.</span>
                     )}
                   </div>
                   {franchiseBrandingForm.logoLabel ? (

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AppAsset } from "@/api/entities";
 
 export const BRANDING_EVENT = "app-branding-updated";
+const BRANDING_CACHE_KEY = "dogcity_franchise_branding_v1";
 
 const MISSING_BRANDING_IMAGE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#fff4f2"/><text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-size="58">\u25b6\ufe0f</text></svg>';
 
@@ -102,6 +103,18 @@ function buildBranding() {
     logoUrl: BASE_BRANDING.logoUrl,
     iconUrl: BASE_BRANDING.iconUrl,
     touchIconUrl: BASE_BRANDING.touchIconUrl,
+    hasConfiguredLogo: false,
+  };
+}
+
+function buildConfiguredBranding(logoUrl) {
+  if (!logoUrl) return buildBranding();
+  return {
+    companyName: BASE_BRANDING.companyName,
+    logoUrl,
+    iconUrl: logoUrl,
+    touchIconUrl: logoUrl,
+    hasConfiguredLogo: true,
   };
 }
 
@@ -110,6 +123,37 @@ function withAssetVersion(url, asset) {
   const version = asset?.updated_date || asset?.created_date || asset?.id || "1";
   const separator = url.includes("?") ? "&" : "?";
   return `${url}${separator}brand_v=${encodeURIComponent(version)}`;
+}
+
+function readCachedBranding() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(BRANDING_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.logoUrl || typeof parsed.logoUrl !== "string") return null;
+    return buildConfiguredBranding(parsed.logoUrl);
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedBranding(branding) {
+  if (typeof window === "undefined" || !branding?.hasConfiguredLogo || !branding?.logoUrl) return;
+  try {
+    window.localStorage.setItem(BRANDING_CACHE_KEY, JSON.stringify({ logoUrl: branding.logoUrl }));
+  } catch {
+    // Ignore cache persistence failures.
+  }
+}
+
+function clearCachedBranding() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(BRANDING_CACHE_KEY);
+  } catch {
+    // Ignore cache cleanup failures.
+  }
 }
 
 async function loadFranchiseLogoUrl() {
@@ -129,14 +173,7 @@ async function loadFranchiseLogoUrl() {
 
 async function buildFranchiseBranding() {
   const logoUrl = await loadFranchiseLogoUrl();
-  if (!logoUrl) return buildBranding();
-
-  return {
-    companyName: BASE_BRANDING.companyName,
-    logoUrl,
-    iconUrl: logoUrl,
-    touchIconUrl: logoUrl,
-  };
+  return buildConfiguredBranding(logoUrl);
 }
 
 function upsertMeta(name, content) {
@@ -154,14 +191,24 @@ export function useBranding(options = {}) {
     variant = "active",
     updateDocument = true,
   } = options;
-  const [branding, setBranding] = useState(DEFAULT_BRANDING);
+  const [branding, setBranding] = useState(() => readCachedBranding() || DEFAULT_BRANDING);
+  const [isResolved, setIsResolved] = useState(() => Boolean(readCachedBranding()));
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadBranding() {
       const nextBranding = await buildFranchiseBranding();
-      if (!cancelled) setBranding(nextBranding);
+      if (nextBranding.hasConfiguredLogo) {
+        writeCachedBranding(nextBranding);
+      } else {
+        clearCachedBranding();
+      }
+
+      if (!cancelled) {
+        setBranding(nextBranding);
+        setIsResolved(true);
+      }
     }
 
     function handleRefresh() {
@@ -209,5 +256,8 @@ export function useBranding(options = {}) {
     document.title = branding.companyName || BASE_BRANDING.companyName;
   }, [branding.companyName, branding.iconUrl, branding.logoUrl, branding.touchIconUrl, updateDocument]);
 
-  return branding;
+  return {
+    ...branding,
+    isResolved,
+  };
 }

@@ -10,10 +10,11 @@ const LOADING_STEPS = [
 ];
 
 export default function LoadingScreen({ onComplete }) {
-  const { companyName, logoUrl } = useBranding({ variant: "base", updateDocument: false });
+  const { companyName, logoUrl, isResolved } = useBranding({ variant: "base", updateDocument: false });
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const showLogo = Boolean(isResolved && logoUrl);
 
   useEffect(() => {
     let totalDuration = LOADING_STEPS.reduce((acc, step) => acc + step.duration, 0);
@@ -55,14 +56,18 @@ export default function LoadingScreen({ onComplete }) {
     >
       <div className="flex flex-col items-center">
         {/* Logo */}
-        <motion.img
-          src={logoUrl}
-          alt={companyName}
-          className="w-20 h-20 mb-8"
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.5 }}
-        />
+        {showLogo ? (
+          <motion.img
+            src={logoUrl}
+            alt={companyName}
+            className="w-20 h-20 mb-8"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5 }}
+          />
+        ) : (
+          <div className="mb-8 h-20 w-20 rounded-3xl border border-slate-200 bg-white/80 shadow-sm" />
+        )}
 
         {/* Progress bar container */}
         <div className="relative w-64 h-1.5 mb-6">

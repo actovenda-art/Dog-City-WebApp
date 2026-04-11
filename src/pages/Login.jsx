@@ -31,7 +31,7 @@ function GoogleIcon() {
 
 export default function Login() {
   const location = useLocation();
-  const { companyName, logoUrl } = useBranding({ variant: "base" });
+  const { companyName, logoUrl, isResolved } = useBranding({ variant: "base" });
   const nextPath = useMemo(() => getSafeNextPath(location.search), [location.search]);
   const isBlocked = useMemo(() => new URLSearchParams(location.search).get("blocked") === "1", [location.search]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,7 +63,11 @@ export default function Login() {
       <Card className="w-full max-w-md border-orange-200 bg-white/95 shadow-2xl shadow-orange-100">
         <CardContent className="p-8">
           <div className="flex flex-col items-center text-center">
-            <img src={logoUrl} alt={companyName} className="w-20 h-20 object-contain" />
+            {isResolved && logoUrl ? (
+              <img src={logoUrl} alt={companyName} className="w-20 h-20 object-contain" />
+            ) : (
+              <div className="h-20 w-20 rounded-3xl border border-orange-100 bg-white/90 shadow-sm" />
+            )}
             <p className="mt-6 text-xs font-semibold uppercase tracking-[0.25em] text-orange-500">Acesso</p>
             <h1 className="mt-3 text-3xl font-brand text-slate-900">{companyName}</h1>
             <p className="mt-3 text-sm text-slate-600">

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User } from "@/api/entities";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { createPageUrl, openImageViewer } from "@/utils";
-import { OFFICIAL_DOG_CITY_LOGO_URL, notifyBrandingChanged } from "@/hooks/use-branding";
+import { MISSING_BRANDING_IMAGE_URL, notifyBrandingChanged } from "@/hooks/use-branding";
 import { ACTIVE_UNIT_EVENT, getStoredActiveUnitId } from "@/lib/unit-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1058,7 +1058,7 @@ export default function AdministracaoSistema() {
               <CardContent className="grid gap-5 lg:grid-cols-[180px_1fr] lg:items-center">
                 <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                   <img
-                    src={franchiseBrandingForm.logoUrl || OFFICIAL_DOG_CITY_LOGO_URL}
+                    src={franchiseBrandingForm.logoUrl || MISSING_BRANDING_IMAGE_URL}
                     alt="Logo da franquia Dog City Brasil"
                     className="mx-auto h-28 w-28 object-contain"
                   />
@@ -1067,7 +1067,7 @@ export default function AdministracaoSistema() {
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Logo usada no webapp</p>
                     <p className="mt-1 text-sm text-gray-600">
-                      Esta é a logo global da Dog City Brasil. Ela é usada no menu lateral, login, carregamento, favicon e ícone do app.
+                      Esta é a logo global da Dog City Brasil. Ela vem apenas das configurações e é usada no menu lateral, login, carregamento, favicon e ícone do app.
                     </p>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -1096,7 +1096,7 @@ export default function AdministracaoSistema() {
                         Ver logo atual
                       </button>
                     ) : (
-                      <span className="text-sm text-gray-500">Usando a logo oficial local como padrão.</span>
+                      <span className="text-sm text-amber-700">Nenhuma logo de franquia cadastrada. Exibindo indicador de erro.</span>
                     )}
                   </div>
                   {franchiseBrandingForm.logoLabel ? (

@@ -2,19 +2,21 @@ import { useEffect, useState } from "react";
 import { AppAsset } from "@/api/entities";
 
 export const BRANDING_EVENT = "app-branding-updated";
-export const OFFICIAL_DOG_CITY_LOGO_URL = "/dog-city-brand.svg?v=20260410";
-export const OFFICIAL_DOG_CITY_ICON_URL = "/favicon.svg?v=20260410";
-export const OFFICIAL_DOG_CITY_TOUCH_ICON_URL = "/apple-touch-icon.png?v=20260410";
+
+const MISSING_BRANDING_IMAGE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#fff4f2"/><text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-size="58">\u25b6\ufe0f</text></svg>';
+
+export const MISSING_BRANDING_IMAGE_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(MISSING_BRANDING_IMAGE_SVG)}`;
 
 const BASE_BRANDING = {
   companyName: "Dog City Brasil",
-  logoUrl: OFFICIAL_DOG_CITY_LOGO_URL,
-  iconUrl: OFFICIAL_DOG_CITY_ICON_URL,
-  touchIconUrl: OFFICIAL_DOG_CITY_TOUCH_ICON_URL,
+  logoUrl: MISSING_BRANDING_IMAGE_URL,
+  iconUrl: MISSING_BRANDING_IMAGE_URL,
+  touchIconUrl: MISSING_BRANDING_IMAGE_URL,
 };
 const DEFAULT_BRANDING = BASE_BRANDING;
 const DEFAULT_FAVICON_URL = BASE_BRANDING.iconUrl;
 const DEFAULT_TOUCH_ICON_URL = BASE_BRANDING.touchIconUrl;
+let dynamicManifestUrl = "";
 
 export function notifyBrandingChanged() {
   if (typeof window === "undefined") return;
@@ -44,6 +46,49 @@ function upsertFaviconLink(id, rel, href, type) {
   link.setAttribute("rel", rel);
   link.setAttribute("href", href || DEFAULT_FAVICON_URL);
   link.setAttribute("type", type);
+}
+
+function upsertManifestLink(branding) {
+  let link = document.getElementById("app-manifest");
+  if (!link) {
+    link = document.querySelector('link[rel="manifest"]') || document.createElement("link");
+    link.id = "app-manifest";
+    document.head.appendChild(link);
+  }
+
+  const iconUrl = branding.touchIconUrl || branding.iconUrl || branding.logoUrl || DEFAULT_FAVICON_URL;
+  const iconType = getFaviconType(iconUrl);
+  const manifest = {
+    name: branding.companyName || BASE_BRANDING.companyName,
+    short_name: "Dog City",
+    description: "Gestao operacional e financeira da Dog City Brasil.",
+    id: "/",
+    start_url: "/",
+    scope: "/",
+    display_override: ["standalone", "minimal-ui"],
+    display: "standalone",
+    background_color: "#ffffff",
+    theme_color: "#ffffff",
+    orientation: "portrait",
+    icons: [
+      {
+        src: iconUrl,
+        sizes: iconType === "image/svg+xml" ? "any" : "512x512",
+        type: iconType,
+        purpose: "any maskable",
+      },
+    ],
+  };
+
+  if (typeof Blob !== "undefined" && typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+    if (dynamicManifestUrl) URL.revokeObjectURL(dynamicManifestUrl);
+    dynamicManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" }));
+    link.setAttribute("href", dynamicManifestUrl);
+  } else {
+    link.setAttribute("href", `data:application/manifest+json;charset=utf-8,${encodeURIComponent(JSON.stringify(manifest))}`);
+  }
+
+  link.setAttribute("rel", "manifest");
 }
 
 function resolveTouchIconUrl(url) {
@@ -153,6 +198,11 @@ export function useBranding(options = {}) {
     upsertFaviconLink("app-favicon-shortcut", "shortcut icon", faviconUrl, faviconType);
     upsertFaviconLink("app-apple-touch-icon", "apple-touch-icon", touchIconUrl, touchIconType);
     upsertFaviconLink("app-apple-touch-icon-precomposed", "apple-touch-icon-precomposed", touchIconUrl, touchIconType);
+    upsertManifestLink({
+      ...branding,
+      iconUrl: faviconUrl,
+      touchIconUrl,
+    });
     upsertMeta("apple-mobile-web-app-title", branding.companyName || BASE_BRANDING.companyName);
     upsertMeta("application-name", branding.companyName || BASE_BRANDING.companyName);
     upsertMeta("theme-color", "#ffffff");

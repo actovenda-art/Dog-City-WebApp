@@ -30,7 +30,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import NotificationBell from "@/components/layout/NotificationBell";
-import { OFFICIAL_DOG_CITY_LOGO_URL, useBranding } from "@/hooks/use-branding";
+import { useBranding } from "@/hooks/use-branding";
 import { ACTIVE_UNIT_EVENT, getStoredActiveUnitId, getUnitDisplayName, resolveDogCityUnit, setStoredActiveUnitId } from "@/lib/unit-context";
 
 export default function Layout({ children, currentPageName }) {
@@ -138,7 +138,7 @@ export default function Layout({ children, currentPageName }) {
 
   const activeUnit = availableUnits.find((unit) => unit.id === activeUnitId) || null;
   const activeUnitName = activeUnit?.nome_fantasia || getUnitDisplayName(activeUnit);
-  const webappLogoUrl = franchiseLogoUrl || OFFICIAL_DOG_CITY_LOGO_URL;
+  const webappLogoUrl = franchiseLogoUrl;
 
   const menuSections = [
         {

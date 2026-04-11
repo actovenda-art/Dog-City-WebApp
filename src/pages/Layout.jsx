@@ -161,10 +161,18 @@ export default function Layout({ children, currentPageName }) {
       selectedUnitIds: [unitId],
     });
 
+    setActiveUnitId(unitId);
+    setSelectedUnitIds([unitId]);
+    setCurrentUser((current) => current ? {
+      ...current,
+      active_unit_id: unitId,
+      empresa_id: unitId,
+      selected_unit_ids: [unitId],
+      unit_selection_mode: "single",
+    } : current);
     setIsUnitPickerOpen(false);
     setIsAccessPanelOpen(false);
     setIsMobileMenuOpen(false);
-    window.location.reload();
   };
 
   const handleLoadingComplete = () => {

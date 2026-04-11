@@ -326,7 +326,6 @@ export default function ConfigurarIntegracoes() {
       primaryUnitId,
       selectedUnitIds: [primaryUnitId],
     });
-    window.location.reload();
   };
 
   if (isLoading) {

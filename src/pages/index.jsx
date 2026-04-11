@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LoaderCircle } from "lucide-react";
 import { User } from "@/api/entities";
+import { ACTIVE_UNIT_EVENT } from "@/lib/unit-context";
 import { createPageUrl, getPageNameFromPath } from "@/utils";
 
 import Layout from "./Layout.jsx";
@@ -83,7 +84,7 @@ function FullScreenAuthLoader() {
     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
       <div className="text-center text-white">
         <LoaderCircle className="w-10 h-10 mx-auto animate-spin text-orange-400" />
-        <p className="mt-4 text-sm text-slate-300">Carregando sessão...</p>
+        <p className="mt-4 text-sm text-slate-300">Carregando sessao...</p>
       </div>
     </div>
   );
@@ -156,29 +157,36 @@ function PagesContent() {
   const authEnabled = typeof User.requiresLogin === "function" ? User.requiresLogin() : false;
   const [authReady, setAuthReady] = useState(!authEnabled);
   const [currentUser, setCurrentUser] = useState(null);
+  const [unitScopeVersion, setUnitScopeVersion] = useState(0);
 
   useEffect(() => {
     let mounted = true;
 
-    async function loadCurrentUser() {
-      if (!authEnabled) {
-        if (mounted) {
-          setCurrentUser(await User.me());
-          setAuthReady(true);
-        }
-        return;
-      }
-
+    async function syncCurrentUser() {
       try {
         const user = await User.me();
         if (mounted) {
           setCurrentUser(user);
         }
       } catch (error) {
-        console.error("Erro ao carregar sessão:", error);
+        console.error("Erro ao carregar sessao:", error);
         if (mounted) {
           setCurrentUser(null);
         }
+      }
+    }
+
+    async function loadCurrentUser() {
+      if (!authEnabled) {
+        if (mounted) {
+          await syncCurrentUser();
+          setAuthReady(true);
+        }
+        return;
+      }
+
+      try {
+        await syncCurrentUser();
       } finally {
         if (mounted) {
           setAuthReady(true);
@@ -190,9 +198,8 @@ function PagesContent() {
 
     const subscription = User.onAuthStateChange?.(async () => {
       try {
-        const user = await User.me();
+        await syncCurrentUser();
         if (mounted) {
-          setCurrentUser(user);
           setAuthReady(true);
         }
       } catch (error) {
@@ -203,8 +210,18 @@ function PagesContent() {
       }
     });
 
+    const handleUnitChanged = async () => {
+      await syncCurrentUser();
+      if (mounted) {
+        setUnitScopeVersion((current) => current + 1);
+      }
+    };
+
+    window.addEventListener(ACTIVE_UNIT_EVENT, handleUnitChanged);
+
     return () => {
       mounted = false;
+      window.removeEventListener(ACTIVE_UNIT_EVENT, handleUnitChanged);
       subscription?.unsubscribe?.();
     };
   }, [authEnabled]);
@@ -214,7 +231,13 @@ function PagesContent() {
       <Route path="/" element={<Navigate to={createPageUrl("Dev_Dashboard")} replace />} />
 
       {Object.keys(PAGES).map((pageName) => {
-        const frame = <PageFrame pageName={pageName} currentPageName={currentPage} />;
+        const frame = (
+          <PageFrame
+            key={`page-frame-${pageName}-${unitScopeVersion}`}
+            pageName={pageName}
+            currentPageName={currentPage}
+          />
+        );
         let element = frame;
 
         if (pageName === "Login") {

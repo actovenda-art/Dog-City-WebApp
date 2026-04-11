@@ -533,9 +533,9 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         const unitId = payload?.empresa_id || await resolveScopedUnitId();
         if (unitId) query = query.eq('empresa_id', unitId);
       }
-      const { data, error } = await query.select().single();
+      const { data, error } = await query.select();
       if (error) throw toAppError(error, `Erro ao atualizar registro em ${table}.`);
-      return data;
+      return Array.isArray(data) ? (data[0] || { id, ...(payload || {}) }) : (data || { id, ...(payload || {}) });
     },
     delete: async (id) => {
       if (options.unitScoped) ensureSingleUnitWrite(table);
@@ -544,9 +544,9 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         const unitId = await resolveScopedUnitId();
         if (unitId) query = query.eq('empresa_id', unitId);
       }
-      const { data, error } = await query.select().single();
+      const { data, error } = await query.select();
       if (error) throw toAppError(error, `Erro ao excluir registro em ${table}.`);
-      return data;
+      return Array.isArray(data) ? (data[0] || { id }) : (data || { id });
     },
   });
 

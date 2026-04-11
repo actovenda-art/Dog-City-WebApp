@@ -46,7 +46,6 @@ export default function UnitModeGuard({ pageName, children }) {
       primaryUnitId,
       selectedUnitIds: [primaryUnitId],
     });
-    window.location.reload();
   };
 
   if (!isMergedMode) {

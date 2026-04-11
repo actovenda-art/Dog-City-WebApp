@@ -4,7 +4,7 @@ import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User } from "
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { createPageUrl, openImageViewer } from "@/utils";
 import { MISSING_BRANDING_IMAGE_URL, notifyBrandingChanged } from "@/hooks/use-branding";
-import { ACTIVE_UNIT_EVENT, getStoredActiveUnitId } from "@/lib/unit-context";
+import { ACTIVE_UNIT_EVENT, getStoredUnitSelection, setStoredUnitSelection } from "@/lib/unit-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -252,6 +252,7 @@ export default function AdministracaoSistema() {
   const [assets, setAssets] = useState([]);
   const [setupError, setSetupError] = useState("");
   const [selectedUnitId, setSelectedUnitId] = useState("");
+  const [selectedUnitIds, setSelectedUnitIds] = useState([]);
   const [brandingForm, setBrandingForm] = useState(DEFAULT_BRANDING);
   const [franchiseBrandingForm, setFranchiseBrandingForm] = useState(DEFAULT_FRANCHISE_BRANDING);
   const [unitForm, setUnitForm] = useState(cloneEmptyUnitForm());
@@ -266,6 +267,7 @@ export default function AdministracaoSistema() {
   const [isUploadingFranchiseLogo, setIsUploadingFranchiseLogo] = useState(false);
   const [isUploadingUnitAsset, setIsUploadingUnitAsset] = useState(false);
   const [unitAddressLoading, setUnitAddressLoading] = useState(false);
+  const [unitSelectionDialog, setUnitSelectionDialog] = useState({ open: false, unit: null });
 
   useEffect(() => {
     loadData();
@@ -273,10 +275,12 @@ export default function AdministracaoSistema() {
 
   useEffect(() => {
     const handleUnitChanged = (event) => {
-      const nextUnitId = event?.detail?.unitId || getStoredActiveUnitId();
-      if (nextUnitId) {
-        setSelectedUnitId(nextUnitId);
-      }
+      const nextSelection = event?.detail || getStoredUnitSelection();
+      const nextUnitId = nextSelection?.primaryUnitId || "";
+      if (!nextUnitId) return;
+
+      setSelectedUnitId(nextUnitId);
+      setSelectedUnitIds(Array.isArray(nextSelection?.selectedUnitIds) ? nextSelection.selectedUnitIds : [nextUnitId]);
     };
 
     window.addEventListener(ACTIVE_UNIT_EVENT, handleUnitChanged);
@@ -304,15 +308,27 @@ export default function AdministracaoSistema() {
       setConfigs(configData || []);
       setAssets(assetData || []);
 
-      const hasCurrentSelection = selectedUnitId && (unitRows || []).some((item) => item.id === selectedUnitId);
-      if (!hasCurrentSelection) {
-        const storedUnitId = getStoredActiveUnitId();
-        const preferredUnitId = storedUnitId && unitRows?.some((item) => item.id === storedUnitId)
-          ? storedUnitId
-          : me?.empresa_id && unitRows?.some((item) => item.id === me.empresa_id)
-            ? me.empresa_id
+      const storedSelection = getStoredUnitSelection();
+      const preferredUnitId = (storedSelection.primaryUnitId && unitRows?.some((item) => item.id === storedSelection.primaryUnitId))
+        ? storedSelection.primaryUnitId
+        : me?.empresa_id && unitRows?.some((item) => item.id === me.empresa_id)
+          ? me.empresa_id
           : unitRows?.[0]?.id || "";
-        setSelectedUnitId(preferredUnitId);
+      const rawSelectedUnitIds = Array.isArray(me?.selected_unit_ids) && me.selected_unit_ids.length > 0
+        ? me.selected_unit_ids
+        : storedSelection.selectedUnitIds;
+      const normalizedSelectedUnitIds = [...new Set([
+        preferredUnitId,
+        ...rawSelectedUnitIds.filter((unitId) => unitRows?.some((item) => item.id === unitId)),
+      ].filter(Boolean))];
+
+      setSelectedUnitId(preferredUnitId);
+      setSelectedUnitIds(normalizedSelectedUnitIds);
+      if (preferredUnitId) {
+        setStoredUnitSelection({
+          primaryUnitId: preferredUnitId,
+          selectedUnitIds: normalizedSelectedUnitIds,
+        });
       }
     } catch (error) {
       console.error("Erro ao carregar administração:", error);
@@ -394,9 +410,52 @@ export default function AdministracaoSistema() {
   const selectedUnitMeta = selectedUnit?.metadata || {};
 
   const selectedUnitPricing = useMemo(
-    () => pricingRows.filter((item) => item.empresa_id === selectedUnitId && item.ativo !== false),
-    [pricingRows, selectedUnitId]
+    () => pricingRows.filter((item) => selectedUnitIds.includes(item.empresa_id) && item.ativo !== false),
+    [pricingRows, selectedUnitIds]
   );
+
+  const isUnitUnionActive = selectedUnitIds.length > 1;
+
+  function activateSingleUnit(unitId) {
+    if (!unitId) return;
+    setStoredUnitSelection({
+      primaryUnitId: unitId,
+      selectedUnitIds: [unitId],
+    });
+    setSelectedUnitId(unitId);
+    setSelectedUnitIds([unitId]);
+    setUnitSelectionDialog({ open: false, unit: null });
+  }
+
+  function mergeUnitIntoSelection(unitId) {
+    if (!unitId) return;
+    const mergedUnitIds = [...new Set([selectedUnitId || unitId, ...selectedUnitIds, unitId].filter(Boolean))];
+    setStoredUnitSelection({
+      primaryUnitId: selectedUnitId || unitId,
+      selectedUnitIds: mergedUnitIds,
+    });
+    setSelectedUnitIds(mergedUnitIds);
+    setUnitSelectionDialog({ open: false, unit: null });
+  }
+
+  function handleUnitCardSelection(unit) {
+    if (!unit?.id) return;
+
+    if (unit.id === selectedUnitId && selectedUnitIds.length === 1) {
+      return;
+    }
+
+    if (selectedUnitIds.includes(unit.id)) {
+      setStoredUnitSelection({
+        primaryUnitId: unit.id,
+        selectedUnitIds,
+      });
+      setSelectedUnitId(unit.id);
+      return;
+    }
+
+    setUnitSelectionDialog({ open: true, unit });
+  }
 
   function openUnitModal(unit = null) {
     const metadata = unit?.metadata || {};
@@ -682,7 +741,12 @@ export default function AdministracaoSistema() {
 
       await saveUnitBrandingConfig(savedUnit, unitForm.nome_fantasia);
       await loadData();
+      setStoredUnitSelection({
+        primaryUnitId: savedUnit.id,
+        selectedUnitIds: [savedUnit.id],
+      });
       setSelectedUnitId(savedUnit.id);
+      setSelectedUnitIds([savedUnit.id]);
       setShowUnitModal(false);
       setEditingUnit(null);
       setUnitForm(cloneEmptyUnitForm());
@@ -862,13 +926,12 @@ export default function AdministracaoSistema() {
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
-              Unidade ativa no menu lateral
+              Unidade em acesso
               <div className="mt-1 font-semibold text-gray-900">{selectedUnit?.nome_fantasia || "Nenhuma unidade ativa"}</div>
+              {isUnitUnionActive ? (
+                <div className="mt-1 text-xs text-blue-600">{selectedUnitIds.length} unidades na visão unificada</div>
+              ) : null}
             </div>
-            <Button variant="outline" onClick={() => openUnitModal()}>
-              <Plus className="w-4 h-4 mr-2" />
-              Nova unidade
-            </Button>
             <Link to={createPageUrl("ConfiguracoesPrecos")}>
               <Button variant="outline">
                 <Tags className="w-4 h-4 mr-2" />
@@ -926,16 +989,29 @@ export default function AdministracaoSistema() {
                   const unitMeta = unit.metadata || {};
                   const services = Array.isArray(unitMeta.servicos_prestados) ? unitMeta.servicos_prestados : [];
                   const hasContract = Boolean(unitMeta.contrato_social_path);
+                  const isPrimarySelected = selectedUnitId === unit.id;
+                  const isMergedSelected = !isPrimarySelected && selectedUnitIds.includes(unit.id);
 
                   return (
-                    <div key={unit.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div
+                      key={unit.id}
+                      onClick={() => handleUnitCardSelection(unit)}
+                      className={isPrimarySelected
+                        ? "cursor-pointer rounded-xl border border-blue-500 bg-blue-50 p-4 shadow-sm"
+                        : isMergedSelected
+                          ? "cursor-pointer rounded-xl border border-sky-300 bg-sky-50 p-4"
+                          : "cursor-pointer rounded-xl border border-gray-200 bg-gray-50 p-4 transition hover:border-gray-300 hover:bg-white"}
+                    >
                       <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="font-semibold text-gray-900">{unit.nome_fantasia}</p>
                             <Badge className={getStatusBadgeClass(unit.status)}>{unit.status || "ativa"}</Badge>
-                            {selectedUnitId === unit.id && (
-                              <Badge className="bg-blue-100 text-blue-700">Unidade selecionada</Badge>
+                            {isPrimarySelected && (
+                              <Badge className="bg-blue-100 text-blue-700">Em acesso</Badge>
+                            )}
+                            {isMergedSelected && (
+                              <Badge className="bg-sky-100 text-sky-700">Na visão unificada</Badge>
                             )}
                           </div>
 
@@ -978,18 +1054,18 @@ export default function AdministracaoSistema() {
                         </div>
 
                         <div className="flex flex-col gap-2 xl:min-w-[180px]">
-                          <Button variant="outline" onClick={() => openUnitModal(unit)}>
+                          <Button variant="outline" onClick={(event) => { event.stopPropagation(); openUnitModal(unit); }}>
                             <Pencil className="w-4 h-4 mr-2" />
                             Editar ficha
                           </Button>
                           {unitMeta.logo_url ? (
-                            <Button variant="outline" onClick={() => openImageViewer(unitMeta.logo_url, `Logo ${unit.nome_fantasia}`)}>
+                            <Button variant="outline" onClick={(event) => { event.stopPropagation(); openImageViewer(unitMeta.logo_url, `Logo ${unit.nome_fantasia}`); }}>
                               <Image className="w-4 h-4 mr-2" />
                               Ver logo
                             </Button>
                           ) : null}
                           {hasContract ? (
-                            <Button variant="outline" onClick={() => handleOpenContract(unitMeta.contrato_social_path)}>
+                            <Button variant="outline" onClick={(event) => { event.stopPropagation(); handleOpenContract(unitMeta.contrato_social_path); }}>
                               <FileText className="w-4 h-4 mr-2" />
                               Ver contrato social
                             </Button>
@@ -1202,6 +1278,44 @@ export default function AdministracaoSistema() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog
+        open={unitSelectionDialog.open}
+        onOpenChange={(open) => setUnitSelectionDialog((current) => ({ ...current, open, unit: open ? current.unit : null }))}
+      >
+        <DialogContent className="max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Selecionar unidade</DialogTitle>
+            <DialogDescription>
+              Deseja acessar esta unidade ou adicionar a seleção?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm font-semibold text-gray-900">{unitSelectionDialog.unit?.nome_fantasia || "Unidade"}</p>
+            <p className="mt-1 text-xs text-gray-500">{unitSelectionDialog.unit?.razao_social || "Dog City Brasil"}</p>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setUnitSelectionDialog({ open: false, unit: null })}>
+              Cancelar
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => mergeUnitIntoSelection(unitSelectionDialog.unit?.id)}
+              disabled={!selectedUnitId}
+            >
+              Unir
+            </Button>
+            <Button
+              onClick={() => activateSingleUnit(unitSelectionDialog.unit?.id)}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Acessar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showProfileModal} onOpenChange={setShowProfileModal}>
         <DialogContent className="max-w-[640px]">

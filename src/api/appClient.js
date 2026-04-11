@@ -3,7 +3,14 @@
 // - Otherwise fall back to a lightweight local mock (localStorage) so the app remains functional.
 
 import { createClient } from '@supabase/supabase-js';
-import { getStoredActiveUnitId, resolveDogCityUnit, setStoredActiveUnitId } from '@/lib/unit-context';
+import {
+  clearStoredActiveUnitId,
+  getStoredActiveUnitId,
+  getStoredSelectedUnitIds,
+  isStoredUnitUnionMode,
+  resolveDogCityUnit,
+  setStoredUnitSelection,
+} from '@/lib/unit-context';
 
 const STORAGE_PREFIX = 'local_app_client_';
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -110,6 +117,18 @@ function getAppOrigin() {
   return SUPABASE_URL;
 }
 
+function getSelectedScopedUnitIds() {
+  const selectedUnitIds = getStoredSelectedUnitIds();
+  if (selectedUnitIds.length > 0) return selectedUnitIds;
+  const activeUnitId = getStoredActiveUnitId();
+  return activeUnitId ? [activeUnitId] : [];
+}
+
+function ensureSingleUnitWrite(table) {
+  if (!isStoredUnitUnionMode()) return;
+  throw new Error(`Seleção unificada ativa. Acesse apenas uma unidade para alterar ${table}.`);
+}
+
 function withActiveUnitHeader(fetchImpl) {
   return async (input, init = {}) => {
     const headers = new Headers(init?.headers || {});
@@ -125,34 +144,46 @@ function getMockScopedUnitId() {
   return getStoredActiveUnitId() || 'empresa_demo';
 }
 
+function getMockScopedUnitIds() {
+  const selectedUnitIds = getSelectedScopedUnitIds();
+  return selectedUnitIds.length > 0 ? selectedUnitIds : ['empresa_demo'];
+}
+
 function createMockEntity(name, options = {}) {
   const { unitScoped = false } = options;
 
   return {
     list: (sort, limit) => Promise.resolve(
       readStorage(name)
-        .filter((item) => !unitScoped || !item.empresa_id || item.empresa_id === getMockScopedUnitId())
+        .filter((item) => !unitScoped || !item.empresa_id || getMockScopedUnitIds().includes(item.empresa_id))
         .slice(0, limit || undefined)
     ),
     listAll: (sort, limit) => Promise.resolve(
       readStorage(name)
-        .filter((item) => !unitScoped || !item.empresa_id || item.empresa_id === getMockScopedUnitId())
+        .filter((item) => !unitScoped || !item.empresa_id || getMockScopedUnitIds().includes(item.empresa_id))
         .slice(0, limit || undefined)
     ),
     filter: (query = {}, sort, limit) => {
       const scopedQuery = { ...(query || {}) };
-      if (unitScoped && !Object.prototype.hasOwnProperty.call(scopedQuery, 'empresa_id')) {
-        scopedQuery.empresa_id = getMockScopedUnitId();
-      }
       return Promise.resolve(
         readStorage(name)
-        .filter((item) => Object.keys(scopedQuery || {}).every((key) => {
-          return scopedQuery[key] === null || scopedQuery[key] === undefined || item[key] === scopedQuery[key];
-        }))
+        .filter((item) => {
+          if (unitScoped && !Object.prototype.hasOwnProperty.call(scopedQuery, 'empresa_id')) {
+            const selectedUnitIds = getMockScopedUnitIds();
+            if (item.empresa_id && !selectedUnitIds.includes(item.empresa_id)) {
+              return false;
+            }
+          }
+
+          return Object.keys(scopedQuery || {}).every((key) => (
+            scopedQuery[key] === null || scopedQuery[key] === undefined || item[key] === scopedQuery[key]
+          ));
+        })
         .slice(0, limit || undefined)
       );
     },
     create: (data) => {
+      if (unitScoped) ensureSingleUnitWrite(name);
       const items = readStorage(name);
       const item = { ...data };
       if (unitScoped && !item.empresa_id) item.empresa_id = getMockScopedUnitId();
@@ -163,6 +194,7 @@ function createMockEntity(name, options = {}) {
       return Promise.resolve(item);
     },
     update: (id, data) => {
+      if (unitScoped) ensureSingleUnitWrite(name);
       const items = readStorage(name);
       const idx = items.findIndex((item) => item.id === id);
       if (idx === -1) return Promise.reject(new Error('Not found'));
@@ -171,6 +203,7 @@ function createMockEntity(name, options = {}) {
       return Promise.resolve(items[idx]);
     },
     delete: (id) => {
+      if (unitScoped) ensureSingleUnitWrite(name);
       const items = readStorage(name);
       const idx = items.findIndex((item) => item.id === id);
       if (idx === -1) return Promise.reject(new Error('Not found'));
@@ -292,11 +325,14 @@ const createMockAuth = () => {
     getSession: async () => ({ user: currentUser }),
     me: async () => {
       const activeUnitId = getStoredActiveUnitId() || currentUser.empresa_id;
+      const selectedUnitIds = getSelectedScopedUnitIds();
       return {
         ...currentUser,
         assigned_empresa_id: currentUser.empresa_id,
         allowed_unit_ids: [currentUser.empresa_id],
         active_unit_id: activeUnitId,
+        selected_unit_ids: selectedUnitIds,
+        unit_selection_mode: selectedUnitIds.length > 1 ? 'merged' : 'single',
         empresa_id: activeUnitId,
       };
     },
@@ -305,7 +341,7 @@ const createMockAuth = () => {
     exchangeCodeForSession: async () => ({ session: { user: currentUser }, user: currentUser }),
     onAuthStateChange: () => ({ unsubscribe() {} }),
     logout: async () => {
-      setStoredActiveUnitId('');
+      clearStoredActiveUnitId();
       return { ok: true };
     },
   };
@@ -365,18 +401,29 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     const profile = await findUserProfile(authUser);
     const allowedUnitIds = await resolveAllowedUnitIds(authUser, profile);
 
+    const storedSelection = getStoredSelectedUnitIds().filter((unitId) => allowedUnitIds.includes(unitId));
     const storedUnitId = getStoredActiveUnitId();
     if (storedUnitId && allowedUnitIds.includes(storedUnitId)) {
+      setStoredUnitSelection({
+        primaryUnitId: storedUnitId,
+        selectedUnitIds: storedSelection.length > 0 ? storedSelection : [storedUnitId],
+      });
       return storedUnitId;
     }
 
     if (preferredUnitId && allowedUnitIds.includes(preferredUnitId)) {
-      setStoredActiveUnitId(preferredUnitId);
+      setStoredUnitSelection({
+        primaryUnitId: preferredUnitId,
+        selectedUnitIds: [preferredUnitId],
+      });
       return preferredUnitId;
     }
 
     if (cachedDefaultUnitId && allowedUnitIds.includes(cachedDefaultUnitId)) {
-      setStoredActiveUnitId(cachedDefaultUnitId);
+      setStoredUnitSelection({
+        primaryUnitId: cachedDefaultUnitId,
+        selectedUnitIds: [cachedDefaultUnitId],
+      });
       return cachedDefaultUnitId;
     }
 
@@ -389,7 +436,10 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const resolvedUnitId = defaultUnit?.id || scopedUnits?.[0]?.id || allowedUnitIds[0] || profile?.empresa_id || '';
       if (resolvedUnitId) {
         cachedDefaultUnitId = resolvedUnitId;
-        setStoredActiveUnitId(resolvedUnitId);
+        setStoredUnitSelection({
+          primaryUnitId: resolvedUnitId,
+          selectedUnitIds: [resolvedUnitId],
+        });
       }
       return resolvedUnitId;
     } catch (error) {
@@ -402,8 +452,10 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     list: async (sort, limit) => {
       let query = supabase.from(table).select('*');
       if (options.unitScoped) {
-        const unitId = await resolveScopedUnitId();
-        if (unitId) query = query.eq('empresa_id', unitId);
+        const unitIds = getSelectedScopedUnitIds();
+        const unitId = unitIds[0] || await resolveScopedUnitId();
+        if (unitIds.length > 1) query = query.in('empresa_id', unitIds);
+        else if (unitId) query = query.eq('empresa_id', unitId);
       }
       if (sort && typeof sort === 'string') {
         const field = sort.replace(/^-/, '');
@@ -422,8 +474,10 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       while (results.length < maxRows) {
         let query = supabase.from(table).select('*');
         if (options.unitScoped) {
-          const unitId = await resolveScopedUnitId();
-          if (unitId) query = query.eq('empresa_id', unitId);
+          const unitIds = getSelectedScopedUnitIds();
+          const unitId = unitIds[0] || await resolveScopedUnitId();
+          if (unitIds.length > 1) query = query.in('empresa_id', unitIds);
+          else if (unitId) query = query.eq('empresa_id', unitId);
         }
         if (sort && typeof sort === 'string') {
           const field = sort.replace(/^-/, '');
@@ -447,8 +501,10 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       let query = supabase.from(table).select('*');
       if (queryObj && Object.keys(queryObj).length) query = query.match(queryObj);
       if (options.unitScoped && !Object.prototype.hasOwnProperty.call(queryObj || {}, 'empresa_id')) {
-        const unitId = await resolveScopedUnitId();
-        if (unitId) query = query.eq('empresa_id', unitId);
+        const unitIds = getSelectedScopedUnitIds();
+        const unitId = unitIds[0] || await resolveScopedUnitId();
+        if (unitIds.length > 1) query = query.in('empresa_id', unitIds);
+        else if (unitId) query = query.eq('empresa_id', unitId);
       }
       if (sort && typeof sort === 'string') {
         const field = sort.replace(/^-/, '');
@@ -461,6 +517,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       return data || [];
     },
     create: async (payload) => {
+      if (options.unitScoped) ensureSingleUnitWrite(table);
       const insertPayload = { ...(payload || {}) };
       if (options.unitScoped && !insertPayload.empresa_id) {
         insertPayload.empresa_id = await resolveScopedUnitId();
@@ -470,6 +527,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       return data;
     },
     update: async (id, payload) => {
+      if (options.unitScoped) ensureSingleUnitWrite(table);
       let query = supabase.from(table).update(payload).eq('id', id);
       if (options.unitScoped) {
         const unitId = payload?.empresa_id || await resolveScopedUnitId();
@@ -480,6 +538,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       return data;
     },
     delete: async (id) => {
+      if (options.unitScoped) ensureSingleUnitWrite(table);
       let query = supabase.from(table).delete().eq('id', id);
       if (options.unitScoped) {
         const unitId = await resolveScopedUnitId();
@@ -867,11 +926,23 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const mergedUser = profile ? { ...authUser, ...profile } : authUser;
       const allowedUnitIds = await resolveAllowedUnitIds(authUser, mergedUser);
       const activeUnitId = await resolveScopedUnitId(getStoredActiveUnitId() || mergedUser?.empresa_id || '');
+      const selectedUnitIds = getStoredSelectedUnitIds().filter((unitId) => allowedUnitIds.includes(unitId));
+      const normalizedSelectedUnitIds = selectedUnitIds.length > 0
+        ? [...new Set([activeUnitId, ...selectedUnitIds].filter(Boolean))]
+        : [activeUnitId].filter(Boolean);
+
+      setStoredUnitSelection({
+        primaryUnitId: activeUnitId || mergedUser?.empresa_id || '',
+        selectedUnitIds: normalizedSelectedUnitIds,
+      });
+
       const sessionUser = {
         ...mergedUser,
         assigned_empresa_id: mergedUser?.empresa_id || null,
         allowed_unit_ids: allowedUnitIds,
         active_unit_id: activeUnitId || mergedUser?.empresa_id || null,
+        selected_unit_ids: normalizedSelectedUnitIds,
+        unit_selection_mode: normalizedSelectedUnitIds.length > 1 ? 'merged' : 'single',
         empresa_id: activeUnitId || mergedUser?.empresa_id || null,
       };
       supabaseAuth.currentUser = sessionUser;
@@ -937,7 +1008,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       supabaseAuth.currentUser = null;
-      setStoredActiveUnitId('');
+      clearStoredActiveUnitId();
       return { ok: true };
     },
     list: async (sort, limit) => {

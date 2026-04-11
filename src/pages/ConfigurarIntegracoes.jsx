@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
+import { ACTIVE_UNIT_EVENT, getStoredUnitSelection, setStoredUnitSelection } from "@/lib/unit-context";
 import {
   AlertCircle,
   Building2,
@@ -100,9 +101,19 @@ export default function ConfigurarIntegracoes() {
     crt: null,
     key: null,
   });
+  const [unitSelection, setUnitSelectionState] = useState(() => getStoredUnitSelection());
 
   useEffect(() => {
     loadConfig();
+  }, []);
+
+  useEffect(() => {
+    const handleSelectionChanged = (event) => {
+      setUnitSelectionState(event?.detail || getStoredUnitSelection());
+    };
+
+    window.addEventListener(ACTIVE_UNIT_EVENT, handleSelectionChanged);
+    return () => window.removeEventListener(ACTIVE_UNIT_EVENT, handleSelectionChanged);
   }, []);
 
   const loadConfig = async () => {
@@ -305,11 +316,56 @@ export default function ConfigurarIntegracoes() {
   const canUseIntegration = Boolean(config?.id);
   const isUsingGlobalFallback = configSource === "global" && Boolean(currentUser?.empresa_id);
   const statusMeta = getStatusMeta(config?.sync_status);
+  const isUnitUnionActive = (unitSelection?.selectedUnitIds || []).length > 1;
+
+  const exitUnionMode = () => {
+    const primaryUnitId = unitSelection?.primaryUnitId || currentUser?.empresa_id || "";
+    if (!primaryUnitId) return;
+
+    setStoredUnitSelection({
+      primaryUnitId,
+      selectedUnitIds: [primaryUnitId],
+    });
+    window.location.reload();
+  };
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600" />
+      </div>
+    );
+  }
+
+  if (isUnitUnionActive) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
+        <div className="mx-auto max-w-3xl">
+          <Card className="border-amber-200 bg-white">
+            <CardHeader className="border-b bg-amber-50">
+              <CardTitle className="flex items-center gap-2 text-amber-800">
+                <AlertCircle className="h-5 w-5" />
+                Integrações bloqueadas na visão unificada
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 p-6">
+              <p className="text-sm text-gray-700">
+                As integrações funcionam por unidade e podem conflitar quando duas ou mais unidades estão unidas.
+                Acesse apenas uma unidade para configurar Banco Inter, credenciais e sincronizações.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(unitSelection?.selectedUnitIds || []).map((unitId) => (
+                  <Badge key={unitId} variant="outline">{unitId}</Badge>
+                ))}
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={exitUnionMode} className="bg-blue-600 hover:bg-blue-700 text-white">
+                  Acessar apenas a unidade atual
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }

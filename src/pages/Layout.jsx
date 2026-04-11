@@ -1,10 +1,9 @@
-
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Empresa, User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl, getPageNameFromPath } from "@/utils";
-import { 
+import {
   LogOut,
   Shield,
   Database,
@@ -24,35 +23,53 @@ import {
   Settings,
   Dog,
   Wallet,
-  Truck,
-  Building2
+  Building2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import NotificationBell from "@/components/layout/NotificationBell";
-import { useBranding } from "@/hooks/use-branding";
-import { ACTIVE_UNIT_EVENT, getStoredActiveUnitId, getUnitDisplayName, resolveDogCityUnit, setStoredActiveUnitId } from "@/lib/unit-context";
+import {
+  ACTIVE_UNIT_EVENT,
+  getStoredUnitSelection,
+  getUnitDisplayName,
+  resolveDogCityUnit,
+  setStoredUnitSelection,
+} from "@/lib/unit-context";
+
+function getUserNickname(user) {
+  const nickname = user?.contact_nickname || user?.display_name || user?.nickname || "";
+  if (nickname) return nickname;
+  if (user?.full_name) return user.full_name.split(" ")[0];
+  return user?.email?.split("@")?.[0] || "Usuário";
+}
+
+function getUnitLogo(unit) {
+  return unit?.metadata?.logo_url || "";
+}
 
 export default function Layout({ children, currentPageName }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [availableUnits, setAvailableUnits] = useState([]);
   const [activeUnitId, setActiveUnitId] = useState("");
+  const [selectedUnitIds, setSelectedUnitIds] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isAccessPanelOpen, setIsAccessPanelOpen] = useState(false);
+  const [isUnitPickerOpen, setIsUnitPickerOpen] = useState(false);
   const brandTitleClass = "font-brand text-gray-900";
-  const { companyName: brandName, logoUrl: franchiseLogoUrl, isResolved: isBrandingResolved } = useBranding({ variant: "base" });
   const showUnitSelector = availableUnits.length > 1;
+  const isUnitUnionActive = selectedUnitIds.length > 1;
   const [expandedSections, setExpandedSections] = useState({
     operacional: false,
     financeiro: false,
     orcamentos: false,
     relatorios: false,
-    sistema: false
+    sistema: false,
   });
 
   const toggleSection = (section) => {
-    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
   useEffect(() => {
@@ -61,14 +78,17 @@ export default function Layout({ children, currentPageName }) {
 
   useEffect(() => {
     const handleUnitChanged = (event) => {
-      const nextUnitId = event?.detail?.unitId || getStoredActiveUnitId();
-      if (!nextUnitId) return;
+      const nextSelection = event?.detail || getStoredUnitSelection();
+      const nextUnitId = nextSelection?.primaryUnitId || "";
 
       setActiveUnitId(nextUnitId);
+      setSelectedUnitIds(Array.isArray(nextSelection?.selectedUnitIds) ? nextSelection.selectedUnitIds : []);
       setCurrentUser((current) => current ? {
         ...current,
         active_unit_id: nextUnitId,
         empresa_id: nextUnitId,
+        selected_unit_ids: Array.isArray(nextSelection?.selectedUnitIds) ? nextSelection.selectedUnitIds : [],
+        unit_selection_mode: nextSelection?.mode || "single",
       } : current);
     };
 
@@ -83,26 +103,39 @@ export default function Layout({ children, currentPageName }) {
 
       if (user) {
         const unitRows = await Empresa.list("-created_date", 200);
-        const baseUnit = resolveDogCityUnit(unitRows || []);
         const allowedUnitIds = Array.isArray(user.allowed_unit_ids) && user.allowed_unit_ids.length > 0
           ? user.allowed_unit_ids
           : [user.empresa_id].filter(Boolean);
-        const storedUnitId = getStoredActiveUnitId();
+        const storedSelection = getStoredUnitSelection();
         const scopedUnits = (unitRows || []).filter((item) => allowedUnitIds.length === 0 || allowedUnitIds.includes(item.id));
-        const resolvedUnitId = (storedUnitId && scopedUnits.some((item) => item.id === storedUnitId))
-          ? storedUnitId
+        const resolvedUnitId = (storedSelection.primaryUnitId && scopedUnits.some((item) => item.id === storedSelection.primaryUnitId))
+          ? storedSelection.primaryUnitId
           : (resolveDogCityUnit(scopedUnits)?.id || scopedUnits?.[0]?.id || user.empresa_id || "");
+        const resolvedSelectedUnitIds = (Array.isArray(user.selected_unit_ids) && user.selected_unit_ids.length > 0
+          ? user.selected_unit_ids
+          : storedSelection.selectedUnitIds
+        ).filter((unitId) => scopedUnits.some((unit) => unit.id === unitId));
+        const normalizedSelectedUnitIds = [...new Set([
+          resolvedUnitId,
+          ...(resolvedSelectedUnitIds.length > 0 ? resolvedSelectedUnitIds : [resolvedUnitId]),
+        ].filter(Boolean))];
 
         if (resolvedUnitId) {
-          setStoredActiveUnitId(resolvedUnitId);
+          setStoredUnitSelection({
+            primaryUnitId: resolvedUnitId,
+            selectedUnitIds: normalizedSelectedUnitIds,
+          });
         }
 
         setAvailableUnits(scopedUnits);
         setActiveUnitId(resolvedUnitId);
+        setSelectedUnitIds(normalizedSelectedUnitIds);
         resolvedUser = {
           ...user,
           allowed_unit_ids: allowedUnitIds,
           active_unit_id: resolvedUnitId || null,
+          selected_unit_ids: normalizedSelectedUnitIds,
+          unit_selection_mode: normalizedSelectedUnitIds.length > 1 ? "merged" : "single",
           empresa_id: resolvedUnitId || user.empresa_id || null,
         };
       }
@@ -119,15 +152,16 @@ export default function Layout({ children, currentPageName }) {
     window.location.reload();
   };
 
-  const handleUnitChange = (value) => {
-    if (!value || value === activeUnitId) return;
-    setStoredActiveUnitId(value);
-    setActiveUnitId(value);
-    setCurrentUser((current) => current ? {
-      ...current,
-      active_unit_id: value,
-      empresa_id: value,
-    } : current);
+  const handleUnitChange = (unitId) => {
+    if (!unitId) return;
+
+    setStoredUnitSelection({
+      primaryUnitId: unitId,
+      selectedUnitIds: [unitId],
+    });
+
+    setIsUnitPickerOpen(false);
+    setIsAccessPanelOpen(false);
     setIsMobileMenuOpen(false);
     window.location.reload();
   };
@@ -138,69 +172,254 @@ export default function Layout({ children, currentPageName }) {
 
   const activeUnit = availableUnits.find((unit) => unit.id === activeUnitId) || null;
   const activeUnitName = activeUnit?.nome_fantasia || getUnitDisplayName(activeUnit);
-  const webappLogoUrl = franchiseLogoUrl;
-  const showWebappLogo = Boolean(isBrandingResolved && webappLogoUrl);
+  const activeUnitLogo = getUnitLogo(activeUnit);
+  const selectedUnits = useMemo(
+    () => availableUnits.filter((unit) => selectedUnitIds.includes(unit.id)),
+    [availableUnits, selectedUnitIds],
+  );
+  const userNickname = getUserNickname(currentUser);
 
   const menuSections = [
+    {
+      id: "operacional",
+      title: "Operacional",
+      icon: Dog,
+      items: [
+        { title: "Registrador", url: createPageUrl("Registrador"), icon: ClipboardCheck },
+        { title: "Agendamentos", url: createPageUrl("Agendamentos"), icon: Calendar },
+        { title: "Serviços Prestados", url: createPageUrl("ServicosPrestados"), icon: ClipboardCheck },
+        { title: "Cadastro", url: createPageUrl("Cadastro"), icon: UserPlus },
+        { title: "Planos Recorrentes", url: createPageUrl("PlanosConfig"), icon: CreditCard },
+      ],
+    },
+    {
+      id: "financeiro",
+      title: "Financeiro",
+      icon: Wallet,
+      items: [
+        { title: "Transações", url: createPageUrl("Movimentacoes"), icon: DollarSign },
+        { title: "Receitas", url: createPageUrl("Receitas"), icon: TrendingUp },
+        { title: "Despesas", url: createPageUrl("Despesas"), icon: TrendingUp },
+        { title: "Contas a Pagar", url: createPageUrl("ContasPagar"), icon: DollarSign },
+        { title: "Contas a Receber", url: createPageUrl("ContasReceber"), icon: TrendingUp },
+      ],
+    },
+    {
+      id: "orcamentos",
+      title: "Orçamentos",
+      icon: FileText,
+      items: [
+        { title: "Novo Orçamento", url: createPageUrl("Orcamentos"), icon: FileText },
+        { title: "Histórico", url: createPageUrl("HistoricoOrcamentos"), icon: FileText },
+        { title: "Config. Preços", url: createPageUrl("ConfiguracoesPrecos"), icon: Settings },
+      ],
+    },
+    {
+      id: "relatorios",
+      title: "Relatórios",
+      icon: BarChart3,
+      items: [
+        { title: "Cockpit", url: createPageUrl("Cockpit"), icon: PieChart },
+        { title: "Controle Gerencial", url: createPageUrl("ControleGerencial"), icon: BarChart3 },
+        { title: "Relatórios Cães", url: createPageUrl("RelatoriosCaes"), icon: BarChart3 },
+      ],
+    },
+    {
+      id: "sistema",
+      title: "Sistema",
+      icon: Settings,
+      items: [
+        { title: "Gestão de Usuários", url: createPageUrl("Dev_Dashboard"), icon: Shield },
+        { title: "Administração", url: createPageUrl("AdministracaoSistema"), icon: Building2 },
+        { title: "Backup", url: createPageUrl("Backup"), icon: Database },
+        { title: "Tarefas", url: createPageUrl("PedidosInternos"), icon: FileText },
         {
-          id: "operacional",
-          title: "Operacional",
-          icon: Dog,
-          items: [
-            { title: "Registrador", url: createPageUrl("Registrador"), icon: ClipboardCheck },
-            { title: "Agendamentos", url: createPageUrl("Agendamentos"), icon: Calendar },
-            { title: "Serviços Prestados", url: createPageUrl("ServicosPrestados"), icon: ClipboardCheck },
-            { title: "Cadastro", url: createPageUrl("Cadastro"), icon: UserPlus },
-            { title: "Planos Recorrentes", url: createPageUrl("PlanosConfig"), icon: CreditCard },
-          ]
-        },
-        {
-          id: "financeiro",
-          title: "Financeiro",
-          icon: Wallet,
-          items: [
-            { title: "Transações", url: createPageUrl("Movimentacoes"), icon: DollarSign },
-            { title: "Receitas", url: createPageUrl("Receitas"), icon: TrendingUp },
-            { title: "Despesas", url: createPageUrl("Despesas"), icon: TrendingUp },
-            { title: "Contas a Pagar", url: createPageUrl("ContasPagar"), icon: DollarSign },
-            { title: "Contas a Receber", url: createPageUrl("ContasReceber"), icon: TrendingUp },
-          ]
-        },
-        {
-          id: "orcamentos",
-          title: "Orçamentos",
-          icon: FileText,
-          items: [
-            { title: "Novo Orçamento", url: createPageUrl("Orcamentos"), icon: FileText },
-            { title: "Histórico", url: createPageUrl("HistoricoOrcamentos"), icon: FileText },
-            { title: "Config. Preços", url: createPageUrl("ConfiguracoesPrecos"), icon: Settings },
-          ]
-        },
-        {
-          id: "relatorios",
-          title: "Relatórios",
-          icon: BarChart3,
-          items: [
-            { title: "Cockpit", url: createPageUrl("Cockpit"), icon: PieChart },
-            { title: "Controle Gerencial", url: createPageUrl("ControleGerencial"), icon: BarChart3 },
-            { title: "Relatórios Cães", url: createPageUrl("RelatoriosCaes"), icon: BarChart3 },
-          ]
-        },
-        {
-          id: "sistema",
-          title: "Sistema",
+          title: "Integrações",
+          url: createPageUrl("ConfigurarIntegracoes"),
           icon: Settings,
-          items: [
-            { title: "Gestão de Usuários", url: createPageUrl("Dev_Dashboard"), icon: Shield },
-            { title: "Administração", url: createPageUrl("AdministracaoSistema"), icon: Building2 },
-            { title: "Backup", url: createPageUrl("Backup"), icon: Database },
-            { title: "Tarefas", url: createPageUrl("PedidosInternos"), icon: FileText },
-            { title: "Integrações", url: createPageUrl("ConfigurarIntegracoes"), icon: Settings },
-          ]
-        }
-      ];
+          disabled: isUnitUnionActive,
+        },
+      ],
+    },
+  ];
 
-  // Show loading screen on initial load
+  const renderAccessPanel = ({ mobile = false } = {}) => (
+    <div className={mobile ? "border-t border-gray-200 p-4" : "border-t border-gray-200 p-4"}>
+      <button
+        type="button"
+        onClick={() => setIsAccessPanelOpen((current) => !current)}
+        className="flex w-full items-center gap-3 rounded-xl bg-gray-50 px-3 py-3 text-left transition hover:bg-gray-100"
+      >
+        <span className="h-px flex-1 bg-gray-200" />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.32em] text-gray-500">Acessos</span>
+        <ChevronDown className={`h-4 w-4 text-gray-500 transition ${isAccessPanelOpen ? "rotate-180" : ""}`} />
+        <span className="h-px flex-1 bg-gray-200" />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {isAccessPanelOpen && currentUser ? (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="space-y-3 pt-3">
+              <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">Unidade em acesso</p>
+                    <p className="mt-2 truncate text-sm font-semibold text-gray-900">{activeUnitName}</p>
+                    {isUnitUnionActive ? (
+                      <p className="mt-1 text-xs text-blue-600">
+                        Visão unificada ativa com {selectedUnitIds.length} unidades selecionadas.
+                      </p>
+                    ) : null}
+                  </div>
+                  {showUnitSelector ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setIsUnitPickerOpen((current) => !current)}>
+                      Alterar
+                    </Button>
+                  ) : null}
+                </div>
+
+                <AnimatePresence initial={false}>
+                  {isUnitPickerOpen && showUnitSelector ? (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-3 space-y-2">
+                        {availableUnits.map((unit) => {
+                          const isCurrent = unit.id === activeUnitId;
+                          return (
+                            <button
+                              key={unit.id}
+                              type="button"
+                              onClick={() => handleUnitChange(unit.id)}
+                              className={isCurrent
+                                ? "flex w-full items-center justify-between rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-left"
+                                : "flex w-full items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-left transition hover:border-gray-300 hover:bg-white"}
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-gray-900">{unit.nome_fantasia}</p>
+                                <p className="truncate text-xs text-gray-500">{unit.razao_social || "Unidade Dog City Brasil"}</p>
+                              </div>
+                              {isCurrent ? (
+                                <span className="rounded-full bg-blue-100 px-2 py-1 text-[11px] font-semibold text-blue-700">Atual</span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">Conta conectada</p>
+                <p className="mt-2 text-sm font-semibold text-gray-900">{userNickname}</p>
+                <p className="mt-1 text-xs text-gray-500">{currentUser.full_name || "Nome não informado"}</p>
+                <p className="mt-1 truncate text-xs text-gray-500">{currentUser.email}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLogout}
+                  className="mt-4 w-full border-orange-300 text-orange-600 hover:bg-orange-50"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Logout
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+
+  const renderMenuSections = ({ mobile = false } = {}) => (
+    <nav className={mobile ? "p-3 space-y-1" : "flex-1 overflow-y-auto p-3 space-y-1"}>
+      {menuSections.map((section) => {
+        const SectionIcon = section.icon;
+        const isExpanded = expandedSections[section.id];
+
+        return (
+          <div key={section.id} className="mb-1">
+            <button
+              type="button"
+              onClick={() => toggleSection(section.id)}
+              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-gray-600 transition-colors hover:bg-gray-100"
+            >
+              <div className="flex items-center gap-2">
+                <SectionIcon className="h-4 w-4" />
+                <span className="text-xs font-semibold uppercase tracking-wider">{section.title}</span>
+              </div>
+              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </button>
+
+            <AnimatePresence initial={false}>
+              {isExpanded ? (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="mt-1 space-y-0.5 pl-2">
+                    {section.items.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = currentPageName === getPageNameFromPath(item.url);
+                      const baseClass = isActive
+                        ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm"
+                        : "text-gray-700 hover:bg-orange-50 hover:text-orange-600";
+
+                      if (item.disabled) {
+                        return (
+                          <div
+                            key={item.title}
+                            className="flex cursor-not-allowed items-center gap-3 rounded-lg border border-dashed border-amber-200 bg-amber-50 px-3 py-2 text-amber-700"
+                            title="Integrações ficam bloqueadas com unidades unificadas."
+                          >
+                            <Icon className="h-4 w-4" />
+                            <div className="min-w-0">
+                              <span className="block text-sm font-medium">{item.title}</span>
+                              <span className="block text-[11px]">Bloqueado na visão unificada</span>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <Link
+                          key={item.title}
+                          to={item.url}
+                          onClick={() => {
+                            if (mobile) setIsMobileMenuOpen(false);
+                          }}
+                          className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${baseClass}`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          <span className="text-sm">{item.title}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
+        );
+      })}
+    </nav>
+  );
+
   if (isLoading || showLoadingScreen) {
     return (
       <AnimatePresence>
@@ -213,254 +432,75 @@ export default function Layout({ children, currentPageName }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
-      {/* Sidebar Desktop */}
-      <aside className="hidden md:flex md:flex-col w-64 bg-white border-r border-gray-200 fixed h-screen">
-        {/* Logo */}
-        <div className="p-6 border-b border-gray-200">
+      <aside className="hidden md:flex md:fixed md:h-screen md:w-64 md:flex-col border-r border-gray-200 bg-white">
+        <div className="border-b border-gray-200 p-6">
           <div className="flex items-center gap-3">
-            {showWebappLogo ? (
-              <img 
-                src={webappLogoUrl}
-                alt={brandName}
+            {activeUnitLogo ? (
+              <img
+                src={activeUnitLogo}
+                alt={activeUnitName}
                 className="h-12 w-12 rounded-2xl border border-gray-100 bg-white p-1 object-contain shadow-sm"
               />
             ) : (
               <div className="h-12 w-12 rounded-2xl border border-gray-100 bg-white shadow-sm" />
             )}
             <div className="min-w-0">
-              <h1 className={`${brandTitleClass} truncate text-2xl leading-none`}>{brandName}</h1>
-              <p className="mt-1 truncate text-sm font-medium text-gray-600">{activeUnitName}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Menu Items */}
-                    <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-                      {menuSections.map((section) => {
-                        const SectionIcon = section.icon;
-                        const isExpanded = expandedSections[section.id];
-
-                        return (
-                          <div key={section.id} className="mb-1">
-                            <button
-                              onClick={() => toggleSection(section.id)}
-                              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
-                            >
-                              <div className="flex items-center gap-2">
-                                <SectionIcon className="w-4 h-4" />
-                                <span className="text-xs font-semibold uppercase tracking-wider">{section.title}</span>
-                              </div>
-                              {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                            </button>
-
-                            <AnimatePresence>
-                              {isExpanded && (
-                                <motion.div
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: "auto", opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  transition={{ duration: 0.2 }}
-                                  className="overflow-hidden"
-                                >
-                                  <div className="pl-2 space-y-0.5 mt-1">
-                                    {section.items.map((item) => {
-                                      const Icon = item.icon;
-                                      const isActive = currentPageName === getPageNameFromPath(item.url);
-
-                                      return (
-                                        <Link
-                                          key={item.title}
-                                          to={item.url}
-                                          className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                                            isActive
-                                              ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm'
-                                              : 'text-gray-700 hover:bg-orange-50 hover:text-orange-600'
-                                          }`}
-                                        >
-                                          <Icon className="w-4 h-4" />
-                                          <span className="text-sm">{item.title}</span>
-                                        </Link>
-                                      );
-                                    })}
-                                  </div>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
-                        );
-                      })}
-                    </nav>
-
-        {/* User Info */}
-        {currentUser && (
-          <div className="border-t border-gray-200 p-4">
-            <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">Unidade ativa</p>
-              {showUnitSelector ? (
-                <select
-                  value={activeUnitId}
-                  onChange={(event) => handleUnitChange(event.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
-                >
-                  {availableUnits.map((unit) => (
-                    <option key={unit.id} value={unit.id}>{unit.nome_fantasia}</option>
-                  ))}
-                </select>
-              ) : (
-                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
-                  {activeUnitName}
-                </div>
-              )}
-            </div>
-            <div className="mb-3">
-              <p className="text-sm font-medium text-gray-900 truncate">{currentUser.full_name}</p>
-              <p className="text-xs text-gray-600 truncate">{currentUser.email}</p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLogout}
-              className="w-full border-orange-300 text-orange-600 hover:bg-orange-50"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Sair
-            </Button>
-          </div>
-        )}
-      </aside>
-
-      {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-50">
-        <div className="flex items-center justify-between p-4">
-          <div className="min-w-0">
-            <div>
-              <h1 className={`${brandTitleClass} truncate text-xl leading-none`}>{brandName}</h1>
-              {activeUnitId ? (
-                <p className="mt-1 truncate text-xs text-gray-500">
-                  {activeUnitName}
+              <h1 className={`${brandTitleClass} truncate text-2xl leading-none`}>{activeUnitName}</h1>
+              <p className="mt-1 truncate text-xs font-semibold uppercase tracking-[0.22em] text-gray-400">Dog City Brasil</p>
+              {isUnitUnionActive ? (
+                <p className="mt-2 truncate text-xs text-blue-600">
+                  {selectedUnits.map((unit) => unit.nome_fantasia).join(" + ")}
                 </p>
               ) : null}
             </div>
           </div>
+        </div>
+
+        {renderMenuSections()}
+
+        {currentUser ? renderAccessPanel() : null}
+      </aside>
+
+      <div className="fixed left-0 right-0 top-0 z-50 border-b border-gray-200 bg-white md:hidden">
+        <div className="flex items-center justify-between p-4">
+          <div className="min-w-0">
+            <h1 className={`${brandTitleClass} truncate text-xl leading-none`}>{activeUnitName}</h1>
+            <p className="mt-1 truncate text-xs uppercase tracking-[0.2em] text-gray-400">Dog City Brasil</p>
+          </div>
           <div className="flex items-center gap-2">
-            {currentUser && <NotificationBell userId={currentUser.id} />}
-            {showWebappLogo ? (
+            {currentUser ? <NotificationBell userId={currentUser.id} /> : null}
+            {activeUnitLogo ? (
               <img
-                src={webappLogoUrl}
-                alt={brandName}
+                src={activeUnitLogo}
+                alt={activeUnitName}
                 className="h-8 w-8 rounded-full object-contain"
               />
             ) : (
               <div className="h-8 w-8 rounded-full border border-gray-200 bg-white" />
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            >
-              {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen((current) => !current)}>
+              {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Desktop Notification Bell - Fixed position */}
-      {currentUser && (
-        <div className="hidden md:block fixed top-4 right-6 z-50">
+      {currentUser ? (
+        <div className="fixed right-6 top-4 z-50 hidden md:block">
           <NotificationBell userId={currentUser.id} />
         </div>
-      )}
+      ) : null}
 
-      {/* Mobile Menu */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-40" onClick={() => setIsMobileMenuOpen(false)}>
-          <div className="fixed top-16 left-0 right-0 bottom-0 bg-white overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <nav className="p-3 space-y-1">
-                              {menuSections.map((section) => {
-                                const SectionIcon = section.icon;
-                                const isExpanded = expandedSections[section.id];
-
-                                return (
-                                  <div key={section.id} className="mb-1">
-                                    <button
-                                      onClick={() => toggleSection(section.id)}
-                                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100"
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <SectionIcon className="w-4 h-4" />
-                                        <span className="text-xs font-semibold uppercase">{section.title}</span>
-                                      </div>
-                                      {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                                    </button>
-
-                                    {isExpanded && (
-                                      <div className="pl-2 space-y-0.5 mt-1">
-                                        {section.items.map((item) => {
-                                          const Icon = item.icon;
-                                          const isActive = currentPageName === getPageNameFromPath(item.url);
-
-                                          return (
-                                            <Link
-                                              key={item.title}
-                                              to={item.url}
-                                              onClick={() => setIsMobileMenuOpen(false)}
-                                              className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                                                isActive ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm' : 'text-gray-700 hover:bg-orange-50 hover:text-orange-600'
-                                              }`}
-                                            >
-                                              <Icon className="w-4 h-4" />
-                                              <span className="text-sm">{item.title}</span>
-                                            </Link>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </nav>
-
-            {currentUser && (
-              <div className="border-t border-gray-200 p-4">
-                <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">Unidade ativa</p>
-                  {showUnitSelector ? (
-                    <select
-                      value={activeUnitId}
-                      onChange={(event) => handleUnitChange(event.target.value)}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
-                    >
-                      {availableUnits.map((unit) => (
-                        <option key={unit.id} value={unit.id}>{unit.nome_fantasia}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
-                      {activeUnitName}
-                    </div>
-                  )}
-                </div>
-                <div className="mb-3">
-                  <p className="text-sm font-medium text-gray-900">{currentUser.full_name}</p>
-                  <p className="text-xs text-gray-600">{currentUser.email}</p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleLogout}
-                  className="w-full border-orange-300 text-orange-600 hover:bg-orange-50"
-                >
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sair
-                </Button>
-                </div>
-            )}
+      {isMobileMenuOpen ? (
+        <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setIsMobileMenuOpen(false)}>
+          <div className="fixed bottom-0 left-0 right-0 top-16 overflow-y-auto bg-white" onClick={(event) => event.stopPropagation()}>
+            {renderMenuSections({ mobile: true })}
+            {currentUser ? renderAccessPanel({ mobile: true }) : null}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Main Content */}
-      <main className="flex-1 md:ml-64 mt-16 md:mt-0">
+      <main className="mt-16 flex-1 md:ml-64 md:mt-0">
         {children}
       </main>
     </div>

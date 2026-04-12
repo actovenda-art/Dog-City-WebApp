@@ -95,6 +95,10 @@ function buildUnitAccessMap(rows = []) {
   }, {});
 }
 
+function getDraftUserAccessUnits(user, accessMap) {
+  return Array.from(new Set((accessMap[user.id] || [user.empresa_id]).filter(Boolean)));
+}
+
 export default function Dev_Dashboard() {
   const [currentUser, setCurrentUser] = useState(null);
   const [units, setUnits] = useState([]);
@@ -165,7 +169,7 @@ export default function Dev_Dashboard() {
   const filteredInvites = useMemo(() => {
     return invites.filter((invite) => {
       const unit = units.find((item) => item.id === invite.empresa_id);
-      const matchesUnit = !selectedUnitId ? true : invite.empresa_id === selectedUnitId;
+      const matchesUnit = invite.is_platform_admin || !selectedUnitId ? true : invite.empresa_id === selectedUnitId;
       const haystack = [invite.full_name, invite.email, unit?.nome_fantasia].filter(Boolean).join(" ").toLowerCase();
       return matchesUnit && (!normalizedSearch || haystack.includes(normalizedSearch));
     });
@@ -174,11 +178,15 @@ export default function Dev_Dashboard() {
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
       const unit = units.find((item) => item.id === user.empresa_id);
-      const matchesUnit = !selectedUnitId ? true : user.empresa_id === selectedUnitId;
+      const draftAccessUnits = getDraftUserAccessUnits(user, userUnitAccessMap);
+      const matchesUnit = user.is_platform_admin
+        || !selectedUnitId
+        || user.empresa_id === selectedUnitId
+        || draftAccessUnits.includes(selectedUnitId);
       const haystack = [user.full_name, user.email, unit?.nome_fantasia].filter(Boolean).join(" ").toLowerCase();
       return matchesUnit && (!normalizedSearch || haystack.includes(normalizedSearch));
     });
-  }, [users, normalizedSearch, selectedUnitId, units]);
+  }, [users, normalizedSearch, selectedUnitId, units, userUnitAccessMap]);
 
   const activeUsersCount = users.filter((user) => user.active !== false).length;
   const pendingInvitesCount = invites.filter((invite) => ["pendente", "aceito"].includes(invite.status || "pendente")).length;
@@ -696,7 +704,7 @@ export default function Dev_Dashboard() {
 
               {filteredUsers.map((user) => {
                 const statusMeta = getAccessStatusMeta(user);
-                const selectedAccessUnits = Array.from(new Set((userUnitAccessMap[user.id] || [user.empresa_id]).filter(Boolean)));
+                const selectedAccessUnits = getDraftUserAccessUnits(user, userUnitAccessMap);
 
                 return (
                   <div key={user.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
@@ -775,10 +783,14 @@ export default function Dev_Dashboard() {
                         </div>
                         <Switch
                           checked={!!user.is_platform_admin}
-                          onCheckedChange={(checked) => patchUserState(user.id, {
-                            is_platform_admin: checked,
-                            empresa_id: checked ? null : user.empresa_id,
-                          })}
+                          onCheckedChange={(checked) => {
+                            const fallbackUnitId = selectedAccessUnits[0] || selectedUnitId || currentUser?.empresa_id || null;
+                            patchUserState(user.id, {
+                              is_platform_admin: checked,
+                              empresa_id: checked ? null : (user.empresa_id || fallbackUnitId),
+                              company_role: checked ? "platform_admin" : (user.company_role === "platform_admin" ? "company_user" : user.company_role),
+                            });
+                          }}
                         />
                       </div>
                     </div>

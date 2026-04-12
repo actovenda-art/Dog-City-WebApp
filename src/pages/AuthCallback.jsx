@@ -30,16 +30,31 @@ export default function AuthCallback() {
         const currentUser = await User.me();
 
         if (!currentUser) {
-          throw new Error("A sessão não foi criada corretamente.");
+          throw new Error("A sessao nao foi criada corretamente.");
         }
 
         if (isMounted) {
+          if (currentUser.onboarding_status === "pendente") {
+            navigate(`${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+            return;
+          }
+
+          if (currentUser.pin_required_reset === true) {
+            navigate(`${createPageUrl("DefinirPin")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+            return;
+          }
+
+          if (!User.isCurrentDeviceTrusted?.(currentUser)) {
+            navigate(`${createPageUrl("ValidarPin")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+            return;
+          }
+
           navigate(nextPath, { replace: true });
         }
       } catch (error) {
         console.error("Erro ao concluir login Google:", error);
         if (isMounted) {
-          setErrorMessage(error?.message || "Não foi possível concluir o login com Google.");
+          setErrorMessage(error?.message || "Nao foi possivel concluir o login com Google.");
         }
       }
     }
@@ -59,7 +74,7 @@ export default function AuthCallback() {
             <LoaderCircle className="w-10 h-10 mx-auto animate-spin text-orange-400" />
             <h1 className="mt-4 text-2xl font-semibold">Concluindo login</h1>
             <p className="mt-2 text-sm text-slate-300">
-              Estamos validando sua sessão no Supabase e carregando o ambiente.
+              Estamos validando sua sessao no Supabase e carregando o ambiente.
             </p>
           </CardContent>
         </Card>

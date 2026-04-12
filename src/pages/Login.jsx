@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { User } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertTriangle, LoaderCircle, LogIn } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import PinPairPad from "@/components/auth/PinPairPad";
+import { AlertTriangle, LoaderCircle, LogIn, Mail, ShieldCheck } from "lucide-react";
 
 const APP_SITE_URL = import.meta.env.VITE_SITE_URL;
 
@@ -18,32 +20,60 @@ function getSafeNextPath(search) {
   return next;
 }
 
+function shufflePairs() {
+  const digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+  for (let index = digits.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [digits[index], digits[randomIndex]] = [digits[randomIndex], digits[index]];
+  }
+
+  const result = [];
+  for (let index = 0; index < digits.length; index += 2) {
+    result.push([digits[index], digits[index + 1]]);
+  }
+  return result;
+}
+
 function GoogleIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
       <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.8-6-6.2s2.7-6.2 6-6.2c1.9 0 3.2.8 4 1.5l2.7-2.6C17 2.8 14.8 2 12 2 6.9 2 2.8 6.4 2.8 11.8S6.9 21.6 12 21.6c6.9 0 9.1-5 9.1-7.6 0-.5-.1-.9-.2-1.3H12z" />
-      <path fill="#34A853" d="M2.8 11.8c0 5.4 4.1 9.8 9.2 9.8 2.8 0 5-1 6.7-2.7l-3.1-2.4c-.8.6-1.9 1-3.6 1-2.8 0-5.2-1.9-6-4.6l-3.2 2.5c1.5 3.1 4.7 5.2 8.9 5.2z" opacity=".001" />
-      <path fill="#FBBC05" d="M4 7.2l2.6 1.9c.7-2.1 2.6-3.6 5.4-3.6 1.9 0 3.2.8 4 1.5l2.7-2.6C17 2.8 14.8 2 12 2 8 2 4.6 4.3 3 7.7L4 7.2z" />
-      <path fill="#4285F4" d="M12 21.6c2.7 0 5-.9 6.6-2.5l-3.1-2.4c-.8.6-1.9 1-3.5 1-3.3 0-6-2.8-6-6.2 0-1 .2-1.9.6-2.8L3.4 6.2C2.9 7.3 2.8 8.5 2.8 9.8 2.8 15.2 6.9 19.6 12 19.6z" opacity=".001" />
     </svg>
   );
 }
 
 export default function Login() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { companyName, logoUrl, isResolved } = useBranding({ variant: "base" });
   const nextPath = useMemo(() => getSafeNextPath(location.search), [location.search]);
   const isBlocked = useMemo(() => new URLSearchParams(location.search).get("blocked") === "1", [location.search]);
+  const [email, setEmail] = useState("");
+  const [pairs, setPairs] = useState(() => shufflePairs());
+  const [selectedPairs, setSelectedPairs] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  const handleSelectPair = (pair) => {
+    setSelectedPairs((current) => current.length >= 6 ? current : [...current, pair]);
+  };
+
+  const handleBackspace = () => {
+    setSelectedPairs((current) => current.slice(0, -1));
+  };
+
+  const handleShuffle = () => {
+    setPairs(shufflePairs());
+  };
 
   const handleGoogleLogin = async () => {
     if (!User.isEnabled?.()) {
-      setErrorMessage("Supabase não configurado para autenticação neste ambiente.");
+      setErrorMessage("Supabase nao configurado para autenticacao neste ambiente.");
       return;
     }
 
-    setIsSubmitting(true);
+    setIsGoogleSubmitting(true);
     setErrorMessage("");
 
     try {
@@ -53,54 +83,107 @@ export default function Login() {
       });
     } catch (error) {
       console.error("Erro ao iniciar login Google:", error);
-      setErrorMessage(error?.message || "Não foi possível iniciar o login com Google.");
+      setErrorMessage(error?.message || "Nao foi possivel iniciar o login com Google.");
+      setIsGoogleSubmitting(false);
+    }
+  };
+
+  const handlePinLogin = async (event) => {
+    event.preventDefault();
+
+    if (!email.trim()) {
+      setErrorMessage("Informe o email para continuar.");
+      return;
+    }
+
+    if (selectedPairs.length !== 6) {
+      setErrorMessage("Selecione os 6 pares correspondentes ao PIN.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage("");
+
+    try {
+      await User.signInWithPinPairs?.({
+        email: email.trim().toLowerCase(),
+        selectedPairs,
+      });
+
+      const currentUser = await User.me();
+      if (currentUser?.onboarding_status === "pendente") {
+        navigate(`${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+        return;
+      }
+
+      if (currentUser?.pin_required_reset === true) {
+        navigate(`${createPageUrl("DefinirPin")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+        return;
+      }
+
+      navigate(nextPath, { replace: true });
+    } catch (error) {
+      console.error("Erro ao autenticar com PIN:", error);
+      setErrorMessage(error?.message || "Nao foi possivel autenticar com email e PIN.");
       setIsSubmitting(false);
+      setSelectedPairs([]);
+      setPairs(shufflePairs());
     }
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#fff7ed,_#f8fafc_55%,_#e2e8f0)] flex items-center justify-center p-4">
-      <Card className="w-full max-w-md border-orange-200 bg-white/95 shadow-2xl shadow-orange-100">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#0f172a,_#111827_55%,_#020617)] flex items-center justify-center p-4">
+      <Card className="w-full max-w-lg border-slate-700 bg-slate-950 text-white shadow-2xl shadow-slate-950/60">
         <CardContent className="p-8">
           <div className="flex flex-col items-center text-center">
             {isResolved && logoUrl ? (
               <img src={logoUrl} alt={companyName} className="w-20 h-20 object-contain" />
             ) : (
-              <div className="h-20 w-20 rounded-3xl border border-orange-100 bg-white/90 shadow-sm" />
+              <div className="h-20 w-20 rounded-3xl border border-slate-700 bg-white/5" />
             )}
-            <p className="mt-6 text-xs font-semibold uppercase tracking-[0.25em] text-orange-500">Acesso</p>
-            <h1 className="mt-3 text-3xl font-brand text-slate-900">{companyName}</h1>
-            <p className="mt-3 text-sm text-slate-600">
-              Entre com sua conta Google para acessar a Dog City Brasil.
+            <p className="mt-6 text-xs font-semibold uppercase tracking-[0.25em] text-blue-300">Acesso</p>
+            <h1 className="mt-3 text-3xl font-brand text-white">{companyName}</h1>
+            <p className="mt-3 text-sm text-slate-300">
+              Entre com email e PIN ou use sua conta Google abaixo.
             </p>
           </div>
 
-          <div className="mt-8 space-y-4">
+          <form onSubmit={handlePinLogin} className="mt-8 space-y-5">
             {isBlocked && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-                Este acesso foi cancelado ou desativado. Fale com a administração central para liberar uma nova vinculação.
+                Este acesso foi cancelado ou desativado. Fale com a administracao central para liberar uma nova vinculacao.
               </div>
             )}
 
-            <Button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={isSubmitting}
-              className="w-full h-12 bg-slate-900 hover:bg-slate-800 text-white"
-            >
-              {isSubmitting ? (
-                <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <GoogleIcon />
-              )}
-              <span className="ml-2">{isSubmitting ? "Redirecionando..." : "Entrar com Google"}</span>
-            </Button>
-
-            {!User.isEnabled?.() && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-                Este ambiente esta em modo local/mock. O login Google so funciona com Supabase configurado.
+            <div>
+              <label className="text-sm font-medium text-slate-200">Login</label>
+              <div className="relative mt-2">
+                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="border-slate-700 bg-slate-900 pl-9 text-white placeholder:text-slate-500"
+                  placeholder="email@dogcitybrasil.com.br"
+                  autoComplete="username"
+                />
               </div>
-            )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+              <div className="mb-4 flex items-center gap-2 text-slate-200">
+                <ShieldCheck className="h-4 w-4 text-blue-300" />
+                <span className="text-sm font-medium">Senha PIN em pares aleatorios</span>
+              </div>
+              <PinPairPad
+                pairs={pairs}
+                selectedPairs={selectedPairs}
+                onSelectPair={handleSelectPair}
+                onBackspace={handleBackspace}
+                onShuffle={handleShuffle}
+                disabled={isSubmitting || isGoogleSubmitting}
+              />
+            </div>
 
             {errorMessage && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -110,12 +193,37 @@ export default function Login() {
                 </div>
               </div>
             )}
-          </div>
 
-          <div className="mt-8 flex items-center justify-center gap-2 text-xs text-slate-500">
-            <LogIn className="w-4 h-4" />
-            <span>OAuth gerenciado por Supabase Auth</span>
-          </div>
+            <Button type="submit" disabled={isSubmitting || isGoogleSubmitting} className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white">
+              {isSubmitting ? <LoaderCircle className="w-4 h-4 mr-2 animate-spin" /> : <LogIn className="w-4 h-4 mr-2" />}
+              {isSubmitting ? "Entrando..." : "Entrar com email e PIN"}
+            </Button>
+
+            <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-slate-800" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase tracking-[0.2em] text-slate-500">
+                <span className="bg-slate-950 px-3">ou</span>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={isSubmitting || isGoogleSubmitting}
+              className="w-full h-12 bg-white text-slate-900 hover:bg-slate-100"
+            >
+              {isGoogleSubmitting ? <LoaderCircle className="w-4 h-4 mr-2 animate-spin" /> : <GoogleIcon />}
+              <span className="ml-2">{isGoogleSubmitting ? "Redirecionando..." : "Entrar com conta Google"}</span>
+            </Button>
+
+            {!User.isEnabled?.() && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                Este ambiente esta em modo local/mock. O login real so funciona com Supabase configurado.
+              </div>
+            )}
+          </form>
         </CardContent>
       </Card>
     </div>

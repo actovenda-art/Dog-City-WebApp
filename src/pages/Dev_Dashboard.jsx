@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Empresa, PerfilAcesso, User, UserInvite, UserProfile, UserUnitAccess } from "@/api/entities";
 import { SendEmail } from "@/api/integrations";
+import { DEFAULT_BOOTSTRAP_PIN } from "@/lib/pin-auth";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -419,48 +420,16 @@ export default function Dev_Dashboard() {
         return;
       }
 
-      await UserProfile.update(user.id, {
-        empresa_id: primaryUnitId,
+      await User.saveManagedUserAccess?.({
+        user_id: user.id,
+        primary_unit_id: primaryUnitId,
+        unit_ids: selectedUnits,
         access_profile_id: user.access_profile_id || null,
         company_role: user.is_platform_admin ? "platform_admin" : (user.company_role || "company_user"),
         is_platform_admin: !!user.is_platform_admin,
         active: user.active !== false,
+        clear_access: false,
       });
-
-      const existingAccessRows = unitAccessRows.filter((row) => row.user_id === user.id);
-      const selectedUnitSet = new Set(selectedUnits);
-
-      await Promise.all(existingAccessRows.map((row) => {
-        if (!selectedUnitSet.has(row.empresa_id) || user.is_platform_admin) {
-          return UserUnitAccess.update(row.id, {
-            ativo: false,
-            is_default: false,
-            access_profile_id: user.access_profile_id || null,
-            papel: user.company_role || "company_user",
-          });
-        }
-
-        return UserUnitAccess.update(row.id, {
-          ativo: true,
-          is_default: row.empresa_id === primaryUnitId,
-          access_profile_id: user.access_profile_id || null,
-          papel: user.company_role || "company_user",
-        });
-      }));
-
-      const existingUnitIds = new Set(existingAccessRows.map((row) => row.empresa_id));
-      const missingUnits = user.is_platform_admin
-        ? []
-        : selectedUnits.filter((unitId) => !existingUnitIds.has(unitId));
-
-      await Promise.all(missingUnits.map((unitId) => UserUnitAccess.create({
-        user_id: user.id,
-        empresa_id: unitId,
-        access_profile_id: user.access_profile_id || null,
-        papel: user.company_role || "company_user",
-        ativo: true,
-        is_default: unitId === primaryUnitId,
-      })));
 
       await loadData();
     } catch (error) {
@@ -476,9 +445,17 @@ export default function Dev_Dashboard() {
 
     setIsSaving(true);
     try {
-      await UserProfile.update(user.id, { active: false });
-      const relatedAccessRows = unitAccessRows.filter((row) => row.user_id === user.id && row.ativo !== false);
-      await Promise.all(relatedAccessRows.map((row) => UserUnitAccess.update(row.id, { ativo: false, is_default: false })));
+      const selectedUnits = Array.from(new Set((userUnitAccessMap[user.id] || [user.empresa_id]).filter(Boolean)));
+      await User.saveManagedUserAccess?.({
+        user_id: user.id,
+        primary_unit_id: user.empresa_id || selectedUnits[0] || null,
+        unit_ids: selectedUnits,
+        access_profile_id: user.access_profile_id || null,
+        company_role: user.is_platform_admin ? "platform_admin" : (user.company_role || "company_user"),
+        is_platform_admin: !!user.is_platform_admin,
+        active: false,
+        clear_access: false,
+      });
       await loadData();
     } catch (error) {
       console.error("Erro ao cancelar acesso do usuário:", error);
@@ -491,9 +468,17 @@ export default function Dev_Dashboard() {
   async function handleReactivateUserAccess(user) {
     setIsSaving(true);
     try {
-      await UserProfile.update(user.id, { active: true });
-      const relatedAccessRows = unitAccessRows.filter((row) => row.user_id === user.id);
-      await Promise.all(relatedAccessRows.map((row) => UserUnitAccess.update(row.id, { ativo: true })));
+      const selectedUnits = Array.from(new Set((userUnitAccessMap[user.id] || [user.empresa_id]).filter(Boolean)));
+      await User.saveManagedUserAccess?.({
+        user_id: user.id,
+        primary_unit_id: user.empresa_id || selectedUnits[0] || null,
+        unit_ids: selectedUnits,
+        access_profile_id: user.access_profile_id || null,
+        company_role: user.is_platform_admin ? "platform_admin" : (user.company_role || "company_user"),
+        is_platform_admin: !!user.is_platform_admin,
+        active: true,
+        clear_access: false,
+      });
       await loadData();
     } catch (error) {
       console.error("Erro ao reativar acesso do usuário:", error);
@@ -508,16 +493,16 @@ export default function Dev_Dashboard() {
 
     setIsSaving(true);
     try {
-      await UserProfile.update(user.id, {
-        active: false,
-        empresa_id: null,
+      await User.saveManagedUserAccess?.({
+        user_id: user.id,
+        primary_unit_id: null,
+        unit_ids: [],
         access_profile_id: null,
         company_role: null,
         is_platform_admin: false,
+        active: false,
+        clear_access: true,
       });
-
-      const relatedAccessRows = unitAccessRows.filter((row) => row.user_id === user.id);
-      await Promise.all(relatedAccessRows.map((row) => UserUnitAccess.update(row.id, { ativo: false, is_default: false })));
 
       const relatedInvites = invites.filter((invite) => invite.email?.toLowerCase() === user.email?.toLowerCase() && invite.status !== "concluido");
       await Promise.all(relatedInvites.map((invite) => UserInvite.update(invite.id, { status: "cancelado" })));
@@ -526,6 +511,22 @@ export default function Dev_Dashboard() {
     } catch (error) {
       console.error("Erro ao excluir acesso do usuário:", error);
       alert(formatApiError(error, "Não foi possível excluir o acesso do usuário."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleBootstrapPins() {
+    if (!window.confirm(`Aplicar o PIN inicial ${DEFAULT_BOOTSTRAP_PIN} aos usuarios ativos e exigir redefinicao no proximo acesso?`)) return;
+
+    setIsSaving(true);
+    try {
+      const result = await User.bootstrapDefaultPins?.({ defaultPin: DEFAULT_BOOTSTRAP_PIN });
+      await loadData();
+      alert(`PIN obrigatorio preparado.\nAtualizados: ${result?.updated || 0}\nIgnorados: ${result?.skipped || 0}\nFalhas: ${result?.failed || 0}`);
+    } catch (error) {
+      console.error("Erro ao preparar PIN obrigatorio:", error);
+      alert(formatApiError(error, "Nao foi possivel preparar o PIN obrigatorio."));
     } finally {
       setIsSaving(false);
     }
@@ -553,6 +554,10 @@ export default function Dev_Dashboard() {
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={handleBootstrapPins} disabled={isSaving}>
+              <Shield className="w-4 h-4 mr-2" />
+              Exigir PIN dos usuarios atuais
+            </Button>
             <Link to={createPageUrl("AdministracaoSistema")}>
               <Button variant="outline">
                 <Settings className="w-4 h-4 mr-2" />

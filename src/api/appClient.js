@@ -11,6 +11,11 @@ import {
   resolveDogCityUnit,
   setStoredUnitSelection,
 } from '@/lib/unit-context';
+import {
+  getOrCreateDeviceId,
+  isDeviceTrustedForUser,
+  markDeviceTrustedForUser,
+} from '@/lib/device-trust';
 
 const STORAGE_PREFIX = 'local_app_client_';
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -106,6 +111,8 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
   const missingOrcamentoColumn = isMissingColumnFor('orcamento');
   const missingCheckinColumn = isMissingColumnFor('checkins');
   const missingExtratoColumn = isMissingColumnFor('extratobancario');
+  const missingUsersPinColumn = isMissingColumnFor('users')
+    && /pin_required_reset|pin_bootstrap_status|pin_updated_at|pin_last_verified_at/i.test(rawMessage);
   const missingCentroCustoTable = rawMessage.includes('centro_custo') && (
     error.code === 'PGRST205' || rawMessage.toLowerCase().includes('schema cache')
   );
@@ -122,6 +129,8 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
       ? `${rawMessage}. Execute o arquivo supabase-schema-registrador-alertas.sql no Supabase.`
     : missingExtratoColumn
       ? `${rawMessage}. Execute os arquivos supabase-schema-finance-ledger.sql e supabase-schema-controle-gerencial.sql no Supabase.`
+    : missingUsersPinColumn
+      ? `${rawMessage}. Execute o arquivo supabase-schema-auth-pin.sql no Supabase.`
     : missingCentroCustoTable
       ? `${rawMessage}. Execute o arquivo supabase-schema-controle-gerencial.sql no Supabase.`
     : lancamentoRlsBlocked
@@ -174,23 +183,98 @@ function getMockScopedUnitIds() {
 
 function createMockEntity(name, options = {}) {
   const { unitScoped = false } = options;
+  const applyMockQueryOptions = (items, queryOptions = {}) => {
+    const {
+      eq = {},
+      in: inFilters = {},
+      gte = {},
+      lte = {},
+      search = null,
+      sort = null,
+      orderBy = null,
+      ascending = undefined,
+      limit = undefined,
+      offset = 0,
+    } = queryOptions || {};
+
+    let filteredItems = [...items];
+
+    Object.entries(eq || {}).forEach(([field, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      filteredItems = filteredItems.filter((item) => item?.[field] === value);
+    });
+
+    Object.entries(inFilters || {}).forEach(([field, value]) => {
+      const values = Array.isArray(value) ? value.filter(Boolean) : [];
+      if (!values.length) return;
+      filteredItems = filteredItems.filter((item) => values.includes(item?.[field]));
+    });
+
+    Object.entries(gte || {}).forEach(([field, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      filteredItems = filteredItems.filter((item) => String(item?.[field] || '') >= String(value));
+    });
+
+    Object.entries(lte || {}).forEach(([field, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      filteredItems = filteredItems.filter((item) => String(item?.[field] || '') <= String(value));
+    });
+
+    const searchTerm = search?.term ? String(search.term).trim().toLowerCase() : '';
+    const searchColumns = Array.isArray(search?.columns) ? search.columns : [];
+    if (searchTerm && searchColumns.length > 0) {
+      filteredItems = filteredItems.filter((item) => searchColumns.some((column) => {
+        const rawValue = item?.[column];
+        if (rawValue === null || rawValue === undefined) return false;
+        return String(rawValue).toLowerCase().includes(searchTerm);
+      }));
+    }
+
+    const effectiveSort = typeof sort === 'string' && sort
+      ? { field: sort.replace(/^-/, ''), ascending: !sort.startsWith('-') }
+      : orderBy
+        ? { field: orderBy, ascending: ascending !== false }
+        : null;
+
+    if (effectiveSort?.field) {
+      filteredItems.sort((left, right) => {
+        const leftValue = left?.[effectiveSort.field];
+        const rightValue = right?.[effectiveSort.field];
+        if (leftValue === rightValue) return 0;
+        if (leftValue === undefined || leftValue === null) return 1;
+        if (rightValue === undefined || rightValue === null) return -1;
+        return leftValue > rightValue ? (effectiveSort.ascending ? 1 : -1) : (effectiveSort.ascending ? -1 : 1);
+      });
+    }
+
+    const total = filteredItems.length;
+    const normalizedOffset = Math.max(0, Number(offset) || 0);
+    const pagedItems = typeof limit === 'number'
+      ? filteredItems.slice(normalizedOffset, normalizedOffset + limit)
+      : filteredItems.slice(normalizedOffset);
+
+    return {
+      data: pagedItems,
+      count: total,
+      hasMore: normalizedOffset + pagedItems.length < total,
+    };
+  };
+
+  const getScopedMockItems = () => readStorage(name)
+    .filter((item) => !unitScoped || !item.empresa_id || getMockScopedUnitIds().includes(item.empresa_id));
 
   return {
     list: (sort, limit) => Promise.resolve(
-      readStorage(name)
-        .filter((item) => !unitScoped || !item.empresa_id || getMockScopedUnitIds().includes(item.empresa_id))
-        .slice(0, limit || undefined)
+      applyMockQueryOptions(getScopedMockItems(), { sort, limit }).data
     ),
     listAll: (sort, limit) => Promise.resolve(
-      readStorage(name)
-        .filter((item) => !unitScoped || !item.empresa_id || getMockScopedUnitIds().includes(item.empresa_id))
-        .slice(0, limit || undefined)
+      applyMockQueryOptions(getScopedMockItems(), { sort, limit }).data
     ),
     filter: (query = {}, sort, limit) => {
       const scopedQuery = { ...(query || {}) };
       return Promise.resolve(
-        readStorage(name)
-        .filter((item) => {
+        applyMockQueryOptions(
+        getScopedMockItems().filter((item) => {
           if (unitScoped && !Object.prototype.hasOwnProperty.call(scopedQuery, 'empresa_id')) {
             const selectedUnitIds = getMockScopedUnitIds();
             if (item.empresa_id && !selectedUnitIds.includes(item.empresa_id)) {
@@ -201,10 +285,17 @@ function createMockEntity(name, options = {}) {
           return Object.keys(scopedQuery || {}).every((key) => (
             scopedQuery[key] === null || scopedQuery[key] === undefined || item[key] === scopedQuery[key]
           ));
-        })
-        .slice(0, limit || undefined)
+        }),
+        { sort, limit },
+      ).data
       );
     },
+    query: (queryOptions = {}) => Promise.resolve(
+      applyMockQueryOptions(getScopedMockItems(), queryOptions)
+    ),
+    queryAll: (queryOptions = {}) => Promise.resolve(
+      applyMockQueryOptions(getScopedMockItems(), queryOptions)
+    ),
     create: (data) => {
       if (unitScoped) ensureSingleUnitWrite(name);
       const items = readStorage(name);
@@ -340,6 +431,7 @@ const createMockAuth = () => {
     full_name: 'Dev User',
     empresa_id: 'empresa_demo',
     access_profile_permissions: [],
+    pin_required_reset: false,
   };
 
   return {
@@ -363,6 +455,36 @@ const createMockAuth = () => {
     list: async () => [currentUser],
     signInWithGoogle: async () => ({ provider: 'google', user: currentUser }),
     exchangeCodeForSession: async () => ({ session: { user: currentUser }, user: currentUser }),
+    signInWithPinPairs: async () => {
+      markDeviceTrustedForUser(currentUser);
+      return { ok: true, session: { user: currentUser }, user: currentUser };
+    },
+    verifyCurrentDevicePin: async () => {
+      markDeviceTrustedForUser(currentUser);
+      return { ok: true, user: currentUser };
+    },
+    isCurrentDeviceTrusted: (user) => isDeviceTrustedForUser(user || currentUser),
+    setPin: async () => {
+      currentUser.pin_required_reset = false;
+      currentUser.pin_bootstrap_status = 'definido';
+      currentUser.pin_updated_at = new Date().toISOString();
+      markDeviceTrustedForUser(currentUser);
+      return { ok: true, user: currentUser };
+    },
+    bootstrapDefaultPins: async () => ({
+      ok: true,
+      default_pin: '654321',
+      total: 1,
+      updated: 1,
+      skipped: 0,
+      failed: 0,
+      results: [{ user_id: currentUser.id, email: currentUser.email, status: 'ok' }],
+    }),
+    saveManagedUserAccess: async (payload = {}) => ({
+      ok: true,
+      user: { ...payload, id: payload?.user_id || currentUser.id },
+      unit_access: [],
+    }),
     onAuthStateChange: () => ({ unsubscribe() {} }),
     logout: async () => {
       clearStoredActiveUnitId();
@@ -471,6 +593,77 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     }
   }
 
+  async function applySupabaseQueryOptions(query, options = {}, entityOptions = {}) {
+    const {
+      eq = {},
+      in: inFilters = {},
+      gte = {},
+      lte = {},
+      search = null,
+      sort = null,
+      orderBy = null,
+      ascending = undefined,
+      limit = undefined,
+      offset = 0,
+    } = options || {};
+
+    if (entityOptions.unitScoped && !Object.prototype.hasOwnProperty.call(eq || {}, 'empresa_id') && !Object.prototype.hasOwnProperty.call(inFilters || {}, 'empresa_id')) {
+      const unitIds = getSelectedScopedUnitIds();
+      const unitId = unitIds[0] || await resolveScopedUnitId();
+      if (unitIds.length > 1) query = query.in('empresa_id', unitIds);
+      else if (unitId) query = query.eq('empresa_id', unitId);
+    }
+
+    Object.entries(eq || {}).forEach(([field, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      query = query.eq(field, value);
+    });
+
+    Object.entries(inFilters || {}).forEach(([field, value]) => {
+      const values = Array.isArray(value) ? value.filter(Boolean) : [];
+      if (!values.length) return;
+      query = query.in(field, values);
+    });
+
+    Object.entries(gte || {}).forEach(([field, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      query = query.gte(field, value);
+    });
+
+    Object.entries(lte || {}).forEach(([field, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      query = query.lte(field, value);
+    });
+
+    const searchTerm = search?.term ? String(search.term).trim() : '';
+    const searchColumns = Array.isArray(search?.columns) ? search.columns.filter(Boolean) : [];
+    if (searchTerm && searchColumns.length > 0) {
+      const sanitizedSearchTerm = searchTerm.replace(/[,%()]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (sanitizedSearchTerm) {
+        query = query.or(searchColumns.map((column) => `${column}.ilike.%${sanitizedSearchTerm}%`).join(','));
+      }
+    }
+
+    const effectiveSort = typeof sort === 'string' && sort
+      ? { field: sort.replace(/^-/, ''), ascending: !sort.startsWith('-') }
+      : orderBy
+        ? { field: orderBy, ascending: ascending !== false }
+        : null;
+
+    if (effectiveSort?.field) {
+      query = query.order(effectiveSort.field, { ascending: effectiveSort.ascending });
+    }
+
+    const normalizedOffset = Math.max(0, Number(offset) || 0);
+    if (typeof limit === 'number') {
+      query = query.range(normalizedOffset, normalizedOffset + limit - 1);
+    } else if (normalizedOffset > 0) {
+      query = query.range(normalizedOffset, normalizedOffset + 999);
+    }
+
+    return query;
+  }
+
   const createSupabaseEntity = (table, options = {}) => ({
     unitScoped: options.unitScoped || false,
     list: async (sort, limit) => {
@@ -539,6 +732,53 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const { data, error } = await query;
       if (error) throw toAppError(error, `Erro ao filtrar ${table}.`);
       return data || [];
+    },
+    query: async (queryOptions = {}) => {
+      const { select = '*', count = false } = queryOptions || {};
+      let query = supabase.from(table).select(select, count ? { count: 'exact' } : undefined);
+      query = await applySupabaseQueryOptions(query, queryOptions, options);
+      const { data, error, count: totalCount } = await query;
+      if (error) throw toAppError(error, `Erro ao consultar ${table}.`);
+      const rows = data || [];
+      const limit = typeof queryOptions?.limit === 'number' ? queryOptions.limit : null;
+      const offset = Math.max(0, Number(queryOptions?.offset) || 0);
+      return {
+        data: rows,
+        count: typeof totalCount === 'number' ? totalCount : null,
+        hasMore: typeof totalCount === 'number'
+          ? offset + rows.length < totalCount
+          : (limit ? rows.length >= limit : false),
+      };
+    },
+    queryAll: async (queryOptions = {}) => {
+      const pageSize = Math.min(Math.max(Number(queryOptions?.pageSize) || 1000, 1), 5000);
+      const maxRows = Math.max(Number(queryOptions?.maxRows) || 20000, pageSize);
+      const results = [];
+      let offset = 0;
+      let totalCount = null;
+
+      while (results.length < maxRows) {
+        const response = await createSupabaseEntity(table, options).query({
+          ...queryOptions,
+          limit: pageSize,
+          offset,
+          count: offset === 0 && queryOptions?.count !== false,
+        });
+
+        if (typeof response.count === 'number' && totalCount === null) {
+          totalCount = response.count;
+        }
+
+        results.push(...(response.data || []));
+        if (!response.hasMore || !response.data?.length) break;
+        offset += pageSize;
+      }
+
+      return {
+        data: results.slice(0, maxRows),
+        count: totalCount ?? results.length,
+        hasMore: totalCount ? results.length < totalCount : false,
+      };
     },
     create: async (payload) => {
       if (options.unitScoped) ensureSingleUnitWrite(table);
@@ -663,6 +903,27 @@ if (SUPABASE_URL && SUPABASE_ANON) {
           details = '';
         }
         throw new Error(details || error.message || 'Falha na integração com Banco Inter.');
+      }
+      return data;
+    },
+    userAdmin: async (payload = {}) => {
+      const { data, error } = await supabase.functions.invoke('user-admin', {
+        body: payload,
+      });
+      if (error) {
+        let details = '';
+        try {
+          if (error.context) {
+            const cloned = error.context.clone ? error.context.clone() : error.context;
+            const errorPayload = await cloned.json();
+            details = errorPayload?.details || errorPayload?.error || '';
+          }
+        } catch (parseError) {
+          details = '';
+        }
+        const baseMessage = details || error.message || 'Falha na administracao de usuarios.';
+        const shouldHintDeploy = /edge function|failed to send a request|non-2xx|not found/i.test(baseMessage);
+        throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function user-admin no Supabase.` : baseMessage);
       }
       return data;
     },
@@ -1011,6 +1272,39 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       if (error) throw error;
       return data;
     },
+    signInWithPinPairs: async ({ email, selectedPairs } = {}) => {
+      const result = await supabaseFunctions.userAdmin({
+        action: 'pin_login',
+        email,
+        selected_pairs: selectedPairs,
+        device_id: getOrCreateDeviceId(),
+      });
+
+      const accessToken = result?.session?.access_token;
+      const refreshToken = result?.session?.refresh_token;
+      if (!accessToken || !refreshToken) {
+        throw new Error('A autenticacao por PIN nao retornou uma sessao valida.');
+      }
+
+      const { error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (error) throw error;
+
+      const authUser = await getAuthenticatedUser();
+      const mergedUser = authUser ? await syncUserProfile(authUser) : (result?.user || null);
+      if (mergedUser) {
+        markDeviceTrustedForUser(mergedUser);
+        supabaseAuth.currentUser = mergedUser;
+      }
+
+      return {
+        ok: true,
+        session: result?.session || null,
+        user: mergedUser || result?.user || null,
+      };
+    },
     exchangeCodeForSession: async (currentUrl) => {
       const origin = getAppOrigin();
       const url = new URL(currentUrl || `${origin}/auth-callback`, origin);
@@ -1030,6 +1324,59 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         supabaseAuth.currentUser = mergedUser;
       }
       return data;
+    },
+    verifyCurrentDevicePin: async ({ selectedPairs } = {}) => {
+      const result = await supabaseFunctions.userAdmin({
+        action: 'verify_pin',
+        selected_pairs: selectedPairs,
+        device_id: getOrCreateDeviceId(),
+      });
+
+      const currentUser = await supabaseAuth.me();
+      if (currentUser) {
+        markDeviceTrustedForUser(currentUser);
+        supabaseAuth.currentUser = {
+          ...currentUser,
+          pin_last_verified_at: result?.user?.pin_last_verified_at || new Date().toISOString(),
+        };
+      }
+
+      return result;
+    },
+    isCurrentDeviceTrusted: (user) => isDeviceTrustedForUser(user),
+    setPin: async ({ pin } = {}) => {
+      const result = await supabaseFunctions.userAdmin({
+        action: 'set_pin',
+        pin,
+      });
+
+      const authUser = await getAuthenticatedUser();
+      if (authUser) {
+        const mergedUser = await syncUserProfile(authUser);
+        markDeviceTrustedForUser(mergedUser || authUser);
+        supabaseAuth.currentUser = {
+          ...supabaseAuth.currentUser,
+          ...mergedUser,
+          pin_required_reset: false,
+          pin_bootstrap_status: 'definido',
+          pin_updated_at: result?.user?.pin_updated_at || new Date().toISOString(),
+        };
+      }
+
+      return result;
+    },
+    bootstrapDefaultPins: async ({ userId = null, defaultPin = '654321' } = {}) => {
+      return supabaseFunctions.userAdmin({
+        action: 'bootstrap_default_pins',
+        user_id: userId,
+        default_pin: defaultPin,
+      });
+    },
+    saveManagedUserAccess: async (payload = {}) => {
+      return supabaseFunctions.userAdmin({
+        action: 'save_user_access',
+        ...payload,
+      });
     },
     onAuthStateChange: (callback) => {
       const { data } = supabase.auth.onAuthStateChange((event, session) => {

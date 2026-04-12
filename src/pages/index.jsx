@@ -11,6 +11,8 @@ import UnitModeGuard from "@/components/layout/UnitModeGuard";
 import Login from "./Login.jsx";
 import AuthCallback from "./AuthCallback.jsx";
 import CompletarCadastro from "./CompletarCadastro.jsx";
+import DefinirPin from "./DefinirPin.jsx";
+import ValidarPin from "./ValidarPin.jsx";
 import Dev_Dashboard from "./Dev_Dashboard";
 import Backup from "./Backup";
 import Registrador from "./Registrador";
@@ -41,6 +43,8 @@ const PAGES = {
   Login,
   AuthCallback,
   CompletarCadastro,
+  DefinirPin,
+  ValidarPin,
   Dev_Dashboard,
   Backup,
   Registrador,
@@ -68,7 +72,7 @@ const PAGES = {
   VisualizadorImagem,
 };
 
-const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "VisualizadorImagem"]);
+const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
 const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "VisualizadorImagem"]);
 
 function getSafeNextPath(search) {
@@ -124,6 +128,8 @@ function LegacyPageRedirect({ pageName }) {
 function RequireAuth({ authEnabled, authReady, currentUser, children }) {
   const location = useLocation();
   const onboardingPath = createPageUrl("CompletarCadastro");
+  const pinSetupPath = createPageUrl("DefinirPin");
+  const pinValidationPath = createPageUrl("ValidarPin");
 
   if (!authEnabled) return children;
   if (!authReady) return <FullScreenAuthLoader />;
@@ -138,6 +144,14 @@ function RequireAuth({ authEnabled, authReady, currentUser, children }) {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`${onboardingPath}?next=${encodeURIComponent(next)}`} replace />;
   }
+  if (currentUser?.pin_required_reset === true && location.pathname !== pinSetupPath) {
+    const next = `${location.pathname}${location.search}`;
+    return <Navigate to={`${pinSetupPath}?next=${encodeURIComponent(next)}`} replace />;
+  }
+  if (location.pathname !== pinValidationPath && !User.isCurrentDeviceTrusted?.(currentUser)) {
+    const next = `${location.pathname}${location.search}`;
+    return <Navigate to={`${pinValidationPath}?next=${encodeURIComponent(next)}`} replace />;
+  }
 
   return children;
 }
@@ -148,6 +162,15 @@ function RedirectAuthenticatedUser({ authEnabled, authReady, currentUser, childr
   if (!authEnabled) return children;
   if (!authReady) return <FullScreenAuthLoader />;
   if (currentUser && currentUser.active !== false) {
+    if (currentUser?.onboarding_status === "pendente") {
+      return <Navigate to={`${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(getSafeNextPath(location.search))}`} replace />;
+    }
+    if (currentUser?.pin_required_reset === true) {
+      return <Navigate to={`${createPageUrl("DefinirPin")}?next=${encodeURIComponent(getSafeNextPath(location.search))}`} replace />;
+    }
+    if (!User.isCurrentDeviceTrusted?.(currentUser)) {
+      return <Navigate to={`${createPageUrl("ValidarPin")}?next=${encodeURIComponent(getSafeNextPath(location.search))}`} replace />;
+    }
     return <Navigate to={getSafeNextPath(location.search)} replace />;
   }
 

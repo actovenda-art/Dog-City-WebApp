@@ -60,8 +60,31 @@ function writeStorage(key, value) {
   localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
 }
 
+function isLikelyNetworkError(error) {
+  const message = [
+    error?.message,
+    error?.details,
+    error?.hint,
+  ].filter(Boolean).join(' | ').toLowerCase();
+
+  return (
+    error?.name === 'TypeError'
+    || /failed to fetch|fetch failed|networkerror|load failed|network request failed/i.test(message)
+  );
+}
+
 function toAppError(error, fallback = 'Erro no Supabase.') {
   if (!error) return new Error(fallback);
+
+  if (isLikelyNetworkError(error)) {
+    const wrapped = new Error(
+      'Nao foi possivel conectar ao servidor. Verifique sua internet e tente novamente. Se sua conexao estiver normal, o sistema pode estar temporariamente indisponivel.'
+    );
+    wrapped.code = error?.code || 'NETWORK_ERROR';
+    wrapped.cause = error;
+    return wrapped;
+  }
+
   if (error instanceof Error) return error;
 
   const rawMessage = [

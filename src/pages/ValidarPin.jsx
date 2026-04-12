@@ -2,21 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { User } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
+import { getSafeNextPathFromSearch } from "@/lib/auth-navigation";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import PinPairPad from "@/components/auth/PinPairPad";
 import { AlertTriangle, KeyRound, LoaderCircle, LogOut } from "lucide-react";
-
-function getSafeNextPath(search) {
-  const params = new URLSearchParams(search);
-  const next = params.get("next");
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
-    return createPageUrl("Dev_Dashboard");
-  }
-  return next;
-}
 
 function shufflePairs() {
   const digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
@@ -36,7 +28,7 @@ export default function ValidarPin() {
   const location = useLocation();
   const navigate = useNavigate();
   const { companyName, logoUrl, isResolved } = useBranding({ variant: "base" });
-  const nextPath = useMemo(() => getSafeNextPath(location.search), [location.search]);
+  const nextPath = useMemo(() => getSafeNextPathFromSearch(location.search), [location.search]);
   const [currentUser, setCurrentUser] = useState(null);
   const [pairs, setPairs] = useState(() => shufflePairs());
   const [selectedPairs, setSelectedPairs] = useState([]);

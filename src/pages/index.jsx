@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LoaderCircle } from "lucide-react";
 import { User } from "@/api/entities";
+import { getSafeNextPathFromSearch, getSafeRedirectTarget } from "@/lib/auth-navigation";
 import { ACTIVE_UNIT_EVENT } from "@/lib/unit-context";
 import { createPageUrl, getPageNameFromPath } from "@/utils";
 
@@ -75,15 +76,6 @@ const PAGES = {
 const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
 const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "VisualizadorImagem"]);
 
-function getSafeNextPath(search) {
-  const params = new URLSearchParams(search);
-  const next = params.get("next");
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
-    return createPageUrl("Dev_Dashboard");
-  }
-  return next;
-}
-
 function FullScreenAuthLoader() {
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -134,22 +126,22 @@ function RequireAuth({ authEnabled, authReady, currentUser, children }) {
   if (!authEnabled) return children;
   if (!authReady) return <FullScreenAuthLoader />;
   if (!currentUser) {
-    const next = `${location.pathname}${location.search}`;
+    const next = getSafeRedirectTarget(location.pathname, location.search);
     return <Navigate to={`${createPageUrl("Login")}?next=${encodeURIComponent(next)}`} replace />;
   }
   if (currentUser?.active === false) {
     return <Navigate to={`${createPageUrl("Login")}?blocked=1`} replace />;
   }
   if (currentUser?.onboarding_status === "pendente" && location.pathname !== onboardingPath) {
-    const next = `${location.pathname}${location.search}`;
+    const next = getSafeRedirectTarget(location.pathname, location.search);
     return <Navigate to={`${onboardingPath}?next=${encodeURIComponent(next)}`} replace />;
   }
   if (currentUser?.pin_required_reset === true && location.pathname !== pinSetupPath) {
-    const next = `${location.pathname}${location.search}`;
+    const next = getSafeRedirectTarget(location.pathname, location.search);
     return <Navigate to={`${pinSetupPath}?next=${encodeURIComponent(next)}`} replace />;
   }
   if (location.pathname !== pinValidationPath && !User.isCurrentDeviceTrusted?.(currentUser)) {
-    const next = `${location.pathname}${location.search}`;
+    const next = getSafeRedirectTarget(location.pathname, location.search);
     return <Navigate to={`${pinValidationPath}?next=${encodeURIComponent(next)}`} replace />;
   }
 
@@ -163,15 +155,15 @@ function RedirectAuthenticatedUser({ authEnabled, authReady, currentUser, childr
   if (!authReady) return <FullScreenAuthLoader />;
   if (currentUser && currentUser.active !== false) {
     if (currentUser?.onboarding_status === "pendente") {
-      return <Navigate to={`${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(getSafeNextPath(location.search))}`} replace />;
+      return <Navigate to={`${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(getSafeNextPathFromSearch(location.search))}`} replace />;
     }
     if (currentUser?.pin_required_reset === true) {
-      return <Navigate to={`${createPageUrl("DefinirPin")}?next=${encodeURIComponent(getSafeNextPath(location.search))}`} replace />;
+      return <Navigate to={`${createPageUrl("DefinirPin")}?next=${encodeURIComponent(getSafeNextPathFromSearch(location.search))}`} replace />;
     }
     if (!User.isCurrentDeviceTrusted?.(currentUser)) {
-      return <Navigate to={`${createPageUrl("ValidarPin")}?next=${encodeURIComponent(getSafeNextPath(location.search))}`} replace />;
+      return <Navigate to={`${createPageUrl("ValidarPin")}?next=${encodeURIComponent(getSafeNextPathFromSearch(location.search))}`} replace />;
     }
-    return <Navigate to={getSafeNextPath(location.search)} replace />;
+    return <Navigate to={getSafeNextPathFromSearch(location.search)} replace />;
   }
 
   return children;

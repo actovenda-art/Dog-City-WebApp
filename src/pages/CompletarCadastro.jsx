@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Empresa, User, UserInvite, UserProfile } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
+import { getSafeNextPathFromSearch } from "@/lib/auth-navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -42,20 +43,11 @@ function formatCEP(value) {
   return (value || "").replace(/\D/g, "").replace(/(\d{5})(\d)/, "$1-$2").slice(0, 9);
 }
 
-function getSafeNextPath(search) {
-  const params = new URLSearchParams(search);
-  const next = params.get("next");
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
-    return createPageUrl("Dev_Dashboard");
-  }
-  return next;
-}
-
 export default function CompletarCadastro() {
   const location = useLocation();
   const navigate = useNavigate();
   const token = useMemo(() => new URLSearchParams(location.search).get("invite"), [location.search]);
-  const nextPath = useMemo(() => getSafeNextPath(location.search), [location.search]);
+  const nextPath = useMemo(() => getSafeNextPathFromSearch(location.search), [location.search]);
   const [currentUser, setCurrentUser] = useState(null);
   const [invite, setInvite] = useState(null);
   const [company, setCompany] = useState(null);

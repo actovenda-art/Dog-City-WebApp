@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { User } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
+import { getSafeNextPathFromSearch } from "@/lib/auth-navigation";
 import { normalizePin, validatePin } from "@/lib/pin-auth";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
@@ -10,20 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AlertTriangle, KeyRound, LoaderCircle, LogOut } from "lucide-react";
 
-function getSafeNextPath(search) {
-  const params = new URLSearchParams(search);
-  const next = params.get("next");
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
-    return createPageUrl("Dev_Dashboard");
-  }
-  return next;
-}
-
 export default function DefinirPin() {
   const location = useLocation();
   const navigate = useNavigate();
   const { companyName, logoUrl, isResolved } = useBranding({ variant: "base" });
-  const nextPath = useMemo(() => getSafeNextPath(location.search), [location.search]);
+  const nextPath = useMemo(() => getSafeNextPathFromSearch(location.search), [location.search]);
   const [currentUser, setCurrentUser] = useState(null);
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");

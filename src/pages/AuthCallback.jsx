@@ -1,24 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { User } from "@/api/entities";
+import { getSafeNextPathFromSearch } from "@/lib/auth-navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createPageUrl } from "@/utils";
 import { AlertTriangle, LoaderCircle } from "lucide-react";
 
-function getSafeNextPath(search) {
-  const params = new URLSearchParams(search);
-  const next = params.get("next");
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
-    return createPageUrl("Dev_Dashboard");
-  }
-  return next;
-}
-
 export default function AuthCallback() {
   const location = useLocation();
   const navigate = useNavigate();
-  const nextPath = useMemo(() => getSafeNextPath(location.search), [location.search]);
+  const nextPath = useMemo(() => getSafeNextPathFromSearch(location.search), [location.search]);
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {

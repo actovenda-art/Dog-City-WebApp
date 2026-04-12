@@ -6,6 +6,7 @@ import { ACTIVE_UNIT_EVENT } from "@/lib/unit-context";
 import { createPageUrl, getPageNameFromPath } from "@/utils";
 
 import Layout from "./Layout.jsx";
+import AccessGuard from "@/components/layout/AccessGuard";
 import UnitModeGuard from "@/components/layout/UnitModeGuard";
 import Login from "./Login.jsx";
 import AuthCallback from "./AuthCallback.jsx";
@@ -90,7 +91,7 @@ function FullScreenAuthLoader() {
   );
 }
 
-function PageFrame({ pageName, currentPageName }) {
+function PageFrame({ pageName, currentPageName, currentUser }) {
   const PageComponent = PAGES[pageName];
 
   if (!PageComponent) return null;
@@ -100,9 +101,11 @@ function PageFrame({ pageName, currentPageName }) {
 
   return (
     <Layout currentPageName={currentPageName}>
-      <UnitModeGuard pageName={pageName}>
-        <PageComponent />
-      </UnitModeGuard>
+      <AccessGuard pageName={pageName} currentUser={currentUser}>
+        <UnitModeGuard pageName={pageName}>
+          <PageComponent />
+        </UnitModeGuard>
+      </AccessGuard>
     </Layout>
   );
 }
@@ -236,6 +239,7 @@ function PagesContent() {
             key={`page-frame-${pageName}-${unitScopeVersion}`}
             pageName={pageName}
             currentPageName={currentPage}
+            currentUser={currentUser}
           />
         );
         let element = frame;

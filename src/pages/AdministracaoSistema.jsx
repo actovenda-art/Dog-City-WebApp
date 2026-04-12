@@ -16,7 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
-import { Building2, FileText, Image, KeyRound, Palette, Pencil, Plus, Save, Settings, Tags } from "lucide-react";
+import { Building2, FileText, Image, KeyRound, Palette, Pencil, Plus, Save, Settings, Tags, Trash2 } from "lucide-react";
 
 const EMPTY_PROFILE = {
   codigo: "",
@@ -794,6 +794,32 @@ export default function AdministracaoSistema() {
     }
   }
 
+  async function handleDeleteProfile(profile) {
+    if (!profile?.id) return;
+    if (!window.confirm(`Excluir o tipo de acesso "${profile.nome}"? Esta acao nao pode ser desfeita.`)) return;
+
+    setIsSaving(true);
+    try {
+      await PerfilAcesso.delete(profile.id);
+      await loadData();
+    } catch (error) {
+      console.error("Erro ao excluir perfil:", error);
+      const rawMessage = String(error?.message || "").toLowerCase();
+      const isInUseError = error?.code === "23503"
+        || rawMessage.includes("foreign key")
+        || rawMessage.includes("violates foreign key")
+        || rawMessage.includes("still referenced");
+
+      if (isInUseError) {
+        alert("Nao foi possivel excluir este tipo de acesso porque ele ainda esta vinculado a usuarios, convites ou acessos de unidade.");
+      } else {
+        alert(formatApiError(error, "NÃ£o foi possÃ­vel excluir o perfil de acesso."));
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function handleSaveBranding() {
     if (!selectedUnitId || !brandingForm.companyName) {
       alert("Selecione a unidade e informe o nome exibido.");
@@ -1114,9 +1140,15 @@ export default function AdministracaoSistema() {
                       <p className="text-sm text-gray-600 mt-1">{profile.descricao || "Sem descrição cadastrada."}</p>
                       <p className="text-xs text-gray-500 mt-2">Escopo: {profile.escopo === "plataforma" ? "Administração central" : "Unidade"}</p>
                     </div>
-                    <Button variant="outline" onClick={() => openProfileModal(profile)}>
-                      Editar
-                    </Button>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button variant="outline" onClick={() => openProfileModal(profile)}>
+                        Editar
+                      </Button>
+                      <Button variant="outline" onClick={() => handleDeleteProfile(profile)} disabled={isSaving} className="border-rose-200 text-rose-600 hover:bg-rose-50">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Excluir
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </CardContent>

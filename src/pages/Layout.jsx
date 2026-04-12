@@ -28,6 +28,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import NotificationBell from "@/components/layout/NotificationBell";
+import { hasPageAccess } from "@/lib/access-control";
 import { isPageBlockedInMergedMode } from "@/lib/unit-page-policy";
 import {
   ACTIVE_UNIT_EVENT,
@@ -265,6 +266,16 @@ export default function Layout({ children, currentPageName }) {
     },
   ];
 
+  const visibleMenuSections = useMemo(
+    () => menuSections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => hasPageAccess(currentUser, getPageNameFromPath(item.url))),
+      }))
+      .filter((section) => section.items.length > 0),
+    [currentUser, menuSections],
+  );
+
   const renderAccessPanel = ({ mobile = false } = {}) => (
     <div className={mobile ? "border-t border-gray-200 p-4" : "border-t border-gray-200 p-4"}>
       <button
@@ -367,7 +378,7 @@ export default function Layout({ children, currentPageName }) {
 
   const renderMenuSections = ({ mobile = false } = {}) => (
     <nav className={mobile ? "p-3 space-y-1" : "flex-1 overflow-y-auto p-3 space-y-1"}>
-      {menuSections.map((section) => {
+      {visibleMenuSections.map((section) => {
         const SectionIcon = section.icon;
         const isExpanded = expandedSections[section.id];
 

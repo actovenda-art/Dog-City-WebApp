@@ -339,6 +339,7 @@ const createMockAuth = () => {
     email: 'dev@example.com',
     full_name: 'Dev User',
     empresa_id: 'empresa_demo',
+    access_profile_permissions: [],
   };
 
   return {
@@ -814,6 +815,23 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     }
   };
 
+  const findAccessProfile = async (profileId) => {
+    if (!profileId) return null;
+
+    try {
+      const { data, error } = await supabase
+        .from('perfil_acesso')
+        .select('*')
+        .eq('id', profileId)
+        .limit(1);
+
+      if (error) return null;
+      return data?.[0] || null;
+    } catch (error) {
+      return null;
+    }
+  };
+
   const syncUserUnitAccess = async ({ userId, empresaId, accessProfileId, companyRole, active, isPlatformAdmin }) => {
     if (!userId || !empresaId || isPlatformAdmin) return;
 
@@ -947,6 +965,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
 
       const profile = await findUserProfile(authUser);
       const mergedUser = profile ? { ...authUser, ...profile } : authUser;
+      const accessProfile = await findAccessProfile(mergedUser?.access_profile_id);
       const allowedUnitIds = await resolveAllowedUnitIds(authUser, mergedUser);
       const activeUnitId = await resolveScopedUnitId(getStoredActiveUnitId() || mergedUser?.empresa_id || '');
       const selectedUnitIds = getStoredSelectedUnitIds().filter((unitId) => allowedUnitIds.includes(unitId));
@@ -965,6 +984,9 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         allowed_unit_ids: allowedUnitIds,
         active_unit_id: activeUnitId || mergedUser?.empresa_id || null,
         selected_unit_ids: normalizedSelectedUnitIds,
+        access_profile_code: accessProfile?.codigo || null,
+        access_profile_name: accessProfile?.nome || null,
+        access_profile_permissions: Array.isArray(accessProfile?.permissoes) ? accessProfile.permissoes : [],
         unit_selection_mode: normalizedSelectedUnitIds.length > 1 ? 'merged' : 'single',
         empresa_id: activeUnitId || mergedUser?.empresa_id || null,
       };

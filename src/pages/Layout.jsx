@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Empresa, User } from "@/api/entities";
+import { AppAsset, Empresa, User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl, getPageNameFromPath } from "@/utils";
@@ -44,13 +44,14 @@ function getUserNickname(user) {
   return user?.email?.split("@")?.[0] || "Usuário";
 }
 
-function getUnitLogo(unit) {
-  return unit?.metadata?.logo_url || "";
+function getUnitLogo(unit, unitLogoMap = {}) {
+  return unit?.metadata?.logo_url || unitLogoMap[unit?.id] || "";
 }
 
 export default function Layout({ children, currentPageName }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [availableUnits, setAvailableUnits] = useState([]);
+  const [unitLogoMap, setUnitLogoMap] = useState({});
   const [activeUnitId, setActiveUnitId] = useState("");
   const [selectedUnitIds, setSelectedUnitIds] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -103,12 +104,23 @@ export default function Layout({ children, currentPageName }) {
       let resolvedUser = user;
 
       if (user) {
-        const unitRows = await Empresa.list("-created_date", 200);
+        const [unitRows, assetRows] = await Promise.all([
+          Empresa.list("-created_date", 200),
+          AppAsset.list("-created_date", 500).catch(() => []),
+        ]);
         const allowedUnitIds = Array.isArray(user.allowed_unit_ids) && user.allowed_unit_ids.length > 0
           ? user.allowed_unit_ids
           : [user.empresa_id].filter(Boolean);
         const storedSelection = getStoredUnitSelection();
         const scopedUnits = (unitRows || []).filter((item) => allowedUnitIds.length === 0 || allowedUnitIds.includes(item.id));
+        const scopedLogoMap = (assetRows || [])
+          .filter((item) => item?.ativo !== false && item?.key === "branding.logo.primary" && item?.empresa_id)
+          .reduce((accumulator, item) => {
+            if (!allowedUnitIds.length || allowedUnitIds.includes(item.empresa_id)) {
+              accumulator[item.empresa_id] = item.public_url || item.url || "";
+            }
+            return accumulator;
+          }, {});
         const resolvedUnitId = (storedSelection.primaryUnitId && scopedUnits.some((item) => item.id === storedSelection.primaryUnitId))
           ? storedSelection.primaryUnitId
           : (resolveDogCityUnit(scopedUnits)?.id || scopedUnits?.[0]?.id || user.empresa_id || "");
@@ -129,6 +141,7 @@ export default function Layout({ children, currentPageName }) {
         }
 
         setAvailableUnits(scopedUnits);
+        setUnitLogoMap(scopedLogoMap);
         setActiveUnitId(resolvedUnitId);
         setSelectedUnitIds(normalizedSelectedUnitIds);
         resolvedUser = {
@@ -181,7 +194,7 @@ export default function Layout({ children, currentPageName }) {
 
   const activeUnit = availableUnits.find((unit) => unit.id === activeUnitId) || null;
   const activeUnitName = activeUnit?.nome_fantasia || getUnitDisplayName(activeUnit);
-  const activeUnitLogo = getUnitLogo(activeUnit);
+  const activeUnitLogo = getUnitLogo(activeUnit, unitLogoMap);
   const selectedUnits = useMemo(
     () => availableUnits.filter((unit) => selectedUnitIds.includes(unit.id)),
     [availableUnits, selectedUnitIds],

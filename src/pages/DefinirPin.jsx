@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { User } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
-import { getSafeNextPathFromSearch } from "@/lib/auth-navigation";
+import { getSafeNextPathFromSearch, isSameAppLocation } from "@/lib/auth-navigation";
 import { normalizePin, validatePin } from "@/lib/pin-auth";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
@@ -30,17 +30,24 @@ export default function DefinirPin() {
       try {
         const me = await User.me();
         if (!me) {
-          navigate(createPageUrl("Login"), { replace: true });
+          if (!isSameAppLocation(createPageUrl("Login"), location.pathname, location.search, location.hash)) {
+            navigate(createPageUrl("Login"), { replace: true });
+          }
           return;
         }
 
         if (me.onboarding_status === "pendente") {
-          navigate(`${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+          const target = `${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(nextPath)}`;
+          if (!isSameAppLocation(target, location.pathname, location.search, location.hash)) {
+            navigate(target, { replace: true });
+          }
           return;
         }
 
         if (me.pin_required_reset !== true) {
-          navigate(nextPath, { replace: true });
+          if (!isSameAppLocation(nextPath, location.pathname, location.search, location.hash)) {
+            navigate(nextPath, { replace: true });
+          }
           return;
         }
 
@@ -63,7 +70,7 @@ export default function DefinirPin() {
     return () => {
       mounted = false;
     };
-  }, [navigate, nextPath]);
+  }, [location.hash, location.pathname, location.search, navigate, nextPath]);
 
   async function handleLogout() {
     await User.logout?.();

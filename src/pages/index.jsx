@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LoaderCircle } from "lucide-react";
 import { User } from "@/api/entities";
-import { getSafeNextPathFromSearch, getSafeRedirectTarget } from "@/lib/auth-navigation";
+import { getSafeNextPathFromSearch, getSafeRedirectTarget, isSameAppLocation } from "@/lib/auth-navigation";
 import { ACTIVE_UNIT_EVENT } from "@/lib/unit-context";
 import { createPageUrl, getPageNameFromPath } from "@/utils";
 
@@ -127,21 +127,36 @@ function RequireAuth({ authEnabled, authReady, currentUser, children }) {
   if (!authReady) return <FullScreenAuthLoader />;
   if (!currentUser) {
     const next = getSafeRedirectTarget(location.pathname, location.search);
+    if (isSameAppLocation(`${createPageUrl("Login")}?next=${encodeURIComponent(next)}`, location.pathname, location.search, location.hash)) {
+      return children;
+    }
     return <Navigate to={`${createPageUrl("Login")}?next=${encodeURIComponent(next)}`} replace />;
   }
   if (currentUser?.active === false) {
+    if (isSameAppLocation(`${createPageUrl("Login")}?blocked=1`, location.pathname, location.search, location.hash)) {
+      return children;
+    }
     return <Navigate to={`${createPageUrl("Login")}?blocked=1`} replace />;
   }
   if (currentUser?.onboarding_status === "pendente" && location.pathname !== onboardingPath) {
     const next = getSafeRedirectTarget(location.pathname, location.search);
+    if (isSameAppLocation(`${onboardingPath}?next=${encodeURIComponent(next)}`, location.pathname, location.search, location.hash)) {
+      return children;
+    }
     return <Navigate to={`${onboardingPath}?next=${encodeURIComponent(next)}`} replace />;
   }
   if (currentUser?.pin_required_reset === true && location.pathname !== pinSetupPath) {
     const next = getSafeRedirectTarget(location.pathname, location.search);
+    if (isSameAppLocation(`${pinSetupPath}?next=${encodeURIComponent(next)}`, location.pathname, location.search, location.hash)) {
+      return children;
+    }
     return <Navigate to={`${pinSetupPath}?next=${encodeURIComponent(next)}`} replace />;
   }
   if (location.pathname !== pinValidationPath && !User.isCurrentDeviceTrusted?.(currentUser)) {
     const next = getSafeRedirectTarget(location.pathname, location.search);
+    if (isSameAppLocation(`${pinValidationPath}?next=${encodeURIComponent(next)}`, location.pathname, location.search, location.hash)) {
+      return children;
+    }
     return <Navigate to={`${pinValidationPath}?next=${encodeURIComponent(next)}`} replace />;
   }
 
@@ -155,15 +170,31 @@ function RedirectAuthenticatedUser({ authEnabled, authReady, currentUser, childr
   if (!authReady) return <FullScreenAuthLoader />;
   if (currentUser && currentUser.active !== false) {
     if (currentUser?.onboarding_status === "pendente") {
-      return <Navigate to={`${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(getSafeNextPathFromSearch(location.search))}`} replace />;
+      const target = `${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(getSafeNextPathFromSearch(location.search))}`;
+      if (isSameAppLocation(target, location.pathname, location.search, location.hash)) {
+        return children;
+      }
+      return <Navigate to={target} replace />;
     }
     if (currentUser?.pin_required_reset === true) {
-      return <Navigate to={`${createPageUrl("DefinirPin")}?next=${encodeURIComponent(getSafeNextPathFromSearch(location.search))}`} replace />;
+      const target = `${createPageUrl("DefinirPin")}?next=${encodeURIComponent(getSafeNextPathFromSearch(location.search))}`;
+      if (isSameAppLocation(target, location.pathname, location.search, location.hash)) {
+        return children;
+      }
+      return <Navigate to={target} replace />;
     }
     if (!User.isCurrentDeviceTrusted?.(currentUser)) {
-      return <Navigate to={`${createPageUrl("ValidarPin")}?next=${encodeURIComponent(getSafeNextPathFromSearch(location.search))}`} replace />;
+      const target = `${createPageUrl("ValidarPin")}?next=${encodeURIComponent(getSafeNextPathFromSearch(location.search))}`;
+      if (isSameAppLocation(target, location.pathname, location.search, location.hash)) {
+        return children;
+      }
+      return <Navigate to={target} replace />;
     }
-    return <Navigate to={getSafeNextPathFromSearch(location.search)} replace />;
+    const nextTarget = getSafeNextPathFromSearch(location.search);
+    if (isSameAppLocation(nextTarget, location.pathname, location.search, location.hash)) {
+      return children;
+    }
+    return <Navigate to={nextTarget} replace />;
   }
 
   return children;

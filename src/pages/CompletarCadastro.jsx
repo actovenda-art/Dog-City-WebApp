@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Empresa, User, UserInvite, UserProfile } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
-import { getSafeNextPathFromSearch } from "@/lib/auth-navigation";
+import { getSafeNextPathFromSearch, isSameAppLocation } from "@/lib/auth-navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -106,7 +106,9 @@ export default function CompletarCadastro() {
     try {
       const me = await User.me();
       if (!me) {
-        navigate(createPageUrl("Login"), { replace: true });
+        if (!isSameAppLocation(createPageUrl("Login"), location.pathname, location.search, location.hash)) {
+          navigate(createPageUrl("Login"), { replace: true });
+        }
         return;
       }
 

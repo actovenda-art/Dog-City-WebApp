@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { User } from "@/api/entities";
-import { getSafeNextPathFromSearch } from "@/lib/auth-navigation";
+import { getSafeNextPathFromSearch, isSameAppLocation } from "@/lib/auth-navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createPageUrl } from "@/utils";
@@ -27,21 +27,32 @@ export default function AuthCallback() {
 
         if (isMounted) {
           if (currentUser.onboarding_status === "pendente") {
-            navigate(`${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+            const target = `${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(nextPath)}`;
+            if (!isSameAppLocation(target, location.pathname, location.search, location.hash)) {
+              navigate(target, { replace: true });
+            }
             return;
           }
 
           if (currentUser.pin_required_reset === true) {
-            navigate(`${createPageUrl("DefinirPin")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+            const target = `${createPageUrl("DefinirPin")}?next=${encodeURIComponent(nextPath)}`;
+            if (!isSameAppLocation(target, location.pathname, location.search, location.hash)) {
+              navigate(target, { replace: true });
+            }
             return;
           }
 
           if (!User.isCurrentDeviceTrusted?.(currentUser)) {
-            navigate(`${createPageUrl("ValidarPin")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+            const target = `${createPageUrl("ValidarPin")}?next=${encodeURIComponent(nextPath)}`;
+            if (!isSameAppLocation(target, location.pathname, location.search, location.hash)) {
+              navigate(target, { replace: true });
+            }
             return;
           }
 
-          navigate(nextPath, { replace: true });
+          if (!isSameAppLocation(nextPath, location.pathname, location.search, location.hash)) {
+            navigate(nextPath, { replace: true });
+          }
         }
       } catch (error) {
         console.error("Erro ao concluir login Google:", error);
@@ -56,7 +67,7 @@ export default function AuthCallback() {
     return () => {
       isMounted = false;
     };
-  }, [navigate, nextPath]);
+  }, [location.hash, location.pathname, location.search, navigate, nextPath]);
 
   if (!errorMessage) {
     return (

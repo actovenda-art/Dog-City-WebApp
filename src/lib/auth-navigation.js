@@ -52,3 +52,21 @@ export function getSafeRedirectTarget(pathname, search = "") {
 
   return resolveSafeNextPath(`${normalizedPath}${search || ""}`);
 }
+
+export function normalizeAppLocation(value) {
+  if (!isSafeRelativePath(value)) return createPageUrl("Dev_Dashboard");
+
+  try {
+    const parsed = new URL(value, "https://dogcity.local");
+    const pathname = normalizePathname(parsed.pathname);
+    return `${pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return createPageUrl("Dev_Dashboard");
+  }
+}
+
+export function isSameAppLocation(target, pathname, search = "", hash = "") {
+  const normalizedTarget = normalizeAppLocation(target);
+  const current = normalizeAppLocation(`${normalizePathname(pathname)}${search || ""}${hash || ""}`);
+  return normalizedTarget === current;
+}

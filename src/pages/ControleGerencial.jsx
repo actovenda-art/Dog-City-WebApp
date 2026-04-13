@@ -35,7 +35,13 @@ import {
 } from "lucide-react";
 import { differenceInDays, endOfMonth, format, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { getAppointmentDateKey, getServiceLabel } from "@/lib/attendance";
+import {
+  filterAppointmentsByApprovedOrcamentos,
+  getAppointmentDateKey,
+  getServiceLabel,
+  isApprovedOrcamento,
+  shouldIncludeLinkedRecord,
+} from "@/lib/attendance";
 import {
   dedupeOfficialImportedMovements,
   formatCurrency,
@@ -204,6 +210,41 @@ export default function ControleGerencial() {
     return { dogsById, clientsById, responsaveisById, clientByDogId, responsavelByDogId };
   }, [data.carteiras, data.dogs, data.responsaveis]);
 
+  const approvedOrcamentos = useMemo(
+    () => data.orcamentos.filter((orcamento) => isApprovedOrcamento(orcamento)),
+    [data.orcamentos]
+  );
+
+  const approvedOrcamentosById = useMemo(
+    () => Object.fromEntries(approvedOrcamentos.map((orcamento) => [orcamento.id, orcamento])),
+    [approvedOrcamentos]
+  );
+
+  const visibleAppointments = useMemo(
+    () => filterAppointmentsByApprovedOrcamentos(data.appointments, approvedOrcamentosById),
+    [approvedOrcamentosById, data.appointments]
+  );
+
+  const visibleAppointmentsById = useMemo(
+    () => Object.fromEntries(visibleAppointments.map((appointment) => [appointment.id, appointment])),
+    [visibleAppointments]
+  );
+
+  const visibleContas = useMemo(
+    () => data.contas.filter((item) => shouldIncludeLinkedRecord(item, visibleAppointmentsById, approvedOrcamentosById)),
+    [approvedOrcamentosById, data.contas, visibleAppointmentsById]
+  );
+
+  const visibleUsages = useMemo(
+    () => data.usages.filter((item) => shouldIncludeLinkedRecord(item, visibleAppointmentsById, approvedOrcamentosById)),
+    [approvedOrcamentosById, data.usages, visibleAppointmentsById]
+  );
+
+  const visibleCheckins = useMemo(
+    () => data.checkins.filter((item) => shouldIncludeLinkedRecord(item, visibleAppointmentsById, approvedOrcamentosById)),
+    [approvedOrcamentosById, data.checkins, visibleAppointmentsById]
+  );
+
   const period = useMemo(() => {
     const months = Number(periodMonths) || 6;
     return {
@@ -229,12 +270,12 @@ export default function ControleGerencial() {
       });
     };
 
-    data.usages.forEach((usage) => register({
+    visibleUsages.forEach((usage) => register({
       dogId: usage.dog_id,
       service: usage.service_type || usage.service,
       date: usage.data_utilizacao || usage.date || usage.created_date,
     }));
-    data.checkins.forEach((checkin) => register({
+    visibleCheckins.forEach((checkin) => register({
       dogId: checkin.dog_id,
       service: checkin.service_type,
       date: checkin.checkin_datetime || checkin.data_checkin || checkin.created_date,
@@ -247,7 +288,7 @@ export default function ControleGerencial() {
         return [service, total / period.months];
       })),
     ]));
-  }, [data.checkins, data.usages, period]);
+  }, [period, visibleCheckins, visibleUsages]);
 
   const fixedClientRows = useMemo(() => {
     const grouped = new Map();
@@ -342,15 +383,15 @@ export default function ControleGerencial() {
 
   const receivablesByBudget = useMemo(() => {
     const contasByOrcamento = {};
-    data.contas.forEach((conta) => {
+    visibleContas.forEach((conta) => {
       if (!conta.orcamento_id) return;
       contasByOrcamento[conta.orcamento_id] ||= [];
       contasByOrcamento[conta.orcamento_id].push(conta);
     });
 
-    const ids = new Set([...data.orcamentos.map((orcamento) => orcamento.id), ...Object.keys(contasByOrcamento)]);
+    const ids = new Set([...approvedOrcamentos.map((orcamento) => orcamento.id), ...Object.keys(contasByOrcamento)]);
     return Array.from(ids).map((id) => {
-      const orcamento = data.orcamentos.find((item) => item.id === id) || {};
+      const orcamento = approvedOrcamentos.find((item) => item.id === id) || {};
       const contas = contasByOrcamento[id] || [];
       const client = indexes.clientsById[orcamento.cliente_id || contas[0]?.cliente_id];
       const charged = contas.reduce((sum, conta) => sum + Number(conta.valor || 0), 0);
@@ -370,7 +411,7 @@ export default function ControleGerencial() {
       .filter((row) => row.valorOrcamento > 0 || row.valorCobrado > 0)
       .filter((row) => normalizeText([row.cliente, row.id, row.status].join(" ")).includes(normalizeText(searchTerm)))
       .sort((a, b) => String(b.vencimento || "").localeCompare(String(a.vencimento || "")));
-  }, [data.contas, data.orcamentos, indexes.clientsById, searchTerm]);
+  }, [approvedOrcamentos, indexes.clientsById, searchTerm, visibleContas]);
 
   const payableRows = useMemo(() => {
     const sorted = [...data.lancamentos].sort((a, b) => String(a.vencimento || a.created_date || "").localeCompare(String(b.vencimento || b.created_date || "")));
@@ -388,7 +429,7 @@ export default function ControleGerencial() {
 
   const absentDogs = useMemo(() => {
     const lastByDogId = {};
-    data.checkins.forEach((checkin) => {
+    visibleCheckins.forEach((checkin) => {
       const date = checkin.checkin_datetime || checkin.data_checkin || checkin.created_date;
       if (!checkin.dog_id || !date) return;
       if (!lastByDogId[checkin.dog_id] || new Date(date) > new Date(lastByDogId[checkin.dog_id])) {
@@ -412,11 +453,11 @@ export default function ControleGerencial() {
       .filter((dog) => dog.diasAusente >= threshold)
       .filter((dog) => normalizeText([dog.nome, dog.raca, dog.responsavelFinanceiro].join(" ")).includes(normalizeText(searchTerm)))
       .sort((a, b) => b.diasAusente - a.diasAusente);
-  }, [absenceThreshold, data.checkins, data.dogs, indexes.clientByDogId, searchTerm]);
+  }, [absenceThreshold, data.dogs, indexes.clientByDogId, searchTerm, visibleCheckins]);
 
   const recentAppointmentsByDog = useMemo(() => {
     const byDog = {};
-    data.appointments.forEach((appointment) => {
+    visibleAppointments.forEach((appointment) => {
       const date = getAppointmentDateKey(appointment);
       if (!appointment.dog_id || !date) return;
       byDog[appointment.dog_id] ||= [];
@@ -424,7 +465,7 @@ export default function ControleGerencial() {
     });
     Object.values(byDog).forEach((items) => items.sort((a, b) => String(getAppointmentDateKey(b)).localeCompare(String(getAppointmentDateKey(a)))));
     return byDog;
-  }, [data.appointments]);
+  }, [visibleAppointments]);
 
   const stats = useMemo(() => ({
     clientesFixos: fixedClientRows.length,

@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog } from "@/api/entities";
-import { buildDogOwnerIndex, buildReceivablePayload, getAppointmentDateKey, getAppointmentMeta, getChargeTypeLabel, getServiceLabel } from "@/lib/attendance";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento } from "@/api/entities";
+import {
+  buildDogOwnerIndex,
+  buildReceivablePayload,
+  filterAppointmentsByApprovedOrcamentos,
+  getAppointmentDateKey,
+  getAppointmentMeta,
+  getChargeTypeLabel,
+  getServiceLabel,
+} from "@/lib/attendance";
 import { createPageUrl } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +52,7 @@ export default function Agendamentos() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [appointments, setAppointments] = useState([]);
+  const [orcamentos, setOrcamentos] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
   const [checkins, setCheckins] = useState([]);
@@ -57,7 +66,12 @@ export default function Agendamentos() {
   const [packageNotes, setPackageNotes] = useState("");
 
   const dogsById = useMemo(() => Object.fromEntries(dogs.map((dog) => [dog.id, dog])), [dogs]);
+  const orcamentosById = useMemo(() => Object.fromEntries(orcamentos.map((orcamento) => [orcamento.id, orcamento])), [orcamentos]);
   const ownerByDogId = useMemo(() => buildDogOwnerIndex(carteiras, []), [carteiras]);
+  const visibleAppointments = useMemo(
+    () => filterAppointmentsByApprovedOrcamentos(appointments, orcamentosById),
+    [appointments, orcamentosById]
+  );
   const reviewAppointmentId = searchParams.get("review");
   const absenceReviewAppointmentId = searchParams.get("absenceReview");
 
@@ -68,13 +82,15 @@ export default function Agendamentos() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [appointmentRows, dogRows, carteiraRows, checkinRows] = await Promise.all([
+      const [appointmentRows, orcamentoRows, dogRows, carteiraRows, checkinRows] = await Promise.all([
         Appointment.listAll("-created_date", 1000, 5000),
+        Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 1000),
         Carteira.list("-created_date", 500),
         Checkin.listAll("-created_date", 1000, 5000),
       ]);
       setAppointments(appointmentRows || []);
+      setOrcamentos(orcamentoRows || []);
       setDogs((dogRows || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteiraRows || []).filter((item) => item.ativo !== false));
       setCheckins(checkinRows || []);
@@ -85,24 +101,24 @@ export default function Agendamentos() {
   }
 
   const pendingCommercialAppointments = useMemo(() => {
-    return appointments.filter((appointment) => {
+    return visibleAppointments.filter((appointment) => {
       const meta = getAppointmentMeta(appointment);
       return appointment.source_type === "manual_registrador" && (
         appointment.charge_type === "pendente_comercial" ||
         meta.commercial_review_pending
       );
     });
-  }, [appointments]);
+  }, [visibleAppointments]);
 
   const pendingAbsenceAppointments = useMemo(() => {
-    return appointments.filter((appointment) => {
+    return visibleAppointments.filter((appointment) => {
       const meta = getAppointmentMeta(appointment);
       return meta.absence_review_pending;
     });
-  }, [appointments]);
+  }, [visibleAppointments]);
 
   const filteredAppointments = useMemo(() => {
-    return appointments.filter((appointment) => {
+    return visibleAppointments.filter((appointment) => {
       const dog = dogsById[appointment.dog_id];
       const owner = ownerByDogId[appointment.dog_id] || {};
       const dateKey = getAppointmentDateKey(appointment);
@@ -112,17 +128,17 @@ export default function Agendamentos() {
       const matchStatus = filterStatus === "all" || appointment.status === filterStatus || appointment.charge_type === filterStatus;
       return matchSearch && matchDate && matchService && matchStatus;
     });
-  }, [appointments, dogsById, filterDate, filterService, filterStatus, ownerByDogId, searchTerm]);
+  }, [visibleAppointments, dogsById, filterDate, filterService, filterStatus, ownerByDogId, searchTerm]);
 
   const stats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     return {
-      total: appointments.length,
-      hoje: appointments.filter((appointment) => getAppointmentDateKey(appointment) === todayKey).length,
+      total: visibleAppointments.length,
+      hoje: visibleAppointments.filter((appointment) => getAppointmentDateKey(appointment) === todayKey).length,
       pendencias: pendingCommercialAppointments.length,
-      presentes: appointments.filter((appointment) => appointment.status === "presente").length,
+      presentes: visibleAppointments.filter((appointment) => appointment.status === "presente").length,
     };
-  }, [appointments, pendingCommercialAppointments]);
+  }, [pendingCommercialAppointments, visibleAppointments]);
 
   function openPackageDialog(appointment) {
     const meta = getAppointmentMeta(appointment);

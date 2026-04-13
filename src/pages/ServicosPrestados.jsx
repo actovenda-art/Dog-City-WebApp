@@ -3,6 +3,7 @@ import { ServiceProvided } from "@/api/entities";
 import { Appointment } from "@/api/entities";
 import { Replacement } from "@/api/entities";
 import { Dog } from "@/api/entities";
+import { Orcamento } from "@/api/entities";
 import { User } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { filterAppointmentsByApprovedOrcamentos, isApprovedOrcamento } from "@/lib/attendance";
 
 const SERVICES = [
   { id: "day_care", label: "Day Care", icon: "🐕" },
@@ -59,15 +61,19 @@ export default function ServicosPrestados() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [servicesData, apptsData, replacementsData, dogsData, usersData] = await Promise.all([
+      const [servicesData, apptsData, replacementsData, dogsData, usersData, orcamentosData] = await Promise.all([
         ServiceProvided.list("-date", 500),
         Appointment.list("-date", 500),
         Replacement.list("-created_date", 500),
         Dog.list("-created_date", 500),
-        User.list("-created_date", 500)
+        User.list("-created_date", 500),
+        Orcamento.list("-created_date", 500),
       ]);
+      const approvedOrcamentosById = Object.fromEntries(
+        (orcamentosData || []).filter((orcamento) => isApprovedOrcamento(orcamento)).map((orcamento) => [orcamento.id, orcamento])
+      );
       setServices(servicesData);
-      setAppointments(apptsData);
+      setAppointments(filterAppointmentsByApprovedOrcamentos(apptsData || [], approvedOrcamentosById));
       setReplacements(replacementsData);
       setDogs(dogsData);
       setUsers(usersData);

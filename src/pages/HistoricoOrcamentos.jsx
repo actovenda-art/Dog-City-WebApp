@@ -22,7 +22,13 @@ import { ptBR } from "date-fns/locale";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { notificacoesOrcamento } from "@/api/functions";
-import { buildAppointmentsFromOrcamento, buildDogOwnerIndex, buildPricingConfig } from "@/lib/attendance";
+import {
+  buildAppointmentsFromOrcamento,
+  buildDogOwnerIndex,
+  buildPricingConfig,
+  getAppointmentMeta,
+  isApprovedOrcamentoStatus,
+} from "@/lib/attendance";
 
 export default function HistoricoOrcamentos() {
   const [orcamentos, setOrcamentos] = useState([]);
@@ -108,29 +114,73 @@ export default function HistoricoOrcamentos() {
   const handleStatusChange = async (id, newStatus) => {
     await Orcamento.update(id, { status: newStatus });
 
-    const orcamento = orcamentos.find((item) => item.id === id);
-    if (newStatus === "aprovado" && orcamento) {
+    const currentOrcamento = orcamentos.find((item) => item.id === id);
+    const nextOrcamento = currentOrcamento ? { ...currentOrcamento, status: newStatus } : null;
+
+    if (nextOrcamento) {
       try {
-        const [pricingRows, currentUser, existingAppointments] = await Promise.all([
-          TabelaPrecos.list("-created_date", 1000),
-          User.me(),
-          Appointment.listAll("-created_date", 1000, 5000),
-        ]);
+        const existingAppointments = await Appointment.listAll("-created_date", 1000, 5000);
+        const linkedAppointments = (existingAppointments || []).filter(
+          (item) => item.orcamento_id === id && item.source_type === "orcamento_aprovado"
+        );
 
-        const ownerByDogId = buildDogOwnerIndex(carteiras, []);
-        const precos = buildPricingConfig(pricingRows || [], currentUser?.empresa_id || orcamento.empresa_id || null);
-        const plannedAppointments = buildAppointmentsFromOrcamento({
-          orcamento,
-          dogs,
-          precos,
-          ownerByDogId,
-        });
+        if (!isApprovedOrcamentoStatus(newStatus)) {
+          await Promise.all(
+            linkedAppointments.map((appointment) =>
+              Appointment.update(appointment.id, {
+                status: "cancelado",
+                metadata: {
+                  ...getAppointmentMeta(appointment),
+                  orcamento_status_bloqueado: true,
+                  orcamento_status_atual: newStatus,
+                },
+              })
+            )
+          );
+        } else {
+          const [pricingRows, currentUser] = await Promise.all([
+            TabelaPrecos.list("-created_date", 1000),
+            User.me(),
+          ]);
 
-        const existingKeys = new Set((existingAppointments || []).map((item) => item.source_key).filter(Boolean));
-        const appointmentsToCreate = plannedAppointments.filter((item) => !item.source_key || !existingKeys.has(item.source_key));
+          const ownerByDogId = buildDogOwnerIndex(carteiras, []);
+          const precos = buildPricingConfig(
+            pricingRows || [],
+            currentUser?.empresa_id || nextOrcamento.empresa_id || null
+          );
+          const plannedAppointments = buildAppointmentsFromOrcamento({
+            orcamento: nextOrcamento,
+            dogs,
+            precos,
+            ownerByDogId,
+          });
 
-        for (const appointment of appointmentsToCreate) {
-          await Appointment.create(appointment);
+          const existingBySourceKey = new Map(
+            (existingAppointments || [])
+              .filter((item) => item.source_key)
+              .map((item) => [item.source_key, item])
+          );
+
+          for (const appointment of plannedAppointments) {
+            const existing = appointment.source_key ? existingBySourceKey.get(appointment.source_key) : null;
+            if (!existing) {
+              await Appointment.create(appointment);
+              continue;
+            }
+
+            if (existing.status === "cancelado" || getAppointmentMeta(existing).orcamento_status_bloqueado) {
+              await Appointment.update(existing.id, {
+                ...appointment,
+                status: "agendado",
+                metadata: {
+                  ...getAppointmentMeta(existing),
+                  ...appointment.metadata,
+                  orcamento_status_bloqueado: false,
+                  orcamento_status_atual: newStatus,
+                },
+              });
+            }
+          }
         }
       } catch (error) {
         console.error("Erro ao gerar agendamentos do orçamento:", error);

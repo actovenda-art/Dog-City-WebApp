@@ -7,6 +7,7 @@ import { Replacement } from "@/api/entities";
 import { PlanConfig } from "@/api/entities";
 import { Dog } from "@/api/entities";
 import { Carteira } from "@/api/entities";
+import { Orcamento } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,6 +21,7 @@ import {
 } from "recharts";
 import { format, subMonths, startOfMonth, endOfMonth, subDays, differenceInDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { filterAppointmentsByApprovedOrcamentos, getAppointmentDateKey, isApprovedOrcamento } from "@/lib/attendance";
 
 export default function Cockpit() {
   const [transactions, setTransactions] = useState([]);
@@ -40,7 +42,7 @@ export default function Cockpit() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [transData, schedData, apptsData, servData, replData, plansData, dogsData, carteirasData] = await Promise.all([
+      const [transData, schedData, apptsData, servData, replData, plansData, dogsData, carteirasData, orcamentosData] = await Promise.all([
         Transaction.list("-date", 1000),
         ScheduledTransaction.list("-due_date", 500),
         Appointment.list("-date", 1000),
@@ -48,11 +50,15 @@ export default function Cockpit() {
         Replacement.list("-created_date", 500),
         PlanConfig.list("-created_date", 500),
         Dog.list("-created_date", 500),
-        Carteira.list("-created_date", 500)
+        Carteira.list("-created_date", 500),
+        Orcamento.list("-created_date", 500),
       ]);
+      const approvedOrcamentosById = Object.fromEntries(
+        (orcamentosData || []).filter((orcamento) => isApprovedOrcamento(orcamento)).map((orcamento) => [orcamento.id, orcamento])
+      );
       setTransactions(transData);
       setScheduled(schedData);
-      setAppointments(apptsData);
+      setAppointments(filterAppointmentsByApprovedOrcamentos(apptsData || [], approvedOrcamentosById));
       setServicesProvided(servData);
       setReplacements(replData);
       setPlans(plansData);
@@ -83,7 +89,7 @@ export default function Cockpit() {
   const pendentesReceber = scheduled.filter(s => s.status === "pendente" && s.type === "entrada").reduce((acc, s) => acc + (s.value || 0), 0);
   const pendentesPagar = scheduled.filter(s => s.status === "pendente" && s.type === "saida").reduce((acc, s) => acc + (s.value || 0), 0);
 
-  const agendamentosHoje = appointments.filter(a => a.date === hoje).length;
+  const agendamentosHoje = appointments.filter((appointment) => getAppointmentDateKey(appointment) === hoje).length;
   const servicosHoje = servicesProvided.filter(s => s.date === hoje).length;
 
   const totalReposicoes = replacements.filter(r => r.status === "disponivel").length;

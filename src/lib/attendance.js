@@ -198,6 +198,45 @@ export function getServiceLabel(serviceType) {
   return ATTENDANCE_SERVICES.find((service) => service.id === serviceType)?.label || serviceType || "-";
 }
 
+export function isApprovedOrcamentoStatus(status) {
+  return String(status || "").trim().toLowerCase() === "aprovado";
+}
+
+export function isApprovedOrcamento(orcamento) {
+  return Boolean(orcamento?.id) && isApprovedOrcamentoStatus(orcamento.status);
+}
+
+export function shouldIncludeAppointment(appointment, orcamentosById = {}) {
+  if (!appointment) return false;
+  if (appointment.source_type !== "orcamento_aprovado" && !appointment.orcamento_id) return true;
+
+  const orcamento = appointment.orcamento_id ? orcamentosById?.[appointment.orcamento_id] : null;
+  if (!orcamento) {
+    return appointment.source_type !== "orcamento_aprovado";
+  }
+
+  return isApprovedOrcamentoStatus(orcamento.status);
+}
+
+export function filterAppointmentsByApprovedOrcamentos(appointments = [], orcamentosById = {}) {
+  return (appointments || []).filter((appointment) => shouldIncludeAppointment(appointment, orcamentosById));
+}
+
+export function shouldIncludeLinkedRecord(record, appointmentsById = {}, orcamentosById = {}) {
+  if (!record) return false;
+
+  if (record.orcamento_id) {
+    const directOrcamento = orcamentosById?.[record.orcamento_id];
+    return isApprovedOrcamento(directOrcamento);
+  }
+
+  if (record.appointment_id) {
+    return shouldIncludeAppointment(appointmentsById?.[record.appointment_id], orcamentosById);
+  }
+
+  return true;
+}
+
 export function getDayCareStandaloneValue(cao, precos = DEFAULT_PRICING) {
   if (cao?.day_care_plano_ativo) {
     return (
@@ -378,6 +417,10 @@ function inferChargeType(cao, serviceType) {
 }
 
 export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, ownerByDogId = {} }) {
+  if (!isApprovedOrcamentoStatus(orcamento?.status)) {
+    return [];
+  }
+
   const appointments = [];
   const dogsById = Object.fromEntries((dogs || []).map((dog) => [dog.id, dog]));
 

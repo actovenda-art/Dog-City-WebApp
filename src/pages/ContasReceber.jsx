@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Appointment, Checkin, Client, ContaReceber, Dog, Orcamento, ServiceProvided } from "@/api/entities";
-import { getAppointmentDateKey, getAppointmentMeta, getChargeTypeLabel, getCheckinMealRecords, getServiceLabel } from "@/lib/attendance";
+import {
+  filterAppointmentsByApprovedOrcamentos,
+  getAppointmentDateKey,
+  getAppointmentMeta,
+  getChargeTypeLabel,
+  getCheckinMealRecords,
+  getServiceLabel,
+  isApprovedOrcamento,
+  shouldIncludeLinkedRecord,
+} from "@/lib/attendance";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,19 +113,57 @@ export default function ContasReceber() {
     setIsLoading(false);
   }
 
+  const approvedOrcamentos = useMemo(
+    () => data.orcamentos.filter((orcamento) => isApprovedOrcamento(orcamento)),
+    [data.orcamentos]
+  );
+
+  const approvedOrcamentosById = useMemo(
+    () => Object.fromEntries(approvedOrcamentos.map((item) => [item.id, item])),
+    [approvedOrcamentos]
+  );
+
+  const visibleAppointments = useMemo(
+    () => filterAppointmentsByApprovedOrcamentos(data.appointments, approvedOrcamentosById),
+    [approvedOrcamentosById, data.appointments]
+  );
+
+  const visibleAppointmentsById = useMemo(
+    () => Object.fromEntries(visibleAppointments.map((item) => [item.id, item])),
+    [visibleAppointments]
+  );
+
+  const visibleContas = useMemo(
+    () => data.contas.filter((item) => shouldIncludeLinkedRecord(item, visibleAppointmentsById, approvedOrcamentosById)),
+    [approvedOrcamentosById, data.contas, visibleAppointmentsById]
+  );
+
+  const visibleCheckins = useMemo(
+    () => data.checkins.filter((item) => shouldIncludeLinkedRecord(item, visibleAppointmentsById, approvedOrcamentosById)),
+    [approvedOrcamentosById, data.checkins, visibleAppointmentsById]
+  );
+
+  const visibleUsages = useMemo(
+    () => data.usages.filter((item) => shouldIncludeLinkedRecord(item, visibleAppointmentsById, approvedOrcamentosById)),
+    [approvedOrcamentosById, data.usages, visibleAppointmentsById]
+  );
+
   const maps = useMemo(() => ({
     clientsById: Object.fromEntries(data.clients.map((item) => [item.id, item])),
     dogsById: Object.fromEntries(data.dogs.map((item) => [item.id, item])),
-    appointmentsById: Object.fromEntries(data.appointments.map((item) => [item.id, item])),
-    checkinsById: Object.fromEntries(data.checkins.map((item) => [item.id, item])),
-    orcamentosById: Object.fromEntries(data.orcamentos.map((item) => [item.id, item])),
-    usageByCheckinId: Object.fromEntries(data.usages.filter((item) => item.checkin_id).map((item) => [item.checkin_id, item])),
-    usageByAppointmentId: Object.fromEntries(data.usages.filter((item) => item.appointment_id).map((item) => [item.appointment_id, item])),
-  }), [data]);
+    appointmentsById: visibleAppointmentsById,
+    checkinsById: Object.fromEntries(visibleCheckins.map((item) => [item.id, item])),
+    orcamentosById: approvedOrcamentosById,
+    usageByCheckinId: Object.fromEntries(visibleUsages.filter((item) => item.checkin_id).map((item) => [item.checkin_id, item])),
+    usageByAppointmentId: Object.fromEntries(visibleUsages.filter((item) => item.appointment_id).map((item) => [item.appointment_id, item])),
+  }), [approvedOrcamentosById, data.clients, data.dogs, visibleAppointmentsById, visibleCheckins, visibleUsages]);
 
-  const serviceOptions = useMemo(() => Array.from(new Set([...data.contas.map((item) => item.servico), ...data.usages.map((item) => item.service_type)].filter(Boolean))).sort(), [data]);
+  const serviceOptions = useMemo(
+    () => Array.from(new Set([...visibleContas.map((item) => item.servico), ...visibleUsages.map((item) => item.service_type)].filter(Boolean))).sort(),
+    [visibleContas, visibleUsages]
+  );
 
-  const filteredContas = useMemo(() => data.contas.filter((conta) => {
+  const filteredContas = useMemo(() => visibleContas.filter((conta) => {
     const client = maps.clientsById[conta.cliente_id];
     const dog = maps.dogsById[conta.dog_id];
     const appointment = maps.appointmentsById[conta.appointment_id];
@@ -137,10 +184,10 @@ export default function ContasReceber() {
       (!filterVencimentoInicio || conta.vencimento >= filterVencimentoInicio) &&
       (!filterVencimentoFim || conta.vencimento <= filterVencimentoFim);
   }).sort((a, b) => `${b.vencimento || b.data_prestacao || ""}`.localeCompare(`${a.vencimento || a.data_prestacao || ""}`)), [
-    data.contas, filterOrigem, filterPrestacaoFim, filterPrestacaoInicio, filterServico, filterStatus, filterTipoAgendamento, filterTipoCobranca, filterVencimentoFim, filterVencimentoInicio, maps, searchTerm,
+    filterOrigem, filterPrestacaoFim, filterPrestacaoInicio, filterServico, filterStatus, filterTipoAgendamento, filterTipoCobranca, filterVencimentoFim, filterVencimentoInicio, maps, searchTerm, visibleContas,
   ]);
 
-  const filteredUsages = useMemo(() => data.usages.filter((usage) => usage.charge_type === "pacote").filter((usage) => {
+  const filteredUsages = useMemo(() => visibleUsages.filter((usage) => usage.charge_type === "pacote").filter((usage) => {
     const client = maps.clientsById[usage.cliente_id];
     const dog = maps.dogsById[usage.dog_id];
     const appointment = maps.appointmentsById[usage.appointment_id];
@@ -150,7 +197,7 @@ export default function ContasReceber() {
       (filterServico === "all" || usage.service_type === filterServico) &&
       (!filterPrestacaoInicio || usageDate >= filterPrestacaoInicio) &&
       (!filterPrestacaoFim || usageDate <= filterPrestacaoFim);
-  }).sort((a, b) => `${b.data_utilizacao || ""}`.localeCompare(`${a.data_utilizacao || ""}`)), [data.usages, filterPrestacaoFim, filterPrestacaoInicio, filterServico, maps, searchTerm]);
+  }).sort((a, b) => `${b.data_utilizacao || ""}`.localeCompare(`${a.data_utilizacao || ""}`)), [filterPrestacaoFim, filterPrestacaoInicio, filterServico, maps, searchTerm, visibleUsages]);
 
   const stats = useMemo(() => ({
     pendente: filteredContas.filter((item) => getStatusKey(item) === "pendente").reduce((sum, item) => sum + (item.valor || 0), 0),

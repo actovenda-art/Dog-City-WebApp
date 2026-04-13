@@ -1,8 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, Notificacao, PerfilAcesso, Responsavel, ServiceProvided, User } from "@/api/entities";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, Notificacao, Orcamento, PerfilAcesso, Responsavel, ServiceProvided, User } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
-import { buildDogOwnerIndex, buildReceivablePayload, getAppointmentDateKey, getAppointmentMeta, getAppointmentStatus, getAppointmentTimeValue, getChargeTypeLabel, getCheckinMealRecords, getServiceLabel, MANUAL_REGISTRADOR_SERVICES, MEAL_CONSUMPTION_OPTIONS } from "@/lib/attendance";
+import {
+  buildDogOwnerIndex,
+  buildReceivablePayload,
+  filterAppointmentsByApprovedOrcamentos,
+  getAppointmentDateKey,
+  getAppointmentMeta,
+  getAppointmentStatus,
+  getAppointmentTimeValue,
+  getChargeTypeLabel,
+  getCheckinMealRecords,
+  getServiceLabel,
+  MANUAL_REGISTRADOR_SERVICES,
+  MEAL_CONSUMPTION_OPTIONS,
+} from "@/lib/attendance";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -159,6 +172,7 @@ export default function Registrador() {
   const [carteiras, setCarteiras] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [appointments, setAppointments] = useState([]);
+  const [orcamentos, setOrcamentos] = useState([]);
   const [checkins, setCheckins] = useState([]);
   const [users, setUsers] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -198,6 +212,11 @@ export default function Registrador() {
 
   const ownerByDogId = useMemo(() => buildDogOwnerIndex(carteiras, responsaveis), [carteiras, responsaveis]);
   const dogsById = useMemo(() => Object.fromEntries(dogs.map((dog) => [dog.id, dog])), [dogs]);
+  const orcamentosById = useMemo(() => Object.fromEntries(orcamentos.map((orcamento) => [orcamento.id, orcamento])), [orcamentos]);
+  const visibleAppointments = useMemo(
+    () => filterAppointmentsByApprovedOrcamentos(appointments, orcamentosById),
+    [appointments, orcamentosById]
+  );
   const profilesById = useMemo(() => Object.fromEntries(profiles.map((profile) => [profile.id, profile])), [profiles]);
   const monitors = useMemo(() => users.filter((user) => user.active !== false), [users]);
   const selectedDateTitle = selectedDate === TODAY_KEY ? "Hoje" : formatDateLabel(selectedDate);
@@ -231,7 +250,7 @@ export default function Registrador() {
   }, [activeProviderCheckins, users]);
 
   const dayAppointments = useMemo(() => {
-    return appointments
+    return visibleAppointments
       .filter((appointment) => {
         if (getAppointmentDateKey(appointment) !== selectedDate) return false;
         if (appointment.status === "cancelado" || appointment.status === "desconsiderado") return false;
@@ -245,7 +264,7 @@ export default function Registrador() {
         const rightTime = getAppointmentTimeValue(right, "entrada") || "00:00";
         return leftTime.localeCompare(rightTime);
       });
-  }, [appointments, finalizedCheckinByAppointmentId, selectedDate]);
+  }, [finalizedCheckinByAppointmentId, selectedDate, visibleAppointments]);
 
   const matchingDogIds = useMemo(() => {
     if (!searchTerm.trim()) return new Set(dogs.map((dog) => dog.id));
@@ -290,9 +309,9 @@ export default function Registrador() {
   }, [requestedDate]);
 
   useEffect(() => {
-    if (isLoading || !users.length || (!appointments.length && !checkins.length)) return;
+    if (isLoading || !users.length || (!visibleAppointments.length && !checkins.length)) return;
     syncCommercialAlerts();
-  }, [appointments, checkins, isLoading, users]);
+  }, [checkins, isLoading, users, visibleAppointments]);
 
   async function loadData() {
     setIsLoading(true);
@@ -307,11 +326,13 @@ export default function Registrador() {
         PerfilAcesso.list("-created_date", 200),
         User.me(),
       ]);
+      const orcamentoRows = await Orcamento.list("-created_date", 500);
 
       setDogs((dogRows || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteiraRows || []).filter((item) => item.ativo !== false));
       setResponsaveis((responsávelRows || []).filter((item) => item.ativo !== false));
       setAppointments(appointmentRows || []);
+      setOrcamentos(orcamentoRows || []);
       setCheckins(checkinRows || []);
       setUsers(userRows || []);
       setProfiles(profileRows || []);
@@ -331,7 +352,7 @@ export default function Registrador() {
       const now = new Date();
       const updates = [];
 
-      for (const appointment of appointments) {
+      for (const appointment of visibleAppointments) {
         const dateKey = getAppointmentDateKey(appointment);
         if (!dateKey || dateKey >= TODAY_KEY) continue;
         if (["cancelado", "finalizado", "faltou", "desconsiderado"].includes(appointment.status)) continue;
@@ -379,7 +400,8 @@ export default function Registrador() {
         }
         if (new Date(checkin.tarefa_lembrete_notificar_em) > now) continue;
 
-        const appointment = appointments.find((item) => item.id === checkin.appointment_id);
+        const appointment = visibleAppointments.find((item) => item.id === checkin.appointment_id);
+        if (checkin.appointment_id && !appointment) continue;
         const dog = dogsById[checkin.dog_id];
         const targetDate = getAppointmentDateKey(appointment) || (checkin.checkin_datetime || "").slice(0, 10) || TODAY_KEY;
         const recipientsCount = await notifySectorUsers({

@@ -249,6 +249,96 @@ async function loadAppUserByEmail(email: string) {
   return (data as AppUserRow | null) || null;
 }
 
+async function loadPendingInviteByEmail(email: string) {
+  if (!email) return null;
+  const normalizedEmail = sanitizeText(email).toLowerCase();
+  const { data, error } = await admin
+    .from("user_invite")
+    .select("*")
+    .eq("email", normalizedEmail)
+    .in("status", ["pendente", "aceito"])
+    .order("created_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Nao foi possivel localizar o convite de usuario.");
+  }
+
+  return (data as Record<string, unknown> | null) || null;
+}
+
+async function createAppUserFromInvite(invite: Record<string, any>) {
+  const now = new Date().toISOString();
+  const normalizedEmail = sanitizeText(invite.email).toLowerCase();
+  const fullName = sanitizeText(invite.full_name) || null;
+
+  let authUserId: string | null = null;
+
+  try {
+    const { data } = await admin.auth.admin.getUserByEmail(normalizedEmail);
+    authUserId = data?.user?.id || null;
+  } catch {
+    authUserId = null;
+  }
+
+  if (!authUserId) {
+    authUserId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `invite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const { data, error } = await admin.auth.admin.createUser({
+      id: authUserId,
+      email: normalizedEmail,
+      password: DEFAULT_BOOTSTRAP_PIN,
+      email_confirm: true,
+      user_metadata: fullName ? { full_name: fullName } : undefined,
+    });
+
+    if (error) {
+      throw new Error(error.message || "Nao foi possivel criar o usuario de autenticacao para o convite.");
+    }
+
+    authUserId = data?.user?.id || authUserId;
+  }
+
+  const { data, error } = await admin
+    .from("users")
+    .insert([{
+      id: authUserId,
+      email: normalizedEmail,
+      full_name: fullName,
+      profile: "usuario",
+      active: true,
+      empresa_id: invite.empresa_id || null,
+      access_profile_id: invite.access_profile_id || null,
+      company_role: invite.company_role || null,
+      is_platform_admin: invite.is_platform_admin ?? false,
+      onboarding_status: "pendente",
+      pin_required_reset: true,
+      pin_bootstrap_status: "pronto",
+      created_date: now,
+      updated_date: now,
+    }])
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Nao foi possivel criar o usuario de aplicacao a partir do convite.");
+  }
+
+  await admin
+    .from("user_invite")
+    .update({
+      status: "aceito",
+      accepted_at: invite.accepted_at || now,
+      updated_date: now,
+    })
+    .eq("id", invite.id);
+
+  return data as AppUserRow | null;
+}
+
 async function touchPinVerification(userId: string) {
   const now = new Date().toISOString();
   const { data, error } = await admin
@@ -637,7 +727,16 @@ async function handlePinLogin(payload: Record<string, unknown>) {
     return jsonResponse({ error: "Selecione os 6 pares do PIN." }, 400);
   }
 
-  const appUser = await loadAppUserByEmail(email);
+  let appUser = await loadAppUserByEmail(email);
+  let invite: Record<string, any> | null = null;
+
+  if (!appUser) {
+    invite = await loadPendingInviteByEmail(email);
+    if (invite) {
+      appUser = await createAppUserFromInvite(invite);
+    }
+  }
+
   if (!appUser) {
     return jsonResponse({ error: "Email nao localizado no cadastro." }, 404);
   }
@@ -646,7 +745,16 @@ async function handlePinLogin(payload: Record<string, unknown>) {
     return jsonResponse({ error: "Este acesso foi bloqueado. Fale com a administracao." }, 403);
   }
 
-  const authUser = await getAuthUserById(appUser.id);
+  let authUser = await getAuthUserById(appUser.id);
+  if (!authUser && invite) {
+    try {
+      await ensureBootstrapAuthUser(appUser, DEFAULT_BOOTSTRAP_PIN);
+      authUser = await getAuthUserById(appUser.id);
+    } catch (error) {
+      return jsonResponse({ error: "Nao foi possivel preparar o acesso para este convite." }, 500);
+    }
+  }
+
   if (!authUser) {
     return jsonResponse({
       error: "Este usuario ainda nao teve o PIN provisionado no acesso direto. Na Gestao de Usuarios, use 'Exigir PIN dos usuarios atuais' novamente.",

@@ -41,6 +41,7 @@ export default function Login() {
   const nextPath = useMemo(() => getSafeNextPathFromSearch(location.search), [location.search]);
   const isBlocked = useMemo(() => new URLSearchParams(location.search).get("blocked") === "1", [location.search]);
   const wasRecovered = useMemo(() => new URLSearchParams(location.search).get("recovered") === "1", [location.search]);
+  const inviteToken = useMemo(() => new URLSearchParams(location.search).get("invite"), [location.search]);
   const [email, setEmail] = useState("");
   const [pairs, setPairs] = useState(() => shufflePairs());
   const [selectedPairs, setSelectedPairs] = useState([]);
@@ -104,13 +105,22 @@ export default function Login() {
       });
 
       const currentUser = await User.me();
+      const buildCompletePath = () => {
+        const params = new URLSearchParams();
+        if (inviteToken) params.set("invite", inviteToken);
+        if (nextPath) params.set("next", nextPath);
+        return `${createPageUrl("CompletarCadastro")}${params.toString() ? `?${params.toString()}` : ""}`;
+      };
+
       if (currentUser?.onboarding_status === "pendente") {
-        navigate(`${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+        navigate(buildCompletePath(), { replace: true });
         return;
       }
 
       if (currentUser?.pin_required_reset === true) {
-        navigate(`${createPageUrl("DefinirPin")}?next=${encodeURIComponent(nextPath)}`, { replace: true });
+        const params = new URLSearchParams();
+        if (nextPath) params.set("next", nextPath);
+        navigate(`${createPageUrl("DefinirPin")}${params.toString() ? `?${params.toString()}` : ""}`, { replace: true });
         return;
       }
 

@@ -11,6 +11,7 @@ export default function AuthCallback() {
   const location = useLocation();
   const navigate = useNavigate();
   const nextPath = useMemo(() => getSafeNextPathFromSearch(location.search), [location.search]);
+  const inviteToken = useMemo(() => new URLSearchParams(location.search).get("invite"), [location.search]);
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
@@ -27,7 +28,10 @@ export default function AuthCallback() {
 
         if (isMounted) {
           if (currentUser.onboarding_status === "pendente") {
-            const target = `${createPageUrl("CompletarCadastro")}?next=${encodeURIComponent(nextPath)}`;
+            const params = new URLSearchParams();
+            if (inviteToken) params.set("invite", inviteToken);
+            if (nextPath) params.set("next", nextPath);
+            const target = `${createPageUrl("CompletarCadastro")}${params.toString() ? `?${params.toString()}` : ""}`;
             if (!isSameAppLocation(target, location.pathname, location.search, location.hash)) {
               navigate(target, { replace: true });
             }

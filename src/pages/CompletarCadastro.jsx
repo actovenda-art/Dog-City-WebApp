@@ -107,7 +107,8 @@ export default function CompletarCadastro() {
       const me = await User.me();
       if (!me) {
         if (!isSameAppLocation(createPageUrl("Login"), location.pathname, location.search, location.hash)) {
-          navigate(createPageUrl("Login"), { replace: true });
+          const loginSearch = token ? `?invite=${encodeURIComponent(token)}` : "";
+          navigate(`${createPageUrl("Login")}${loginSearch}`, { replace: true });
         }
         return;
       }

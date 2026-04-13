@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { User } from "@/api/entities";
+import { User, UserInvite } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
 import { getSafeNextPathFromSearch } from "@/lib/auth-navigation";
 import { createPageUrl } from "@/utils";
@@ -43,6 +43,7 @@ export default function Login() {
   const wasRecovered = useMemo(() => new URLSearchParams(location.search).get("recovered") === "1", [location.search]);
   const inviteToken = useMemo(() => new URLSearchParams(location.search).get("invite"), [location.search]);
   const [email, setEmail] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
   const [pairs, setPairs] = useState(() => shufflePairs());
   const [selectedPairs, setSelectedPairs] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -60,6 +61,29 @@ export default function Login() {
   const handleShuffle = () => {
     setPairs(shufflePairs());
   };
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadInviteEmail() {
+      if (!inviteToken) return;
+      try {
+        const inviteRows = await UserInvite.filter({ token: inviteToken }, "-created_date", 1);
+        const invite = inviteRows?.[0] || null;
+        if (!invite || !invite.email) return;
+
+        if (mounted) {
+          setEmail(invite.email);
+          setInviteEmail(invite.email);
+        }
+      } catch (error) {
+        console.warn("Erro ao carregar email do convite:", error);
+      }
+    }
+
+    loadInviteEmail();
+    return () => { mounted = false; };
+  }, [inviteToken]);
 
   const handleGoogleLogin = async () => {
     if (!User.isEnabled?.()) {
@@ -176,6 +200,7 @@ export default function Login() {
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
+                  disabled={!!inviteEmail}
                   className="border-slate-700 bg-slate-900 pl-9 text-white placeholder:text-slate-500"
                   placeholder="email@dogcitybrasil.com.br"
                   autoComplete="username"
@@ -212,6 +237,12 @@ export default function Login() {
               {isSubmitting ? "Entrando..." : "Entrar com email e PIN"}
             </Button>
 
+            {inviteToken && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+                Use o email do convite e o PIN inicial 654321. O login por Google nao e suportado nesse fluxo de convite.
+              </div>
+            )}
+
             <div className="relative py-2">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t border-slate-800" />
@@ -224,7 +255,7 @@ export default function Login() {
             <Button
               type="button"
               onClick={handleGoogleLogin}
-              disabled={isSubmitting || isGoogleSubmitting}
+              disabled={isSubmitting || isGoogleSubmitting || !!inviteToken}
               className="w-full h-12 bg-white text-slate-900 hover:bg-slate-100"
             >
               {isGoogleSubmitting ? <LoaderCircle className="w-4 h-4 mr-2 animate-spin" /> : <GoogleIcon />}

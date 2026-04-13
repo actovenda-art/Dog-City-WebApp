@@ -3,6 +3,13 @@ import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from "r
 import { LoaderCircle } from "lucide-react";
 import { User } from "@/api/entities";
 import { getSafeNextPathFromSearch, getSafeRedirectTarget, isSameAppLocation } from "@/lib/auth-navigation";
+import {
+  buildRecoveredLoginUrl,
+  clearCorruptedBrowserAuthState,
+  recordNavigationSample,
+  shouldTriggerAuthRecovery,
+  wasRecentlyRecovered,
+} from "@/lib/auth-recovery";
 import { ACTIVE_UNIT_EVENT } from "@/lib/unit-context";
 import { createPageUrl, getPageNameFromPath } from "@/utils";
 
@@ -207,6 +214,17 @@ function PagesContent() {
   const [authReady, setAuthReady] = useState(!authEnabled);
   const [currentUser, setCurrentUser] = useState(null);
   const [unitScopeVersion, setUnitScopeVersion] = useState(0);
+
+  useEffect(() => {
+    const samples = recordNavigationSample(location.pathname, location.search);
+    if (!shouldTriggerAuthRecovery(samples) || wasRecentlyRecovered()) {
+      return;
+    }
+
+    console.warn("Auth navigation loop detected. Clearing browser auth state.");
+    clearCorruptedBrowserAuthState();
+    window.location.replace(buildRecoveredLoginUrl());
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     let mounted = true;

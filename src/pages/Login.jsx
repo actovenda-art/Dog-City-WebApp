@@ -40,6 +40,7 @@ export default function Login() {
   const { companyName, logoUrl, isResolved } = useBranding({ variant: "base" });
   const nextPath = useMemo(() => getSafeNextPathFromSearch(location.search), [location.search]);
   const isBlocked = useMemo(() => new URLSearchParams(location.search).get("blocked") === "1", [location.search]);
+  const wasRecovered = useMemo(() => new URLSearchParams(location.search).get("recovered") === "1", [location.search]);
   const [email, setEmail] = useState("");
   const [pairs, setPairs] = useState(() => shufflePairs());
   const [selectedPairs, setSelectedPairs] = useState([]);
@@ -141,6 +142,12 @@ export default function Login() {
           </div>
 
           <form onSubmit={handlePinLogin} className="mt-8 space-y-5">
+            {wasRecovered && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+                Encontramos um estado antigo de sessao neste navegador e limpamos o acesso local para recuperar o login. Entre novamente para continuar.
+              </div>
+            )}
+
             {isBlocked && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
                 Este acesso foi cancelado ou desativado. Fale com a administracao central para liberar uma nova vinculacao.

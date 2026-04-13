@@ -31,6 +31,7 @@ type AppUserRow = {
   company_role?: string | null;
   is_platform_admin?: boolean | null;
   active?: boolean | null;
+  pin_bootstrap_status?: string | null;
 };
 
 type UserUnitAccessRow = {
@@ -289,6 +290,56 @@ async function signInWithPassword(email: string, password: string) {
   };
 }
 
+async function getAuthUserById(userId: string) {
+  if (!userId) return null;
+
+  const { data, error } = await admin.auth.admin.getUserById(userId);
+  if (error || !data?.user) {
+    return null;
+  }
+
+  return data.user;
+}
+
+async function ensureBootstrapAuthUser(user: AppUserRow, defaultPin: string) {
+  const email = sanitizeText(user.email).toLowerCase();
+  if (!user.id || !email) {
+    throw new Error("Usuario sem identificador ou email valido para preparar o PIN.");
+  }
+
+  const existingAuthUser = await getAuthUserById(user.id);
+  if (existingAuthUser) {
+    const { error: updateError } = await admin.auth.admin.updateUserById(user.id, {
+      password: defaultPin,
+      email_confirm: true,
+      user_metadata: user.full_name ? { full_name: user.full_name } : undefined,
+    });
+
+    if (updateError) {
+      throw new Error(updateError.message || "Nao foi possivel atualizar a senha no Auth.");
+    }
+
+    return { mode: "updated" as const };
+  }
+
+  const { data, error: createError } = await admin.auth.admin.createUser({
+    id: user.id,
+    email,
+    password: defaultPin,
+    email_confirm: true,
+    user_metadata: user.full_name ? { full_name: user.full_name } : undefined,
+  });
+
+  if (createError) {
+    throw new Error(createError.message || "Nao foi possivel criar o usuario no Auth.");
+  }
+
+  return {
+    mode: "created" as const,
+    auth_user_id: data?.user?.id || user.id,
+  };
+}
+
 async function loadTargetUserAccessRows(userId: string) {
   const { data, error } = await admin
     .from("user_unit_access")
@@ -476,17 +527,17 @@ async function handleBootstrapDefaultPins(request: Request, payload: Record<stri
       continue;
     }
 
-    const { error: authError } = await admin.auth.admin.updateUserById(user.id, {
-      password: defaultPin,
-    });
-
-    if (authError) {
+    let authMode = "updated";
+    try {
+      const authResult = await ensureBootstrapAuthUser(user as AppUserRow, defaultPin);
+      authMode = authResult.mode;
+    } catch (error) {
       summary.failed += 1;
       summary.results.push({
         user_id: user.id,
         email: user.email,
         status: "erro",
-        reason: authError.message || "Nao foi possivel atualizar a senha no Auth.",
+        reason: error instanceof Error ? error.message : String(error),
       });
       continue;
     }
@@ -518,6 +569,7 @@ async function handleBootstrapDefaultPins(request: Request, payload: Record<stri
       user_id: user.id,
       email: user.email,
       status: "ok",
+      auth_mode: authMode,
     });
   }
 
@@ -586,8 +638,19 @@ async function handlePinLogin(payload: Record<string, unknown>) {
   }
 
   const appUser = await loadAppUserByEmail(email);
+  if (!appUser) {
+    return jsonResponse({ error: "Email nao localizado no cadastro." }, 404);
+  }
+
   if (appUser?.active === false) {
     return jsonResponse({ error: "Este acesso foi bloqueado. Fale com a administracao." }, 403);
+  }
+
+  const authUser = await getAuthUserById(appUser.id);
+  if (!authUser) {
+    return jsonResponse({
+      error: "Este usuario ainda nao teve o PIN provisionado no acesso direto. Na Gestao de Usuarios, use 'Exigir PIN dos usuarios atuais' novamente.",
+    }, 409);
   }
 
   const candidates = buildPinCandidates(selectedPairs);

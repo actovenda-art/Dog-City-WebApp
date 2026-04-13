@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Empresa, User, UserInvite, UserProfile } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
@@ -60,10 +60,6 @@ export default function CompletarCadastro() {
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    loadContext();
-  }, [token]);
-
-  useEffect(() => {
     const cepDigits = form.cep.replace(/\D/g, "");
     if (cepDigits.length !== 8) return undefined;
 
@@ -99,7 +95,7 @@ export default function CompletarCadastro() {
     };
   }, [form.cep]);
 
-  async function loadContext() {
+  const loadContext = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage("");
 
@@ -171,7 +167,11 @@ export default function CompletarCadastro() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [token, navigate, location.pathname, location.search, location.hash]);
+
+  useEffect(() => {
+    loadContext();
+  }, [loadContext]);
 
   async function handlePhotoUpload(file) {
     if (!file || !currentUser) return;
@@ -239,7 +239,10 @@ export default function CompletarCadastro() {
         });
       }
 
-      window.location.replace(nextPath);
+      const target = invite
+        ? `${createPageUrl("DefinirPin")}?next=${encodeURIComponent(nextPath || "/")}`
+        : nextPath || "/";
+      window.location.replace(target);
     } catch (error) {
       console.error("Erro ao concluir cadastro:", error);
       setErrorMessage(error?.message || "Não foi possível concluir o cadastro.");

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { User, UserInvite } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
@@ -130,6 +130,7 @@ export default function Login() {
       await User.signInWithPinPairs?.({
         email: email.trim().toLowerCase(),
         selectedPairs,
+        token: inviteToken,
       });
 
       const currentUser = await User.me();
@@ -239,7 +240,7 @@ export default function Login() {
 
             {inviteToken && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
-                Use o email do convite e o PIN inicial 654321. O login por Google nao e suportado nesse fluxo de convite.
+                Este convite deve ser acessado com o email convidado. Utilize o login com Google para continuar.
               </div>
             )}
 
@@ -255,7 +256,7 @@ export default function Login() {
             <Button
               type="button"
               onClick={handleGoogleLogin}
-              disabled={isSubmitting || isGoogleSubmitting || !!inviteToken}
+              disabled={isSubmitting || isGoogleSubmitting}
               className="w-full h-12 bg-white text-slate-900 hover:bg-slate-100"
             >
               {isGoogleSubmitting ? <LoaderCircle className="w-4 h-4 mr-2 animate-spin" /> : <GoogleIcon />}

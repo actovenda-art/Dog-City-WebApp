@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AppAsset, Empresa, User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
-import { Link } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 import { createPageUrl, getPageNameFromPath } from "@/utils";
 import {
   LogOut,
@@ -49,14 +49,13 @@ function getUnitLogo(unit, unitLogoMap = {}) {
   return unit?.metadata?.logo_url || unitLogoMap[unit?.id] || "";
 }
 
-export default function Layout({ children, currentPageName }) {
-  const [currentUser, setCurrentUser] = useState(null);
+export default function Layout({ children, currentPageName, initialUser = null }) {
+  const [currentUser, setCurrentUser] = useState(initialUser);
   const [availableUnits, setAvailableUnits] = useState([]);
   const [unitLogoMap, setUnitLogoMap] = useState({});
   const [activeUnitId, setActiveUnitId] = useState("");
   const [selectedUnitIds, setSelectedUnitIds] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showLoadingScreen, setShowLoadingScreen] = useState(true);
+  const [isLoading, setIsLoading] = useState(!initialUser);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAccessPanelOpen, setIsAccessPanelOpen] = useState(false);
   const [isUnitPickerOpen, setIsUnitPickerOpen] = useState(false);
@@ -77,7 +76,14 @@ export default function Layout({ children, currentPageName }) {
 
   useEffect(() => {
     loadUser();
-  }, []);
+  }, [initialUser?.id]);
+
+  useEffect(() => {
+    if (!initialUser) return;
+
+    setCurrentUser((current) => current ? { ...current, ...initialUser } : initialUser);
+    setIsLoading(false);
+  }, [initialUser]);
 
   useEffect(() => {
     const handleUnitChanged = (event) => {
@@ -101,7 +107,7 @@ export default function Layout({ children, currentPageName }) {
 
   const loadUser = async () => {
     try {
-      const user = await User.me();
+      const user = initialUser || await User.me();
       let resolvedUser = user;
 
       if (user) {
@@ -187,10 +193,6 @@ export default function Layout({ children, currentPageName }) {
     setIsUnitPickerOpen(false);
     setIsAccessPanelOpen(false);
     setIsMobileMenuOpen(false);
-  };
-
-  const handleLoadingComplete = () => {
-    setShowLoadingScreen(false);
   };
 
   const activeUnit = availableUnits.find((unit) => unit.id === activeUnitId) || null;
@@ -460,14 +462,8 @@ export default function Layout({ children, currentPageName }) {
     </nav>
   );
 
-  if (isLoading || showLoadingScreen) {
-    return (
-      <AnimatePresence>
-        {(isLoading || showLoadingScreen) && (
-          <LoadingScreen onComplete={handleLoadingComplete} />
-        )}
-      </AnimatePresence>
-    );
+  if (isLoading && !currentUser) {
+    return <LoadingScreen />;
   }
 
   return (
@@ -541,7 +537,7 @@ export default function Layout({ children, currentPageName }) {
       ) : null}
 
       <main className="mt-16 flex-1 md:ml-64 md:mt-0">
-        {children}
+        {children || <Outlet />}
       </main>
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter as Router, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { LoaderCircle } from "lucide-react";
 import { User } from "@/api/entities";
 import { getSafeNextPathFromSearch, getSafeRedirectTarget, isSameAppLocation } from "@/lib/auth-navigation";
@@ -94,21 +94,30 @@ function FullScreenAuthLoader() {
   );
 }
 
-function PageFrame({ pageName, currentPageName, currentUser }) {
+function StandalonePage({ pageName }) {
   const PageComponent = PAGES[pageName];
 
   if (!PageComponent) return null;
-  if (STANDALONE_PAGES.has(pageName)) {
-    return <PageComponent />;
-  }
+  return <PageComponent />;
+}
 
+function ProtectedPage({ pageName, currentUser, unitScopeVersion }) {
+  const PageComponent = PAGES[pageName];
+
+  if (!PageComponent) return null;
   return (
-    <Layout currentPageName={currentPageName}>
-      <AccessGuard pageName={pageName} currentUser={currentUser}>
-        <UnitModeGuard pageName={pageName}>
-          <PageComponent />
-        </UnitModeGuard>
-      </AccessGuard>
+    <AccessGuard pageName={pageName} currentUser={currentUser}>
+      <UnitModeGuard pageName={pageName}>
+        <PageComponent key={`page-${pageName}-${unitScopeVersion}`} />
+      </UnitModeGuard>
+    </AccessGuard>
+  );
+}
+
+function ProtectedLayout({ currentPageName, currentUser }) {
+  return (
+    <Layout currentPageName={currentPageName} initialUser={currentUser}>
+      <Outlet />
     </Layout>
   );
 }
@@ -293,43 +302,57 @@ function PagesContent() {
     };
   }, [authEnabled]);
 
+  const protectedLayoutPages = Object.keys(PAGES).filter((pageName) => !STANDALONE_PAGES.has(pageName));
+  const privateStandalonePages = Object.keys(PAGES).filter((pageName) => STANDALONE_PAGES.has(pageName) && !PUBLIC_PAGES.has(pageName) && pageName !== "Login");
+
   return (
     <Routes>
       <Route path="/" element={<Navigate to={createPageUrl("Dev_Dashboard")} replace />} />
 
-      {Object.keys(PAGES).map((pageName) => {
-        const frame = (
-          <PageFrame
-            key={`page-frame-${pageName}-${unitScopeVersion}`}
-            pageName={pageName}
-            currentPageName={currentPage}
-            currentUser={currentUser}
-          />
-        );
-        let element = frame;
+      <Route
+        path={createPageUrl("Login")}
+        element={(
+          <RedirectAuthenticatedUser authEnabled={authEnabled} authReady={authReady} currentUser={currentUser}>
+            <StandalonePage pageName="Login" />
+          </RedirectAuthenticatedUser>
+        )}
+      />
 
-        if (pageName === "Login") {
-          element = (
-            <RedirectAuthenticatedUser authEnabled={authEnabled} authReady={authReady} currentUser={currentUser}>
-              {frame}
-            </RedirectAuthenticatedUser>
-          );
-        } else if (!PUBLIC_PAGES.has(pageName)) {
-          element = (
+      {PUBLIC_PAGES.has("AuthCallback") ? (
+        <Route path={createPageUrl("AuthCallback")} element={<StandalonePage pageName="AuthCallback" />} />
+      ) : null}
+
+      {PUBLIC_PAGES.has("VisualizadorImagem") ? (
+        <Route path={createPageUrl("VisualizadorImagem")} element={<StandalonePage pageName="VisualizadorImagem" />} />
+      ) : null}
+
+      {privateStandalonePages.map((pageName) => (
+        <Route
+          key={`standalone-private-${pageName}`}
+          path={createPageUrl(pageName)}
+          element={(
             <RequireAuth authEnabled={authEnabled} authReady={authReady} currentUser={currentUser}>
-              {frame}
+              <StandalonePage pageName={pageName} />
             </RequireAuth>
-          );
-        }
+          )}
+        />
+      ))}
 
-        return (
+      <Route
+        element={(
+          <RequireAuth authEnabled={authEnabled} authReady={authReady} currentUser={currentUser}>
+            <ProtectedLayout currentPageName={currentPage} currentUser={currentUser} />
+          </RequireAuth>
+        )}
+      >
+        {protectedLayoutPages.map((pageName) => (
           <Route
-            key={`pretty-${pageName}`}
+            key={`protected-${pageName}`}
             path={createPageUrl(pageName)}
-            element={element}
+            element={<ProtectedPage pageName={pageName} currentUser={currentUser} unitScopeVersion={unitScopeVersion} />}
           />
-        );
-      })}
+        ))}
+      </Route>
 
       {Object.keys(PAGES).map((pageName) => {
         const legacyPath = `/${pageName}`;

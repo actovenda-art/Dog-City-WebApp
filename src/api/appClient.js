@@ -1176,6 +1176,8 @@ if (SUPABASE_URL && SUPABASE_ANON) {
           company_role: invite?.company_role || null,
           is_platform_admin: invite?.is_platform_admin ?? false,
           onboarding_status: invite ? 'pendente' : 'completo',
+          pin_required_reset: invite ? true : false,
+          pin_bootstrap_status: invite ? 'pronto' : null,
         }])
         .select()
         .single();

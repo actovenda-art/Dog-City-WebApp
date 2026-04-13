@@ -71,8 +71,12 @@ export default function Login() {
     setErrorMessage("");
 
     try {
+      const callbackUrl = new URL(`${(APP_SITE_URL || window.location.origin).replace(/\/+$/, "")}${createPageUrl("AuthCallback")}`);
+      if (inviteToken) callbackUrl.searchParams.set('invite', inviteToken);
+      if (nextPath) callbackUrl.searchParams.set('next', nextPath);
+
       await User.signInWithGoogle({
-        redirectTo: `${(APP_SITE_URL || window.location.origin).replace(/\/+$/, "")}${createPageUrl("AuthCallback")}`,
+        redirectTo: callbackUrl.toString(),
         nextPath,
       });
     } catch (error) {

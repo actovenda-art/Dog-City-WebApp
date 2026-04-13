@@ -268,24 +268,46 @@ async function loadPendingInviteByEmail(email: string) {
   return (data as Record<string, unknown> | null) || null;
 }
 
+async function getAuthUserByEmail(email: string) {
+  if (!email) return null;
+  const normalizedEmail = sanitizeText(email).toLowerCase();
+  let page = 1;
+  const perPage = 100;
+
+  while (true) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      throw new Error(error.message || "Nao foi possivel buscar usuarios de autenticacao.");
+    }
+
+    const found = (data?.users || []).find((user) => {
+      return sanitizeText((user.email || "")).toLowerCase() === normalizedEmail;
+    });
+
+    if (found) return found;
+    if (!data?.users?.length || data.users.length < perPage) break;
+    page += 1;
+  }
+
+  return null;
+}
+
 async function createAppUserFromInvite(invite: Record<string, any>) {
   const now = new Date().toISOString();
   const normalizedEmail = sanitizeText(invite.email).toLowerCase();
   const fullName = sanitizeText(invite.full_name) || null;
 
   let authUserId: string | null = null;
+  let authUser = await getAuthUserByEmail(normalizedEmail);
 
-  try {
-    const { data } = await admin.auth.admin.getUserByEmail(normalizedEmail);
-    authUserId = data?.user?.id || null;
-  } catch {
-    authUserId = null;
+  if (authUser?.id) {
+    authUserId = authUser.id;
   }
 
   if (!authUserId) {
-    authUserId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    authUserId = invite.id || (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
-      : `invite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      : `invite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
     const { data, error } = await admin.auth.admin.createUser({
       id: authUserId,
@@ -296,15 +318,20 @@ async function createAppUserFromInvite(invite: Record<string, any>) {
     });
 
     if (error) {
-      throw new Error(error.message || "Nao foi possivel criar o usuario de autenticacao para o convite.");
+      const retryUser = await getAuthUserByEmail(normalizedEmail);
+      if (retryUser?.id) {
+        authUserId = retryUser.id;
+      } else {
+        throw new Error(error.message || "Nao foi possivel criar o usuario de autenticacao para o convite.");
+      }
+    } else {
+      authUserId = data?.user?.id || authUserId;
     }
-
-    authUserId = data?.user?.id || authUserId;
   }
 
   const { data, error } = await admin
     .from("users")
-    .insert([{
+    .upsert([{
       id: authUserId,
       email: normalizedEmail,
       full_name: fullName,
@@ -319,7 +346,7 @@ async function createAppUserFromInvite(invite: Record<string, any>) {
       pin_bootstrap_status: "pronto",
       created_date: now,
       updated_date: now,
-    }])
+    }], { onConflict: ["id"] })
     .select("*")
     .maybeSingle();
 

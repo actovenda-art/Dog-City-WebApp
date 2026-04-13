@@ -1054,13 +1054,12 @@ if (SUPABASE_URL && SUPABASE_ANON) {
 
   const findPendingInviteByEmail = async (email) => {
     if (!email) return null;
-    const normalizedEmail = email.trim().toLowerCase();
 
     try {
       const { data, error } = await supabase
         .from('user_invite')
         .select('*')
-        .ilike('email', normalizedEmail)
+        .eq('email', email)
         .in('status', ['pendente', 'aceito'])
         .order('created_date', { ascending: false })
         .limit(1);
@@ -1177,8 +1176,6 @@ if (SUPABASE_URL && SUPABASE_ANON) {
           company_role: invite?.company_role || null,
           is_platform_admin: invite?.is_platform_admin ?? false,
           onboarding_status: invite ? 'pendente' : 'completo',
-          pin_required_reset: invite ? true : false,
-          pin_bootstrap_status: invite ? 'pronto' : null,
         }])
         .select()
         .single();
@@ -1275,12 +1272,11 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       if (error) throw error;
       return data;
     },
-    signInWithPinPairs: async ({ email, selectedPairs, token } = {}) => {
+    signInWithPinPairs: async ({ email, selectedPairs } = {}) => {
       const result = await supabaseFunctions.userAdmin({
         action: 'pin_login',
         email,
         selected_pairs: selectedPairs,
-        token,
         device_id: getOrCreateDeviceId(),
       });
 

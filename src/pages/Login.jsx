@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { User, UserInvite } from "@/api/entities";
+import { User } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
 import { getSafeNextPathFromSearch } from "@/lib/auth-navigation";
 import { createPageUrl } from "@/utils";
@@ -43,7 +43,6 @@ export default function Login() {
   const wasRecovered = useMemo(() => new URLSearchParams(location.search).get("recovered") === "1", [location.search]);
   const inviteToken = useMemo(() => new URLSearchParams(location.search).get("invite"), [location.search]);
   const [email, setEmail] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
   const [pairs, setPairs] = useState(() => shufflePairs());
   const [selectedPairs, setSelectedPairs] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -62,29 +61,6 @@ export default function Login() {
     setPairs(shufflePairs());
   };
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadInviteEmail() {
-      if (!inviteToken) return;
-      try {
-        const inviteRows = await UserInvite.filter({ token: inviteToken }, "-created_date", 1);
-        const invite = inviteRows?.[0] || null;
-        if (!invite || !invite.email) return;
-
-        if (mounted) {
-          setEmail(invite.email);
-          setInviteEmail(invite.email);
-        }
-      } catch (error) {
-        console.warn("Erro ao carregar email do convite:", error);
-      }
-    }
-
-    loadInviteEmail();
-    return () => { mounted = false; };
-  }, [inviteToken]);
-
   const handleGoogleLogin = async () => {
     if (!User.isEnabled?.()) {
       setErrorMessage("Supabase nao configurado para autenticacao neste ambiente.");
@@ -95,12 +71,8 @@ export default function Login() {
     setErrorMessage("");
 
     try {
-      const callbackUrl = new URL(`${(APP_SITE_URL || window.location.origin).replace(/\/+$/, "")}${createPageUrl("AuthCallback")}`);
-      if (inviteToken) callbackUrl.searchParams.set('invite', inviteToken);
-      if (nextPath) callbackUrl.searchParams.set('next', nextPath);
-
       await User.signInWithGoogle({
-        redirectTo: callbackUrl.toString(),
+        redirectTo: `${(APP_SITE_URL || window.location.origin).replace(/\/+$/, "")}${createPageUrl("AuthCallback")}`,
         nextPath,
       });
     } catch (error) {
@@ -130,7 +102,6 @@ export default function Login() {
       await User.signInWithPinPairs?.({
         email: email.trim().toLowerCase(),
         selectedPairs,
-        token: inviteToken,
       });
 
       const currentUser = await User.me();
@@ -201,7 +172,6 @@ export default function Login() {
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  disabled={!!inviteEmail}
                   className="border-slate-700 bg-slate-900 pl-9 text-white placeholder:text-slate-500"
                   placeholder="email@dogcitybrasil.com.br"
                   autoComplete="username"
@@ -237,12 +207,6 @@ export default function Login() {
               {isSubmitting ? <LoaderCircle className="w-4 h-4 mr-2 animate-spin" /> : <LogIn className="w-4 h-4 mr-2" />}
               {isSubmitting ? "Entrando..." : "Entrar com email e PIN"}
             </Button>
-
-            {inviteToken && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
-                Este convite deve ser acessado com o email convidado. Utilize o login com Google para continuar.
-              </div>
-            )}
 
             <div className="relative py-2">
               <div className="absolute inset-0 flex items-center">

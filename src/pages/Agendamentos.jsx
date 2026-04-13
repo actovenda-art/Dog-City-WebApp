@@ -387,7 +387,7 @@ export default function Agendamentos() {
               <SelectTrigger><SelectValue placeholder="Serviço" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os serviços</SelectItem>
-                {["day_care", "hospedagem", "banho", "tosa", "transporte", "adestramento"].map((service) => (
+                {["day_care", "hospedagem", "adaptacao", "banho", "tosa", "transporte", "adestramento"].map((service) => (
                   <SelectItem key={service} value={service}>{getServiceLabel(service)}</SelectItem>
                 ))}
               </SelectContent>

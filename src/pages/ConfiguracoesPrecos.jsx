@@ -16,6 +16,7 @@ const SERVICE_TYPES = [
   { id: "hospedagem_mensalista", label: "Hospedagem (Mensalista)", category: "hospitalidade" },
   { id: "day_care_avulso_sem_pacote", label: "Day Care Avulso (Sem pacote ativo)", category: "hospitalidade" },
   { id: "day_care_avulso_com_pacote", label: "Day Care Avulso (Com pacote ativo)", category: "hospitalidade" },
+  { id: "adaptacao", label: "Adaptacao", category: "hospitalidade" },
   { id: "pernoite", label: "Pernoite (Day Care de hospedagem)", category: "hospitalidade" },
   { id: "banho", label: "Banho", category: "banho" },
   { id: "tosa_higienica", label: "Tosa Higienica", category: "tosa" },
@@ -29,6 +30,7 @@ const FIXED_CONFIG_TYPES = new Set([
   "hospedagem_mensalista",
   "day_care_avulso_sem_pacote",
   "day_care_avulso_com_pacote",
+  "adaptacao",
   "pernoite",
   "transporte_km",
 ]);

@@ -15,6 +15,7 @@ import {
   getServiceLabel,
   MANUAL_REGISTRADOR_SERVICES,
   MEAL_CONSUMPTION_OPTIONS,
+  safeJsonParse,
 } from "@/lib/attendance";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,7 @@ const EMPTY_CHECKIN_FORM = {
 const EMPTY_CHECKOUT_FORM = {
   checkout_datetime: `${TODAY_KEY}T18:00:00`,
   monitor_id: "",
+  retirador_nome: "",
   observacoes: "",
   pertences_saida_foto_url: "",
 };
@@ -59,6 +61,12 @@ const EMPTY_MEAL_FORM = {
   observacoes: "",
   foto_refeicao_url: "",
   selfie_monitor_url: "",
+};
+
+const EMPTY_ADAPTACAO_REGISTRO_FORM = {
+  monitor_id: "",
+  registro_datetime: nowDateTimeValue(),
+  observacoes: "",
 };
 
 function nowDateTimeValue() {
@@ -160,6 +168,25 @@ function getReminderSectorLabel(value) {
   return "Setor";
 }
 
+function getCheckinMeta(checkin) {
+  return safeJsonParse(checkin?.metadata, {}) || {};
+}
+
+function getCheckinDateKey(checkin) {
+  return (
+    (checkin?.checkin_datetime || "").slice(0, 10) ||
+    (checkin?.data_checkin || "").slice(0, 10) ||
+    (checkin?.checkout_datetime || "").slice(0, 10) ||
+    (checkin?.data_checkout || "").slice(0, 10) ||
+    ""
+  );
+}
+
+function getAdaptacaoProgressRecords(checkin) {
+  const records = getCheckinMeta(checkin)?.adaptacao_registros;
+  return Array.isArray(records) ? records : [];
+}
+
 function buildAppointmentSourceKey({ dogId, serviceType, dateKey, mode }) {
   return ["registrador", mode, dogId, serviceType, dateKey, Date.now()].filter(Boolean).join("|");
 }
@@ -191,18 +218,21 @@ export default function Registrador() {
   const [showCheckinDialog, setShowCheckinDialog] = useState(false);
   const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
   const [showMealDialog, setShowMealDialog] = useState(false);
+  const [showAdaptacaoDialog, setShowAdaptacaoDialog] = useState(false);
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [showNotifyDialog, setShowNotifyDialog] = useState(false);
 
   const [checkinForm, setCheckinForm] = useState(EMPTY_CHECKIN_FORM);
   const [checkoutForm, setCheckoutForm] = useState(EMPTY_CHECKOUT_FORM);
   const [mealForm, setMealForm] = useState(EMPTY_MEAL_FORM);
+  const [adaptacaoRegistroForm, setAdaptacaoRegistroForm] = useState(EMPTY_ADAPTACAO_REGISTRO_FORM);
   const [manualForm, setManualForm] = useState({
     dog_id: "",
     service_type: "",
     observacoes: "",
   });
   const [notifyState, setNotifyState] = useState({ title: "", message: "" });
+  const [checkinSharedSource, setCheckinSharedSource] = useState(null);
 
   const checkinPhotoInputRef = useRef(null);
   const checkoutPhotoInputRef = useRef(null);
@@ -243,6 +273,28 @@ export default function Registrador() {
     ),
     [checkins]
   );
+  const checkinsByDogDate = useMemo(() => {
+    const grouped = {};
+    checkins
+      .filter((item) => item.tipo === "pet" && item.dog_id)
+      .forEach((item) => {
+        const dateKey = getCheckinDateKey(item);
+        if (!dateKey) return;
+        const key = `${item.dog_id}|${dateKey}`;
+        grouped[key] = grouped[key] || [];
+        grouped[key].push(item);
+      });
+
+    Object.values(grouped).forEach((items) => {
+      items.sort((left, right) => {
+        const leftValue = left.checkin_datetime || left.data_checkin || left.created_date || "";
+        const rightValue = right.checkin_datetime || right.data_checkin || right.created_date || "";
+        return String(rightValue).localeCompare(String(leftValue));
+      });
+    });
+
+    return grouped;
+  }, [checkins]);
   const presentProviders = useMemo(() => {
     return activeProviderCheckins
       .map((checkin) => ({ checkin, user: users.find((user) => user.id === checkin.user_id) }))
@@ -449,28 +501,49 @@ export default function Registrador() {
     setShowNotifyDialog(true);
   }
 
+  function findSharedDailyCheckin(appointment) {
+    if (!appointment?.dog_id) return null;
+    const appointmentDate = getAppointmentDateKey(appointment) || selectedDate || TODAY_KEY;
+    const relatedCheckins = checkinsByDogDate[`${appointment.dog_id}|${appointmentDate}`] || [];
+    return relatedCheckins.find((item) => item.appointment_id !== appointment.id) || null;
+  }
+
   function resetCheckinDialog(appointment) {
     const owner = ownerByDogId[appointment?.dog_id] || {};
     const appointmentDate = getAppointmentDateKey(appointment) || selectedDate || TODAY_KEY;
     const appointmentTime = getAppointmentTimeValue(appointment, "entrada") || "09:00";
+    const sharedDailyCheckin = findSharedDailyCheckin(appointment);
+    setCheckinSharedSource(sharedDailyCheckin);
     setCheckinForm({
       ...EMPTY_CHECKIN_FORM,
       checkin_datetime: buildDateTimeForDate(appointmentDate, appointmentTime),
-      entregador_nome: owner.nome || "",
+      entregador_nome: sharedDailyCheckin?.entregador_nome || owner.nome || "",
+      tem_refeicao: Boolean(sharedDailyCheckin?.tem_refeicao),
+      refeicao_observacao: sharedDailyCheckin?.tem_refeicao ? (sharedDailyCheckin?.refeicao_observacao || "") : "",
+      pertences_entrada_foto_url: sharedDailyCheckin?.pertences_entrada_foto_url || "",
     });
   }
 
-  function resetCheckoutDialog(appointment) {
+  function resetCheckoutDialog(appointment, checkin) {
     const appointmentDate = getAppointmentDateKey(appointment) || selectedDate || TODAY_KEY;
     const appointmentTime = getAppointmentTimeValue(appointment, "saida") || "18:00";
+    const meta = getCheckinMeta(checkin);
     setCheckoutForm({
       ...EMPTY_CHECKOUT_FORM,
       checkout_datetime: buildDateTimeForDate(appointmentDate, appointmentTime),
+      retirador_nome: meta.retirador_nome || "",
     });
   }
 
   function resetMealDialog() {
     setMealForm(EMPTY_MEAL_FORM);
+  }
+
+  function resetAdaptacaoDialog() {
+    setAdaptacaoRegistroForm({
+      ...EMPTY_ADAPTACAO_REGISTRO_FORM,
+      registro_datetime: nowDateTimeValue(),
+    });
   }
 
   function openCheckinDialogForAppointment(appointment) {
@@ -482,7 +555,7 @@ export default function Registrador() {
   function openCheckoutDialogForCheckin(appointment, checkin) {
     setSelectedAppointment(appointment);
     setSelectedCheckin(checkin);
-    resetCheckoutDialog(appointment);
+    resetCheckoutDialog(appointment, checkin);
     setShowCheckoutDialog(true);
   }
 
@@ -491,6 +564,13 @@ export default function Registrador() {
     setSelectedCheckin(checkin);
     resetMealDialog();
     setShowMealDialog(true);
+  }
+
+  function openAdaptacaoDialogForCheckin(appointment, checkin) {
+    setSelectedAppointment(appointment);
+    setSelectedCheckin(checkin);
+    resetAdaptacaoDialog();
+    setShowAdaptacaoDialog(true);
   }
 
   function openManualDialogForDog(dog = null) {
@@ -621,6 +701,7 @@ export default function Registrador() {
       await loadData();
       setShowCheckinDialog(false);
       setSelectedAppointment(null);
+      setCheckinSharedSource(null);
       openNotify("Check-in realizado", `Check-in realizado com sucesso para ${getDogDisplayName(dog)}.`);
     } catch (error) {
       console.error("Erro ao realizar check-in:", error);
@@ -679,8 +760,8 @@ export default function Registrador() {
 
   async function submitCheckout() {
     if (!selectedAppointment || !selectedCheckin) return;
-    if (!checkoutForm.monitor_id || !checkoutForm.pertences_saida_foto_url) {
-      openNotify("Campos obrigatorios", "Informe o monitor da entrega e a foto dos itens devolvidos.");
+    if (!checkoutForm.monitor_id || !checkoutForm.retirador_nome || !checkoutForm.pertences_saida_foto_url) {
+      openNotify("Campos obrigatorios", "Informe quem buscou o cao, o monitor da entrega e a foto dos itens devolvidos.");
       return;
     }
 
@@ -688,15 +769,20 @@ export default function Registrador() {
     try {
       const monitor = users.find((user) => user.id === checkoutForm.monitor_id);
       const mergedObservacoes = [selectedCheckin.observacoes, checkoutForm.observacoes].filter(Boolean).join("\n");
+      const currentMeta = getCheckinMeta(selectedCheckin);
 
       await Checkin.update(selectedCheckin.id, {
         checkout_datetime: checkoutForm.checkout_datetime,
         data_checkout: checkoutForm.checkout_datetime,
         checkout_monitor_nome: monitor?.full_name || monitor?.nome_completo || "",
-        monitor_id: checkoutForm.monitor_id,
         pertences_saida_foto_url: checkoutForm.pertences_saida_foto_url,
         observacoes: mergedObservacoes,
         status: "finalizado",
+        metadata: {
+          ...currentMeta,
+          retirador_nome: checkoutForm.retirador_nome,
+          checkout_monitor_id: checkoutForm.monitor_id,
+        },
       });
 
       await Appointment.update(selectedAppointment.id, {
@@ -752,6 +838,45 @@ export default function Registrador() {
     } catch (error) {
       console.error("Erro ao registrar refeição:", error);
       openNotify("Erro", error?.message || "Não foi possível registrar a refeição.");
+    }
+    setIsSaving(false);
+  }
+
+  async function submitAdaptacaoRegistro() {
+    if (!selectedCheckin) return;
+    if (!adaptacaoRegistroForm.monitor_id || !adaptacaoRegistroForm.observacoes.trim()) {
+      openNotify("Campos obrigatorios", "Informe o monitor e descreva a evolucao da adaptacao.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const monitor = users.find((user) => user.id === adaptacaoRegistroForm.monitor_id);
+      const currentMeta = getCheckinMeta(selectedCheckin);
+      const nextRecords = [
+        ...getAdaptacaoProgressRecords(selectedCheckin),
+        {
+          created_at: new Date().toISOString(),
+          registro_datetime: adaptacaoRegistroForm.registro_datetime || nowDateTimeValue(),
+          monitor_id: adaptacaoRegistroForm.monitor_id,
+          monitor_nome: monitor?.full_name || monitor?.nome_completo || "",
+          observacoes: adaptacaoRegistroForm.observacoes.trim(),
+        },
+      ];
+
+      await Checkin.update(selectedCheckin.id, {
+        metadata: {
+          ...currentMeta,
+          adaptacao_registros: nextRecords,
+        },
+      });
+
+      await loadData();
+      setShowAdaptacaoDialog(false);
+      openNotify("Registro adicionado", "A evolucao da adaptacao foi registrada com sucesso.");
+    } catch (error) {
+      console.error("Erro ao registrar adaptacao:", error);
+      openNotify("Erro", error?.message || "Nao foi possivel salvar o registro da adaptacao.");
     }
     setIsSaving(false);
   }
@@ -1042,9 +1167,12 @@ export default function Registrador() {
                 const dog = dogsById[appointment.dog_id];
                 const owner = ownerByDogId[appointment.dog_id] || {};
                 const activeCheckin = activeCheckinByAppointmentId[appointment.id];
+                const finalizedCheckin = finalizedCheckinByAppointmentId[appointment.id];
+                const attendanceRecord = activeCheckin || finalizedCheckin || null;
                 const status = getAppointmentStatus(appointment, activeCheckinByAppointmentId);
                 const mealEnabled = activeCheckin?.tem_refeicao;
                 const mealCount = getCheckinMealRecords(activeCheckin).length;
+                const adaptacaoRegistros = getAdaptacaoProgressRecords(attendanceRecord);
                 const highlighted = highlightedAppointmentId === appointment.id;
 
                 return (
@@ -1089,10 +1217,28 @@ export default function Registrador() {
                                 {appointment.observacoes}
                               </p>
                             )}
-                            {activeCheckin?.pertences_entrada_foto_url && (
+                            {appointment.service_type === "adaptacao" && Boolean(getAppointmentTimeValue(appointment, "saida")) && (
+                              <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                                Termino previsto da adaptacao: <strong>{getAppointmentTimeValue(appointment, "saida")}</strong>
+                              </div>
+                            )}
+                            {adaptacaoRegistros.length > 0 && (
+                              <div className="mt-3 space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
+                                <p className="text-sm font-medium text-sky-900">Registros da adaptacao</p>
+                                {adaptacaoRegistros.slice(-3).reverse().map((registro, registroIndex) => (
+                                  <div key={`${registro.created_at || registro.registro_datetime || "registro"}-${registroIndex}`} className="text-sm text-sky-900">
+                                    <p className="font-medium">
+                                      {formatDateTime(registro.registro_datetime || registro.created_at)} {registro.monitor_nome ? `• ${registro.monitor_nome}` : ""}
+                                    </p>
+                                    <p className="text-sky-800">{registro.observacoes}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {attendanceRecord?.pertences_entrada_foto_url && (
                               <button
                                 type="button"
-                                onClick={() => handleAttachmentPreview(activeCheckin.pertences_entrada_foto_url, "Pertences na entrada")}
+                                onClick={() => handleAttachmentPreview(attendanceRecord.pertences_entrada_foto_url, "Pertences na entrada")}
                                 className="mt-3 text-sm font-medium text-blue-600"
                               >
                                 Ver foto dos pertences
@@ -1109,6 +1255,12 @@ export default function Registrador() {
                             </Button>
                           ) : (
                             <>
+                              {appointment.service_type === "adaptacao" && (
+                                <Button variant="outline" onClick={() => openAdaptacaoDialogForCheckin(appointment, activeCheckin)}>
+                                  <Plus className="mr-2 h-4 w-4" />
+                                  Adicionar registro{adaptacaoRegistros.length > 0 ? ` (${adaptacaoRegistros.length})` : ""}
+                                </Button>
+                              )}
                               {mealEnabled && (
                                 <Button variant="outline" onClick={() => openMealDialogForCheckin(appointment, activeCheckin)}>
                                   <UtensilsCrossed className="mr-2 h-4 w-4" />
@@ -1213,7 +1365,13 @@ export default function Registrador() {
         </Tabs>
       </div>
 
-      <Dialog open={showCheckinDialog} onOpenChange={setShowCheckinDialog}>
+      <Dialog
+        open={showCheckinDialog}
+        onOpenChange={(open) => {
+          setShowCheckinDialog(open);
+          if (!open) setCheckinSharedSource(null);
+        }}
+      >
         <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Confirmar check-in</DialogTitle>
@@ -1222,6 +1380,19 @@ export default function Registrador() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
+            {checkinSharedSource && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                Dados diarios reaproveitados do primeiro check-in deste cao no dia:
+                responsavel pela entrega, foto dos pertences e informacao de refeicao.
+              </div>
+            )}
+
+            {selectedAppointment?.service_type === "adaptacao" && getAppointmentTimeValue(selectedAppointment, "saida") && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
+                Esta adaptacao foi planejada para terminar as <strong>{getAppointmentTimeValue(selectedAppointment, "saida")}</strong>.
+              </div>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <Label>Data e horário do check-in</Label>
@@ -1349,7 +1520,7 @@ export default function Registrador() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCheckinDialog(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setShowCheckinDialog(false); setCheckinSharedSource(null); }}>Cancelar</Button>
             <Button onClick={submitCheckin} disabled={isSaving} className="bg-green-600 text-white hover:bg-green-700">
               {isSaving ? "Salvando..." : "Confirmar check-in"}
             </Button>
@@ -1386,6 +1557,15 @@ export default function Registrador() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div>
+              <Label>Quem buscou?</Label>
+              <Input
+                value={checkoutForm.retirador_nome}
+                onChange={(event) => setCheckoutForm((current) => ({ ...current, retirador_nome: event.target.value }))}
+                className="mt-2"
+              />
             </div>
 
             <div>
@@ -1517,6 +1697,63 @@ export default function Registrador() {
             <Button variant="outline" onClick={() => setShowMealDialog(false)}>Cancelar</Button>
             <Button onClick={submitMeal} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
               {isSaving ? "Salvando..." : "Registrar refeição"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAdaptacaoDialog} onOpenChange={setShowAdaptacaoDialog}>
+        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Adicionar registro da adaptacao</DialogTitle>
+            <DialogDescription>
+              Registre a evolucao observada durante o dia para este atendimento de adaptacao.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label>Data e horario do registro</Label>
+                <DateTimePickerInput
+                  value={adaptacaoRegistroForm.registro_datetime}
+                  onChange={(value) => setAdaptacaoRegistroForm((current) => ({ ...current, registro_datetime: value }))}
+                />
+              </div>
+              <div>
+                <Label>Monitor responsavel</Label>
+                <Select
+                  value={adaptacaoRegistroForm.monitor_id}
+                  onValueChange={(value) => setAdaptacaoRegistroForm((current) => ({ ...current, monitor_id: value }))}
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monitors.map((monitor) => (
+                      <SelectItem key={monitor.id} value={monitor.id}>
+                        {monitor.full_name || monitor.nome_completo || monitor.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label>Observacoes do progresso</Label>
+              <Textarea
+                value={adaptacaoRegistroForm.observacoes}
+                onChange={(event) => setAdaptacaoRegistroForm((current) => ({ ...current, observacoes: event.target.value }))}
+                className="mt-2"
+                rows={4}
+                placeholder="Ex.: ficou mais tranquilo apos 20 minutos, interagiu bem com o ambiente, ainda precisa de nova etapa"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdaptacaoDialog(false)}>Cancelar</Button>
+            <Button onClick={submitAdaptacaoRegistro} disabled={isSaving} className="bg-sky-600 text-white hover:bg-sky-700">
+              {isSaving ? "Salvando..." : "Salvar registro"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -4,6 +4,7 @@ const DEFAULT_PRICING = {
   day_care_avulso_com_pacote: 110,
   day_care_avulso_sem_pacote: 125,
   day_care_avulso: 125,
+  adaptacao: 0,
   pernoite: 60,
   transporte_km: 6,
   desconto_canil: 0.3,
@@ -97,6 +98,7 @@ const DEFAULT_TOSA_DETALHADA = {
 export const ATTENDANCE_SERVICES = [
   { id: "day_care", label: "Day Care" },
   { id: "hospedagem", label: "Hospedagem" },
+  { id: "adaptacao", label: "Adaptacao" },
   { id: "banho", label: "Banho" },
   { id: "tosa", label: "Tosa" },
   { id: "transporte", label: "Transporte" },
@@ -162,6 +164,10 @@ export function buildPricingConfig(precosRows, empresaId) {
         (row) => row.tipo === "day_care_avulso_sem_pacote" || row.config_key === "day_care_avulso_sem_pacote"
       )?.valor ??
       DEFAULT_PRICING.day_care_avulso_sem_pacote,
+    adaptacao:
+      byConfigKey.adaptacao ??
+      scopedRows.find((row) => row.tipo === "adaptacao" || row.config_key === "adaptacao")?.valor ??
+      DEFAULT_PRICING.adaptacao,
     pernoite: byConfigKey.pernoite ?? DEFAULT_PRICING.pernoite,
     transporte_km: byConfigKey.transporte_km ?? DEFAULT_PRICING.transporte_km,
     desconto_canil: (byConfigKey.desconto_canil ?? DEFAULT_PRICING.desconto_canil * 100) / 100,
@@ -389,9 +395,16 @@ function calculateTosaValue(cao, dog, precos) {
   return precos.tosa_geral[breed] || precos.tosa_geral.Outro || 0;
 }
 
+function calculateAdaptacaoValue(precos) {
+  return Number.parseFloat(precos?.adaptacao ?? DEFAULT_PRICING.adaptacao) || 0;
+}
+
 function inferAppointmentDate(cao, orcamento) {
   return (
     cao?.day_care_data ||
+    cao?.adaptacao_data ||
+    cao?.banho_data ||
+    cao?.tosa_data ||
     cao?.hosp_data_entrada ||
     (cao?.transporte_viagens || []).find((viagem) => viagem?.data)?.data ||
     orcamento?.data_criacao ||
@@ -404,6 +417,8 @@ function inferChargeType(cao, serviceType) {
     case "hospedagem":
       return cao?.hosp_is_mensalista ? "pacote" : "avulso";
     case "day_care":
+      return "avulso";
+    case "adaptacao":
       return "avulso";
     case "banho":
       return cao?.banho_do_pacote || cao?.banho_plano_ativo ? "pacote" : "avulso";
@@ -533,6 +548,37 @@ export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, o
       });
     }
 
+    if (cao.servicos?.adaptacao && cao.adaptacao_data) {
+      appointments.push({
+        empresa_id: orcamento.empresa_id || null,
+        cliente_id: orcamento.cliente_id || owner.cliente_id || null,
+        dog_id: cao.dog_id,
+        orcamento_id: orcamento.id,
+        service_type: "adaptacao",
+        status: "agendado",
+        charge_type: inferChargeType(cao, "adaptacao"),
+        source_type: "orcamento_aprovado",
+        valor_previsto: calculateAdaptacaoValue(precos),
+        data_referencia: cao.adaptacao_data,
+        data_hora_entrada: combineDateTime(cao.adaptacao_data, cao.adaptacao_horario_entrada || "09:00"),
+        data_hora_saida: combineDateTime(cao.adaptacao_data, cao.adaptacao_horario_saida || "10:00"),
+        observacoes: cao.adaptacao_observacoes || orcamento.observacoes || "",
+        source_key: buildSourceKey([
+          "orcamento",
+          orcamento.id,
+          cao.dog_id,
+          "adaptacao",
+          cao.adaptacao_data,
+        ]),
+        metadata: {
+          ...baseMeta,
+          servico: "adaptacao",
+          adaptacao_horario_saida: cao.adaptacao_horario_saida || "",
+          snapshot: cao,
+        },
+      });
+    }
+
     if (cao.servicos?.banho) {
       const banhoDate = inferAppointmentDate(cao, orcamento);
       appointments.push({
@@ -546,8 +592,9 @@ export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, o
         source_type: "orcamento_aprovado",
         valor_previsto: calculateBanhoValue(cao, dog, precos),
         data_referencia: banhoDate,
-        data_hora_entrada: combineDateTime(banhoDate, cao.banho_horario || "09:00"),
-        observacoes: orcamento.observacoes || "",
+        data_hora_entrada: combineDateTime(banhoDate, cao.banho_horario_inicio || cao.banho_horario || "09:00"),
+        data_hora_saida: combineDateTime(banhoDate, cao.banho_horario_saida || ""),
+        observacoes: cao.banho_observacoes || orcamento.observacoes || "",
         source_key: buildSourceKey(["orcamento", orcamento.id, cao.dog_id, "banho", banhoDate]),
         metadata: {
           ...baseMeta,
@@ -571,7 +618,8 @@ export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, o
         source_type: "orcamento_aprovado",
         valor_previsto: calculateTosaValue(cao, dog, precos),
         data_referencia: tosaDate,
-        data_hora_entrada: combineDateTime(tosaDate, cao.banho_horario || "10:00"),
+        data_hora_entrada: combineDateTime(tosaDate, cao.tosa_horario_entrada || "10:00"),
+        data_hora_saida: combineDateTime(tosaDate, cao.tosa_horario_saida || ""),
         observacoes: cao.tosa_obs || orcamento.observacoes || "",
         source_key: buildSourceKey(["orcamento", orcamento.id, cao.dog_id, "tosa", tosaDate]),
         metadata: {
@@ -598,7 +646,8 @@ export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, o
           valor_previsto: km * (precos.transporte_km || 0),
           data_referencia: viagem.data,
           data_hora_entrada: combineDateTime(viagem.data, viagem.horario || "09:00"),
-          observacoes: orcamento.observacoes || "",
+          data_hora_saida: combineDateTime(viagem.data, viagem.horario_fim || ""),
+          observacoes: viagem.observacao || orcamento.observacoes || "",
           source_key: buildSourceKey([
             "orcamento",
             orcamento.id,

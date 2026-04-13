@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import { Dog, Plus, Trash2, X } from "lucide-react";
 
@@ -16,6 +17,18 @@ const TOSA_HIGIENICA_OPTIONS = [
   { id: "grande_baixa", label: "Grande - Pelagem baixa" },
   { id: "grande_alta", label: "Grande - Pelagem alta" },
 ];
+
+function EmptyTrip() {
+  return {
+    partida: "",
+    destino: "",
+    data: "",
+    horario: "",
+    horario_fim: "",
+    km: "",
+    observacao: "",
+  };
+}
 
 export default function OrcamentoCaoForm({
   cao,
@@ -29,13 +42,16 @@ export default function OrcamentoCaoForm({
   const formatCurrency = (value) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
 
+  function updateCao(patch) {
+    onUpdate(index, { ...cao, ...patch });
+  }
+
   function handleChange(field, value) {
-    onUpdate(index, { ...cao, [field]: value });
+    updateCao({ [field]: value });
   }
 
   function handleServiceChange(service, checked) {
-    onUpdate(index, {
-      ...cao,
+    updateCao({
       servicos: {
         ...cao.servicos,
         [service]: checked,
@@ -55,7 +71,7 @@ export default function OrcamentoCaoForm({
   function addViagem() {
     handleChange("transporte_viagens", [
       ...(cao.transporte_viagens || []),
-      { partida: "", destino: "", data: "", horario: "", km: "" },
+      EmptyTrip(),
     ]);
   }
 
@@ -74,7 +90,7 @@ export default function OrcamentoCaoForm({
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Dog className="h-5 w-5 text-blue-600" />
-            Cão {index + 1}
+            Cao {index + 1}
           </CardTitle>
           {canRemove && (
             <Button
@@ -91,7 +107,7 @@ export default function OrcamentoCaoForm({
 
       <CardContent className="space-y-5">
         <div>
-          <Label>Selecionar Cão *</Label>
+          <Label>Selecionar Cao *</Label>
           <Select value={cao.dog_id} onValueChange={(value) => handleChange("dog_id", value)}>
             <SelectTrigger className="mt-1">
               <SelectValue placeholder="Escolha o cão" />
@@ -129,10 +145,21 @@ export default function OrcamentoCaoForm({
             />
           </div>
 
+          <div className="flex items-center justify-between rounded-lg bg-sky-50 p-3">
+            <div>
+              <Label className="text-sm font-medium">Adaptacao</Label>
+              <p className="text-xs text-gray-500">Sessao avulsa com horario definido</p>
+            </div>
+            <Switch
+              checked={cao.servicos?.adaptacao || false}
+              onCheckedChange={(checked) => handleServiceChange("adaptacao", checked)}
+            />
+          </div>
+
           <div className="flex items-center justify-between rounded-lg bg-cyan-50 p-3">
             <div>
               <Label className="text-sm font-medium">Banho</Label>
-              <p className="text-xs text-gray-500">Serviço por raca</p>
+              <p className="text-xs text-gray-500">Servico por raca</p>
             </div>
             <Switch
               checked={cao.servicos?.banho || false}
@@ -166,16 +193,16 @@ export default function OrcamentoCaoForm({
         {cao.servicos?.day_care && (
           <div className="space-y-4 rounded-lg border border-emerald-100 bg-emerald-50/50 p-4">
             <div className="rounded-lg bg-white p-3">
-              <p className="text-sm font-medium text-gray-900">Day Care Avulso</p>
+              <p className="text-sm font-medium text-gray-900">Day Care avulso</p>
               <p className="mt-1 text-xs text-gray-500">
                 Sem pacote ativo: {formatCurrency(precos?.day_care_avulso_sem_pacote ?? precos?.day_care_avulso ?? 125)}
-                {" "}| Com pacote ativo: {formatCurrency(precos?.day_care_avulso_com_pacote ?? 110)}
+                {" | "}Com pacote ativo: {formatCurrency(precos?.day_care_avulso_com_pacote ?? 110)}
               </p>
             </div>
 
             <div className="flex items-center justify-between rounded-lg bg-white p-3">
               <div>
-                <Label className="text-sm font-medium">Cão com pacote de Day Care ativo?</Label>
+                <Label className="text-sm font-medium">Cao com pacote de Day Care ativo?</Label>
                 <p className="text-xs text-gray-500">Aplica o valor avulso reduzido para clientes com pacote em vigor.</p>
               </div>
               <Switch
@@ -194,7 +221,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horário de Entrada</Label>
+                <Label>Horario de entrada</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.day_care_horario_entrada}
@@ -202,7 +229,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horário de Saida</Label>
+                <Label>Horario de saida</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.day_care_horario_saida}
@@ -212,12 +239,12 @@ export default function OrcamentoCaoForm({
             </div>
 
             <div>
-              <Label>Observações do Day Care</Label>
+              <Label>Observacoes do Day Care</Label>
               <Input
                 className="mt-1"
                 value={cao.day_care_observacoes || ""}
                 onChange={(event) => handleChange("day_care_observacoes", event.target.value)}
-                placeholder="Ex.: socialização, gasto de energia, horário especial"
+                placeholder="Ex.: socializacao, gasto de energia, horario especial"
               />
             </div>
           </div>
@@ -238,7 +265,7 @@ export default function OrcamentoCaoForm({
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <Label>Data de Entrada</Label>
+                <Label>Data de entrada</Label>
                 <DatePickerInput
                   className="mt-1"
                   value={cao.hosp_data_entrada}
@@ -246,7 +273,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horário de Entrada</Label>
+                <Label>Horario de entrada</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.hosp_horario_entrada}
@@ -254,7 +281,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Data de Saida</Label>
+                <Label>Data de saida</Label>
                 <DatePickerInput
                   className="mt-1"
                   value={cao.hosp_data_saida}
@@ -262,7 +289,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horário de Saida</Label>
+                <Label>Horario de saida</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.hosp_horario_saida}
@@ -274,7 +301,7 @@ export default function OrcamentoCaoForm({
             <div className="flex items-center justify-between rounded-lg bg-white p-3">
               <div>
                 <Label className="text-sm font-medium">Dormitorio compartilhado?</Label>
-                <p className="text-xs text-gray-500">Aplica desconto no próprio cão</p>
+                <p className="text-xs text-gray-500">Aplica desconto no proprio cão</p>
               </div>
               <Switch
                 checked={cao.hosp_dormitório_compartilhado}
@@ -319,10 +346,64 @@ export default function OrcamentoCaoForm({
                   </Button>
                 </div>
               ))}
-              <Button type="button" variant="outline" onClick={() => handleChange("hosp_datas_daycare", [...(cao.hosp_datas_daycare || []), ""])} className="w-full border-dashed">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleChange("hosp_datas_daycare", [...(cao.hosp_datas_daycare || []), ""])}
+                className="w-full border-dashed"
+              >
                 <Plus className="mr-2 h-4 w-4" />
-                Adicionar Data
+                Adicionar data
               </Button>
+            </div>
+          </div>
+        )}
+
+        {cao.servicos?.adaptacao && (
+          <div className="space-y-4 rounded-lg border border-sky-100 bg-sky-50/50 p-4">
+            <div className="rounded-lg bg-white p-3">
+              <p className="text-sm font-medium text-gray-900">Adaptacao</p>
+              <p className="mt-1 text-xs text-gray-500">
+                Valor configurado: {formatCurrency(precos?.adaptacao ?? 0)}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <Label>Data</Label>
+                <DatePickerInput
+                  className="mt-1"
+                  value={cao.adaptacao_data}
+                  onChange={(value) => handleChange("adaptacao_data", value)}
+                />
+              </div>
+              <div>
+                <Label>Horario de inicio</Label>
+                <TimePickerInput
+                  className="mt-1"
+                  value={cao.adaptacao_horario_entrada}
+                  onChange={(value) => handleChange("adaptacao_horario_entrada", value)}
+                />
+              </div>
+              <div>
+                <Label>Horario de termino</Label>
+                <TimePickerInput
+                  className="mt-1"
+                  value={cao.adaptacao_horario_saida}
+                  onChange={(value) => handleChange("adaptacao_horario_saida", value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Observacoes da adaptacao</Label>
+              <Textarea
+                className="mt-1"
+                value={cao.adaptacao_observacoes || ""}
+                onChange={(event) => handleChange("adaptacao_observacoes", event.target.value)}
+                rows={3}
+                placeholder="Ex.: tolerou bem o ambiente, precisa de nova etapa, avisar comercial"
+              />
             </div>
           </div>
         )}
@@ -331,7 +412,7 @@ export default function OrcamentoCaoForm({
           <div className="space-y-4 rounded-lg border border-cyan-100 bg-cyan-50/50 p-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <Label>Raca para Banho</Label>
+                <Label>Raca para banho</Label>
                 <Input
                   className="mt-1"
                   value={cao.banho_raca || selectedDog?.raca || ""}
@@ -339,13 +420,43 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horário do Banho</Label>
-                <TimePickerInput
+                <Label>Data do banho</Label>
+                <DatePickerInput
                   className="mt-1"
-                  value={cao.banho_horario}
-                  onChange={(value) => handleChange("banho_horario", value)}
+                  value={cao.banho_data}
+                  onChange={(value) => handleChange("banho_data", value)}
                 />
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Horario de inicio</Label>
+                <TimePickerInput
+                  className="mt-1"
+                  value={cao.banho_horario_inicio || cao.banho_horario}
+                  onChange={(value) => updateCao({ banho_horario_inicio: value, banho_horario: value })}
+                />
+              </div>
+              <div>
+                <Label>Horario de termino</Label>
+                <TimePickerInput
+                  className="mt-1"
+                  value={cao.banho_horario_saida}
+                  onChange={(value) => handleChange("banho_horario_saida", value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Observacoes do banho</Label>
+              <Textarea
+                className="mt-1"
+                value={cao.banho_observacoes || ""}
+                onChange={(event) => handleChange("banho_observacoes", event.target.value)}
+                rows={3}
+                placeholder="Ex.: o cao estava mais agitado hoje"
+              />
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -376,8 +487,35 @@ export default function OrcamentoCaoForm({
 
         {cao.servicos?.tosa && (
           <div className="space-y-4 rounded-lg border border-purple-100 bg-purple-50/50 p-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <Label>Data da tosa</Label>
+                <DatePickerInput
+                  className="mt-1"
+                  value={cao.tosa_data}
+                  onChange={(value) => handleChange("tosa_data", value)}
+                />
+              </div>
+              <div>
+                <Label>Horario de inicio</Label>
+                <TimePickerInput
+                  className="mt-1"
+                  value={cao.tosa_horario_entrada}
+                  onChange={(value) => handleChange("tosa_horario_entrada", value)}
+                />
+              </div>
+              <div>
+                <Label>Horario de termino</Label>
+                <TimePickerInput
+                  className="mt-1"
+                  value={cao.tosa_horario_saida}
+                  onChange={(value) => handleChange("tosa_horario_saida", value)}
+                />
+              </div>
+            </div>
+
             <div>
-              <Label>Tipo de Tosa</Label>
+              <Label>Tipo de tosa</Label>
               <Select value={cao.tosa_tipo} onValueChange={(value) => handleChange("tosa_tipo", value)}>
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Escolha o tipo" />
@@ -392,14 +530,16 @@ export default function OrcamentoCaoForm({
 
             {cao.tosa_tipo === "higienica" && (
               <div>
-                <Label>Subtipo Higienica</Label>
+                <Label>Subtipo higienica</Label>
                 <Select value={cao.tosa_subtipo_higienica} onValueChange={(value) => handleChange("tosa_subtipo_higienica", value)}>
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Escolha o subtipo" />
                   </SelectTrigger>
                   <SelectContent>
                     {TOSA_HIGIENICA_OPTIONS.map((option) => (
-                      <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -431,12 +571,13 @@ export default function OrcamentoCaoForm({
             </div>
 
             <div>
-              <Label>Observações da Tosa</Label>
-              <Input
+              <Label>Observacoes da tosa</Label>
+              <Textarea
                 className="mt-1"
                 value={cao.tosa_obs}
                 onChange={(event) => handleChange("tosa_obs", event.target.value)}
-                placeholder="Observações específicas"
+                rows={3}
+                placeholder="Observacoes especificas"
               />
             </div>
           </div>
@@ -483,21 +624,33 @@ export default function OrcamentoCaoForm({
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <TimePickerInput
+                    value={viagem.horario_fim}
+                    onChange={(value) => updateTransporteViagem(viagemIndex, "horario_fim", value)}
+                  />
                   <Input
                     placeholder="KM"
                     value={viagem.km}
                     onChange={(event) => updateTransporteViagem(viagemIndex, "km", event.target.value)}
                   />
-                  <div className="flex items-center justify-between rounded-lg bg-amber-50 p-3">
-                    <div>
-                      <Label className="text-sm font-medium">Do pacote</Label>
-                      <p className="text-xs text-gray-500">Transporte do pacote</p>
-                    </div>
-                    <Switch
-                      checked={cao.transporte_do_pacote}
-                      onCheckedChange={(checked) => handleChange("transporte_do_pacote", checked)}
-                    />
+                </div>
+
+                <Textarea
+                  value={viagem.observacao || ""}
+                  onChange={(event) => updateTransporteViagem(viagemIndex, "observacao", event.target.value)}
+                  rows={2}
+                  placeholder="Observacoes do transporte"
+                />
+
+                <div className="flex items-center justify-between rounded-lg bg-amber-50 p-3">
+                  <div>
+                    <Label className="text-sm font-medium">Do pacote</Label>
+                    <p className="text-xs text-gray-500">Transporte do pacote</p>
                   </div>
+                  <Switch
+                    checked={cao.transporte_do_pacote}
+                    onCheckedChange={(checked) => handleChange("transporte_do_pacote", checked)}
+                  />
                 </div>
               </div>
             ))}
@@ -515,7 +668,7 @@ export default function OrcamentoCaoForm({
 
             <Button type="button" variant="outline" onClick={addViagem} className="w-full border-dashed">
               <Plus className="mr-2 h-4 w-4" />
-              Adicionar Viagem
+              Adicionar viagem
             </Button>
           </div>
         )}

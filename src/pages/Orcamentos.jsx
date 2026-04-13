@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User } from "@/api/entities";
-import { Link, useLocation } from "react-router-dom";
-import { createPageUrl } from "@/utils";
+import { useLocation } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -9,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calculator, Dog as DogIcon, FileText, History, Plus, Save, Search, Send } from "lucide-react";
+import { Calculator, Dog as DogIcon, FileText, Plus, Save, Search, Send } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 import OrcamentoCaoForm from "@/components/orcamento/OrcamentoCaoForm";
+import OrcamentosHistoricoPanel from "@/components/orcamento/OrcamentosHistoricoPanel";
 import OrcamentoResumo from "@/components/orcamento/OrcamentoResumo";
 
 const PRECOS_PADRAO = {
@@ -22,6 +22,7 @@ const PRECOS_PADRAO = {
   day_care_avulso_com_pacote: 110,
   day_care_avulso_sem_pacote: 125,
   day_care_avulso: 125,
+  adaptacao: 0,
   pernoite: 60,
   transporte_km: 6,
   desconto_canil: 0.3,
@@ -69,12 +70,16 @@ const PRECOS_TOSA_DETALHADA_PADRAO = {
 
 const emptyCao = {
   dog_id: "",
-  servicos: { day_care: false, hospedagem: false, banho: false, tosa: false, transporte: false },
+  servicos: { day_care: false, hospedagem: false, adaptacao: false, banho: false, tosa: false, transporte: false },
   day_care_data: "",
   day_care_plano_ativo: false,
   day_care_horario_entrada: "08:00",
   day_care_horario_saida: "18:00",
   day_care_observacoes: "",
+  adaptacao_data: "",
+  adaptacao_horario_entrada: "09:00",
+  adaptacao_horario_saida: "10:00",
+  adaptacao_observacoes: "",
   hosp_data_entrada: "",
   hosp_horario_entrada: "",
   hosp_data_saida: "",
@@ -86,18 +91,25 @@ const emptyCao = {
   hosp_datas_daycare: [],
   banho_plano_ativo: false,
   banho_do_pacote: false,
+  banho_data: "",
   banho_horario: "",
+  banho_horario_inicio: "",
+  banho_horario_saida: "",
   banho_raca: "",
+  banho_observacoes: "",
   banho_srd_porte: "",
   banho_srd_pelagem: "",
+  tosa_data: "",
   tosa_tipo: "",
   tosa_subtipo_higienica: "",
   tosa_plano_ativo: false,
   tosa_do_pacote: false,
+  tosa_horario_entrada: "",
+  tosa_horario_saida: "",
   tosa_obs: "",
   transporte_plano_ativo: false,
   transporte_do_pacote: false,
-  transporte_viagens: [{ partida: "", destino: "", data: "", horario: "", km: "" }],
+  transporte_viagens: [{ partida: "", destino: "", data: "", horario: "", horario_fim: "", km: "", observacao: "" }],
 };
 
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -163,6 +175,10 @@ function buildPricingConfig(precosRows, empresaId) {
         (row) => row.tipo === "day_care_avulso_sem_pacote" || row.config_key === "day_care_avulso_sem_pacote"
       )?.valor ??
       PRECOS_PADRAO.day_care_avulso_sem_pacote,
+    adaptacao:
+      byConfigKey.adaptacao ??
+      scopedRows.find((row) => row.tipo === "adaptacao" || row.config_key === "adaptacao")?.valor ??
+      PRECOS_PADRAO.adaptacao,
     pernoite: byConfigKey.pernoite ?? PRECOS_PADRAO.pernoite,
     transporte_km: byConfigKey.transporte_km ?? PRECOS_PADRAO.transporte_km,
     desconto_canil: (byConfigKey.desconto_canil ?? (PRECOS_PADRAO.desconto_canil * 100)) / 100,
@@ -204,6 +220,17 @@ function calcularOrcamento(caes, dogs, precos) {
       });
       totalCao += valorDayCare;
       subtotalServicos += valorDayCare;
+    }
+
+    if (cao.servicos?.adaptacao && cao.adaptacao_data) {
+      const valorAdaptacao = Number(precos.adaptacao || 0);
+      linhas.push({
+        tipo: "adaptacao",
+        descricao: "Adaptacao",
+        valor: valorAdaptacao,
+      });
+      totalCao += valorAdaptacao;
+      subtotalServicos += valorAdaptacao;
     }
 
     if (cao.servicos?.hospedagem && cao.hosp_data_entrada && cao.hosp_data_saida) {
@@ -360,6 +387,7 @@ export default function Orcamentos() {
   const [precos, setPrecos] = useState(buildPricingConfig([], null));
   const [currentUser, setCurrentUser] = useState(null);
   const [prefillApplied, setPrefillApplied] = useState(false);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   const [showModal, setShowModal] = useState(false);
   const [etapa, setEtapa] = useState("cliente");
@@ -404,7 +432,10 @@ export default function Orcamentos() {
 
     if (service === "banho") {
       prefilledCao.servicos.banho = true;
+      prefilledCao.banho_data = date;
       prefilledCao.banho_horario = "09:00";
+      prefilledCao.banho_horario_inicio = "09:00";
+      prefilledCao.banho_horario_saida = "10:00";
     } else if (service === "hospedagem") {
       prefilledCao.servicos.hospedagem = true;
       prefilledCao.hosp_data_entrada = date;
@@ -416,6 +447,11 @@ export default function Orcamentos() {
       prefilledCao.day_care_data = date;
       prefilledCao.day_care_horario_entrada = "08:00";
       prefilledCao.day_care_horario_saida = "18:00";
+    } else if (service === "adaptacao") {
+      prefilledCao.servicos.adaptacao = true;
+      prefilledCao.adaptacao_data = date;
+      prefilledCao.adaptacao_horario_entrada = "09:00";
+      prefilledCao.adaptacao_horario_saida = "10:00";
     }
 
     setClienteSelecionado(selectedCarteira);
@@ -569,6 +605,7 @@ export default function Orcamentos() {
         observacoes,
       });
       await loadData();
+      setHistoryRefreshKey((current) => current + 1);
       setShowModal(false);
       resetForm();
     } catch (error) {
@@ -612,16 +649,270 @@ export default function Orcamentos() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Orçamentos</h1>
+              <p className="mt-1 text-sm text-gray-600">Área comercial para criação, acompanhamento e gestão de orçamentos.</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-blue-600 text-white hover:bg-blue-700">
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Orçamento
+            </Button>
+          </div>
+        </div>
+
+        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[
+            { label: "Total", val: orcamentos.length, color: "text-blue-600", border: "border-blue-200" },
+            { label: "Aprovados", val: orcamentos.filter((item) => item.status === "aprovado").length, color: "text-green-600", border: "border-green-200" },
+            { label: "Enviados", val: orcamentos.filter((item) => item.status === "enviado").length, color: "text-orange-600", border: "border-orange-200" },
+            { label: "Rascunhos", val: orcamentos.filter((item) => item.status === "rascunho").length, color: "text-gray-600", border: "border-gray-200" },
+          ].map((stat) => (
+            <Card key={stat.label} className={`bg-white ${stat.border}`}>
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-gray-600">{stat.label}</p>
+                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.val}</p>
+                </div>
+                <FileText className={`h-10 w-10 ${stat.color} opacity-60`} />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <OrcamentosHistoricoPanel
+          embedded
+          refreshKey={historyRefreshKey}
+          onChange={loadData}
+        />
+      </div>
+
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="flex max-h-[95vh] w-[98vw] max-w-[1100px] flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-blue-600" />
+              {etapa === "cliente" && "Novo Orçamento - Selecione o Cliente"}
+              {etapa === "caes" && "Novo Orçamento - Serviços por Cão"}
+              {etapa === "resumo" && "Novo Orçamento - Revisão Final"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Fluxo de criação de orçamento com busca ampla por destinatário financeiro, responsável e cão.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center gap-2 border-b border-gray-100 px-1 py-2">
+            {[
+              { id: "cliente", label: "1. Cliente" },
+              { id: "caes", label: "2. Serviços" },
+              { id: "resumo", label: "3. Revisão" },
+            ].map((step, index) => (
+              <React.Fragment key={step.id}>
+                <div className={`rounded-full px-3 py-1 text-xs font-medium ${etapa === step.id ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500"}`}>
+                  {step.label}
+                </div>
+                {index < 2 && <div className="h-px flex-1 bg-gray-200" />}
+              </React.Fragment>
+            ))}
+          </div>
+
+          {etapa === "cliente" && (
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              <p className="text-sm text-gray-600">Selecione o cliente ou pule para criar orçamento avulso.</p>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Input
+                  placeholder="Buscar por responsável financeiro, responsável, cão, CPF/CNPJ ou celular..."
+                  value={searchCliente}
+                  onChange={(event) => setSearchCliente(event.target.value)}
+                  className="pl-9"
+                />
+              </div>
+
+              {exigeConfirmacaoDestinatario && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-sm text-amber-700">
+                    Encontramos mais de um destinatário financeiro para esta busca. Confirme para quem o orçamento será destinado.
+                  </p>
+                </div>
+              )}
+
+              <div className="max-h-[45vh] space-y-2 overflow-y-auto">
+                {clientesFiltrados.slice(0, 20).map((resultado) => {
+                  const { cliente, dogsDoCliente, responsaveisDoCliente, destaqueBusca } = resultado;
+                  const numCaes = dogsDoCliente.length;
+                  const selected = clienteSelecionado?.id === cliente.id;
+
+                  return (
+                    <div
+                      key={cliente.id}
+                      onClick={() => setClienteSelecionado((prev) => prev?.id === cliente.id ? null : cliente)}
+                      className={`cursor-pointer rounded-lg border-2 p-4 transition-all ${selected ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white hover:border-gray-300"}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-gray-900">{cliente.nome_razao_social}</p>
+                          {destaqueBusca ? (
+                            <p className="mt-1 text-xs text-blue-700">{destaqueBusca}</p>
+                          ) : null}
+                          {dogsDoCliente.length > 0 ?(
+                            <p className="mt-1 text-xs text-gray-500">
+                              Cães: {dogsDoCliente.map((dog) => dog.nome).join(", ")}
+                            </p>
+                          ) : null}
+                          {responsaveisDoCliente.length > 0 ?(
+                            <p className="mt-1 text-xs text-gray-500">
+                              Responsáveis: {responsaveisDoCliente.map((responsavel) => responsavel.nome_completo).join(", ")}
+                            </p>
+                          ) : null}
+                          <p className="text-sm text-gray-500">{cliente.celular} • {cliente.cpf_cnpj}</p>
+                        </div>
+                        <Badge variant="outline">{numCaes} cão(es)</Badge>
+                      </div>
+                    </div>
+                  );
+                })}
+                {clientesFiltrados.length === 0 && (
+                  <p className="py-8 text-center text-gray-500">Nenhum cliente encontrado</p>
+                )}
+              </div>
+
+              {clienteSelecionado && (
+                <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                  <p className="text-sm text-green-700">
+                    <strong>Selecionado:</strong> {clienteSelecionado.nome_razao_social}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {etapa === "caes" && (
+            <div className="flex-1 overflow-y-auto">
+              <div className="grid h-full grid-cols-1 gap-0 lg:grid-cols-3">
+                <div className="space-y-4 overflow-y-auto p-4 lg:col-span-2">
+                  {clienteSelecionado && (
+                    <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                      <DogIcon className="h-4 w-4 text-blue-600" />
+                      <p className="text-sm text-blue-700">
+                        Cliente: <strong>{clienteSelecionado.nome_razao_social}</strong>
+                      </p>
+                    </div>
+                  )}
+
+                  {caes.map((cao, index) => (
+                    <OrcamentoCaoForm
+                      key={index}
+                      cao={cao}
+                      index={index}
+                      allCaes={caes}
+                      dogs={getCaesDoCliente()}
+                      precos={precos}
+                      onUpdate={updateCao}
+                      onRemove={removeCao}
+                      canRemove={caes.length > 1}
+                    />
+                  ))}
+
+                  <Button variant="outline" onClick={addCao} className="w-full border-dashed">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Adicionar Outro Cão
+                  </Button>
+
+                  <Card className="border-gray-200 bg-white">
+                    <CardContent className="p-4">
+                      <Label className="text-sm font-medium">Observações Gerais</Label>
+                      <Textarea
+                        value={observacoes}
+                        onChange={(event) => setObservacoes(event.target.value)}
+                        placeholder="Informações adicionais sobre o orçamento..."
+                        rows={2}
+                        className="mt-2"
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="overflow-y-auto border-l border-gray-100 bg-gray-50 p-4 lg:col-span-1">
+                  <OrcamentoResumo calculo={calculo} caes={caes} dogs={dogs} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {etapa === "resumo" && (
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              {clienteSelecionado && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <p className="mb-1 text-sm font-medium text-gray-600">Cliente</p>
+                  <p className="font-semibold text-gray-900">{clienteSelecionado.nome_razao_social}</p>
+                  <p className="text-sm text-gray-500">{clienteSelecionado.celular}</p>
+                </div>
+              )}
+
+              <OrcamentoResumo calculo={calculo} caes={caes} dogs={dogs} />
+
+              {observacoes && (
+                <div className="rounded-lg border-l-4 border-yellow-400 bg-yellow-50 p-3">
+                  <p className="mb-1 text-xs font-semibold text-yellow-700">Observações</p>
+                  <p className="text-sm text-gray-700">{observacoes}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 border-t pt-4">
+            {etapa === "cliente" && (
+              <>
+                <Button variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
+                <Button variant="outline" onClick={() => setEtapa("caes")}>Pular (sem cliente)</Button>
+                <Button onClick={() => setEtapa("caes")} className="bg-blue-600 text-white hover:bg-blue-700">
+                  {clienteSelecionado ? "Continuar" : "Continuar sem cliente"}
+                </Button>
+              </>
+            )}
+            {etapa === "caes" && (
+              <>
+                <Button variant="outline" onClick={() => setEtapa("cliente")}>Voltar</Button>
+                <Button onClick={() => setEtapa("resumo")} disabled={!calculo} className="bg-blue-600 text-white hover:bg-blue-700">
+                  Ver Resumo
+                </Button>
+              </>
+            )}
+            {etapa === "resumo" && (
+              <>
+                <Button variant="outline" onClick={() => setEtapa("caes")}>Voltar</Button>
+                <Button variant="outline" onClick={() => handleSave("rascunho")} disabled={isSaving || !calculo}>
+                  <Save className="mr-2 h-4 w-4" />
+                  Salvar Rascunho
+                </Button>
+                <Button onClick={() => handleSave("enviado")} disabled={isSaving || !calculo} className="bg-green-600 text-white hover:bg-green-700">
+                  <Send className="mr-2 h-4 w-4" />
+                  {isSaving ? "Salvando..." : "Enviar Orçamento"}
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="mt-1">
+              <Calculator className="h-6 w-6 text-blue-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Orçamentos</h1>
               <p className="mt-1 text-sm text-gray-600">Geração de orçamentos para serviços</p>
             </div>
           </div>
           <div className="flex gap-2">
-            <Link to={createPageUrl("HistoricoOrcamentos")}>
-              <Button variant="outline">
-                <History className="mr-2 h-4 w-4" />
                 Histórico
-              </Button>
-            </Link>
             <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-blue-600 text-white hover:bg-blue-700">
               <Plus className="mr-2 h-4 w-4" />
               Novo Orçamento

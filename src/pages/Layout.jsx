@@ -65,7 +65,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
   const [expandedSections, setExpandedSections] = useState({
     operacional: false,
     financeiro: false,
-    orcamentos: false,
+    comercial: false,
     relatorios: false,
     sistema: false,
   });
@@ -213,7 +213,6 @@ export default function Layout({ children, currentPageName, initialUser = null }
         { title: "Registrador", url: createPageUrl("Registrador"), icon: ClipboardCheck },
         { title: "Agendamentos", url: createPageUrl("Agendamentos"), icon: Calendar },
         { title: "Serviços Prestados", url: createPageUrl("ServicosPrestados"), icon: ClipboardCheck },
-        { title: "Cadastro", url: createPageUrl("Cadastro"), icon: UserPlus },
         { title: "Planos Recorrentes", url: createPageUrl("PlanosConfig"), icon: CreditCard },
       ],
     },
@@ -230,7 +229,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
       ],
     },
     {
-      id: "orcamentos",
+      id: "comercial",
       title: "Orçamentos",
       icon: FileText,
       items: [
@@ -268,14 +267,37 @@ export default function Layout({ children, currentPageName, initialUser = null }
     },
   ];
 
+  const normalizedMenuSections = menuSections.map((section) => {
+    if (section.id === "comercial") {
+      return {
+        ...section,
+        title: "Comercial",
+        items: [
+          { title: "Orçamentos", url: createPageUrl("Orcamentos"), icon: FileText },
+          { title: "Cadastro", url: createPageUrl("Cadastro"), icon: UserPlus },
+          { title: "Config. Preços", url: createPageUrl("ConfiguracoesPrecos"), icon: Settings },
+        ],
+      };
+    }
+
+    if (section.id === "operacional") {
+      return {
+        ...section,
+        items: section.items.filter((item) => item.url !== createPageUrl("Cadastro")),
+      };
+    }
+
+    return section;
+  });
+
   const visibleMenuSections = useMemo(
-    () => menuSections
+    () => normalizedMenuSections
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => hasPageAccess(currentUser, getPageNameFromPath(item.url))),
       }))
       .filter((section) => section.items.length > 0),
-    [currentUser, menuSections],
+    [currentUser, normalizedMenuSections],
   );
 
   const renderAccessPanel = ({ mobile = false } = {}) => (

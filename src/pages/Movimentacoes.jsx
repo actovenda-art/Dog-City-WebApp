@@ -51,6 +51,8 @@ const EMPTY_FORM = {
   observacoes: "",
 };
 
+const MOVEMENTS_PAGE_SIZE = 50;
+
 function StatCard({ label, value, className = "", valueClassName = "", icon = null, helper = null, isBlurred = false }) {
   return (
     <Card className={className}>
@@ -94,6 +96,7 @@ export default function Movimentacoes() {
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(MOVEMENTS_PAGE_SIZE);
 
   const loadData = async (userProfile, { preserveVisibleData = false } = {}) => {
     if (!preserveVisibleData && movimentacoes.length === 0) {
@@ -192,6 +195,17 @@ export default function Movimentacoes() {
       }),
     [normalizedMovements, searchTerm, tipoFiltro, dataInicial, dataFinal],
   );
+
+  useEffect(() => {
+    setVisibleCount(MOVEMENTS_PAGE_SIZE);
+  }, [searchTerm, tipoFiltro, dataInicial, dataFinal]);
+
+  const visibleMovements = useMemo(
+    () => filtered.slice(0, visibleCount),
+    [filtered, visibleCount],
+  );
+
+  const hasMoreMovements = visibleMovements.length < filtered.length;
 
   const totalEntradas = filtered
     .filter((item) => item.tipo === "entrada")
@@ -494,7 +508,8 @@ export default function Movimentacoes() {
               </CardContent>
             </Card>
           ) : (
-            filtered.map((movement) => (
+            <>
+              {visibleMovements.map((movement) => (
               <Card key={movement.id} className="border-gray-200 bg-white">
                 <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center">
                   <div className={`flex h-12 w-12 items-center justify-center rounded-full ${movement.tipo === "entrada" ? "bg-green-100" : "bg-red-100"}`}>
@@ -562,7 +577,24 @@ export default function Movimentacoes() {
                   </div>
                 </CardContent>
               </Card>
-            ))
+              ))}
+
+              {hasMoreMovements && (
+                <Card className="border-dashed border-gray-300 bg-white">
+                  <CardContent className="flex flex-col items-center gap-3 p-5 text-center">
+                    <p className="text-sm text-gray-500">
+                      Exibindo {visibleMovements.length} de {filtered.length} movimentações encontradas.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => setVisibleCount((current) => current + MOVEMENTS_PAGE_SIZE)}
+                    >
+                      Carregar mais
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
         </div>
       </div>

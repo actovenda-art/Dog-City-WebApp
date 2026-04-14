@@ -115,6 +115,11 @@ function validateBootstrapPin(pin: string) {
   return "";
 }
 
+function isAuthDuplicateEmailError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /already been registered|already registered|email address has already been registered|user already registered/i.test(message);
+}
+
 function uniqueTextList(value: unknown) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((item) => sanitizeText(item)).filter(Boolean))];
@@ -263,6 +268,49 @@ async function loadAppUserByEmail(email: string) {
   return (data as AppUserRow | null) || null;
 }
 
+async function findAuthUserByEmail(email: string) {
+  const normalizedEmail = sanitizeText(email).toLowerCase();
+  if (!normalizedEmail) return null;
+
+  try {
+    const { data } = await admin.auth.admin.getUserByEmail(normalizedEmail);
+    if (data?.user?.email && sanitizeText(data.user.email).toLowerCase() === normalizedEmail) {
+      return data.user;
+    }
+  } catch {
+    // fallback below
+  }
+
+  let page = 1;
+  const perPage = 200;
+  while (page <= 20) {
+    try {
+      const { data, error } = await admin.auth.admin.listUsers({
+        page,
+        perPage,
+      });
+
+      if (error) break;
+
+      const users = data?.users || [];
+      const found = users.find((user) => sanitizeText(user.email).toLowerCase() === normalizedEmail);
+      if (found) {
+        return found;
+      }
+
+      if (users.length < perPage) {
+        break;
+      }
+
+      page += 1;
+    } catch {
+      break;
+    }
+  }
+
+  return null;
+}
+
 async function loadPendingInviteByEmail(email: string) {
   if (!email) return null;
   const normalizedEmail = sanitizeText(email).toLowerCase();
@@ -376,6 +424,39 @@ async function upsertUserUnitAccessRow({
   }
 }
 
+async function discardPendingAppUserIdentity(existingUser: AppUserRow, nextUserId: string) {
+  if (!existingUser?.id || !nextUserId || existingUser.id === nextUserId) {
+    return;
+  }
+
+  if (existingUser.onboarding_status === "completo") {
+    throw new Error("Conflito entre o usuario de autenticacao e o cadastro interno deste email.");
+  }
+
+  const now = new Date().toISOString();
+
+  const { error: accessError } = await admin
+    .from("user_unit_access")
+    .update({
+      user_id: nextUserId,
+      updated_date: now,
+    })
+    .eq("user_id", existingUser.id);
+
+  if (accessError) {
+    throw new Error(accessError.message || "Nao foi possivel ajustar os acessos pendentes deste usuario.");
+  }
+
+  const { error: deleteError } = await admin
+    .from("users")
+    .delete()
+    .eq("id", existingUser.id);
+
+  if (deleteError) {
+    throw new Error(deleteError.message || "Nao foi possivel limpar o cadastro pendente anterior deste usuario.");
+  }
+}
+
 async function createAppUserFromInvite(invite: Record<string, any>) {
   const now = new Date().toISOString();
   const normalizedEmail = sanitizeText(invite.email).toLowerCase();
@@ -383,12 +464,8 @@ async function createAppUserFromInvite(invite: Record<string, any>) {
 
   let authUserId: string | null = null;
 
-  try {
-    const { data } = await admin.auth.admin.getUserByEmail(normalizedEmail);
-    authUserId = data?.user?.id || null;
-  } catch {
-    authUserId = null;
-  }
+  const existingAuthUser = await findAuthUserByEmail(normalizedEmail);
+  authUserId = existingAuthUser?.id || null;
 
   if (!authUserId) {
     authUserId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -404,7 +481,16 @@ async function createAppUserFromInvite(invite: Record<string, any>) {
     });
 
     if (error) {
-      throw new Error(error.message || "Nao foi possivel criar o usuario de autenticacao para o convite.");
+      if (isAuthDuplicateEmailError(error)) {
+        const duplicateAuthUser = await findAuthUserByEmail(normalizedEmail);
+        if (duplicateAuthUser?.id) {
+          authUserId = duplicateAuthUser.id;
+        } else {
+          throw new Error("O email ja existe no Auth, mas nao foi possivel recuperar esse usuario.");
+        }
+      } else {
+        throw new Error(error.message || "Nao foi possivel criar o usuario de autenticacao para o convite.");
+      }
     }
 
     authUserId = data?.user?.id || authUserId;
@@ -896,28 +982,27 @@ async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) 
   }
 
   const fullName = sanitizeText(profile.full_name || invite.full_name);
-  const existingUser = await loadAppUserByEmail(normalizedEmail);
+  let existingUser = await loadAppUserByEmail(normalizedEmail);
   if (existingUser?.onboarding_status === "completo" && existingUser?.active !== false) {
     return jsonResponse({
       error: "Este email ja possui acesso concluido. Use o login normal ou ajuste o acesso na Gestao de Usuarios.",
     }, 409);
   }
 
-  let authUser = null;
-  try {
-    const { data } = await admin.auth.admin.getUserByEmail(normalizedEmail);
-    authUser = data?.user || null;
-  } catch {
-    authUser = null;
-  }
+  let authUser = await findAuthUserByEmail(normalizedEmail);
 
   if (existingUser?.id && authUser?.id && existingUser.id !== authUser.id) {
-    return jsonResponse({
-      error: "Conflito entre o usuario de autenticacao e o cadastro interno deste email.",
-    }, 409);
+    try {
+      await discardPendingAppUserIdentity(existingUser, authUser.id);
+      existingUser = null;
+    } catch (error) {
+      return jsonResponse({
+        error: error instanceof Error ? error.message : "Nao foi possivel reconciliar o cadastro pendente deste email.",
+      }, 409);
+    }
   }
 
-  const userId = existingUser?.id || authUser?.id || (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+  let resolvedAuthUserId = existingUser?.id || authUser?.id || (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `invite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
@@ -932,8 +1017,8 @@ async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) 
       return jsonResponse({ error: updateAuthError.message || "Nao foi possivel atualizar o acesso do convite." }, 500);
     }
   } else {
-    const { error: createAuthError } = await admin.auth.admin.createUser({
-      id: userId,
+    const { data: createdAuthUser, error: createAuthError } = await admin.auth.admin.createUser({
+      id: resolvedAuthUserId,
       email: normalizedEmail,
       password: pin,
       email_confirm: true,
@@ -941,7 +1026,39 @@ async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) 
     });
 
     if (createAuthError) {
-      return jsonResponse({ error: createAuthError.message || "Nao foi possivel criar o acesso do convite." }, 500);
+      if (isAuthDuplicateEmailError(createAuthError)) {
+        authUser = await findAuthUserByEmail(normalizedEmail);
+        if (!authUser?.id) {
+          return jsonResponse({ error: "O email ja existe no Auth, mas nao foi possivel recuperar esse usuario." }, 500);
+        }
+
+        resolvedAuthUserId = authUser.id;
+
+        if (existingUser?.id && existingUser.id !== authUser.id) {
+          try {
+            await discardPendingAppUserIdentity(existingUser, authUser.id);
+            existingUser = null;
+          } catch (error) {
+            return jsonResponse({
+              error: error instanceof Error ? error.message : "Nao foi possivel reconciliar o cadastro pendente deste email.",
+            }, 409);
+          }
+        }
+
+        const { error: retryUpdateAuthError } = await admin.auth.admin.updateUserById(authUser.id, {
+          password: pin,
+          email_confirm: true,
+          user_metadata: fullName ? { full_name: fullName } : undefined,
+        });
+
+        if (retryUpdateAuthError) {
+          return jsonResponse({ error: retryUpdateAuthError.message || "Nao foi possivel atualizar o acesso existente deste convite." }, 500);
+        }
+      } else {
+        return jsonResponse({ error: createAuthError.message || "Nao foi possivel criar o acesso do convite." }, 500);
+      }
+    } else {
+      resolvedAuthUserId = createdAuthUser?.user?.id || resolvedAuthUserId;
     }
   }
 
@@ -993,7 +1110,7 @@ async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) 
     const { data, error } = await admin
       .from("users")
       .insert([{
-        id: userId,
+        id: resolvedAuthUserId,
         profile: "usuario",
         created_date: now,
         ...profilePayload,
@@ -1010,7 +1127,7 @@ async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) 
   try {
     if (!(invite.is_platform_admin ?? false) && invite.empresa_id) {
       await upsertUserUnitAccessRow({
-        userId: savedUser?.id || userId,
+        userId: savedUser?.id || resolvedAuthUserId,
         empresaId: invite.empresa_id,
         accessProfileId: invite.access_profile_id || null,
         papel: invite.company_role || "company_user",

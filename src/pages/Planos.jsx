@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Plus, Search, Pencil, Trash2, CreditCard, AlertTriangle, CheckCircle, XCircle, Dog as DogIcon, Calendar, Filter
 } from "lucide-react";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { format, isPast, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useBranding } from "@/hooks/use-branding";
@@ -281,24 +282,42 @@ export default function Planos() {
 
         {/* Filters */}
         <Card className="mb-6 border-gray-200 bg-white">
-          <CardContent className="p-4 flex flex-wrap gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input placeholder="Buscar por nome ou ID do cão..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
-            </div>
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-44">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="ativo">Ativos</SelectItem>
-                <SelectItem value="inadimplente">Inadimplentes</SelectItem>
-                <SelectItem value="suspenso">Suspensos</SelectItem>
-                <SelectItem value="cancelado">Cancelados</SelectItem>
-              </SelectContent>
-            </Select>
+          <CardContent className="p-4">
+            <SearchFiltersToolbar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Buscar por nome ou ID do cão..."
+              hasActiveFilters={Boolean(searchTerm || filterStatus !== "all")}
+              onClear={() => {
+                setSearchTerm("");
+                setFilterStatus("all");
+              }}
+              filters={[
+                {
+                  id: "status",
+                  label: "Status",
+                  icon: Filter,
+                  active: filterStatus !== "all",
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status do plano</p>
+                      <Select value={filterStatus} onValueChange={setFilterStatus}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          <SelectItem value="ativo">Ativos</SelectItem>
+                          <SelectItem value="inadimplente">Inadimplentes</SelectItem>
+                          <SelectItem value="suspenso">Suspensos</SelectItem>
+                          <SelectItem value="cancelado">Cancelados</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
 

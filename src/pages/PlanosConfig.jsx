@@ -16,6 +16,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import {
   Plus, CreditCard, Search, Pencil, Trash2, Play, Pause, Calendar, Zap
 } from "lucide-react";
@@ -371,19 +372,40 @@ export default function PlanosConfig() {
 
         {/* Filters */}
         <Card className="mb-6 border-gray-200 bg-white">
-          <CardContent className="p-4 flex flex-wrap gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input placeholder="Buscar cliente ou cão..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
-            </div>
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="ativo">Ativos</SelectItem>
-                <SelectItem value="inativo">Inativos</SelectItem>
-              </SelectContent>
-            </Select>
+          <CardContent className="p-4">
+            <SearchFiltersToolbar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Buscar cliente ou cão..."
+              hasActiveFilters={Boolean(searchTerm || filterStatus !== "all")}
+              onClear={() => {
+                setSearchTerm("");
+                setFilterStatus("all");
+              }}
+              filters={[
+                {
+                  id: "status",
+                  label: "Status",
+                  icon: CreditCard,
+                  active: filterStatus !== "all",
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status do plano</p>
+                      <Select value={filterStatus} onValueChange={setFilterStatus}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          <SelectItem value="ativo">Ativos</SelectItem>
+                          <SelectItem value="inativo">Inativos</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
 

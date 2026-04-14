@@ -20,8 +20,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { DatePickerInput } from "@/components/common/DateTimeInputs";
-import { AlertTriangle, CheckCircle2, CreditCard, DollarSign, Eye, PackageCheck, RefreshCcw, Search, Wallet } from "lucide-react";
+import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
+import { AlertTriangle, Calendar, CheckCircle2, CreditCard, DollarSign, Eye, PackageCheck, RefreshCcw, Search, Wallet } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -273,17 +274,169 @@ export default function ContasReceber() {
           <Card className="border-purple-200 bg-white"><CardContent className="flex items-center justify-between p-4"><div><p className="text-sm text-gray-600">Usos em pacote</p><p className="text-2xl font-bold text-purple-600">{stats.usosPacote}</p></div><PackageCheck className="h-10 w-10 text-purple-500" /></CardContent></Card>
         </div>
 
-        <Card className="border-gray-200 bg-white"><CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
-          <div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar cliente, cão, serviço, pacote..." className="pl-9" /></div>
-          <Select value={filterServico} onValueChange={setFilterServico}><SelectTrigger><SelectValue placeholder="Serviço" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os serviços</SelectItem>{serviceOptions.map((item) => <SelectItem key={item} value={item}>{getServiceLabel(item)}</SelectItem>)}</SelectContent></Select>
-          <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os status</SelectItem><SelectItem value="pendente">Pendente</SelectItem><SelectItem value="vencido">Vencido</SelectItem><SelectItem value="pago">Pago</SelectItem></SelectContent></Select>
-          <Select value={filterTipoCobranca} onValueChange={setFilterTipoCobranca}><SelectTrigger><SelectValue placeholder="Tipo de cobrança" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os tipos</SelectItem><SelectItem value="avulso">Avulso</SelectItem><SelectItem value="orcamento">Orçamento</SelectItem><SelectItem value="pacote">Pacote</SelectItem></SelectContent></Select>
-          <Select value={filterTipoAgendamento} onValueChange={setFilterTipoAgendamento}><SelectTrigger><SelectValue placeholder="Tipo de agendamento" /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="agendamento_solto">Agendamento solto</SelectItem><SelectItem value="orcamento">Orçamento</SelectItem></SelectContent></Select>
-          <Select value={filterOrigem} onValueChange={setFilterOrigem}><SelectTrigger><SelectValue placeholder="Origem" /></SelectTrigger><SelectContent><SelectItem value="all">Toda origem</SelectItem><SelectItem value="manual_registrador">Registrador manual</SelectItem><SelectItem value="orcamento_aprovado">Orçamento aprovado</SelectItem><SelectItem value="agendamento">Agendamento</SelectItem></SelectContent></Select>
-          <div><Label className="text-xs text-gray-500">Prestação inicial</Label><DatePickerInput value={filterPrestacaoInicio} onChange={setFilterPrestacaoInicio} /></div>
-          <div><Label className="text-xs text-gray-500">Prestação final</Label><DatePickerInput value={filterPrestacaoFim} onChange={setFilterPrestacaoFim} /></div>
-          <div><Label className="text-xs text-gray-500">Vencimento inicial</Label><DatePickerInput value={filterVencimentoInicio} onChange={setFilterVencimentoInicio} /></div>
-          <div><Label className="text-xs text-gray-500">Vencimento final</Label><DatePickerInput value={filterVencimentoFim} onChange={setFilterVencimentoFim} /></div>
+        <Card className="border-gray-200 bg-white"><CardContent className="p-4">
+          <SearchFiltersToolbar
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Buscar cliente, cão, serviço ou pacote..."
+            hasActiveFilters={Boolean(
+              searchTerm
+              || filterServico !== "all"
+              || filterStatus !== "all"
+              || filterTipoCobranca !== "all"
+              || filterTipoAgendamento !== "all"
+              || filterOrigem !== "all"
+              || filterPrestacaoInicio
+              || filterPrestacaoFim
+              || filterVencimentoInicio
+              || filterVencimentoFim
+            )}
+            onClear={() => {
+              setSearchTerm("");
+              setFilterServico("all");
+              setFilterStatus("all");
+              setFilterTipoCobranca("all");
+              setFilterTipoAgendamento("all");
+              setFilterOrigem("all");
+              setFilterPrestacaoInicio("");
+              setFilterPrestacaoFim("");
+              setFilterVencimentoInicio("");
+              setFilterVencimentoFim("");
+            }}
+            filters={[
+              {
+                id: "service",
+                label: "Serviço",
+                icon: DollarSign,
+                active: filterServico !== "all",
+                content: (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Serviço</p>
+                    <Select value={filterServico} onValueChange={setFilterServico}>
+                      <SelectTrigger><SelectValue placeholder="Serviço" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos os serviços</SelectItem>
+                        {serviceOptions.map((item) => <SelectItem key={item} value={item}>{getServiceLabel(item)}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ),
+              },
+              {
+                id: "status",
+                label: "Status",
+                icon: AlertTriangle,
+                active: filterStatus !== "all",
+                content: (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status</p>
+                    <Select value={filterStatus} onValueChange={setFilterStatus}>
+                      <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos os status</SelectItem>
+                        <SelectItem value="pendente">Pendente</SelectItem>
+                        <SelectItem value="vencido">Vencido</SelectItem>
+                        <SelectItem value="pago">Pago</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ),
+              },
+              {
+                id: "charge",
+                label: "Cobrança",
+                icon: CreditCard,
+                active: filterTipoCobranca !== "all",
+                content: (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Tipo de cobrança</p>
+                    <Select value={filterTipoCobranca} onValueChange={setFilterTipoCobranca}>
+                      <SelectTrigger><SelectValue placeholder="Tipo de cobrança" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos os tipos</SelectItem>
+                        <SelectItem value="avulso">Avulso</SelectItem>
+                        <SelectItem value="orcamento">Orçamento</SelectItem>
+                        <SelectItem value="pacote">Pacote</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ),
+              },
+              {
+                id: "schedule",
+                label: "Agendamento",
+                icon: PackageCheck,
+                active: filterTipoAgendamento !== "all",
+                content: (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Tipo de agendamento</p>
+                    <Select value={filterTipoAgendamento} onValueChange={setFilterTipoAgendamento}>
+                      <SelectTrigger><SelectValue placeholder="Tipo de agendamento" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="agendamento_solto">Agendamento solto</SelectItem>
+                        <SelectItem value="orcamento">Orçamento</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ),
+              },
+              {
+                id: "origin",
+                label: "Origem",
+                icon: RefreshCcw,
+                active: filterOrigem !== "all",
+                content: (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Origem</p>
+                    <Select value={filterOrigem} onValueChange={setFilterOrigem}>
+                      <SelectTrigger><SelectValue placeholder="Origem" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Toda origem</SelectItem>
+                        <SelectItem value="manual_registrador">Registrador manual</SelectItem>
+                        <SelectItem value="orcamento_aprovado">Orçamento aprovado</SelectItem>
+                        <SelectItem value="agendamento">Agendamento</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ),
+              },
+              {
+                id: "service-period",
+                label: "Prestação",
+                icon: Calendar,
+                active: Boolean(filterPrestacaoInicio || filterPrestacaoFim),
+                content: (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período de prestação</p>
+                    <DateRangePickerInput
+                      startValue={filterPrestacaoInicio}
+                      endValue={filterPrestacaoFim}
+                      onStartChange={setFilterPrestacaoInicio}
+                      onEndChange={setFilterPrestacaoFim}
+                    />
+                  </div>
+                ),
+              },
+              {
+                id: "due-period",
+                label: "Vencimento",
+                icon: Calendar,
+                active: Boolean(filterVencimentoInicio || filterVencimentoFim),
+                content: (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período de vencimento</p>
+                    <DateRangePickerInput
+                      startValue={filterVencimentoInicio}
+                      endValue={filterVencimentoFim}
+                      onStartChange={setFilterVencimentoInicio}
+                      onEndChange={setFilterVencimentoFim}
+                    />
+                  </div>
+                ),
+              },
+            ]}
+          />
         </CardContent></Card>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>

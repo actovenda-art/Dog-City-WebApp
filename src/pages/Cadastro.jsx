@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { isImagePreviewable, openImageViewer } from "@/utils";
 
 export default function Cadastro() {
@@ -289,9 +290,14 @@ export default function Cadastro() {
                   <div className="sm:col-span-2"><Label>Email</Label><Input type="email" value={responsavelForm.email} onChange={(e) => setResponsavelForm({ ...responsavelForm, email: e.target.value })} /></div>
                   <div className="sm:col-span-2">
                     <Label>Vincular Cães (até 8)</Label>
-                    <div className="relative mt-2">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <Input value={searchDogResp} onChange={(e) => setSearchDogResp(e.target.value)} placeholder="Buscar cão por nome..." className="pl-9" />
+                    <div className="mt-2">
+                      <SearchFiltersToolbar
+                        searchTerm={searchDogResp}
+                        onSearchChange={setSearchDogResp}
+                        searchPlaceholder="Buscar cão por nome..."
+                        hasActiveFilters={Boolean(searchDogResp)}
+                        onClear={() => setSearchDogResp("")}
+                      />
                     </div>
                     <div className="mt-2 max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">
                       {dogs.filter(d => !searchDogResp || d.nome?.toLowerCase().includes(searchDogResp.toLowerCase())).map(d => {
@@ -364,9 +370,14 @@ export default function Cadastro() {
                   <div></div>
                   <div className="sm:col-span-2">
                     <Label>Vincular Cães (até 8)</Label>
-                    <div className="relative mt-2">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <Input value={searchDogCart} onChange={(e) => setSearchDogCart(e.target.value)} placeholder="Buscar cão por nome..." className="pl-9" />
+                    <div className="mt-2">
+                      <SearchFiltersToolbar
+                        searchTerm={searchDogCart}
+                        onSearchChange={setSearchDogCart}
+                        searchPlaceholder="Buscar cão por nome..."
+                        hasActiveFilters={Boolean(searchDogCart)}
+                        onClear={() => setSearchDogCart("")}
+                      />
                     </div>
                     <div className="mt-2 max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">
                       {dogs.filter(d => !searchDogCart || d.nome?.toLowerCase().includes(searchDogCart.toLowerCase())).map(d => {

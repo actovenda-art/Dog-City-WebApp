@@ -41,7 +41,6 @@ import ConfiguracoesPrecos from "./ConfiguracoesPrecos";
 import HistoricoOrcamentos from "./HistoricoOrcamentos";
 import Agendamentos from "./Agendamentos";
 import PlanosConfig from "./PlanosConfig";
-import ServicosPrestados from "./ServicosPrestados";
 import Despesas from "./Despesas";
 import ConfigurarIntegracoes from "./ConfigurarIntegracoes";
 import AdministracaoSistema from "./AdministracaoSistema";
@@ -73,7 +72,6 @@ const PAGES = {
   HistoricoOrcamentos,
   Agendamentos,
   PlanosConfig,
-  ServicosPrestados,
   Despesas,
   ConfigurarIntegracoes,
   AdministracaoSistema,

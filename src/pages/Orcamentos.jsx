@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Calculator, Dog as DogIcon, FileText, Plus, Save, Search, Send } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -719,15 +720,13 @@ export default function Orcamentos() {
             <div className="flex-1 space-y-4 overflow-y-auto p-4">
               <p className="text-sm text-gray-600">Selecione o cliente ou pule para criar orçamento avulso.</p>
 
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
-                  placeholder="Buscar por responsável financeiro, responsável, cão, CPF/CNPJ ou celular..."
-                  value={searchCliente}
-                  onChange={(event) => setSearchCliente(event.target.value)}
-                  className="pl-9"
-                />
-              </div>
+              <SearchFiltersToolbar
+                searchTerm={searchCliente}
+                onSearchChange={setSearchCliente}
+                searchPlaceholder="Buscar por responsável financeiro, responsável, cão, CPF/CNPJ ou celular..."
+                hasActiveFilters={Boolean(searchCliente)}
+                onClear={() => setSearchCliente("")}
+              />
 
               {exigeConfirmacaoDestinatario && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -1025,15 +1024,13 @@ export default function Orcamentos() {
             <div className="flex-1 space-y-4 overflow-y-auto p-4">
               <p className="text-sm text-gray-600">Selecione o cliente ou pule para criar orçamento avulso.</p>
 
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
-                  placeholder="Buscar por responsável financeiro, responsável, cão, CPF/CNPJ ou celular..."
-                  value={searchCliente}
-                  onChange={(event) => setSearchCliente(event.target.value)}
-                  className="pl-9"
-                />
-              </div>
+              <SearchFiltersToolbar
+                searchTerm={searchCliente}
+                onSearchChange={setSearchCliente}
+                searchPlaceholder="Buscar por responsável financeiro, responsável, cão, CPF/CNPJ ou celular..."
+                hasActiveFilters={Boolean(searchCliente)}
+                onClear={() => setSearchCliente("")}
+              />
 
               {exigeConfirmacaoDestinatario && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">

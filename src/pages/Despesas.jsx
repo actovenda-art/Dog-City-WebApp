@@ -6,7 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
-import { ArrowDownCircle, Landmark, Search } from "lucide-react";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
+import { ArrowDownCircle, Calendar, Landmark, Search } from "lucide-react";
 import {
   dedupeOfficialImportedMovements,
   formatCurrency,
@@ -153,21 +154,36 @@ export default function Despesas() {
         </div>
 
         <Card className="border-gray-200 bg-white mb-6">
-          <CardContent className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="relative md:col-span-2">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                className="pl-9"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Buscar por favorecido, banco, referência ou observações"
-              />
-            </div>
-            <DateRangePickerInput
-              startValue={dateStart}
-              endValue={dateEnd}
-              onStartChange={setDateStart}
-              onEndChange={setDateEnd}
+          <CardContent className="p-4">
+            <SearchFiltersToolbar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Buscar por favorecido, banco, referência ou observações"
+              hasActiveFilters={Boolean(searchTerm || dateStart || dateEnd)}
+              onClear={() => {
+                setSearchTerm("");
+                setDateStart("");
+                setDateEnd("");
+              }}
+              filters={[
+                {
+                  id: "period",
+                  label: "Período",
+                  icon: Calendar,
+                  active: Boolean(dateStart || dateEnd),
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período da despesa</p>
+                      <DateRangePickerInput
+                        startValue={dateStart}
+                        endValue={dateEnd}
+                        onStartChange={setDateStart}
+                        onEndChange={setDateEnd}
+                      />
+                    </div>
+                  ),
+                },
+              ]}
             />
           </CardContent>
         </Card>

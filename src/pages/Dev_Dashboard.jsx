@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Empresa, PerfilAcesso, User, UserInvite, UserProfile, UserUnitAccess } from "@/api/entities";
 import { SendEmail } from "@/api/integrations";
-import { DEFAULT_BOOTSTRAP_PIN } from "@/lib/pin-auth";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Mail, RotateCcw, Save, Search, Settings, Shield, Trash2, UserPlus, UserX, Users } from "lucide-react";
 
 const EMPTY_INVITE = {
@@ -193,6 +193,9 @@ export default function Dev_Dashboard() {
   const pendingInvitesCount = invites.filter((invite) => ["pendente", "aceito"].includes(invite.status || "pendente")).length;
   const confirmedUsersCount = users.filter((user) => user.active !== false && user.onboarding_status !== "pendente").length;
   const blockedUsersCount = users.filter((user) => user.active === false).length;
+  const defaultSelectedUnitId = currentUser?.empresa_id && units.some((item) => item.id === currentUser.empresa_id)
+    ? currentUser.empresa_id
+    : units?.[0]?.id || "";
 
   function getUnitName(unitId) {
     if (!unitId) return "Administração Central";
@@ -516,22 +519,6 @@ export default function Dev_Dashboard() {
     }
   }
 
-  async function handleBootstrapPins() {
-    if (!window.confirm(`Aplicar o PIN inicial ${DEFAULT_BOOTSTRAP_PIN} aos usuarios ativos e exigir redefinicao no proximo acesso?`)) return;
-
-    setIsSaving(true);
-    try {
-      const result = await User.bootstrapDefaultPins?.({ defaultPin: DEFAULT_BOOTSTRAP_PIN });
-      await loadData();
-      alert(`PIN obrigatorio preparado.\nAtualizados: ${result?.updated || 0}\nIgnorados: ${result?.skipped || 0}\nFalhas: ${result?.failed || 0}`);
-    } catch (error) {
-      console.error("Erro ao preparar PIN obrigatorio:", error);
-      alert(formatApiError(error, "Nao foi possivel preparar o PIN obrigatorio."));
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -554,10 +541,6 @@ export default function Dev_Dashboard() {
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={handleBootstrapPins} disabled={isSaving}>
-              <Shield className="w-4 h-4 mr-2" />
-              Exigir PIN dos usuarios atuais
-            </Button>
             <Link to={createPageUrl("AdministracaoSistema")}>
               <Button variant="outline">
                 <Settings className="w-4 h-4 mr-2" />
@@ -597,28 +580,42 @@ export default function Dev_Dashboard() {
         </div>
 
         <Card className="bg-white border-gray-200">
-          <CardContent className="p-4 flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                className="pl-9"
-                placeholder="Buscar por nome, email ou unidade..."
-              />
-            </div>
-            <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
-              <SelectTrigger className="w-full lg:w-[280px] bg-white">
-              <SelectValue placeholder="Selecionar unidade" />
-            </SelectTrigger>
-            <SelectContent>
-                {units.map((unit) => (
-                  <SelectItem key={unit.id} value={unit.id}>
-                    {unit.nome_fantasia}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <CardContent className="p-4">
+            <SearchFiltersToolbar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Buscar por nome, email ou unidade..."
+              hasActiveFilters={Boolean(searchTerm || (selectedUnitId && selectedUnitId !== defaultSelectedUnitId))}
+              onClear={() => {
+                setSearchTerm("");
+                setSelectedUnitId(defaultSelectedUnitId);
+              }}
+              filters={[
+                {
+                  id: "unit",
+                  label: "Unidade",
+                  icon: Building2,
+                  active: Boolean(selectedUnitId && selectedUnitId !== defaultSelectedUnitId),
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Unidade em foco</p>
+                      <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
+                        <SelectTrigger className="bg-white">
+                          <SelectValue placeholder="Selecionar unidade" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {units.map((unit) => (
+                            <SelectItem key={unit.id} value={unit.id}>
+                              {unit.nome_fantasia}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
 

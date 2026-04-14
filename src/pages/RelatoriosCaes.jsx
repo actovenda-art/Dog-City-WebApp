@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dog as DogIcon, Users, Cake, Syringe, Search, Filter, Eye } from "lucide-react";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { format, addDays, isBefore, isAfter, subDays, differenceInDays, getMonth } from "date-fns";
@@ -150,7 +151,14 @@ export default function RelatoriosCaes() {
           {/* Por Responsável */}
           <TabsContent value="responsavel">
             <Card className="mb-4 border-gray-200 bg-white"><CardContent className="p-4">
-              <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" /><Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar responsável..." className="pl-9 w-full sm:w-64" /></div>
+              <SearchFiltersToolbar
+                searchTerm={searchTerm}
+                onSearchChange={setSearchTerm}
+                searchPlaceholder="Buscar responsável..."
+                hasActiveFilters={Boolean(searchTerm)}
+                onClear={() => setSearchTerm("")}
+                searchClassName="max-w-sm"
+              />
             </CardContent></Card>
             <div className="space-y-4">
               {caesPorResponsavel().map(resp => (

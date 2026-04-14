@@ -15,7 +15,6 @@ const PAGE_ACCESS_REQUIREMENTS = {
   PerfilCao: ["platform:*", "empresa:*", "empresa:update", "dogs:*"],
   Planos: ["platform:*", "empresa:*", "empresa:update", "agenda:*", "dogs:*"],
   PlanosConfig: ["platform:*", "empresa:*", "empresa:update", "agenda:*", "dogs:*"],
-  ServicosPrestados: ["platform:*", "empresa:*", "empresa:update", "checkin:*", "agenda:*"],
   PedidosInternos: ["platform:*", "empresa:*", "empresa:update", "tarefas:*", "tarefas:read", "tarefas:update"],
 
   Movimentacoes: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
@@ -41,6 +40,60 @@ function normalizePermissions(values) {
   return Array.isArray(values)
     ? [...new Set(values.map(normalizePermission).filter(Boolean))]
     : [];
+}
+
+function buildAccessHaystack(user) {
+  return [
+    user?.profile,
+    user?.company_role,
+    user?.access_profile_code,
+    user?.access_profile_name,
+  ]
+    .map(normalizePermission)
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function isOperationalProfile(user) {
+  if (!user || user.is_platform_admin || user.company_role === "platform_admin") {
+    return false;
+  }
+
+  const grantedPermissions = normalizePermissions(
+    user.access_profile_permissions || user.accessProfilePermissions || []
+  );
+  const haystack = buildAccessHaystack(user);
+
+  const hasCommercialOrAdminPermission = grantedPermissions.some((permission) =>
+    [
+      "orcamentos:*",
+      "orcamentos:read",
+      "orcamentos:update",
+      "financeiro:*",
+      "financeiro:read",
+      "financeiro:update",
+      "usuarios:*",
+      "usuarios:read",
+      "usuarios:update",
+      "platform:*",
+    ].some((required) => permissionMatches(permission, required))
+  );
+
+  if (hasCommercialOrAdminPermission) {
+    return false;
+  }
+
+  return [
+    "operacao",
+    "operacional",
+    "monitor",
+    "banho",
+    "tosa",
+    "hospedagem",
+    "day care",
+    "daycare",
+    "adestramento",
+  ].some((token) => haystack.includes(token));
 }
 
 function permissionMatches(granted, required) {

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -481,18 +482,39 @@ export default function ContasPagar() {
 
         {/* Filters */}
         <Card className="mb-6 border-gray-200 bg-white">
-          <CardContent className="p-4 flex flex-wrap gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
-            </div>
-            <Select value={filterCategoria} onValueChange={setFilterCategoria}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Categoria" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                {categorias.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <CardContent className="p-4">
+            <SearchFiltersToolbar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Buscar lançamentos, favorecido ou referência..."
+              hasActiveFilters={Boolean(searchTerm || filterCategoria !== "all")}
+              onClear={() => {
+                setSearchTerm("");
+                setFilterCategoria("all");
+              }}
+              filters={[
+                {
+                  id: "categoria",
+                  label: "Categoria",
+                  icon: FileText,
+                  active: filterCategoria !== "all",
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Categoria</p>
+                      <Select value={filterCategoria} onValueChange={setFilterCategoria}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Categoria" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todas</SelectItem>
+                          {categorias.map((categoria) => <SelectItem key={categoria} value={categoria}>{categoria}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
 

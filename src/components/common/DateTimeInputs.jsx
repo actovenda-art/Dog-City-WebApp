@@ -13,25 +13,25 @@ const HOURS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2,
 const MINUTES = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0"));
 
 const pickerTriggerClassName = cn(
-  "flex h-11 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-medium text-slate-900 shadow-sm",
+  "flex h-10 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3.5 text-left text-sm font-medium text-slate-900 shadow-sm",
   "hover:bg-slate-50 hover:text-slate-900",
 );
 
 const calendarClassNames = {
   months: "flex flex-col",
-  month: "w-full space-y-3",
-  caption: "grid min-h-12 grid-cols-[2.5rem_1fr_2.5rem] items-center gap-2 px-2 pt-1",
-  caption_label: "col-start-2 text-center text-xl font-black tracking-tight text-slate-900 capitalize",
+  month: "w-full space-y-2",
+  caption: "grid min-h-11 grid-cols-[2rem_1fr_2rem] items-center gap-2 px-1 pt-1",
+  caption_label: "col-start-2 text-center text-lg font-bold tracking-tight text-slate-900 capitalize",
   nav: "contents",
-  nav_button: "h-10 w-10 rounded-full border border-slate-200 bg-white p-0 text-slate-700 opacity-100 shadow-sm hover:bg-slate-100",
+  nav_button: "h-8 w-8 rounded-full border border-slate-200 bg-white p-0 text-slate-700 opacity-100 shadow-sm hover:bg-slate-100",
   nav_button_previous: "col-start-1 justify-self-start",
   nav_button_next: "col-start-3 justify-self-end",
   table: "w-full table-fixed border-collapse",
   head_row: "flex w-full justify-between",
-  head_cell: "w-10 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400",
-  row: "mt-1 flex w-full justify-between",
-  cell: "h-10 w-10 p-0 text-center text-sm",
-  day: "h-10 w-10 rounded-full p-0 text-base font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900",
+  head_cell: "w-8 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400",
+  row: "mt-0.5 flex w-full justify-between",
+  cell: "h-8 w-8 p-0 text-center text-sm",
+  day: "h-8 w-8 rounded-full p-0 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900",
   day_selected: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white focus:bg-blue-500 focus:text-white",
   day_range_start: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
   day_range_end: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
@@ -193,7 +193,7 @@ function PickerPopover({ children, content, className, open, onOpenChange }) {
         collisionPadding={8}
         onOpenAutoFocus={(event) => event.preventDefault()}
         className={cn(
-          "w-[360px] max-w-[calc(100vw-1rem)] max-h-[calc(100vh-1rem)] overflow-auto rounded-[28px] border border-slate-200 bg-white p-4 shadow-2xl",
+          "w-[332px] max-w-[calc(100vw-1rem)] max-h-[calc(100vh-1rem)] overflow-auto rounded-[24px] border border-slate-200 bg-white p-6 shadow-2xl",
           className
         )}
       >
@@ -277,7 +277,7 @@ export function DatePickerInput({
     <PickerPopover
       open={open}
       onOpenChange={setOpen}
-      className="p-3"
+      className="p-0"
       content={
         <div className="space-y-3">
           <Calendar
@@ -289,7 +289,7 @@ export function DatePickerInput({
               setInputValue(date ? formatInputDate(date) : "");
               setOpen(false);
             }}
-            className="w-full rounded-[24px] bg-white p-2"
+            className="w-full rounded-[20px] bg-white p-1"
             classNames={calendarClassNames}
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-1">
@@ -371,7 +371,7 @@ export function DateRangePickerInput({
     <PickerPopover
       open={open}
       onOpenChange={setOpen}
-      className="p-3"
+      className="p-0"
       content={
         <div className="space-y-3">
           <Calendar
@@ -390,7 +390,7 @@ export function DateRangePickerInput({
                 setOpen(false);
               }
             }}
-            className="w-full rounded-[24px] bg-white p-2"
+            className="w-full rounded-[20px] bg-white p-1"
             classNames={calendarClassNames}
           />
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">

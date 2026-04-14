@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Search,
@@ -326,42 +327,66 @@ export default function OrcamentosHistoricoPanel({
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="flex flex-wrap gap-3 border-b border-gray-100 p-4">
-            <div className="relative min-w-[220px] flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                placeholder="Buscar por cão ou ID..."
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-44">
-                <Filter className="mr-2 h-4 w-4" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os status</SelectItem>
-                <SelectItem value="rascunho">Rascunho</SelectItem>
-                <SelectItem value="enviado">Enviado</SelectItem>
-                <SelectItem value="aprovado">Aprovado</SelectItem>
-                <SelectItem value="recusado">Recusado</SelectItem>
-                <SelectItem value="expirado">Expirado</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filterPeriodo} onValueChange={setFilterPeriodo}>
-              <SelectTrigger className="w-44">
-                <Calendar className="mr-2 h-4 w-4" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todo período</SelectItem>
-                <SelectItem value="7dias">Últimos 7 dias</SelectItem>
-                <SelectItem value="30dias">Últimos 30 dias</SelectItem>
-                <SelectItem value="90dias">Últimos 90 dias</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="border-b border-gray-100 p-4">
+            <SearchFiltersToolbar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Buscar por cão ou ID..."
+              hasActiveFilters={Boolean(searchTerm || filterStatus !== "all" || filterPeriodo !== "all")}
+              onClear={() => {
+                setSearchTerm("");
+                setFilterStatus("all");
+                setFilterPeriodo("all");
+              }}
+              filters={[
+                {
+                  id: "status",
+                  label: "Status",
+                  icon: Filter,
+                  active: filterStatus !== "all",
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status do orçamento</p>
+                      <Select value={filterStatus} onValueChange={setFilterStatus}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos os status</SelectItem>
+                          <SelectItem value="rascunho">Rascunho</SelectItem>
+                          <SelectItem value="enviado">Enviado</SelectItem>
+                          <SelectItem value="aprovado">Aprovado</SelectItem>
+                          <SelectItem value="recusado">Recusado</SelectItem>
+                          <SelectItem value="expirado">Expirado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+                {
+                  id: "periodo",
+                  label: "Período",
+                  icon: Calendar,
+                  active: filterPeriodo !== "all",
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período</p>
+                      <Select value={filterPeriodo} onValueChange={setFilterPeriodo}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todo período</SelectItem>
+                          <SelectItem value="7dias">Últimos 7 dias</SelectItem>
+                          <SelectItem value="30dias">Últimos 30 dias</SelectItem>
+                          <SelectItem value="90dias">Últimos 90 dias</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </div>
 
           {filtered.length === 0 ? (

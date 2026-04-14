@@ -24,7 +24,6 @@ export const PAGE_ROUTES: Record<string, string> = {
     HistoricoOrcamentos: "historico-orcamentos",
     Agendamentos: "agendamentos",
     PlanosConfig: "planos-config",
-    ServicosPrestados: "servicos-prestados",
     Despesas: "despesas",
     ConfigurarIntegracoes: "integracoes",
     AdministracaoSistema: "administracao",

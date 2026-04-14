@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento } from "@/api/entities";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, User } from "@/api/entities";
 import {
   buildDogOwnerIndex,
   buildReceivablePayload,
@@ -10,6 +10,7 @@ import {
   getChargeTypeLabel,
   getServiceLabel,
 } from "@/lib/attendance";
+import { isOperationalProfile } from "@/lib/access-control";
 import { createPageUrl } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { AlertTriangle, Calendar, ClipboardList, RefreshCw, Search, Tag } from "lucide-react";
 
 function formatDate(value) {
@@ -51,6 +53,7 @@ export default function Agendamentos() {
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [orcamentos, setOrcamentos] = useState([]);
   const [dogs, setDogs] = useState([]);
@@ -82,13 +85,15 @@ export default function Agendamentos() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [appointmentRows, orcamentoRows, dogRows, carteiraRows, checkinRows] = await Promise.all([
+      const [me, appointmentRows, orcamentoRows, dogRows, carteiraRows, checkinRows] = await Promise.all([
+        User.me(),
         Appointment.listAll("-created_date", 1000, 5000),
         Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 1000),
         Carteira.list("-created_date", 500),
         Checkin.listAll("-created_date", 1000, 5000),
       ]);
+      setCurrentUser(me || null);
       setAppointments(appointmentRows || []);
       setOrcamentos(orcamentoRows || []);
       setDogs((dogRows || []).filter((dog) => dog.ativo !== false));
@@ -99,6 +104,8 @@ export default function Agendamentos() {
     }
     setIsLoading(false);
   }
+
+  const shouldHideOperationalAlerts = useMemo(() => isOperationalProfile(currentUser), [currentUser]);
 
   const pendingCommercialAppointments = useMemo(() => {
     return visibleAppointments.filter((appointment) => {
@@ -275,7 +282,7 @@ export default function Agendamentos() {
             { label: "Total", value: stats.total, tone: "text-blue-600", border: "border-blue-200" },
             { label: "Hoje", value: stats.hoje, tone: "text-emerald-600", border: "border-emerald-200" },
             { label: "Presentes", value: stats.presentes, tone: "text-amber-600", border: "border-amber-200" },
-            { label: "Pendencias comerciais", value: stats.pendencias, tone: "text-rose-600", border: "border-rose-200" },
+            ...(!shouldHideOperationalAlerts ? [{ label: "Pendencias comerciais", value: stats.pendencias, tone: "text-rose-600", border: "border-rose-200" }] : []),
           ].map((item) => (
             <Card key={item.label} className={`${item.border} bg-white`}>
               <CardContent className="p-4">
@@ -286,7 +293,7 @@ export default function Agendamentos() {
           ))}
         </div>
 
-        {pendingAbsenceAppointments.length > 0 && (
+        {!shouldHideOperationalAlerts && pendingAbsenceAppointments.length > 0 && (
           <Card className={`border-rose-300 bg-rose-50 ${absenceReviewAppointmentId ? "ring-2 ring-rose-300" : ""}`}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-rose-900">
@@ -335,7 +342,7 @@ export default function Agendamentos() {
           </Card>
         )}
 
-        {pendingCommercialAppointments.length > 0 && (
+        {!shouldHideOperationalAlerts && pendingCommercialAppointments.length > 0 && (
           <Card className={`border-amber-300 bg-amber-50 ${reviewAppointmentId ? "ring-2 ring-amber-300" : ""}`}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-amber-900">
@@ -377,33 +384,80 @@ export default function Agendamentos() {
         )}
 
         <Card className="border-gray-200 bg-white">
-          <CardContent className="grid gap-3 p-4 md:grid-cols-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Buscar..." className="pl-9" />
-            </div>
-            <DatePickerInput value={filterDate} onChange={setFilterDate} />
-            <Select value={filterService} onValueChange={setFilterService}>
-              <SelectTrigger><SelectValue placeholder="Serviço" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os serviços</SelectItem>
-                {["day_care", "hospedagem", "adaptacao", "banho", "tosa", "transporte", "adestramento"].map((service) => (
-                  <SelectItem key={service} value={service}>{getServiceLabel(service)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="agendado">Agendado</SelectItem>
-                <SelectItem value="presente">Presente</SelectItem>
-                <SelectItem value="finalizado">Finalizado</SelectItem>
-                <SelectItem value="pendente_comercial">Pendente comercial</SelectItem>
-                <SelectItem value="avulso">Avulso</SelectItem>
-                <SelectItem value="pacote">Pacote</SelectItem>
-              </SelectContent>
-            </Select>
+          <CardContent className="p-4">
+            <SearchFiltersToolbar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Buscar por cão, responsável ou serviço..."
+              hasActiveFilters={Boolean(searchTerm || filterDate || filterService !== "all" || filterStatus !== "all")}
+              onClear={() => {
+                setSearchTerm("");
+                setFilterDate("");
+                setFilterService("all");
+                setFilterStatus("all");
+              }}
+              filters={[
+                {
+                  id: "date",
+                  label: "Data",
+                  icon: Calendar,
+                  active: Boolean(filterDate),
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Data do agendamento</p>
+                      <DatePickerInput value={filterDate} onChange={setFilterDate} />
+                    </div>
+                  ),
+                },
+                {
+                  id: "service",
+                  label: "Serviço",
+                  icon: ClipboardList,
+                  active: filterService !== "all",
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Serviço</p>
+                      <Select value={filterService} onValueChange={setFilterService}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Serviço" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos os serviços</SelectItem>
+                          {["day_care", "hospedagem", "adaptacao", "banho", "tosa", "transporte", "adestramento"].map((service) => (
+                            <SelectItem key={service} value={service}>{getServiceLabel(service)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+                {
+                  id: "status",
+                  label: "Status",
+                  icon: Tag,
+                  active: filterStatus !== "all",
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status</p>
+                      <Select value={filterStatus} onValueChange={setFilterStatus}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          <SelectItem value="agendado">Agendado</SelectItem>
+                          <SelectItem value="presente">Presente</SelectItem>
+                          <SelectItem value="finalizado">Finalizado</SelectItem>
+                          <SelectItem value="pendente_comercial">Pendente comercial</SelectItem>
+                          <SelectItem value="avulso">Avulso</SelectItem>
+                          <SelectItem value="pacote">Pacote</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
 
@@ -431,7 +485,7 @@ export default function Agendamentos() {
                         Origem: {appointment.source_type || "manual"} {appointment.valor_previsto ? `• Previsto ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(appointment.valor_previsto)}` : ""}
                       </p>
                     </div>
-                    {appointment.source_type === "manual_registrador" && appointment.charge_type === "pendente_comercial" && (
+                    {!shouldHideOperationalAlerts && appointment.source_type === "manual_registrador" && appointment.charge_type === "pendente_comercial" && (
                       <div className="flex flex-wrap gap-2">
                         <Button variant="outline" onClick={() => openPackageDialog(appointment)}>Pacote</Button>
                         <Button onClick={() => handleCreateOrcamento(appointment)} className="bg-blue-600 text-white hover:bg-blue-700">

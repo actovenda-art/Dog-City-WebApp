@@ -115,11 +115,6 @@ export const UNIT_PAGE_POLICY = {
     label: "Planos Recorrentes",
     description: "Automação de planos, agendamentos e cobranças deve continuar individual por unidade.",
   },
-  ServicosPrestados: {
-    mergedMode: "single_only",
-    label: "Serviços Prestados",
-    description: "Lançamentos e confirmações de serviços prestados não devem ser unificados.",
-  },
   ConfigurarIntegracoes: {
     mergedMode: "single_only",
     label: "Integrações",

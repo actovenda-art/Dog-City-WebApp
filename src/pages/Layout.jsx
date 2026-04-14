@@ -28,7 +28,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import NotificationBell from "@/components/layout/NotificationBell";
-import { hasPageAccess } from "@/lib/access-control";
+import { hasPageAccess, isOperationalProfile } from "@/lib/access-control";
 import { isPageBlockedInMergedMode } from "@/lib/unit-page-policy";
 import {
   ACTIVE_UNIT_EVENT,
@@ -70,7 +70,10 @@ export default function Layout({ children, currentPageName, initialUser = null }
     sistema: false,
   });
 
+  const isOperationalUser = isOperationalProfile(currentUser);
+
   const toggleSection = (section) => {
+    if (isOperationalUser && section === "operacional") return;
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
@@ -212,8 +215,6 @@ export default function Layout({ children, currentPageName, initialUser = null }
       items: [
         { title: "Registrador", url: createPageUrl("Registrador"), icon: ClipboardCheck },
         { title: "Agendamentos", url: createPageUrl("Agendamentos"), icon: Calendar },
-        { title: "Serviços Prestados", url: createPageUrl("ServicosPrestados"), icon: ClipboardCheck },
-        { title: "Planos Recorrentes", url: createPageUrl("PlanosConfig"), icon: CreditCard },
       ],
     },
     {
@@ -230,11 +231,12 @@ export default function Layout({ children, currentPageName, initialUser = null }
     },
     {
       id: "comercial",
-      title: "Orçamentos",
+      title: "Comercial",
       icon: FileText,
       items: [
-        { title: "Novo Orçamento", url: createPageUrl("Orcamentos"), icon: FileText },
-        { title: "Histórico", url: createPageUrl("HistoricoOrcamentos"), icon: FileText },
+        { title: "Orçamentos", url: createPageUrl("Orcamentos"), icon: FileText },
+        { title: "Cadastro", url: createPageUrl("Cadastro"), icon: UserPlus },
+        { title: "Planos Recorrentes", url: createPageUrl("PlanosConfig"), icon: CreditCard },
         { title: "Config. Preços", url: createPageUrl("ConfiguracoesPrecos"), icon: Settings },
       ],
     },
@@ -267,38 +269,31 @@ export default function Layout({ children, currentPageName, initialUser = null }
     },
   ];
 
-  const normalizedMenuSections = menuSections.map((section) => {
-    if (section.id === "comercial") {
-      return {
-        ...section,
-        title: "Comercial",
-        items: [
-          { title: "Orçamentos", url: createPageUrl("Orcamentos"), icon: FileText },
-          { title: "Cadastro", url: createPageUrl("Cadastro"), icon: UserPlus },
-          { title: "Config. Preços", url: createPageUrl("ConfiguracoesPrecos"), icon: Settings },
-        ],
-      };
-    }
-
-    if (section.id === "operacional") {
-      return {
-        ...section,
-        items: section.items.filter((item) => item.url !== createPageUrl("Cadastro")),
-      };
-    }
-
-    return section;
-  });
-
   const visibleMenuSections = useMemo(
-    () => normalizedMenuSections
+    () => menuSections
+      .filter((section) => !isOperationalUser || section.id === "operacional")
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => hasPageAccess(currentUser, getPageNameFromPath(item.url))),
       }))
       .filter((section) => section.items.length > 0),
-    [currentUser, normalizedMenuSections],
+    [currentUser, isOperationalUser, isUnitUnionActive],
   );
+
+  useEffect(() => {
+    if (isOperationalUser) {
+      setExpandedSections((prev) => ({ ...prev, operacional: true }));
+      return;
+    }
+
+    const activeSection = menuSections.find((section) =>
+      section.items.some((item) => getPageNameFromPath(item.url) === currentPageName)
+    );
+
+    if (activeSection) {
+      setExpandedSections((prev) => ({ ...prev, [activeSection.id]: true }));
+    }
+  }, [currentPageName, isOperationalUser]);
 
   const renderAccessPanel = ({ mobile = false } = {}) => (
     <div className={mobile ? "border-t border-gray-200 p-4" : "border-t border-gray-200 p-4"}>
@@ -404,21 +399,29 @@ export default function Layout({ children, currentPageName, initialUser = null }
     <nav className={mobile ? "p-3 space-y-1" : "flex-1 overflow-y-auto p-3 space-y-1"}>
       {visibleMenuSections.map((section) => {
         const SectionIcon = section.icon;
-        const isExpanded = expandedSections[section.id];
+        const isPinnedOperationalSection = isOperationalUser && section.id === "operacional";
+        const isExpanded = isPinnedOperationalSection ? true : expandedSections[section.id];
 
         return (
           <div key={section.id} className="mb-1">
-            <button
-              type="button"
-              onClick={() => toggleSection(section.id)}
-              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-gray-600 transition-colors hover:bg-gray-100"
-            >
-              <div className="flex items-center gap-2">
+            {isPinnedOperationalSection ? (
+              <div className="flex w-full items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-blue-700">
                 <SectionIcon className="h-4 w-4" />
                 <span className="text-xs font-semibold uppercase tracking-wider">{section.title}</span>
               </div>
-              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => toggleSection(section.id)}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-gray-600 transition-colors hover:bg-gray-100"
+              >
+                <div className="flex items-center gap-2">
+                  <SectionIcon className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-wider">{section.title}</span>
+                </div>
+                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+            )}
 
             <AnimatePresence initial={false}>
               {isExpanded ? (

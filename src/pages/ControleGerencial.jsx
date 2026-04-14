@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -531,10 +532,13 @@ export default function ControleGerencial() {
 
         <Card className="border-gray-200 bg-white">
           <CardContent className="p-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Buscar em clientes, cães, despesas, orçamentos e contas" className="pl-9" />
-            </div>
+            <SearchFiltersToolbar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Buscar em clientes, cães, despesas, orçamentos e contas"
+              hasActiveFilters={Boolean(searchTerm)}
+              onClear={() => setSearchTerm("")}
+            />
           </CardContent>
         </Card>
 

@@ -21,6 +21,7 @@ import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,9 +30,30 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, DateTimePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { BellRing, CalendarClock, Camera, Dog as DogIcon, LogIn, LogOut, Plus, Search, UserRound, UtensilsCrossed } from "lucide-react";
 
 const TODAY_KEY = new Date().toISOString().slice(0, 10);
+
+const BODY_CHECKUP_PARTS = [
+  { key: "cabeca", label: "Cabeça" },
+  { key: "orelhas", label: "Orelhas" },
+  { key: "focinho", label: "Focinho" },
+  { key: "pata_dianteira_esquerda", label: "Pata dianteira esquerda" },
+  { key: "pata_dianteira_direita", label: "Pata dianteira direita" },
+  { key: "pata_traseira_esquerda", label: "Pata traseira esquerda" },
+  { key: "pata_traseira_direita", label: "Pata traseira direita" },
+  { key: "rabo", label: "Rabo" },
+  { key: "costas", label: "Costas" },
+  { key: "barriga", label: "Barriga" },
+];
+
+function createEmptyBodyCheckup() {
+  return BODY_CHECKUP_PARTS.reduce((accumulator, item) => {
+    accumulator[item.key] = false;
+    return accumulator;
+  }, {});
+}
 
 const EMPTY_CHECKIN_FORM = {
   checkin_datetime: `${TODAY_KEY}T09:00:00`,
@@ -45,6 +67,8 @@ const EMPTY_CHECKIN_FORM = {
   tem_refeicao: false,
   refeicao_observacao: "",
   pertences_entrada_foto_url: "",
+  body_checkup: createEmptyBodyCheckup(),
+  body_checkup_observacao: "",
 };
 
 const EMPTY_CHECKOUT_FORM = {
@@ -187,6 +211,23 @@ function getAdaptacaoProgressRecords(checkin) {
   return Array.isArray(records) ? records : [];
 }
 
+function getBodyCheckupFromCheckin(checkin) {
+  const metadata = getCheckinMeta(checkin);
+  const raw = metadata?.body_checkup;
+  const normalized = createEmptyBodyCheckup();
+
+  if (raw && typeof raw === "object") {
+    BODY_CHECKUP_PARTS.forEach((item) => {
+      normalized[item.key] = raw[item.key] === true;
+    });
+  }
+
+  return {
+    checks: normalized,
+    observacao: metadata?.body_checkup_observacao || "",
+  };
+}
+
 function buildAppointmentSourceKey({ dogId, serviceType, dateKey, mode }) {
   return ["registrador", mode, dogId, serviceType, dateKey, Date.now()].filter(Boolean).join("|");
 }
@@ -221,6 +262,7 @@ export default function Registrador() {
   const [showAdaptacaoDialog, setShowAdaptacaoDialog] = useState(false);
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [showNotifyDialog, setShowNotifyDialog] = useState(false);
+  const [checkinDialogTab, setCheckinDialogTab] = useState("geral");
 
   const [checkinForm, setCheckinForm] = useState(EMPTY_CHECKIN_FORM);
   const [checkoutForm, setCheckoutForm] = useState(EMPTY_CHECKOUT_FORM);
@@ -513,7 +555,9 @@ export default function Registrador() {
     const appointmentDate = getAppointmentDateKey(appointment) || selectedDate || TODAY_KEY;
     const appointmentTime = getAppointmentTimeValue(appointment, "entrada") || "09:00";
     const sharedDailyCheckin = findSharedDailyCheckin(appointment);
+    const sharedBodyCheckup = getBodyCheckupFromCheckin(sharedDailyCheckin);
     setCheckinSharedSource(sharedDailyCheckin);
+    setCheckinDialogTab("geral");
     setCheckinForm({
       ...EMPTY_CHECKIN_FORM,
       checkin_datetime: buildDateTimeForDate(appointmentDate, appointmentTime),
@@ -521,6 +565,8 @@ export default function Registrador() {
       tem_refeicao: Boolean(sharedDailyCheckin?.tem_refeicao),
       refeicao_observacao: sharedDailyCheckin?.tem_refeicao ? (sharedDailyCheckin?.refeicao_observacao || "") : "",
       pertences_entrada_foto_url: sharedDailyCheckin?.pertences_entrada_foto_url || "",
+      body_checkup: sharedBodyCheckup.checks,
+      body_checkup_observacao: sharedBodyCheckup.observacao,
     });
   }
 
@@ -690,6 +736,8 @@ export default function Registrador() {
         status: "presente",
         metadata: {
           appointment_source_key: selectedAppointment.source_key || "",
+          body_checkup: checkinForm.body_checkup || createEmptyBodyCheckup(),
+          body_checkup_observacao: checkinForm.body_checkup_observacao || "",
         },
       });
 
@@ -1129,33 +1177,46 @@ export default function Registrador() {
           <TabsContent value="pets" className="space-y-6">
             <Card className="border-gray-200 bg-white">
               <CardContent className="p-4 sm:p-6">
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_240px_140px]">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                    <Input
-                      value={searchTerm}
-                      onChange={(event) => setSearchTerm(event.target.value)}
-                      placeholder="Buscar por nome do cão, raca ou responsável..."
-                      className="h-12 pl-10"
-                    />
-                  </div>
-                  <DatePickerInput
-                    value={selectedDate}
-                    onChange={(value) => setSelectedDate(value || TODAY_KEY)}
-                    placeholder="Selecione o dia"
-                    className="h-12"
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSearchTerm("");
-                      loadData();
-                    }}
-                    className="h-12"
-                  >
-                    Atualizar
-                  </Button>
-                </div>
+                <SearchFiltersToolbar
+                  searchTerm={searchTerm}
+                  onSearchChange={setSearchTerm}
+                  searchPlaceholder="Buscar por nome do cão, raça ou responsável..."
+                  hasActiveFilters={Boolean(searchTerm || selectedDate !== TODAY_KEY)}
+                  onClear={() => {
+                    setSearchTerm("");
+                    setSelectedDate(TODAY_KEY);
+                  }}
+                  filters={[
+                    {
+                      id: "date",
+                      label: "Dia",
+                      icon: CalendarClock,
+                      active: selectedDate !== TODAY_KEY,
+                      content: (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Dia dos agendamentos</p>
+                          <DatePickerInput
+                            value={selectedDate}
+                            onChange={(value) => setSelectedDate(value || TODAY_KEY)}
+                            placeholder="Selecione o dia"
+                          />
+                        </div>
+                      ),
+                    },
+                  ]}
+                  rightContent={(
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setSearchTerm("");
+                        loadData();
+                      }}
+                      className="h-11 rounded-full px-5"
+                    >
+                      Atualizar
+                    </Button>
+                  )}
+                />
                 <p className="mt-3 text-xs text-gray-500">
                   {selectedDateTitle}: {filteredAppointments.length} agendamento(s) encontrado(s) para a busca atual.
                 </p>
@@ -1379,146 +1440,230 @@ export default function Registrador() {
               Confirme horário, monitor, pertences e observações do atendimento.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
-            {checkinSharedSource && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-                Dados diarios reaproveitados do primeiro check-in deste cao no dia:
-                responsavel pela entrega, foto dos pertences e informacao de refeicao.
-              </div>
-            )}
+          <Tabs value={checkinDialogTab} onValueChange={setCheckinDialogTab} className="py-2">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="geral">Dados do check-in</TabsTrigger>
+              <TabsTrigger value="checkup">Check-list corporal</TabsTrigger>
+            </TabsList>
 
-            {selectedAppointment?.service_type === "adaptacao" && getAppointmentTimeValue(selectedAppointment, "saida") && (
-              <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-                Esta adaptacao foi planejada para terminar as <strong>{getAppointmentTimeValue(selectedAppointment, "saida")}</strong>.
-              </div>
-            )}
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label>Data e horário do check-in</Label>
-                <DateTimePickerInput value={checkinForm.checkin_datetime} onChange={(value) => setCheckinForm((current) => ({ ...current, checkin_datetime: value }))} />
-              </div>
-              <div>
-                <Label>Monitor responsável</Label>
-                <Select value={checkinForm.monitor_id} onValueChange={(value) => setCheckinForm((current) => ({ ...current, monitor_id: value }))}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {monitors.map((monitor) => (
-                      <SelectItem key={monitor.id} value={monitor.id}>
-                        {monitor.full_name || monitor.nome_completo || monitor.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <Label>Responsável pela entrega</Label>
-              <Input value={checkinForm.entregador_nome} onChange={(event) => setCheckinForm((current) => ({ ...current, entregador_nome: event.target.value }))} className="mt-2" />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Foto dos pertences</Label>
-                <input
-                  ref={checkinPhotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={(event) => handleAttachmentUpload(event, "checkin", "checkin")}
-                />
-                <Button type="button" variant="outline" onClick={() => checkinPhotoInputRef.current?.click()} className="w-full">
-                  <Camera className="mr-2 h-4 w-4" />
-                  Tirar foto dos pertences
-                </Button>
-                {checkinForm.pertences_entrada_foto_url && (
-                  <button type="button" onClick={() => handleAttachmentPreview(checkinForm.pertences_entrada_foto_url, "Pertences na entrada")} className="text-sm text-blue-600">
-                    Ver imagem enviada
-                  </button>
-                )}
-              </div>
-              <div className="space-y-3 rounded-xl border border-gray-200 p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-gray-900">Tem refeição?</p>
-                    <p className="text-xs text-gray-500">Libera o registro posterior da refeição.</p>
-                  </div>
-                  <Switch checked={checkinForm.tem_refeicao} onCheckedChange={(checked) => setCheckinForm((current) => ({ ...current, tem_refeicao: checked }))} />
+            <TabsContent value="geral" className="mt-4 space-y-4">
+              {checkinSharedSource && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                  Dados diários reaproveitados do primeiro check-in deste cão no dia:
+                  responsável pela entrega, foto dos pertences e informação de refeição.
                 </div>
-                {checkinForm.tem_refeicao && (
-                  <div>
-                    <Label>Observação da refeição</Label>
-                    <Textarea value={checkinForm.refeicao_observacao} onChange={(event) => setCheckinForm((current) => ({ ...current, refeicao_observacao: event.target.value }))} className="mt-2" rows={3} />
-                  </div>
-                )}
-              </div>
-            </div>
+              )}
 
-            <div className={`grid gap-4 ${selectedAppointmentRequiresReminderDateTime ? "sm:grid-cols-[minmax(0,1fr)_220px_260px]" : "sm:grid-cols-[minmax(0,1fr)_220px_220px]"}`}>
-              <div>
-                <Label>Lembrete ou tarefa</Label>
-                <Textarea
-                  value={checkinForm.tarefa_lembrete}
-                  onChange={(event) => setCheckinForm((current) => ({ ...current, tarefa_lembrete: event.target.value }))}
-                  className="mt-2"
-                  rows={3}
-                  placeholder="Ex.: avisar comercial sobre banho extra"
-                />
-              </div>
-              <div>
-                <Label>Setor a notificar</Label>
-                <div className="mt-2">
-                  <Select
-                    value={checkinForm.tarefa_lembrete_setor}
-                    onValueChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_setor: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o setor" />
+              {selectedAppointment?.service_type === "adaptacao" && getAppointmentTimeValue(selectedAppointment, "saida") && (
+                <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
+                  Esta adaptação foi planejada para terminar às <strong>{getAppointmentTimeValue(selectedAppointment, "saida")}</strong>.
+                </div>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label>Data e horário do check-in</Label>
+                  <DateTimePickerInput value={checkinForm.checkin_datetime} onChange={(value) => setCheckinForm((current) => ({ ...current, checkin_datetime: value }))} />
+                </div>
+                <div>
+                  <Label>Monitor responsável</Label>
+                  <Select value={checkinForm.monitor_id} onValueChange={(value) => setCheckinForm((current) => ({ ...current, monitor_id: value }))}>
+                    <SelectTrigger className="mt-2">
+                      <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="administracao">Administração</SelectItem>
-                      <SelectItem value="operacao">Operação</SelectItem>
+                      {monitors.map((monitor) => (
+                        <SelectItem key={monitor.id} value={monitor.id}>
+                          {monitor.full_name || monitor.nome_completo || monitor.email}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <p className="mt-2 text-xs text-gray-500">
-                  O lembrete será enviado para os usuários com perfis vinculados ao setor selecionado.
-                </p>
               </div>
+
               <div>
-                <Label>{selectedAppointmentRequiresReminderDateTime ? "Data e horário do lembrete" : "Horário do lembrete"}</Label>
-                <div className="mt-2">
-                  {selectedAppointmentRequiresReminderDateTime ? (
-                    <DateTimePickerInput
-                      value={checkinForm.tarefa_lembrete_datetime}
-                      onChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_datetime: value }))}
-                      placeholder="Defina data e horário"
-                    />
-                  ) : (
-                    <TimePickerInput
-                      value={checkinForm.tarefa_lembrete_horario}
-                      onChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_horario: value }))}
-                      placeholder="Defina o horário"
-                    />
+                <Label>Responsável pela entrega</Label>
+                <Input value={checkinForm.entregador_nome} onChange={(event) => setCheckinForm((current) => ({ ...current, entregador_nome: event.target.value }))} className="mt-2" />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Foto dos pertences</Label>
+                  <input
+                    ref={checkinPhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(event) => handleAttachmentUpload(event, "checkin", "checkin")}
+                  />
+                  <Button type="button" variant="outline" onClick={() => checkinPhotoInputRef.current?.click()} className="w-full">
+                    <Camera className="mr-2 h-4 w-4" />
+                    Tirar foto dos pertences
+                  </Button>
+                  {checkinForm.pertences_entrada_foto_url && (
+                    <button type="button" onClick={() => handleAttachmentPreview(checkinForm.pertences_entrada_foto_url, "Pertences na entrada")} className="text-sm text-blue-600">
+                      Ver imagem enviada
+                    </button>
                   )}
                 </div>
-                <p className="mt-2 text-xs text-gray-500">
-                  {selectedAppointmentRequiresReminderDateTime
-                    ? "Na hospedagem, você escolhe a data e o horário exatos da notificação."
-                    : "Nos demais serviços, o lembrete será enviado no mesmo dia do agendamento, no horário informado."}
-                </p>
+                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900">Tem refeição?</p>
+                      <p className="text-xs text-gray-500">Libera o registro posterior da refeição.</p>
+                    </div>
+                    <Switch checked={checkinForm.tem_refeicao} onCheckedChange={(checked) => setCheckinForm((current) => ({ ...current, tem_refeicao: checked }))} />
+                  </div>
+                  {checkinForm.tem_refeicao && (
+                    <div>
+                      <Label>Observação da refeição</Label>
+                      <Textarea value={checkinForm.refeicao_observacao} onChange={(event) => setCheckinForm((current) => ({ ...current, refeicao_observacao: event.target.value }))} className="mt-2" rows={3} />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
 
-            <div>
-              <Label>Observações gerais</Label>
-              <Textarea value={checkinForm.observacoes} onChange={(event) => setCheckinForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
-            </div>
-          </div>
+              <div className={`grid gap-4 ${selectedAppointmentRequiresReminderDateTime ? "sm:grid-cols-[minmax(0,1fr)_220px_260px]" : "sm:grid-cols-[minmax(0,1fr)_220px_220px]"}`}>
+                <div>
+                  <Label>Lembrete ou tarefa</Label>
+                  <Textarea
+                    value={checkinForm.tarefa_lembrete}
+                    onChange={(event) => setCheckinForm((current) => ({ ...current, tarefa_lembrete: event.target.value }))}
+                    className="mt-2"
+                    rows={3}
+                    placeholder="Ex.: avisar comercial sobre banho extra"
+                  />
+                </div>
+                <div>
+                  <Label>Setor a notificar</Label>
+                  <div className="mt-2">
+                    <Select
+                      value={checkinForm.tarefa_lembrete_setor}
+                      onValueChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_setor: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o setor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="administracao">Administração</SelectItem>
+                        <SelectItem value="operacao">Operação</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    O lembrete será enviado para os usuários com perfis vinculados ao setor selecionado.
+                  </p>
+                </div>
+                <div>
+                  <Label>{selectedAppointmentRequiresReminderDateTime ? "Data e horário do lembrete" : "Horário do lembrete"}</Label>
+                  <div className="mt-2">
+                    {selectedAppointmentRequiresReminderDateTime ? (
+                      <DateTimePickerInput
+                        value={checkinForm.tarefa_lembrete_datetime}
+                        onChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_datetime: value }))}
+                        placeholder="Defina data e horário"
+                      />
+                    ) : (
+                      <TimePickerInput
+                        value={checkinForm.tarefa_lembrete_horario}
+                        onChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_horario: value }))}
+                        placeholder="Defina o horário"
+                      />
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    {selectedAppointmentRequiresReminderDateTime
+                      ? "Na hospedagem, você escolhe a data e o horário exatos da notificação."
+                      : "Nos demais serviços, o lembrete será enviado no mesmo dia do agendamento, no horário informado."}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <Label>Observações gerais</Label>
+                <Textarea value={checkinForm.observacoes} onChange={(event) => setCheckinForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="checkup" className="mt-4 space-y-4">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                Assinale no check-list os pontos do corpo que estão OK na entrada do cão.
+              </div>
+
+              {checkinSharedSource && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                  O check-list corporal do primeiro check-in deste cão no dia foi reaproveitado e pode ser ajustado para este atendimento.
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-medium text-gray-900">Check-up corporal</p>
+                  <p className="text-sm text-gray-500">Marque rapidamente tudo o que estiver dentro do esperado.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setCheckinForm((current) => ({
+                      ...current,
+                      body_checkup: BODY_CHECKUP_PARTS.reduce((accumulator, item) => {
+                        accumulator[item.key] = true;
+                        return accumulator;
+                      }, {}),
+                    }))
+                  }
+                >
+                  Marcar tudo como OK
+                </Button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {BODY_CHECKUP_PARTS.map((item) => {
+                  const isChecked = Boolean(checkinForm.body_checkup?.[item.key]);
+
+                  return (
+                    <div
+                      key={item.key}
+                      className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${isChecked ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-white"}`}
+                    >
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={(checked) =>
+                          setCheckinForm((current) => ({
+                            ...current,
+                            body_checkup: {
+                              ...(current.body_checkup || createEmptyBodyCheckup()),
+                              [item.key]: checked === true,
+                            },
+                          }))
+                        }
+                      />
+                      <div>
+                        <p className="font-medium text-gray-900">{item.label}</p>
+                        <p className={`text-xs ${isChecked ? "text-emerald-700" : "text-gray-500"}`}>
+                          {isChecked ? "Tudo OK" : "Marcar como OK"}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div>
+                <Label>Observações do check-up</Label>
+                <Textarea
+                  value={checkinForm.body_checkup_observacao}
+                  onChange={(event) => setCheckinForm((current) => ({ ...current, body_checkup_observacao: event.target.value }))}
+                  className="mt-2"
+                  rows={4}
+                  placeholder="Ex.: sensibilidade na pata traseira direita, leve vermelhidão nas orelhas, sem outras alterações visíveis."
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowCheckinDialog(false); setCheckinSharedSource(null); }}>Cancelar</Button>
             <Button onClick={submitCheckin} disabled={isSaving} className="bg-green-600 text-white hover:bg-green-700">

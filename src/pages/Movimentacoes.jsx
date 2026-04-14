@@ -17,9 +17,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
+  Calendar,
+  ListFilter,
   Pencil,
   Plus,
   RefreshCw,
@@ -427,33 +430,58 @@ export default function Movimentacoes() {
         </div>
 
         <Card className="mb-6 border-gray-200 bg-white">
-          <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-4">
-            <div className="relative md:col-span-2">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                className="pl-9"
-                placeholder="Buscar por titular, metodo, banco ou transação ID"
-              />
-            </div>
-
-            <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
-              <SelectTrigger>
-                <SelectValue placeholder="Tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="entrada">Entradas</SelectItem>
-                <SelectItem value="saida">Saídas</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <DateRangePickerInput
-              startValue={dataInicial}
-              endValue={dataFinal}
-              onStartChange={setDataInicial}
-              onEndChange={setDataFinal}
+          <CardContent className="p-4">
+            <SearchFiltersToolbar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Buscar por titular, método, banco ou transação ID"
+              hasActiveFilters={Boolean(searchTerm || tipoFiltro !== "all" || dataInicial || dataFinal)}
+              onClear={() => {
+                setSearchTerm("");
+                setTipoFiltro("all");
+                setDataInicial("");
+                setDataFinal("");
+              }}
+              filters={[
+                {
+                  id: "type",
+                  label: "Tipo",
+                  icon: ListFilter,
+                  active: tipoFiltro !== "all",
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Tipo de movimentação</p>
+                      <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          <SelectItem value="entrada">Entradas</SelectItem>
+                          <SelectItem value="saida">Saídas</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+                {
+                  id: "period",
+                  label: "Período",
+                  icon: Calendar,
+                  active: Boolean(dataInicial || dataFinal),
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período da transação</p>
+                      <DateRangePickerInput
+                        startValue={dataInicial}
+                        endValue={dataFinal}
+                        onStartChange={setDataInicial}
+                        onEndChange={setDataFinal}
+                      />
+                    </div>
+                  ),
+                },
+              ]}
             />
           </CardContent>
         </Card>

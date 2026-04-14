@@ -1365,6 +1365,49 @@ if (SUPABASE_URL && SUPABASE_ANON) {
 
       return result;
     },
+    getInviteOnboardingContext: async ({ token } = {}) => {
+      return supabaseFunctions.userAdmin({
+        action: 'get_invite_context',
+        token,
+      });
+    },
+    completeInviteOnboarding: async ({ token, pin, profile } = {}) => {
+      const result = await supabaseFunctions.userAdmin({
+        action: 'complete_invite_onboarding',
+        token,
+        pin,
+        profile,
+      });
+
+      const accessToken = result?.session?.access_token;
+      const refreshToken = result?.session?.refresh_token;
+      if (!accessToken || !refreshToken) {
+        throw new Error('A conclusao do convite nao retornou uma sessao valida.');
+      }
+
+      const { error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (error) throw error;
+
+      const authUser = await getAuthenticatedUser();
+      const mergedUser = authUser ? await syncUserProfile(authUser) : (result?.user || null);
+      if (mergedUser) {
+        markDeviceTrustedForUser(mergedUser);
+        supabaseAuth.currentUser = {
+          ...mergedUser,
+          onboarding_status: 'completo',
+          pin_required_reset: false,
+        };
+      }
+
+      return {
+        ok: true,
+        session: result?.session || null,
+        user: mergedUser || result?.user || null,
+      };
+    },
     bootstrapDefaultPins: async ({ userId = null, defaultPin = '654321' } = {}) => {
       return supabaseFunctions.userAdmin({
         action: 'bootstrap_default_pins',

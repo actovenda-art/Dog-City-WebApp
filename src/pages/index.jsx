@@ -81,7 +81,7 @@ const PAGES = {
 };
 
 const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
-const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "VisualizadorImagem"]);
+const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "VisualizadorImagem"]);
 
 function FullScreenAuthLoader() {
   return (
@@ -320,6 +320,10 @@ function PagesContent() {
 
       {PUBLIC_PAGES.has("AuthCallback") ? (
         <Route path={createPageUrl("AuthCallback")} element={<StandalonePage pageName="AuthCallback" />} />
+      ) : null}
+
+      {PUBLIC_PAGES.has("CompletarCadastro") ? (
+        <Route path={createPageUrl("CompletarCadastro")} element={<StandalonePage pageName="CompletarCadastro" />} />
       ) : null}
 
       {PUBLIC_PAGES.has("VisualizadorImagem") ? (

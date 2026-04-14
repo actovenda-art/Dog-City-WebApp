@@ -48,6 +48,20 @@ type RequestContext = {
   allowedUnitIds: string[];
 };
 
+type InviteRow = {
+  id: string;
+  token?: string | null;
+  email?: string | null;
+  full_name?: string | null;
+  empresa_id?: string | null;
+  access_profile_id?: string | null;
+  company_role?: string | null;
+  is_platform_admin?: boolean | null;
+  status?: string | null;
+  accepted_at?: string | null;
+  onboarding_completed_at?: string | null;
+};
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -266,6 +280,100 @@ async function loadPendingInviteByEmail(email: string) {
   }
 
   return (data as Record<string, unknown> | null) || null;
+}
+
+async function loadInviteByToken(token: string) {
+  const normalizedToken = sanitizeText(token);
+  if (!normalizedToken) return null;
+
+  const { data, error } = await admin
+    .from("user_invite")
+    .select("*")
+    .eq("token", normalizedToken)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Nao foi possivel localizar o convite.");
+  }
+
+  return (data as InviteRow | null) || null;
+}
+
+async function loadEmpresaSummary(empresaId: string | null | undefined) {
+  const normalizedEmpresaId = sanitizeText(empresaId);
+  if (!normalizedEmpresaId) return null;
+
+  const { data, error } = await admin
+    .from("empresa")
+    .select("id, nome_fantasia, razao_social")
+    .eq("id", normalizedEmpresaId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Nao foi possivel carregar a unidade do convite.");
+  }
+
+  return data || null;
+}
+
+async function upsertUserUnitAccessRow({
+  userId,
+  empresaId,
+  accessProfileId,
+  papel,
+  ativo = true,
+  isDefault = true,
+}: {
+  userId: string;
+  empresaId: string | null;
+  accessProfileId?: string | null;
+  papel?: string | null;
+  ativo?: boolean;
+  isDefault?: boolean;
+}) {
+  const normalizedEmpresaId = sanitizeText(empresaId);
+  if (!userId || !normalizedEmpresaId) return;
+
+  const { data: existingRow, error: existingError } = await admin
+    .from("user_unit_access")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("empresa_id", normalizedEmpresaId)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message || "Nao foi possivel carregar o acesso da unidade.");
+  }
+
+  const payload = {
+    user_id: userId,
+    empresa_id: normalizedEmpresaId,
+    access_profile_id: accessProfileId || null,
+    papel: papel || "company_user",
+    ativo,
+    is_default: isDefault,
+    updated_date: new Date().toISOString(),
+  };
+
+  if (existingRow?.id) {
+    const { error } = await admin
+      .from("user_unit_access")
+      .update(payload)
+      .eq("id", existingRow.id);
+
+    if (error) {
+      throw new Error(error.message || "Nao foi possivel atualizar o acesso da unidade.");
+    }
+    return;
+  }
+
+  const { error } = await admin
+    .from("user_unit_access")
+    .insert([payload]);
+
+  if (error) {
+    throw new Error(error.message || "Nao foi possivel criar o acesso da unidade.");
+  }
 }
 
 async function createAppUserFromInvite(invite: Record<string, any>) {
@@ -715,6 +823,240 @@ async function handleSetPin(request: Request, payload: Record<string, unknown>) 
   });
 }
 
+async function handleGetInviteContext(payload: Record<string, unknown>) {
+  const token = sanitizeText(payload.token);
+  if (!token) {
+    return jsonResponse({ error: "Token do convite obrigatorio." }, 400);
+  }
+
+  const invite = await loadInviteByToken(token);
+  if (!invite) {
+    return jsonResponse({ error: "Convite nao localizado." }, 404);
+  }
+
+  if (invite.status === "cancelado") {
+    return jsonResponse({ error: "Este convite foi cancelado." }, 410);
+  }
+
+  if (invite.status === "concluido") {
+    return jsonResponse({ error: "Este convite ja foi concluido." }, 409);
+  }
+
+  const empresa = await loadEmpresaSummary(invite.empresa_id || null);
+
+  return jsonResponse({
+    ok: true,
+    invite: {
+      id: invite.id,
+      token: invite.token || token,
+      full_name: invite.full_name || "",
+      email: invite.email || "",
+      empresa_id: invite.empresa_id || null,
+      access_profile_id: invite.access_profile_id || null,
+      company_role: invite.company_role || null,
+      is_platform_admin: invite.is_platform_admin ?? false,
+      status: invite.status || "pendente",
+    },
+    empresa,
+  });
+}
+
+async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) {
+  const token = sanitizeText(payload.token);
+  const pin = normalizePin(payload.pin);
+  const validationError = validatePin(pin);
+
+  if (!token) {
+    return jsonResponse({ error: "Token do convite obrigatorio." }, 400);
+  }
+
+  if (validationError) {
+    return jsonResponse({ error: validationError }, 400);
+  }
+
+  const invite = await loadInviteByToken(token);
+  if (!invite) {
+    return jsonResponse({ error: "Convite nao localizado." }, 404);
+  }
+
+  if (invite.status === "cancelado") {
+    return jsonResponse({ error: "Este convite foi cancelado." }, 410);
+  }
+
+  if (invite.status === "concluido") {
+    return jsonResponse({ error: "Este convite ja foi concluido." }, 409);
+  }
+
+  const profile = (payload.profile && typeof payload.profile === "object")
+    ? (payload.profile as Record<string, unknown>)
+    : {};
+  const normalizedEmail = sanitizeText(invite.email).toLowerCase();
+  if (!normalizedEmail) {
+    return jsonResponse({ error: "Este convite nao possui email valido." }, 400);
+  }
+
+  const fullName = sanitizeText(profile.full_name || invite.full_name);
+  const existingUser = await loadAppUserByEmail(normalizedEmail);
+  if (existingUser?.onboarding_status === "completo" && existingUser?.active !== false) {
+    return jsonResponse({
+      error: "Este email ja possui acesso concluido. Use o login normal ou ajuste o acesso na Gestao de Usuarios.",
+    }, 409);
+  }
+
+  let authUser = null;
+  try {
+    const { data } = await admin.auth.admin.getUserByEmail(normalizedEmail);
+    authUser = data?.user || null;
+  } catch {
+    authUser = null;
+  }
+
+  if (existingUser?.id && authUser?.id && existingUser.id !== authUser.id) {
+    return jsonResponse({
+      error: "Conflito entre o usuario de autenticacao e o cadastro interno deste email.",
+    }, 409);
+  }
+
+  const userId = existingUser?.id || authUser?.id || (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `invite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+
+  if (authUser?.id) {
+    const { error: updateAuthError } = await admin.auth.admin.updateUserById(authUser.id, {
+      password: pin,
+      email_confirm: true,
+      user_metadata: fullName ? { full_name: fullName } : undefined,
+    });
+
+    if (updateAuthError) {
+      return jsonResponse({ error: updateAuthError.message || "Nao foi possivel atualizar o acesso do convite." }, 500);
+    }
+  } else {
+    const { error: createAuthError } = await admin.auth.admin.createUser({
+      id: userId,
+      email: normalizedEmail,
+      password: pin,
+      email_confirm: true,
+      user_metadata: fullName ? { full_name: fullName } : undefined,
+    });
+
+    if (createAuthError) {
+      return jsonResponse({ error: createAuthError.message || "Nao foi possivel criar o acesso do convite." }, 500);
+    }
+  }
+
+  const now = new Date().toISOString();
+  const profilePayload = {
+    email: normalizedEmail,
+    full_name: fullName || null,
+    cpf: sanitizeText(profile.cpf) || null,
+    birth_date: sanitizeText(profile.birth_date) || null,
+    cep: sanitizeText(profile.cep) || null,
+    street: sanitizeText(profile.street) || null,
+    number: sanitizeText(profile.number) || null,
+    neighborhood: sanitizeText(profile.neighborhood) || null,
+    city: sanitizeText(profile.city) || null,
+    state: sanitizeText(profile.state) || null,
+    pix_key_type: sanitizeText(profile.pix_key_type) || null,
+    pix_key: sanitizeText(profile.pix_key) || null,
+    contact_nickname: sanitizeText(profile.contact_nickname) || null,
+    emergency_contact: sanitizeText(profile.emergency_contact) || null,
+    profile_photo_path: null,
+    onboarding_status: "completo",
+    onboarding_completed_at: now,
+    active: true,
+    empresa_id: invite.empresa_id || null,
+    access_profile_id: invite.access_profile_id || null,
+    company_role: invite.is_platform_admin ? "platform_admin" : (invite.company_role || "company_user"),
+    is_platform_admin: invite.is_platform_admin ?? false,
+    pin_required_reset: false,
+    pin_bootstrap_status: "definido",
+    pin_updated_at: now,
+    pin_last_verified_at: now,
+    updated_date: now,
+  };
+
+  let savedUser: AppUserRow | null = null;
+  if (existingUser?.id) {
+    const { data, error } = await admin
+      .from("users")
+      .update(profilePayload)
+      .eq("id", existingUser.id)
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      return jsonResponse({ error: error.message || "Nao foi possivel concluir o cadastro do convite." }, 500);
+    }
+    savedUser = (data as AppUserRow | null) || null;
+  } else {
+    const { data, error } = await admin
+      .from("users")
+      .insert([{
+        id: userId,
+        profile: "usuario",
+        created_date: now,
+        ...profilePayload,
+      }])
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      return jsonResponse({ error: error.message || "Nao foi possivel criar o usuario do convite." }, 500);
+    }
+    savedUser = (data as AppUserRow | null) || null;
+  }
+
+  try {
+    if (!(invite.is_platform_admin ?? false) && invite.empresa_id) {
+      await upsertUserUnitAccessRow({
+        userId: savedUser?.id || userId,
+        empresaId: invite.empresa_id,
+        accessProfileId: invite.access_profile_id || null,
+        papel: invite.company_role || "company_user",
+        ativo: true,
+        isDefault: true,
+      });
+    }
+  } catch (error) {
+    return jsonResponse({
+      error: error instanceof Error ? error.message : "Nao foi possivel salvar o acesso da unidade do convite.",
+    }, 500);
+  }
+
+  const { error: inviteUpdateError } = await admin
+    .from("user_invite")
+    .update({
+      status: "concluido",
+      accepted_at: invite.accepted_at || now,
+      onboarding_completed_at: now,
+      updated_date: now,
+    })
+    .eq("id", invite.id);
+
+  if (inviteUpdateError) {
+    return jsonResponse({ error: inviteUpdateError.message || "Nao foi possivel finalizar o convite." }, 500);
+  }
+
+  const signInResult = await signInWithPassword(normalizedEmail, pin);
+  if (!signInResult.ok || !signInResult?.payload?.access_token || !signInResult?.payload?.refresh_token) {
+    return jsonResponse({ error: "O cadastro foi concluido, mas nao foi possivel iniciar a sessao automaticamente." }, 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    user: savedUser,
+    session: {
+      access_token: signInResult.payload.access_token,
+      refresh_token: signInResult.payload.refresh_token,
+      expires_in: signInResult.payload.expires_in,
+      expires_at: signInResult.payload.expires_at,
+      token_type: signInResult.payload.token_type,
+      user: signInResult.payload.user,
+    },
+  });
+}
+
 async function handlePinLogin(payload: Record<string, unknown>) {
   const email = sanitizeText(payload.email).toLowerCase();
   const selectedPairs = normalizeSelectedPairs(payload.selected_pairs);
@@ -733,7 +1075,9 @@ async function handlePinLogin(payload: Record<string, unknown>) {
   if (!appUser) {
     invite = await loadPendingInviteByEmail(email);
     if (invite) {
-      appUser = await createAppUserFromInvite(invite);
+      return jsonResponse({
+        error: "Este convite ainda precisa ser concluido pelo link recebido antes do primeiro acesso.",
+      }, 409);
     }
   }
 
@@ -746,16 +1090,14 @@ async function handlePinLogin(payload: Record<string, unknown>) {
   }
 
   let authUser = await getAuthUserById(appUser.id);
-  if (!authUser && invite) {
-    try {
-      await ensureBootstrapAuthUser(appUser, DEFAULT_BOOTSTRAP_PIN);
-      authUser = await getAuthUserById(appUser.id);
-    } catch (error) {
-      return jsonResponse({ error: "Nao foi possivel preparar o acesso para este convite." }, 500);
-    }
-  }
 
   if (!authUser) {
+    if (appUser?.onboarding_status === "pendente") {
+      return jsonResponse({
+        error: "Este convite ainda precisa ser concluido pelo link recebido antes do primeiro acesso.",
+      }, 409);
+    }
+
     return jsonResponse({
       error: "Este usuario ainda nao teve o PIN provisionado no acesso direto. Na Gestao de Usuarios, use 'Exigir PIN dos usuarios atuais' novamente.",
     }, 409);
@@ -847,6 +1189,14 @@ Deno.serve(async (request) => {
 
     if (action === "set_pin") {
       return await handleSetPin(request, payload || {});
+    }
+
+    if (action === "get_invite_context") {
+      return await handleGetInviteContext(payload || {});
+    }
+
+    if (action === "complete_invite_onboarding") {
+      return await handleCompleteInviteOnboarding(payload || {});
     }
 
     if (action === "pin_login") {

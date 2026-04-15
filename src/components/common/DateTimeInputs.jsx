@@ -17,21 +17,23 @@ const pickerTriggerClassName = cn(
   "hover:bg-slate-50 hover:text-slate-900",
 );
 
+const calendarPopoverClassName = "w-[284px] max-w-[calc(100vw-1rem)] rounded-[24px] border border-slate-200 bg-white p-6 shadow-2xl";
+
 const calendarClassNames = {
   months: "flex flex-col",
-  month: "w-full space-y-2",
-  caption: "grid min-h-11 grid-cols-[2rem_1fr_2rem] items-center gap-2 px-1 pt-1",
-  caption_label: "col-start-2 text-center text-lg font-bold tracking-tight text-slate-900 capitalize",
+  month: "w-[236px] space-y-1.5",
+  caption: "grid min-h-[32px] grid-cols-[28px_1fr_28px] items-center gap-1.5 px-0 pt-0",
+  caption_label: "col-start-2 text-center text-[15px] font-bold tracking-tight text-slate-900 capitalize leading-none",
   nav: "contents",
-  nav_button: "h-8 w-8 rounded-full border border-slate-200 bg-white p-0 text-slate-700 opacity-100 shadow-sm hover:bg-slate-100",
+  nav_button: "h-7 w-7 rounded-full border border-slate-200 bg-white p-0 text-slate-700 opacity-100 shadow-sm hover:bg-slate-100",
   nav_button_previous: "col-start-1 justify-self-start",
   nav_button_next: "col-start-3 justify-self-end",
   table: "w-full table-fixed border-collapse",
   head_row: "flex w-full justify-between",
-  head_cell: "w-8 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400",
+  head_cell: "h-7 w-7 text-center text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400",
   row: "mt-0.5 flex w-full justify-between",
-  cell: "h-8 w-8 p-0 text-center text-sm",
-  day: "h-8 w-8 rounded-full p-0 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900",
+  cell: "h-7 w-7 p-0 text-center text-[13px]",
+  day: "h-7 w-7 rounded-full p-0 text-[13px] font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900",
   day_selected: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white focus:bg-blue-500 focus:text-white",
   day_range_start: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
   day_range_end: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
@@ -193,7 +195,7 @@ function PickerPopover({ children, content, className, open, onOpenChange }) {
         collisionPadding={8}
         onOpenAutoFocus={(event) => event.preventDefault()}
         className={cn(
-          "w-[332px] max-w-[calc(100vw-1rem)] max-h-[calc(100vh-1rem)] overflow-auto rounded-[24px] border border-slate-200 bg-white p-6 shadow-2xl",
+          `${calendarPopoverClassName} max-h-[calc(100vh-1rem)] overflow-auto`,
           className
         )}
       >
@@ -279,7 +281,7 @@ export function DatePickerInput({
       onOpenChange={setOpen}
       className="p-0"
       content={
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           <Calendar
             mode="single"
             locale={ptBR}
@@ -289,10 +291,10 @@ export function DatePickerInput({
               setInputValue(date ? formatInputDate(date) : "");
               setOpen(false);
             }}
-            className="w-full rounded-[20px] bg-white p-1"
+            className="mx-auto w-[236px] rounded-[20px] bg-white p-0"
             classNames={calendarClassNames}
           />
-          <div className="flex items-center justify-between gap-2 px-2 pb-1">
+          <div className="flex items-center justify-between gap-2 pt-1">
             <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Data</span>
             <Button
               type="button"
@@ -373,7 +375,7 @@ export function DateRangePickerInput({
       onOpenChange={setOpen}
       className="p-0"
       content={
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           <Calendar
             mode="range"
             locale={ptBR}
@@ -390,16 +392,16 @@ export function DateRangePickerInput({
                 setOpen(false);
               }
             }}
-            className="w-full rounded-[20px] bg-white p-1"
+            className="mx-auto w-[236px] rounded-[20px] bg-white p-0"
             classNames={calendarClassNames}
           />
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Período</p>
-            <p className="mt-2 text-sm font-semibold text-slate-900">
+            <p className="mt-1.5 text-sm font-semibold text-slate-900">
               {formatDisplayDateRange(startValue, endValue) || "Defina a data inicial e final"}
             </p>
           </div>
-          <div className="flex items-center justify-between gap-2 px-2 pb-1">
+          <div className="flex items-center justify-between gap-2 pt-1">
             <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Intervalo</span>
             <Button
               type="button"

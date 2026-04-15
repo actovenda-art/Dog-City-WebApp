@@ -114,12 +114,52 @@ function normalizeDisplayName(value) {
     .join(" ");
 }
 
+function extractCounterpartyTailParts(value) {
+  const cleaned = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return { counterpartyName: "", counterpartyCode: null };
+  }
+
+  const tokens = cleaned.split(" ");
+  const firstNameIndex = tokens.findIndex((token) => /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(token));
+
+  if (firstNameIndex === -1) {
+    return {
+      counterpartyName: normalizeDisplayName(cleaned),
+      counterpartyCode: null,
+    };
+  }
+
+  const codeTokens = tokens.slice(0, firstNameIndex).join(" ").trim();
+  const nameTokens = tokens.slice(firstNameIndex).join(" ").trim();
+
+  return {
+    counterpartyName: normalizeDisplayName(nameTokens || cleaned),
+    counterpartyCode: codeTokens || null,
+  };
+}
+
 function parseBancoInterDescription(record) {
   const rawDescription = String(record?.raw_data?.descricao || record?.descricao || "").trim();
   if (!rawDescription) return null;
 
-  const match = rawDescription.match(/^(pix\s+(?:enviado|recebido))\s*-\s*cp\s*:\s*([^-]+)-(.+)$/i);
-  if (!match) {
+  const cpMatch = rawDescription.match(/^(pix\s+(?:enviado|recebido)(?:\s+interno)?)\s*-\s*cp\s*:\s*([^-]+)-(.+)$/i);
+  if (cpMatch) {
+    const [, detailLabel, counterpartyCode, counterpartyName] = cpMatch;
+    return {
+      rawDescription,
+      method: "Pix",
+      counterpartyName: normalizeDisplayName(counterpartyName),
+      counterpartyCode: String(counterpartyCode || "").trim() || null,
+      detailLabel: normalizeDisplayName(detailLabel),
+    };
+  }
+
+  const genericPixMatch = rawDescription.match(/^(pix\s+(?:enviado|recebido)(?:\s+interno)?)\s*-\s*(.+)$/i);
+  if (!genericPixMatch) {
     return {
       rawDescription,
       method: record?.raw_data?.tipoTransacao ? normalizeDisplayName(record.raw_data.tipoTransacao) : null,
@@ -129,12 +169,14 @@ function parseBancoInterDescription(record) {
     };
   }
 
-  const [, detailLabel, counterpartyCode, counterpartyName] = match;
+  const [, detailLabel, trailingInfo] = genericPixMatch;
+  const { counterpartyName, counterpartyCode } = extractCounterpartyTailParts(trailingInfo);
+
   return {
     rawDescription,
     method: "Pix",
-    counterpartyName: normalizeDisplayName(counterpartyName),
-    counterpartyCode: String(counterpartyCode || "").trim() || null,
+    counterpartyName,
+    counterpartyCode,
     detailLabel: normalizeDisplayName(detailLabel),
   };
 }
@@ -329,8 +371,20 @@ export function getMovementDirectionLabel(record) {
 
 export function getMovementCounterparty(record) {
   const parsedInter = parseBancoInterDescription(record);
+  const storedCounterparty = String(record?.nome_contraparte || "").trim();
+  const shouldUseParsedCounterparty = Boolean(
+    parsedInter?.counterpartyName
+    && (
+      !storedCounterparty
+      || storedCounterparty === parsedInter?.rawDescription
+      || /^(pix\s+(?:enviado|recebido)(?:\s+interno)?)/i.test(storedCounterparty)
+      || /cp\s*:/i.test(storedCounterparty)
+    )
+  );
+
   return (
-    record?.nome_contraparte ||
+    (shouldUseParsedCounterparty ? parsedInter?.counterpartyName : "") ||
+    storedCounterparty ||
     parsedInter?.counterpartyName ||
     record?.raw_data?.nomeRemetente ||
     record?.raw_data?.nomeFavorecido ||

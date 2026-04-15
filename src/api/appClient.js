@@ -364,6 +364,67 @@ const mockFunctions = {
     }
     return { ok: true };
   },
+  clientRegistration: async (payload = {}) => {
+    const links = readStorage('client_registration_links');
+    const action = payload?.action;
+
+    if (action === 'create_link') {
+      const token = payload?.token || makeId();
+      const row = {
+        id: makeId(),
+        token,
+        empresa_id: payload?.empresa_id || getMockScopedUnitId(),
+        responsavel_nome: payload?.responsavel_nome || '',
+        responsavel_email: payload?.responsavel_email || '',
+        status: 'pendente',
+        metadata: payload?.metadata || {},
+        created_date: new Date().toISOString(),
+        updated_date: new Date().toISOString(),
+      };
+      links.push(row);
+      writeStorage('client_registration_links', links);
+      return {
+        ok: true,
+        link: row,
+      };
+    }
+
+    const token = String(payload?.token || '').trim();
+    const rowIndex = links.findIndex((item) => item.token === token);
+    const row = rowIndex >= 0 ? links[rowIndex] : null;
+
+    if (!row) {
+      throw new Error('Link de cadastro nao localizado.');
+    }
+
+    if (action === 'get_context') {
+      return {
+        ok: true,
+        link: row,
+        empresa: {
+          id: row.empresa_id,
+          nome_fantasia: 'Dog City Brasil',
+        },
+      };
+    }
+
+    if (action === 'submit') {
+      links[rowIndex] = {
+        ...row,
+        status: 'concluido',
+        submitted_payload: payload?.payload || {},
+        completed_at: new Date().toISOString(),
+        updated_date: new Date().toISOString(),
+      };
+      writeStorage('client_registration_links', links);
+      return {
+        ok: true,
+        link: links[rowIndex],
+      };
+    }
+
+    throw new Error('Acao de cadastro do cliente invalida.');
+  },
 };
 
 const mockIntegrations = {
@@ -924,6 +985,27 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         const baseMessage = details || error.message || 'Falha na administração de usuários.';
         const shouldHintDeploy = /edge function|failed to send a request|non-2xx|not found/i.test(baseMessage);
         throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function user-admin no Supabase.` : baseMessage);
+      }
+      return data;
+    },
+    clientRegistration: async (payload = {}) => {
+      const { data, error } = await supabase.functions.invoke('client-registration', {
+        body: payload,
+      });
+      if (error) {
+        let details = '';
+        try {
+          if (error.context) {
+            const cloned = error.context.clone ? error.context.clone() : error.context;
+            const errorPayload = await cloned.json();
+            details = errorPayload?.details || errorPayload?.error || '';
+          }
+        } catch (parseError) {
+          details = '';
+        }
+        const baseMessage = details || error.message || 'Falha no cadastro do cliente.';
+        const shouldHintDeploy = /edge function|failed to send a request|non-2xx|not found/i.test(baseMessage);
+        throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function client-registration no Supabase.` : baseMessage);
       }
       return data;
     },

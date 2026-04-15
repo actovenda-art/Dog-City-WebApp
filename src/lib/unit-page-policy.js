@@ -2,6 +2,7 @@ export const UNIT_PAGE_POLICY = {
   Login: { mergedMode: "allowed", label: "Login" },
   AuthCallback: { mergedMode: "allowed", label: "Callback de autenticação" },
   CompletarCadastro: { mergedMode: "allowed", label: "Completar cadastro" },
+  CadastroClientePublico: { mergedMode: "allowed", label: "Cadastro do cliente" },
   VisualizadorImagem: { mergedMode: "allowed", label: "Visualizador de imagem" },
 
   AdministracaoSistema: {

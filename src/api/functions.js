@@ -21,3 +21,11 @@ export const bancoInter = async (...args) => {
 	}
 	return f.bancoInter(...args);
 };
+
+export const clientRegistration = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.clientRegistration !== 'function') {
+		return Promise.reject(new Error('appClient.functions.clientRegistration is not available'));
+	}
+	return f.clientRegistration(...args);
+};

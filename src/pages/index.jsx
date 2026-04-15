@@ -19,6 +19,7 @@ import UnitModeGuard from "@/components/layout/UnitModeGuard";
 import Login from "./Login.jsx";
 import AuthCallback from "./AuthCallback.jsx";
 import CompletarCadastro from "./CompletarCadastro.jsx";
+import CadastroClientePublico from "./CadastroClientePublico.jsx";
 import DefinirPin from "./DefinirPin.jsx";
 import ValidarPin from "./ValidarPin.jsx";
 import Dev_Dashboard from "./Dev_Dashboard";
@@ -50,6 +51,7 @@ const PAGES = {
   Login,
   AuthCallback,
   CompletarCadastro,
+  CadastroClientePublico,
   DefinirPin,
   ValidarPin,
   Dev_Dashboard,
@@ -78,8 +80,8 @@ const PAGES = {
   VisualizadorImagem,
 };
 
-const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
-const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "VisualizadorImagem"]);
+const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
+const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "VisualizadorImagem"]);
 
 function FullScreenAuthLoader() {
   return (
@@ -322,6 +324,10 @@ function PagesContent() {
 
       {PUBLIC_PAGES.has("CompletarCadastro") ? (
         <Route path={createPageUrl("CompletarCadastro")} element={<StandalonePage pageName="CompletarCadastro" />} />
+      ) : null}
+
+      {PUBLIC_PAGES.has("CadastroClientePublico") ? (
+        <Route path={createPageUrl("CadastroClientePublico")} element={<StandalonePage pageName="CadastroClientePublico" />} />
       ) : null}
 
       {PUBLIC_PAGES.has("VisualizadorImagem") ? (

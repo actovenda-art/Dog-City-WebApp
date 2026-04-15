@@ -3,11 +3,12 @@ import { Dog } from "@/api/entities";
 import { Responsavel } from "@/api/entities";
 import { Carteira } from "@/api/entities";
 import { User } from "@/api/entities";
+import { clientRegistration } from "@/api/functions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Search, Check } from "lucide-react";
+import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Search, Check, Link as LinkIcon, Copy, ExternalLink } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -15,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { isImagePreviewable, openImageViewer } from "@/utils";
+import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 
 export default function Cadastro() {
   const [notifyOpen, setNotifyOpen] = useState(false);
@@ -25,6 +26,11 @@ export default function Cadastro() {
   const [isUploading, setIsUploading] = useState(false);
   const [dogs, setDogs] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [showClientLinkModal, setShowClientLinkModal] = useState(false);
+  const [showClientLinkFeedback, setShowClientLinkFeedback] = useState(false);
+  const [hasCopiedClientLink, setHasCopiedClientLink] = useState(false);
+  const [clientLinkForm, setClientLinkForm] = useState({ responsavel_nome: "", responsavel_email: "" });
+  const [clientLinkValue, setClientLinkValue] = useState("");
 
   useEffect(() => { loadDogs(); loadCurrentUser(); }, []);
   const loadDogs = async () => { const data = await Dog.list("-created_date", 500); setDogs(data); };
@@ -65,6 +71,10 @@ export default function Cadastro() {
   };
   const formatCEP = (v) => v.replace(/\D/g, '').replace(/(\d{5})(\d{3})/, '$1-$2').slice(0, 9);
   const optional = (v) => v === "" ? null : v;
+  const buildClientRegistrationLink = (token) => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return `${origin}${createPageUrl("CadastroClientePublico")}?token=${encodeURIComponent(token)}`;
+  };
 
   const handleUpload = async (file, field) => {
     if (!file) return;
@@ -210,18 +220,74 @@ export default function Cadastro() {
     setIsSaving(false);
   };
 
+  const openClientLinkModal = () => {
+    setClientLinkForm({ responsavel_nome: "", responsavel_email: "" });
+    setHasCopiedClientLink(false);
+    setShowClientLinkModal(true);
+  };
+
+  const handleCreateClientLink = async () => {
+    if (!clientLinkForm.responsavel_nome || !clientLinkForm.responsavel_email) {
+      setNotifyTitle("Campos obrigatórios");
+      setNotifyMessage("Preencha nome do responsável e email para gerar o link.");
+      setNotifyOpen(true);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const result = await clientRegistration({
+        action: "create_link",
+        responsavel_nome: clientLinkForm.responsavel_nome.trim(),
+        responsavel_email: clientLinkForm.responsavel_email.trim().toLowerCase(),
+        empresa_id: currentUser?.empresa_id || null,
+      });
+      const link = buildClientRegistrationLink(result?.link?.token);
+      setClientLinkValue(link);
+      setShowClientLinkModal(false);
+      setShowClientLinkFeedback(true);
+    } catch (error) {
+      setNotifyTitle("Erro");
+      setNotifyMessage(error?.message || "Não foi possível gerar o link de cadastro.");
+      setNotifyOpen(true);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const copyClientLink = async () => {
+    if (!clientLinkValue) return;
+    try {
+      await navigator.clipboard.writeText(clientLinkValue);
+      setHasCopiedClientLink(true);
+      window.setTimeout(() => setHasCopiedClientLink(false), 2000);
+    } catch (error) {
+      setNotifyTitle("Erro");
+      setNotifyMessage("Não foi possível copiar o link.");
+      setNotifyOpen(true);
+    }
+  };
+
   
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="mb-6 flex items-start gap-3">
-          <div className="mt-1">
-            <DogIcon className="w-6 h-6 text-orange-500" />
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="mt-1">
+              <DogIcon className="w-6 h-6 text-orange-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Cadastro</h1>
+              <p className="text-sm text-gray-600 mt-1">Gerenciamento de cadastros</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Cadastro</h1>
-            <p className="text-sm text-gray-600 mt-1">Gerenciamento de cadastros</p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={openClientLinkModal}>
+              <LinkIcon className="w-4 h-4 mr-2" />
+              Compartilhar link de cadastro
+            </Button>
           </div>
         </div>
 
@@ -421,6 +487,85 @@ export default function Cadastro() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={showClientLinkModal} onOpenChange={setShowClientLinkModal}>
+        <DialogContent className="w-[92vw] max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Compartilhar link de cadastro</DialogTitle>
+            <DialogDescription>
+              Gere um link para o cliente preencher responsável, cães e responsável financeiro em etapas.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Nome do responsável</Label>
+              <Input
+                value={clientLinkForm.responsavel_nome}
+                onChange={(event) => setClientLinkForm((current) => ({ ...current, responsavel_nome: event.target.value }))}
+                placeholder="Nome do responsável"
+              />
+            </div>
+            <div>
+              <Label>Email do responsável</Label>
+              <Input
+                type="email"
+                value={clientLinkForm.responsavel_email}
+                onChange={(event) => setClientLinkForm((current) => ({ ...current, responsavel_email: event.target.value }))}
+                placeholder="email@cliente.com"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClientLinkModal(false)}>Cancelar</Button>
+            <Button onClick={handleCreateClientLink} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white">
+              <LinkIcon className="w-4 h-4 mr-2" />
+              {isSaving ? "Gerando..." : "Gerar link"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showClientLinkFeedback} onOpenChange={setShowClientLinkFeedback}>
+        <DialogContent className="w-[92vw] max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Link gerado com sucesso</DialogTitle>
+            <DialogDescription>
+              Compartilhe este link com o cliente para que ele preencha a ficha de cadastro completa.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
+              O link abre um fluxo em etapas com responsável, cães e responsável financeiro.
+            </div>
+            <div>
+              <Label>Link do cadastro</Label>
+              <div className="mt-2 flex gap-2">
+                <Input value={clientLinkValue} readOnly />
+                <Button type="button" variant="outline" onClick={copyClientLink}>
+                  <Copy className="w-4 h-4" />
+                </Button>
+                <Button type="button" variant="outline" onClick={() => window.open(clientLinkValue, "_blank", "noopener,noreferrer")}>
+                  <ExternalLink className="w-4 h-4" />
+                </Button>
+              </div>
+              {hasCopiedClientLink ? (
+                <p className="mt-2 text-xs font-medium text-emerald-600">Link copiado.</p>
+              ) : null}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClientLinkFeedback(false)}>Fechar</Button>
+            <Button onClick={copyClientLink} className="bg-blue-600 hover:bg-blue-700 text-white">
+              <Copy className="w-4 h-4 mr-2" />
+              Copiar link
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={notifyOpen} onOpenChange={setNotifyOpen}>
         <DialogContent className="w-[92vw] max-w-[460px]">

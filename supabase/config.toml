@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.user-admin]
 verify_jwt = false
+
+[functions.client-registration]
+verify_jwt = false

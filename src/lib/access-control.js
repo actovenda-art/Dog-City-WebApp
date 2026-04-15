@@ -2,6 +2,7 @@ const PAGE_ACCESS_REQUIREMENTS = {
   Login: [],
   AuthCallback: [],
   CompletarCadastro: [],
+  CadastroClientePublico: [],
   VisualizadorImagem: [],
 
   Dev_Dashboard: ["platform:*", "usuarios:*", "usuarios:read", "usuarios:update"],

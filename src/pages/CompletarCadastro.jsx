@@ -60,7 +60,7 @@ function validateRegistrationForm(form) {
     || !form.contact_nickname
     || !form.emergency_contact
   ) {
-    return "Preencha todos os campos obrigatorios da ficha cadastral.";
+    return "Preencha todos os campos obrigatórios da ficha cadastral.";
   }
 
   return "";
@@ -145,7 +145,7 @@ export default function CompletarCadastro() {
         const inviteContext = await User.getInviteOnboardingContext?.({ token });
         const currentInvite = inviteContext?.invite || null;
         if (!currentInvite) {
-          throw new Error("Nao foi possivel localizar o convite.");
+          throw new Error("Não foi possível localizar o convite.");
         }
 
         setCurrentUser(null);
@@ -214,7 +214,7 @@ export default function CompletarCadastro() {
       }
     } catch (error) {
       console.error("Erro ao carregar cadastro complementar:", error);
-      setErrorMessage(error?.message || "Nao foi possivel carregar os dados do convite.");
+      setErrorMessage(error?.message || "Não foi possível carregar os dados do convite.");
     } finally {
       setIsLoading(false);
     }
@@ -247,7 +247,7 @@ export default function CompletarCadastro() {
       setPhotoPreviewUrl(signed?.signedUrl || signed?.url || "");
     } catch (error) {
       console.error("Erro ao enviar foto de perfil:", error);
-      setErrorMessage("Nao foi possivel enviar a foto de perfil.");
+      setErrorMessage("Não foi possível enviar a foto de perfil.");
     } finally {
       setIsUploading(false);
     }
@@ -322,7 +322,7 @@ export default function CompletarCadastro() {
       window.location.replace(nextPath);
     } catch (error) {
       console.error("Erro ao concluir cadastro:", error);
-      setErrorMessage(error?.message || "Nao foi possivel concluir o cadastro.");
+      setErrorMessage(error?.message || "Não foi possível concluir o cadastro.");
     } finally {
       setIsSaving(false);
     }
@@ -348,7 +348,7 @@ export default function CompletarCadastro() {
     }
 
     if (normalizedPin !== normalizedConfirmPin) {
-      setErrorMessage("A confirmacao nao corresponde ao PIN informado.");
+      setErrorMessage("A confirmação não corresponde ao PIN informado.");
       return;
     }
 
@@ -387,14 +387,14 @@ export default function CompletarCadastro() {
           await UserProfile.update(sessionUser.id, { profile_photo_path: file_key });
         } catch (photoError) {
           console.error("Erro ao enviar foto apos concluir convite:", photoError);
-          alert("Cadastro concluido, mas nao foi possivel enviar a foto de perfil. Voce pode anexar essa foto depois, dentro do sistema.");
+          alert("Cadastro concluído, mas não foi possível enviar a foto de perfil. Você pode anexar essa foto depois, dentro do sistema.");
         }
       }
 
       window.location.replace(nextPath);
     } catch (error) {
       console.error("Erro ao concluir onboarding do convite:", error);
-      setErrorMessage(error?.message || "Nao foi possivel concluir o convite.");
+      setErrorMessage(error?.message || "Não foi possível concluir o convite.");
     } finally {
       setIsSaving(false);
     }
@@ -424,7 +424,7 @@ export default function CompletarCadastro() {
                 </CardTitle>
                 <p className="mt-2 text-sm text-slate-600">
                   {isInviteFlow
-                    ? "Preencha sua ficha primeiro. Na etapa seguinte voce define o PIN e o acesso sera liberado automaticamente."
+                    ? "Preencha sua ficha primeiro. Na etapa seguinte você define o PIN e o acesso será liberado automaticamente."
                     : "Seus dados basicos do convite ja vieram preenchidos. Revise, complemente e salve para liberar o acesso ao sistema."}
                 </p>
               </div>
@@ -500,7 +500,7 @@ export default function CompletarCadastro() {
                       onChange={(event) => setForm((current) => ({ ...current, cep: formatCEP(event.target.value) }))}
                       className="mt-2"
                     />
-                    <p className="mt-1 text-xs text-slate-500">{addressLoading ? "Buscando endereco..." : "Rua, bairro, cidade e estado serao preenchidos pelo CEP."}</p>
+                    <p className="mt-1 text-xs text-slate-500">{addressLoading ? "Buscando endereço..." : "Rua, bairro, cidade e estado serão preenchidos pelo CEP."}</p>
                   </div>
                 </div>
 
@@ -637,7 +637,7 @@ export default function CompletarCadastro() {
                 <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
                   <p className="text-sm font-semibold text-orange-900">Quase pronto</p>
                   <p className="mt-1 text-sm text-orange-800">
-                    Seu cadastro foi preenchido. Agora defina um PIN de 6 numeros para concluir o primeiro acesso.
+                    Seu cadastro foi preenchido. Agora defina um PIN de 6 números para concluir o primeiro acesso.
                   </p>
                 </div>
 
@@ -674,7 +674,7 @@ export default function CompletarCadastro() {
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
                   <div className="flex items-start gap-2">
                     <KeyRound className="w-4 h-4 mt-0.5" />
-                    <span>O PIN deve conter 6 numeros e nao pode ser sequencial.</span>
+                    <span>O PIN deve conter 6 números e não pode ser sequencial.</span>
                   </div>
                 </div>
 

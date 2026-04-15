@@ -216,7 +216,7 @@ function calcularOrcamento(caes, dogs, precos) {
       const valorDayCare = getDayCareStandaloneValue(cao, precos);
       linhas.push({
         tipo: "day_care",
-        descricao: `Day Care Avulso (${cao.day_care_plano_ativo ? "cao com pacote ativo" : "cao sem pacote ativo"})`,
+            descricao: `Day Care Avulso (${cao.day_care_plano_ativo ? "cão com pacote ativo" : "cão sem pacote ativo"})`,
         valor: valorDayCare,
       });
       totalCao += valorDayCare;
@@ -227,7 +227,7 @@ function calcularOrcamento(caes, dogs, precos) {
       const valorAdaptacao = Number(precos.adaptacao || 0);
       linhas.push({
         tipo: "adaptacao",
-        descricao: "Adaptacao",
+            descricao: "Adaptação",
         valor: valorAdaptacao,
       });
       totalCao += valorAdaptacao;
@@ -979,7 +979,7 @@ export default function Orcamentos() {
                     <div className="mt-2 flex flex-wrap gap-2 pl-0 text-xs text-gray-500 sm:pl-13">
                       <span>Hospedagem: {formatCurrency(orcamento.subtotal_hospedagem)}</span>
                       <span>•</span>
-                      <span>Servicos: {formatCurrency(orcamento.subtotal_servicos)}</span>
+                      <span>Serviços: {formatCurrency(orcamento.subtotal_servicos)}</span>
                       <span>•</span>
                       <span>Transporte: {formatCurrency(orcamento.subtotal_transporte)}</span>
                     </div>
@@ -1001,7 +1001,7 @@ export default function Orcamentos() {
               {etapa === "resumo" && "Novo Orçamento - Revisão Final"}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              Fluxo de criacao de orçamento com busca ampla por destinatério financeiro, responsável e cão.
+              Fluxo de criação de orçamento com busca ampla por destinatário financeiro, responsável e cão.
             </DialogDescription>
           </DialogHeader>
 

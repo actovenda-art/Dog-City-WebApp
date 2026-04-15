@@ -83,7 +83,7 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
 
   if (isLikelyNetworkError(error)) {
     const wrapped = new Error(
-      'Nao foi possivel conectar ao servidor. Verifique sua internet e tente novamente. Se sua conexao estiver normal, o sistema pode estar temporariamente indisponivel.'
+      'Não foi possível conectar ao servidor. Verifique sua internet e tente novamente. Se sua conexão estiver normal, o sistema pode estar temporariamente indisponível.'
     );
     wrapped.code = error?.code || 'NETWORK_ERROR';
     wrapped.cause = error;
@@ -921,7 +921,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         } catch (parseError) {
           details = '';
         }
-        const baseMessage = details || error.message || 'Falha na administracao de usuarios.';
+        const baseMessage = details || error.message || 'Falha na administração de usuários.';
         const shouldHintDeploy = /edge function|failed to send a request|non-2xx|not found/i.test(baseMessage);
         throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function user-admin no Supabase.` : baseMessage);
       }
@@ -1272,18 +1272,20 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       if (error) throw error;
       return data;
     },
-    signInWithPinPairs: async ({ email, selectedPairs } = {}) => {
+    signInWithPinPairs: async ({ email, selectedPairs, selectedDigits, pin } = {}) => {
       const result = await supabaseFunctions.userAdmin({
         action: 'pin_login',
         email,
         selected_pairs: selectedPairs,
+        selected_digits: selectedDigits,
+        pin,
         device_id: getOrCreateDeviceId(),
       });
 
       const accessToken = result?.session?.access_token;
       const refreshToken = result?.session?.refresh_token;
       if (!accessToken || !refreshToken) {
-        throw new Error('A autenticacao por PIN nao retornou uma sessao valida.');
+        throw new Error('A autenticação por PIN não retornou uma sessão válida.');
       }
 
       const { error } = await supabase.auth.setSession({
@@ -1325,10 +1327,12 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       }
       return data;
     },
-    verifyCurrentDevicePin: async ({ selectedPairs } = {}) => {
+    verifyCurrentDevicePin: async ({ selectedPairs, selectedDigits, pin } = {}) => {
       const result = await supabaseFunctions.userAdmin({
         action: 'verify_pin',
         selected_pairs: selectedPairs,
+        selected_digits: selectedDigits,
+        pin,
         device_id: getOrCreateDeviceId(),
       });
 
@@ -1382,7 +1386,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const accessToken = result?.session?.access_token;
       const refreshToken = result?.session?.refresh_token;
       if (!accessToken || !refreshToken) {
-        throw new Error('A conclusao do convite nao retornou uma sessao valida.');
+        throw new Error('A conclusão do convite não retornou uma sessão válida.');
       }
 
       const { error } = await supabase.auth.setSession({

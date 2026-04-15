@@ -135,6 +135,15 @@ function normalizeSelectedPairs(value: unknown) {
     .filter((pair) => pair.length === 2);
 }
 
+function normalizeSelectedDigits(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => sanitizeText(item).replace(/\D/g, "").slice(0, 1))
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
 function buildPinCandidates(selectedPairs: string[][]) {
   if (!selectedPairs.length) return [];
 
@@ -1176,14 +1185,16 @@ async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) 
 
 async function handlePinLogin(payload: Record<string, unknown>) {
   const email = sanitizeText(payload.email).toLowerCase();
+  const submittedPin = normalizePin(payload.pin);
+  const selectedDigits = normalizeSelectedDigits(payload.selected_digits);
   const selectedPairs = normalizeSelectedPairs(payload.selected_pairs);
 
   if (!email) {
     return jsonResponse({ error: "Email obrigatorio." }, 400);
   }
 
-  if (selectedPairs.length !== 6) {
-    return jsonResponse({ error: "Selecione os 6 pares do PIN." }, 400);
+  if (submittedPin.length !== 6 && selectedDigits.length !== 6 && selectedPairs.length !== 6) {
+    return jsonResponse({ error: "Informe os 6 digitos do PIN." }, 400);
   }
 
   let appUser = await loadAppUserByEmail(email);
@@ -1220,7 +1231,12 @@ async function handlePinLogin(payload: Record<string, unknown>) {
     }, 409);
   }
 
-  const candidates = buildPinCandidates(selectedPairs);
+  const candidates = submittedPin.length === 6
+    ? [submittedPin]
+    : selectedDigits.length === 6
+      ? [selectedDigits.join("")]
+      : buildPinCandidates(selectedPairs);
+
   for (const candidate of candidates) {
     const result = await signInWithPassword(email, candidate);
     if (!result.ok || !result?.payload?.access_token || !result?.payload?.user?.id) {
@@ -1248,6 +1264,8 @@ async function handlePinLogin(payload: Record<string, unknown>) {
 
 async function handleVerifyPin(request: Request, payload: Record<string, unknown>) {
   const ctx = await getRequestContext(request);
+  const submittedPin = normalizePin(payload.pin);
+  const selectedDigits = normalizeSelectedDigits(payload.selected_digits);
   const selectedPairs = normalizeSelectedPairs(payload.selected_pairs);
 
   if (!ctx.authUser?.id || !ctx.authUser?.email) {
@@ -1258,11 +1276,16 @@ async function handleVerifyPin(request: Request, payload: Record<string, unknown
     return jsonResponse({ error: "Este acesso foi bloqueado. Fale com a administracao." }, 403);
   }
 
-  if (selectedPairs.length !== 6) {
-    return jsonResponse({ error: "Selecione os 6 pares do PIN." }, 400);
+  if (submittedPin.length !== 6 && selectedDigits.length !== 6 && selectedPairs.length !== 6) {
+    return jsonResponse({ error: "Informe os 6 digitos do PIN." }, 400);
   }
 
-  const candidates = buildPinCandidates(selectedPairs);
+  const candidates = submittedPin.length === 6
+    ? [submittedPin]
+    : selectedDigits.length === 6
+      ? [selectedDigits.join("")]
+      : buildPinCandidates(selectedPairs);
+
   for (const candidate of candidates) {
     const result = await signInWithPassword(ctx.authUser.email, candidate);
     if (!result.ok || !result?.payload?.user?.id) {

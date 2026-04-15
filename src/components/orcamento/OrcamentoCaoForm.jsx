@@ -90,7 +90,7 @@ export default function OrcamentoCaoForm({
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Dog className="h-5 w-5 text-blue-600" />
-            Cao {index + 1}
+            Cão {index + 1}
           </CardTitle>
           {canRemove && (
             <Button
@@ -107,7 +107,7 @@ export default function OrcamentoCaoForm({
 
       <CardContent className="space-y-5">
         <div>
-          <Label>Selecionar Cao *</Label>
+                <Label>Selecionar Cão *</Label>
           <Select value={cao.dog_id} onValueChange={(value) => handleChange("dog_id", value)}>
             <SelectTrigger className="mt-1">
               <SelectValue placeholder="Escolha o cão" />
@@ -147,8 +147,8 @@ export default function OrcamentoCaoForm({
 
           <div className="flex items-center justify-between rounded-lg bg-sky-50 p-3">
             <div>
-              <Label className="text-sm font-medium">Adaptacao</Label>
-              <p className="text-xs text-gray-500">Sessao avulsa com horario definido</p>
+              <Label className="text-sm font-medium">Adaptação</Label>
+              <p className="text-xs text-gray-500">Sessão avulsa com horário definido</p>
             </div>
             <Switch
               checked={cao.servicos?.adaptacao || false}
@@ -159,7 +159,7 @@ export default function OrcamentoCaoForm({
           <div className="flex items-center justify-between rounded-lg bg-cyan-50 p-3">
             <div>
               <Label className="text-sm font-medium">Banho</Label>
-              <p className="text-xs text-gray-500">Servico por raca</p>
+              <p className="text-xs text-gray-500">Serviço por raça</p>
             </div>
             <Switch
               checked={cao.servicos?.banho || false}
@@ -202,7 +202,7 @@ export default function OrcamentoCaoForm({
 
             <div className="flex items-center justify-between rounded-lg bg-white p-3">
               <div>
-                <Label className="text-sm font-medium">Cao com pacote de Day Care ativo?</Label>
+              <Label className="text-sm font-medium">Cão com pacote de Day Care ativo?</Label>
                 <p className="text-xs text-gray-500">Aplica o valor avulso reduzido para clientes com pacote em vigor.</p>
               </div>
               <Switch
@@ -221,7 +221,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de entrada</Label>
+                <Label>Horário de entrada</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.day_care_horario_entrada}
@@ -229,7 +229,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de saida</Label>
+                <Label>Horário de saída</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.day_care_horario_saida}
@@ -244,7 +244,7 @@ export default function OrcamentoCaoForm({
                 className="mt-1"
                 value={cao.day_care_observacoes || ""}
                 onChange={(event) => handleChange("day_care_observacoes", event.target.value)}
-                placeholder="Ex.: socializacao, gasto de energia, horario especial"
+                placeholder="Ex.: socialização, gasto de energia, horário especial"
               />
             </div>
           </div>
@@ -273,7 +273,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de entrada</Label>
+                <Label>Horário de entrada</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.hosp_horario_entrada}
@@ -281,7 +281,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Data de saida</Label>
+                <Label>Data de saída</Label>
                 <DatePickerInput
                   className="mt-1"
                   value={cao.hosp_data_saida}
@@ -289,7 +289,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de saida</Label>
+                <Label>Horário de saída</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.hosp_horario_saida}
@@ -362,7 +362,7 @@ export default function OrcamentoCaoForm({
         {cao.servicos?.adaptacao && (
           <div className="space-y-4 rounded-lg border border-sky-100 bg-sky-50/50 p-4">
             <div className="rounded-lg bg-white p-3">
-              <p className="text-sm font-medium text-gray-900">Adaptacao</p>
+              <p className="text-sm font-medium text-gray-900">Adaptação</p>
               <p className="mt-1 text-xs text-gray-500">
                 Valor configurado: {formatCurrency(precos?.adaptacao ?? 0)}
               </p>
@@ -378,7 +378,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de inicio</Label>
+                <Label>Horário de início</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.adaptacao_horario_entrada}
@@ -386,7 +386,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de termino</Label>
+                <Label>Horário de término</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.adaptacao_horario_saida}
@@ -396,7 +396,7 @@ export default function OrcamentoCaoForm({
             </div>
 
             <div>
-              <Label>Observacoes da adaptacao</Label>
+              <Label>Observações da adaptação</Label>
               <Textarea
                 className="mt-1"
                 value={cao.adaptacao_observacoes || ""}
@@ -412,7 +412,7 @@ export default function OrcamentoCaoForm({
           <div className="space-y-4 rounded-lg border border-cyan-100 bg-cyan-50/50 p-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <Label>Raca para banho</Label>
+                <Label>Raça para banho</Label>
                 <Input
                   className="mt-1"
                   value={cao.banho_raca || selectedDog?.raca || ""}
@@ -439,7 +439,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de termino</Label>
+                <Label>Horário de término</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.banho_horario_saida}
@@ -455,7 +455,7 @@ export default function OrcamentoCaoForm({
                 value={cao.banho_observacoes || ""}
                 onChange={(event) => handleChange("banho_observacoes", event.target.value)}
                 rows={3}
-                placeholder="Ex.: o cao estava mais agitado hoje"
+                placeholder="Ex.: o cão estava mais agitado hoje"
               />
             </div>
 
@@ -474,7 +474,7 @@ export default function OrcamentoCaoForm({
               <div className="flex items-center justify-between rounded-lg bg-white p-3">
                 <div>
                   <Label className="text-sm font-medium">Do pacote</Label>
-                  <p className="text-xs text-gray-500">Marcacao visual</p>
+              <p className="text-xs text-gray-500">Marcação visual</p>
                 </div>
                 <Switch
                   checked={cao.banho_do_pacote}
@@ -497,7 +497,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de inicio</Label>
+                <Label>Horário de início</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.tosa_horario_entrada}
@@ -505,7 +505,7 @@ export default function OrcamentoCaoForm({
                 />
               </div>
               <div>
-                <Label>Horario de termino</Label>
+                <Label>Horário de término</Label>
                 <TimePickerInput
                   className="mt-1"
                   value={cao.tosa_horario_saida}
@@ -561,7 +561,7 @@ export default function OrcamentoCaoForm({
               <div className="flex items-center justify-between rounded-lg bg-white p-3">
                 <div>
                   <Label className="text-sm font-medium">Do pacote</Label>
-                  <p className="text-xs text-gray-500">Marcacao visual</p>
+              <p className="text-xs text-gray-500">Marcação visual</p>
                 </div>
                 <Switch
                   checked={cao.tosa_do_pacote}

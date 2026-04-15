@@ -4,8 +4,10 @@ import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, User } fr
 import {
   buildDogOwnerIndex,
   buildReceivablePayload,
+  doesAppointmentOccurOnDate,
   filterAppointmentsByApprovedOrcamentos,
   getAppointmentDateKey,
+  getAppointmentEndDateKey,
   getAppointmentMeta,
   getChargeTypeLabel,
   getServiceLabel,
@@ -26,6 +28,22 @@ import { AlertTriangle, Calendar, ClipboardList, RefreshCw, Search, Tag } from "
 function formatDate(value) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(value));
+}
+
+function formatAppointmentPeriod(appointment) {
+  const startDateKey = getAppointmentDateKey(appointment);
+  if (!startDateKey) return "-";
+
+  if (appointment?.service_type !== "hospedagem") {
+    return formatDate(startDateKey);
+  }
+
+  const endDateKey = getAppointmentEndDateKey(appointment);
+  if (!endDateKey || endDateKey === startDateKey) {
+    return formatDate(startDateKey);
+  }
+
+  return `${formatDate(startDateKey)} atÃ© ${formatDate(endDateKey)}`;
 }
 
 function addDays(dateKey, days) {
@@ -128,9 +146,8 @@ export default function Agendamentos() {
     return visibleAppointments.filter((appointment) => {
       const dog = dogsById[appointment.dog_id];
       const owner = ownerByDogId[appointment.dog_id] || {};
-      const dateKey = getAppointmentDateKey(appointment);
       const matchSearch = !searchTerm || appointmentMatchesSearch(appointment, dog, owner, searchTerm);
-      const matchDate = !filterDate || dateKey === filterDate;
+      const matchDate = !filterDate || doesAppointmentOccurOnDate(appointment, filterDate);
       const matchService = filterService === "all" || appointment.service_type === filterService;
       const matchStatus = filterStatus === "all" || appointment.status === filterStatus || appointment.charge_type === filterStatus;
       return matchSearch && matchDate && matchService && matchStatus;
@@ -141,7 +158,7 @@ export default function Agendamentos() {
     const todayKey = new Date().toISOString().slice(0, 10);
     return {
       total: visibleAppointments.length,
-      hoje: visibleAppointments.filter((appointment) => getAppointmentDateKey(appointment) === todayKey).length,
+      hoje: visibleAppointments.filter((appointment) => doesAppointmentOccurOnDate(appointment, todayKey)).length,
       pendencias: pendingCommercialAppointments.length,
       presentes: visibleAppointments.filter((appointment) => appointment.status === "presente").length,
     };
@@ -315,7 +332,7 @@ export default function Agendamentos() {
                           {dog?.nome || "Cão"} - {getServiceLabel(appointment.service_type)}
                         </p>
                         <p className="mt-1 text-sm text-gray-600">
-                          {owner.nome || "Responsável não identificado"} - {formatDate(getAppointmentDateKey(appointment))}
+                          {owner.nome || "Responsável não identificado"} - {formatAppointmentPeriod(appointment)}
                         </p>
                         <p className="mt-2 text-sm text-rose-900">
                           {meta.checkin_id ? "Existe check-in aberto sem check-out. Revise no Registrador antes de confirmar a falta." : "Não houve check-in/check-out registrado para esse atendimento."}
@@ -363,7 +380,7 @@ export default function Agendamentos() {
                           {dog?.nome || "Cão"} • {getServiceLabel(appointment.service_type)}
                         </p>
                         <p className="mt-1 text-sm text-gray-600">
-                          {owner.nome || "Responsável não identificado"} • {formatDate(getAppointmentDateKey(appointment))}
+                          {owner.nome || "Responsável não identificado"} • {formatAppointmentPeriod(appointment)}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -479,7 +496,7 @@ export default function Agendamentos() {
                         </Badge>
                       </div>
                       <p className="mt-1 text-sm text-gray-600">
-                        {owner.nome || "Responsável não identificado"} • {formatDate(getAppointmentDateKey(appointment))}
+                        {owner.nome || "Responsável não identificado"} • {formatAppointmentPeriod(appointment)}
                       </p>
                       <p className="mt-1 text-xs text-gray-500">
                         Origem: {appointment.source_type || "manual"} {appointment.valor_previsto ? `• Previsto ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(appointment.valor_previsto)}` : ""}

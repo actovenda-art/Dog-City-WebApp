@@ -5,6 +5,7 @@ import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import {
   buildDogOwnerIndex,
   buildReceivablePayload,
+  doesAppointmentOccurOnDate,
   filterAppointmentsByApprovedOrcamentos,
   getAppointmentDateKey,
   getAppointmentMeta,
@@ -346,7 +347,7 @@ export default function Registrador() {
   const dayAppointments = useMemo(() => {
     return visibleAppointments
       .filter((appointment) => {
-        if (getAppointmentDateKey(appointment) !== selectedDate) return false;
+        if (!doesAppointmentOccurOnDate(appointment, selectedDate)) return false;
         if (appointment.status === "cancelado" || appointment.status === "desconsiderado") return false;
         if (selectedDate < TODAY_KEY) {
           return Boolean(finalizedCheckinByAppointmentId[appointment.id] || appointment.status === "finalizado");
@@ -661,25 +662,25 @@ export default function Registrador() {
   async function submitCheckin() {
     if (!selectedAppointment) return;
     if (!checkinForm.monitor_id || !checkinForm.entregador_nome || !checkinForm.pertences_entrada_foto_url) {
-      openNotify("Campos obrigatorios", "Informe monitor, responsável pela entrega e foto dos pertences.");
+      openNotify("Campos obrigatórios", "Informe monitor, responsável pela entrega e foto dos pertences.");
       return;
     }
     if (checkinForm.tarefa_lembrete && !checkinForm.tarefa_lembrete_setor) {
-      openNotify("Campos obrigatorios", "Selecione o setor que deve receber o lembrete.");
+      openNotify("Campos obrigatórios", "Selecione o setor que deve receber o lembrete.");
       return;
     }
     if (checkinForm.tarefa_lembrete) {
       if (selectedAppointmentRequiresReminderDateTime && !checkinForm.tarefa_lembrete_datetime) {
-        openNotify("Campos obrigatorios", "Informe a data e o horário do lembrete para hospedagem.");
+        openNotify("Campos obrigatórios", "Informe a data e o horário do lembrete para hospedagem.");
         return;
       }
       if (!selectedAppointmentRequiresReminderDateTime && !checkinForm.tarefa_lembrete_horario) {
-        openNotify("Campos obrigatorios", "Informe o horário para notificar o lembrete.");
+        openNotify("Campos obrigatórios", "Informe o horário para notificar o lembrete.");
         return;
       }
     }
     if ((checkinForm.tarefa_lembrete_horario || checkinForm.tarefa_lembrete_datetime || checkinForm.tarefa_lembrete_setor) && !checkinForm.tarefa_lembrete) {
-      openNotify("Campos obrigatorios", "Escreva o lembrete antes de definir data, horário ou setor.");
+      openNotify("Campos obrigatórios", "Escreva o lembrete antes de definir data, horário ou setor.");
       return;
     }
 
@@ -809,7 +810,7 @@ export default function Registrador() {
   async function submitCheckout() {
     if (!selectedAppointment || !selectedCheckin) return;
     if (!checkoutForm.monitor_id || !checkoutForm.retirador_nome || !checkoutForm.pertences_saida_foto_url) {
-      openNotify("Campos obrigatorios", "Informe quem buscou o cao, o monitor da entrega e a foto dos itens devolvidos.");
+      openNotify("Campos obrigatórios", "Informe quem buscou o cão, o monitor da entrega e a foto dos itens devolvidos.");
       return;
     }
 
@@ -856,7 +857,7 @@ export default function Registrador() {
   async function submitMeal() {
     if (!selectedCheckin) return;
     if (!mealForm.monitor_id || !mealForm.percentual_consumido || !mealForm.foto_refeicao_url || !mealForm.selfie_monitor_url) {
-      openNotify("Campos obrigatorios", "Complete monitor, percentual consumido, foto da refeição e selfie.");
+      openNotify("Campos obrigatórios", "Complete monitor, percentual consumido, foto da refeição e selfie.");
       return;
     }
 
@@ -893,7 +894,7 @@ export default function Registrador() {
   async function submitAdaptacaoRegistro() {
     if (!selectedCheckin) return;
     if (!adaptacaoRegistroForm.monitor_id || !adaptacaoRegistroForm.observacoes.trim()) {
-      openNotify("Campos obrigatorios", "Informe o monitor e descreva a evolucao da adaptacao.");
+      openNotify("Campos obrigatórios", "Informe o monitor e descreva a evolução da adaptação.");
       return;
     }
 
@@ -921,10 +922,10 @@ export default function Registrador() {
 
       await loadData();
       setShowAdaptacaoDialog(false);
-      openNotify("Registro adicionado", "A evolucao da adaptacao foi registrada com sucesso.");
+      openNotify("Registro adicionado", "A evolução da adaptação foi registrada com sucesso.");
     } catch (error) {
       console.error("Erro ao registrar adaptacao:", error);
-      openNotify("Erro", error?.message || "Nao foi possivel salvar o registro da adaptacao.");
+      openNotify("Erro", error?.message || "Não foi possível salvar o registro da adaptação.");
     }
     setIsSaving(false);
   }
@@ -989,7 +990,7 @@ export default function Registrador() {
       appointment,
       dog,
       tipo: "agendamento_manual_pendente",
-      titulo: "Agendamento manual aguardando classificao",
+      titulo: "Agendamento manual aguardando classificação",
       mensagem: `${getDogDisplayName(dog)} (${getServiceLabel(appointment.service_type)}) precisa ser classificado como pacote ou avulso.`,
       link: `${createPageUrl("Agendamentos")}?review=${appointment.id}`,
     });
@@ -997,7 +998,7 @@ export default function Registrador() {
 
   async function submitManualAppointment() {
     if (!manualForm.dog_id || !manualForm.service_type) {
-      openNotify("Campos obrigatorios", "Selecione o cão e o serviço.");
+      openNotify("Campos obrigatórios", "Selecione o cão e o serviço.");
       return;
     }
     if (!canAddManualAppointment) {
@@ -1102,7 +1103,7 @@ export default function Registrador() {
         status: "finalizado",
       });
       await loadData();
-      openNotify("Saida registrada", "Check-out do prestador concluido.");
+      openNotify("Saída registrada", "Check-out do prestador concluído.");
     } catch (error) {
       console.error("Erro ao registrar saida do prestador:", error);
       openNotify("Erro", error?.message || "Não foi possível concluir a saída.");
@@ -1280,12 +1281,12 @@ export default function Registrador() {
                             )}
                             {appointment.service_type === "adaptacao" && Boolean(getAppointmentTimeValue(appointment, "saida")) && (
                               <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-                                Termino previsto da adaptacao: <strong>{getAppointmentTimeValue(appointment, "saida")}</strong>
+                                Término previsto da adaptação: <strong>{getAppointmentTimeValue(appointment, "saida")}</strong>
                               </div>
                             )}
                             {adaptacaoRegistros.length > 0 && (
                               <div className="mt-3 space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
-                                <p className="text-sm font-medium text-sky-900">Registros da adaptacao</p>
+                                <p className="text-sm font-medium text-sky-900">Registros da adaptação</p>
                                 {adaptacaoRegistros.slice(-3).reverse().map((registro, registroIndex) => (
                                   <div key={`${registro.created_at || registro.registro_datetime || "registro"}-${registroIndex}`} className="text-sm text-sky-900">
                                     <p className="font-medium">
@@ -1325,7 +1326,7 @@ export default function Registrador() {
                               {mealEnabled && (
                                 <Button variant="outline" onClick={() => openMealDialogForCheckin(appointment, activeCheckin)}>
                                   <UtensilsCrossed className="mr-2 h-4 w-4" />
-                                  Refeicao {mealCount > 0 ? `(${mealCount})` : ""}
+                  Refeição {mealCount > 0 ? `(${mealCount})` : ""}
                                 </Button>
                               )}
                               <Button onClick={() => openCheckoutDialogForCheckin(appointment, activeCheckin)} className="bg-slate-900 text-white hover:bg-slate-800">
@@ -1348,7 +1349,7 @@ export default function Registrador() {
                       <div>
                         <p className="font-semibold text-blue-900">Nenhum agendamento encontrado para {selectedDateTitle.toLowerCase()}.</p>
                         <p className="mt-1 text-sm text-blue-800">
-                          Você pode incluir manualmente o atendimento e liberar a classificacao comercial depois.
+                          Você pode incluir manualmente o atendimento e liberar a classificação comercial depois.
                         </p>
                       </div>
                       <Button onClick={() => openManualDialogForDog(matchedDogsWithoutAppointments[0])} className="bg-green-600 text-white hover:bg-green-700">
@@ -1728,7 +1729,7 @@ export default function Registrador() {
                 Tirar foto dos itens devolvidos
               </Button>
               {checkoutForm.pertences_saida_foto_url && (
-                <button type="button" onClick={() => handleAttachmentPreview(checkoutForm.pertences_saida_foto_url, "Pertences na saida")} className="mt-2 text-sm text-blue-600">
+            <button type="button" onClick={() => handleAttachmentPreview(checkoutForm.pertences_saida_foto_url, "Pertences na saída")} className="mt-2 text-sm text-blue-600">
                   Ver imagem enviada
                 </button>
               )}
@@ -1850,15 +1851,15 @@ export default function Registrador() {
       <Dialog open={showAdaptacaoDialog} onOpenChange={setShowAdaptacaoDialog}>
         <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Adicionar registro da adaptacao</DialogTitle>
+            <DialogTitle>Adicionar registro da adaptação</DialogTitle>
             <DialogDescription>
-              Registre a evolucao observada durante o dia para este atendimento de adaptacao.
+              Registre a evolução observada durante o dia para este atendimento de adaptação.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label>Data e horario do registro</Label>
+                <Label>Data e horário do registro</Label>
                 <DateTimePickerInput
                   value={adaptacaoRegistroForm.registro_datetime}
                   onChange={(value) => setAdaptacaoRegistroForm((current) => ({ ...current, registro_datetime: value }))}
@@ -1909,7 +1910,7 @@ export default function Registrador() {
             <DialogHeader>
               <DialogTitle>Incluir manualmente</DialogTitle>
               <DialogDescription>
-                Selecione o cao e o servico para incluir um agendamento avulso em {selectedDateTitle.toLowerCase()}.
+                Selecione o cão e o serviço para incluir um agendamento avulso em {selectedDateTitle.toLowerCase()}.
               </DialogDescription>
             </DialogHeader>
           <div className="grid gap-4 py-2">

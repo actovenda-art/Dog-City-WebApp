@@ -26,11 +26,11 @@ export function validatePin(pin) {
   const normalized = normalizePin(pin);
 
   if (normalized.length !== 6) {
-    return "A senha deve conter 6 numeros.";
+    return "A senha deve conter 6 números.";
   }
 
   if (isSequentialPin(normalized)) {
-    return "A senha nao pode ser sequencial.";
+    return "A senha não pode ser sequencial.";
   }
 
   return "";

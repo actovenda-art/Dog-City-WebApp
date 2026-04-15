@@ -213,7 +213,7 @@ function formatAccountingSummary(value) {
       .map((item) => `${item.finalidade || "Email"}: ${item.email}${item.nome ?` | ${item.nome}` : ""}`),
   ];
 
-  return lines.length > 0 ? lines.join("\n") : "NÃ£o informado";
+  return lines.length > 0 ? lines.join("\n") : "Não informado";
 }
 
 function formatAddressSummary(value) {
@@ -225,7 +225,7 @@ function formatAddressSummary(value) {
   const mainLine = [address.street, address.number].filter(Boolean).join(", ");
   const secondaryLine = [address.neighborhood, address.city, address.state].filter(Boolean).join(" - ");
   const lines = [mainLine, secondaryLine, address.cep].filter(Boolean);
-  return lines.length > 0 ? lines.join("\n") : "NÃ£o informado";
+  return lines.length > 0 ? lines.join("\n") : "Não informado";
 }
 
 function formatDisplayDate(value) {
@@ -345,13 +345,13 @@ export default function AdministracaoSistema() {
         });
       }
     } catch (error) {
-      console.error("Erro ao carregar administraÃ§Ã£o:", error);
+      console.error("Erro ao carregar administração:", error);
       if (isMissingAdminTablesError(error)) {
-        setSetupError("A estrutura administrativa ainda nÃ£o existe no Supabase. Execute `supabase-schema-admin-multiempresa.sql`, `supabase-schema-cloud-config.sql` e `supabase-seed-admin-config.sql`.");
+        setSetupError("A estrutura administrativa ainda não existe no Supabase. Execute `supabase-schema-admin-multiempresa.sql`, `supabase-schema-cloud-config.sql` e `supabase-seed-admin-config.sql`.");
       } else if (isRowLevelSecurityError(error)) {
         setSetupError("O Supabase bloqueou leitura ou escrita por RLS nas tabelas administrativas. Ajuste as policies antes de continuar.");
       } else {
-        setSetupError(error?.message || "NÃ£o foi possÃ­vel carregar a administraÃ§Ã£o central.");
+        setSetupError(error?.message || "Não foi possível carregar a administração central.");
       }
     } finally {
       setIsLoading(false);
@@ -612,7 +612,7 @@ export default function AdministracaoSistema() {
       }));
     } catch (error) {
       console.error("Erro ao enviar contrato social:", error);
-      alert(formatApiError(error, "NÃ£o foi possÃ­vel enviar o contrato social."));
+      alert(formatApiError(error, "Não foi possível enviar o contrato social."));
     } finally {
       setIsUploadingUnitAsset(false);
     }
@@ -635,7 +635,7 @@ export default function AdministracaoSistema() {
       }));
     } catch (error) {
       console.error("Erro ao enviar logo da unidade:", error);
-      alert(formatApiError(error, "NÃ£o foi possÃ­vel enviar a logo da unidade."));
+      alert(formatApiError(error, "Não foi possível enviar a logo da unidade."));
     } finally {
       setIsUploadingUnitAsset(false);
     }
@@ -649,7 +649,7 @@ export default function AdministracaoSistema() {
       window.open(signedUrl || url, "_blank", "noopener,noreferrer");
     } catch (error) {
       console.error("Erro ao abrir contrato social:", error);
-      alert(formatApiError(error, "NÃ£o foi possÃ­vel abrir o contrato social."));
+      alert(formatApiError(error, "Não foi possível abrir o contrato social."));
     }
   }
 
@@ -698,7 +698,7 @@ export default function AdministracaoSistema() {
 
   async function handleSaveUnit() {
     if (!unitForm.nome_fantasia || !unitForm.razao_social || !unitForm.cnpj) {
-      alert("Preencha nome fantasia, razÃ£o social e CNPJ.");
+      alert("Preencha nome fantasia, razão social e CNPJ.");
       return;
     }
 
@@ -767,7 +767,7 @@ export default function AdministracaoSistema() {
       notifyBrandingChanged();
     } catch (error) {
       console.error("Erro ao salvar unidade:", error);
-      alert(formatApiError(error, "NÃ£o foi possÃ­vel salvar a unidade."));
+      alert(formatApiError(error, "Não foi possível salvar a unidade."));
     } finally {
       setIsSaving(false);
     }
@@ -775,7 +775,7 @@ export default function AdministracaoSistema() {
 
   async function handleSaveProfile() {
     if (!profileForm.codigo || !profileForm.nome) {
-      alert("Preencha cÃ³digo e nome do perfil.");
+      alert("Preencha código e nome do perfil.");
       return;
     }
 
@@ -802,7 +802,7 @@ export default function AdministracaoSistema() {
       await loadData();
     } catch (error) {
       console.error("Erro ao salvar perfil:", error);
-      alert(formatApiError(error, "NÃ£o foi possÃ­vel salvar o perfil de acesso."));
+      alert(formatApiError(error, "Não foi possível salvar o perfil de acesso."));
     } finally {
       setIsSaving(false);
     }
@@ -810,7 +810,7 @@ export default function AdministracaoSistema() {
 
   async function handleDeleteProfile(profile) {
     if (!profile?.id) return;
-    if (!window.confirm(`Excluir o tipo de acesso "${profile.nome}"? Esta acao nao pode ser desfeita.`)) return;
+    if (!window.confirm(`Excluir o tipo de acesso "${profile.nome}"? Esta ação não pode ser desfeita.`)) return;
 
     setIsSaving(true);
     setActiveTab("acessos");
@@ -841,9 +841,9 @@ export default function AdministracaoSistema() {
       const isSilentPermissionBlock = rawMessage.includes("permaneceu salvo no banco");
 
       if (isInUseError) {
-        alert("Nao foi possivel excluir este tipo de acesso porque ele ainda esta vinculado a usuarios, convites ou acessos de unidade.");
+        alert("Não foi possível excluir este tipo de acesso porque ele ainda está vinculado a usuários, convites ou acessos de unidade.");
       } else if (isSilentPermissionBlock) {
-        alert("Nao foi possivel excluir este tipo de acesso. O registro continuou no banco, o que normalmente indica bloqueio por permissao ou regra do Supabase.");
+        alert("Não foi possível excluir este tipo de acesso. O registro continuou no banco, o que normalmente indica bloqueio por permissão ou regra do Supabase.");
       } else {
         alert(formatApiError(error, "NÃƒÂ£o foi possÃƒÂ­vel excluir o perfil de acesso."));
       }
@@ -880,7 +880,7 @@ export default function AdministracaoSistema() {
       notifyBrandingChanged();
     } catch (error) {
       console.error("Erro ao salvar branding:", error);
-      alert(formatApiError(error, "NÃ£o foi possÃ­vel salvar o branding."));
+      alert(formatApiError(error, "Não foi possível salvar o branding."));
     } finally {
       setIsSaving(false);
     }
@@ -918,7 +918,7 @@ export default function AdministracaoSistema() {
       notifyBrandingChanged();
     } catch (error) {
       console.error("Erro ao enviar logo da franquia:", error);
-      alert(formatApiError(error, "NÃ£o foi possÃ­vel enviar a logo da franquia."));
+      alert(formatApiError(error, "Não foi possível enviar a logo da franquia."));
     } finally {
       setIsUploadingFranchiseLogo(false);
     }
@@ -955,7 +955,7 @@ export default function AdministracaoSistema() {
       notifyBrandingChanged();
     } catch (error) {
       console.error("Erro ao enviar logo:", error);
-      alert(formatApiError(error, "NÃ£o foi possÃ­vel enviar a logo."));
+      alert(formatApiError(error, "Não foi possível enviar a logo."));
     } finally {
       setIsUploading(false);
     }
@@ -978,7 +978,7 @@ export default function AdministracaoSistema() {
               <Building2 className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">AdministraÃ§Ã£o Central</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Administração Central</h1>
               <p className="text-sm text-gray-600 mt-1">Dog City Brasil: unidades, perfis de acesso e branding em nuvem.</p>
             </div>
           </div>
@@ -987,13 +987,13 @@ export default function AdministracaoSistema() {
               Unidade em acesso
               <div className="mt-1 font-semibold text-gray-900">{selectedUnit?.nome_fantasia || "Nenhuma unidade ativa"}</div>
               {isUnitUnionActive ? (
-                <div className="mt-1 text-xs text-blue-600">{selectedUnitIds.length} unidades na visÃ£o unificada</div>
+                <div className="mt-1 text-xs text-blue-600">{selectedUnitIds.length} unidades na visão unificada</div>
               ) : null}
             </div>
             <Link to={createPageUrl("ConfiguracoesPrecos")}>
               <Button variant="outline">
                 <Tags className="w-4 h-4 mr-2" />
-                Configurar precos
+                Configurar preços
               </Button>
             </Link>
           </div>
@@ -1069,14 +1069,14 @@ export default function AdministracaoSistema() {
                               <Badge className="bg-blue-100 text-blue-700">Em acesso</Badge>
                             )}
                             {isMergedSelected && (
-                              <Badge className="bg-sky-100 text-sky-700">Na visÃ£o unificada</Badge>
+                              <Badge className="bg-sky-100 text-sky-700">Na visão unificada</Badge>
                             )}
                           </div>
 
                           <div>
-                            <p className="text-sm text-gray-700">{unit.razao_social || "RazÃ£o social nÃ£o cadastrada"}</p>
+                            <p className="text-sm text-gray-700">{unit.razao_social || "Razão social não cadastrada"}</p>
                             <p className="text-xs text-gray-500 mt-1">
-                              CÃ³digo: {unit.codigo || "-"} | Slug: {unit.slug || "-"} | CNPJ: {unit.cnpj || "-"}
+                              Código: {unit.codigo || "-"} | Slug: {unit.slug || "-"} | CNPJ: {unit.cnpj || "-"}
                             </p>
                           </div>
 
@@ -1087,25 +1087,25 @@ export default function AdministracaoSistema() {
                             </div>
                             <div className="rounded-lg border border-gray-200 bg-white p-3">
                               <p className="text-xs uppercase tracking-wide text-gray-400">Contabilidade</p>
-                              <p className="mt-1 font-medium text-gray-900">{unitMeta.contabilidade_responsavel || "NÃ£o informada"}</p>
+                              <p className="mt-1 font-medium text-gray-900">{unitMeta.contabilidade_responsavel || "Não informada"}</p>
                             </div>
                             <div className="rounded-lg border border-gray-200 bg-white p-3">
                               <p className="text-xs uppercase tracking-wide text-gray-400">Contato da contabilidade</p>
                               <p className="mt-1 text-gray-700 whitespace-pre-line">{formatAccountingSummary(unitMeta.contatos_contabilidade)}</p>
                             </div>
                             <div className="rounded-lg border border-gray-200 bg-white p-3">
-                              <p className="text-xs uppercase tracking-wide text-gray-400">EndereÃ§o</p>
+                              <p className="text-xs uppercase tracking-wide text-gray-400">Endereço</p>
                               <p className="mt-1 text-gray-700 whitespace-pre-line">{formatAddressSummary(unitMeta.endereco)}</p>
                             </div>
                           </div>
 
                           <div>
-                            <p className="text-xs uppercase tracking-wide text-gray-400">ServiÃ§os prestados</p>
+                            <p className="text-xs uppercase tracking-wide text-gray-400">Serviços prestados</p>
                             <div className="mt-2 flex flex-wrap gap-2">
                               {services.length > 0 ? services.map((service) => (
                                 <Badge key={service} variant="outline">{service}</Badge>
                               )) : (
-                                <span className="text-sm text-gray-500">Nenhum serviÃ§o vinculado.</span>
+                                <span className="text-sm text-gray-500">Nenhum serviço vinculado.</span>
                               )}
                             </div>
                           </div>
@@ -1129,7 +1129,7 @@ export default function AdministracaoSistema() {
                             </Button>
                           ) : (
                             <div className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-2 text-sm text-gray-500">
-                              Contrato social nÃ£o anexado.
+                              Contrato social não anexado.
                             </div>
                           )}
                         </div>
@@ -1169,8 +1169,8 @@ export default function AdministracaoSistema() {
                           {profile.ativo !== false ? "Ativo" : "Inativo"}
                         </Badge>
                       </div>
-                      <p className="text-sm text-gray-600 mt-1">{profile.descricao || "Sem descriÃ§Ã£o cadastrada."}</p>
-                      <p className="text-xs text-gray-500 mt-2">Escopo: {profile.escopo === "plataforma" ? "AdministraÃ§Ã£o central" : "Unidade"}</p>
+                      <p className="text-sm text-gray-600 mt-1">{profile.descricao || "Sem descrição cadastrada."}</p>
+                      <p className="text-xs text-gray-500 mt-2">Escopo: {profile.escopo === "plataforma" ? "Administração central" : "Unidade"}</p>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <Button variant="outline" onClick={() => openProfileModal(profile)}>
@@ -1207,7 +1207,7 @@ export default function AdministracaoSistema() {
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Logo usada no webapp</p>
                     <p className="mt-1 text-sm text-gray-600">
-                      A marca institucional do app Ã© fixa na franquia. A Ãºnica logo variÃ¡vel dentro do webapp Ã© a da unidade exibida no menu lateral.
+                      A marca institucional do app é fixa na franquia. A única logo variável dentro do webapp é a da unidade exibida no menu lateral.
                     </p>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -1236,7 +1236,7 @@ export default function AdministracaoSistema() {
                         Ver logo atual
                       </button>
                     ) : (
-                      <span className="text-sm text-gray-500">Este arquivo nÃ£o altera favicon, login nem carregamento do app.</span>
+                      <span className="text-sm text-gray-500">Este arquivo não altera favicon, login nem carregamento do app.</span>
                     )}
                   </div>
                   {franchiseBrandingForm.logoLabel ? (
@@ -1251,7 +1251,7 @@ export default function AdministracaoSistema() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Palette className="w-5 h-5 text-purple-600" />
-                    IdentificaÃ§Ã£o da unidade
+                    Identificação da unidade
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-5">
@@ -1274,7 +1274,7 @@ export default function AdministracaoSistema() {
 
                   <div>
                     <Label>Logo cadastral da unidade</Label>
-                    <p className="mt-1 text-xs text-gray-500">Esta logo fica apenas no cadastro da unidade. Ela nÃ£o altera o menu, login, favicon ou Ã­cone do app.</p>
+                    <p className="mt-1 text-xs text-gray-500">Esta logo fica apenas no cadastro da unidade. Ela não altera o menu, login, favicon ou ícone do app.</p>
                     <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-3">
                       <input
                         id="branding-logo-upload"
@@ -1305,7 +1305,7 @@ export default function AdministracaoSistema() {
                   <div className="flex justify-end">
                     <Button onClick={handleSaveBranding} disabled={isSaving || !selectedUnitId} className="bg-blue-600 hover:bg-blue-700 text-white">
                       <Save className="w-4 h-4 mr-2" />
-                      Salvar identificaÃ§Ã£o
+                      Salvar identificação
                     </Button>
                   </div>
                 </CardContent>
@@ -1318,8 +1318,8 @@ export default function AdministracaoSistema() {
                 <CardContent className="space-y-4">
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                     <p className="text-xs uppercase tracking-wide text-gray-500">Unidade</p>
-                    <p className="mt-2 font-semibold text-gray-900">{selectedUnit?.nome_fantasia || "NÃ£o selecionada"}</p>
-                    <p className="text-sm text-gray-600 mt-1">{selectedUnit?.razao_social || "Sem razÃ£o social cadastrada"}</p>
+                    <p className="mt-2 font-semibold text-gray-900">{selectedUnit?.nome_fantasia || "Não selecionada"}</p>
+                    <p className="text-sm text-gray-600 mt-1">{selectedUnit?.razao_social || "Sem razão social cadastrada"}</p>
                   </div>
 
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -1328,13 +1328,13 @@ export default function AdministracaoSistema() {
                   </div>
 
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500">EndereÃ§o</p>
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Endereço</p>
                     <p className="mt-2 text-sm text-gray-700 whitespace-pre-line">{formatAddressSummary(selectedUnitMeta.endereco)}</p>
                   </div>
 
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                     <p className="text-xs uppercase tracking-wide text-gray-500">Administrador atual</p>
-                    <p className="mt-2 text-sm text-gray-700">{currentUser?.full_name || currentUser?.email || "NÃ£o identificado"}</p>
+                    <p className="mt-2 text-sm text-gray-700">{currentUser?.full_name || currentUser?.email || "Não identificado"}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -1351,7 +1351,7 @@ export default function AdministracaoSistema() {
           <DialogHeader>
             <DialogTitle>Selecionar unidade</DialogTitle>
             <DialogDescription>
-              Deseja acessar esta unidade ou adicionar a seleÃ§Ã£o?
+              Deseja acessar esta unidade ou adicionar a seleção?
             </DialogDescription>
           </DialogHeader>
 
@@ -1386,13 +1386,13 @@ export default function AdministracaoSistema() {
           <DialogHeader>
             <DialogTitle>{editingProfile ? "Editar perfil de acesso" : "Novo perfil de acesso"}</DialogTitle>
             <DialogDescription>
-              Configure os perfis que serÃ¡o atribuÃ­dos aos usuÃ¡rios das unidades e da administraÃ§Ã£o central.
+              Configure os perfis que seráo atribuídos aos usuários das unidades e da administração central.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label>CÃ³digo</Label>
+                <Label>Código</Label>
                 <Input value={profileForm.codigo} onChange={(event) => setProfileForm((current) => ({ ...current, codigo: event.target.value }))} className="mt-2" />
               </div>
               <div>
@@ -1403,7 +1403,7 @@ export default function AdministracaoSistema() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="empresa">Unidade</SelectItem>
-                    <SelectItem value="plataforma">AdministraÃ§Ã£o central</SelectItem>
+                    <SelectItem value="plataforma">Administração central</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1415,7 +1415,7 @@ export default function AdministracaoSistema() {
             </div>
 
             <div>
-              <Label>DescriÃ§Ã£o</Label>
+              <Label>Descrição</Label>
               <Textarea value={profileForm.descricao} onChange={(event) => setProfileForm((current) => ({ ...current, descricao: event.target.value }))} className="mt-2" rows={2} />
             </div>
 
@@ -1435,7 +1435,7 @@ export default function AdministracaoSistema() {
               <Switch checked={profileForm.ativo} onCheckedChange={(checked) => setProfileForm((current) => ({ ...current, ativo: checked }))} />
               <div>
                 <p className="text-sm font-medium text-gray-900">Perfil ativo</p>
-                <p className="text-xs text-gray-500">Perfis inativos nÃ£o devem ser atribuÃ­dos a novos usuÃ¡rios.</p>
+                <p className="text-xs text-gray-500">Perfis inativos não devem ser atribuídos a novos usuários.</p>
               </div>
             </div>
           </div>
@@ -1460,7 +1460,7 @@ export default function AdministracaoSistema() {
           <DialogHeader>
             <DialogTitle>{editingUnit ? "Editar unidade" : "Cadastrar nova unidade"}</DialogTitle>
             <DialogDescription>
-              Cadastre a ficha institucional da unidade. Os dados extras ficam vinculados ao cadastro da unidade e sustentam branding, usuÃ¡rios, precos e integraÃ§Ãµes por contexto.
+              Cadastre a ficha institucional da unidade. Os dados extras ficam vinculados ao cadastro da unidade e sustentam branding, usuários, preços e integrações por contexto.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-5 py-4">
@@ -1474,7 +1474,7 @@ export default function AdministracaoSistema() {
                 />
               </div>
               <div>
-                <Label>RazÃ£o Social</Label>
+                <Label>Razão Social</Label>
                 <Input
                   value={unitForm.razao_social}
                   onChange={(event) => setUnitForm((current) => ({ ...current, razao_social: event.target.value }))}
@@ -1507,7 +1507,7 @@ export default function AdministracaoSistema() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div>
-                <Label>Contabilidade responsÃ¡vel</Label>
+                <Label>Contabilidade responsável</Label>
                 <Input
                   value={unitForm.contabilidade_responsavel}
                   onChange={(event) => setUnitForm((current) => ({ ...current, contabilidade_responsavel: event.target.value }))}
@@ -1587,9 +1587,9 @@ export default function AdministracaoSistema() {
 
             <div className="space-y-4 rounded-xl border border-gray-200 p-4">
               <div>
-                <Label>EndereÃ§o</Label>
+                <Label>Endereço</Label>
                 <p className="mt-1 text-xs text-gray-500">
-                  {unitAddressLoading ? "Buscando endereÃ§o..." : "Rua, bairro, cidade e estado serÃ¡o preenchidos pelo CEP."}
+                  {unitAddressLoading ? "Buscando endereço..." : "Rua, bairro, cidade e estado seráo preenchidos pelo CEP."}
                 </p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1614,7 +1614,7 @@ export default function AdministracaoSistema() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <Label>NÃºmero</Label>
+                  <Label>Número</Label>
                   <Input
                     value={unitForm.endereco.number}
                     onChange={(event) => updateUnitAddress("number", event.target.value)}
@@ -1722,7 +1722,7 @@ export default function AdministracaoSistema() {
             </div>
 
             <div>
-              <Label>ServiÃ§os prestados</Label>
+              <Label>Serviços prestados</Label>
               <div className="mt-3 flex flex-wrap gap-2">
                 {SERVICE_OPTIONS.map((service) => {
                   const selected = unitForm.servicos_prestados.includes(service);

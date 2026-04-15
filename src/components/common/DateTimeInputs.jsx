@@ -534,7 +534,7 @@ export function DateTimePickerInput({
             onClick={() => onChange?.("")}
           >
             <X className="mr-2 h-4 w-4" />
-            Limpar data e horario
+            Limpar data e horário
           </Button>
         </div>
       ) : null}

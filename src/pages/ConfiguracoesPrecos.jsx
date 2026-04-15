@@ -16,7 +16,7 @@ const SERVICE_TYPES = [
   { id: "hospedagem_mensalista", label: "Hospedagem (Mensalista)", category: "hospitalidade" },
   { id: "day_care_avulso_sem_pacote", label: "Day Care Avulso (Sem pacote ativo)", category: "hospitalidade" },
   { id: "day_care_avulso_com_pacote", label: "Day Care Avulso (Com pacote ativo)", category: "hospitalidade" },
-  { id: "adaptacao", label: "Adaptacao", category: "hospitalidade" },
+  { id: "adaptacao", label: "Adaptação", category: "hospitalidade" },
   { id: "pernoite", label: "Pernoite (Day Care de hospedagem)", category: "hospitalidade" },
   { id: "banho", label: "Banho", category: "banho" },
   { id: "tosa_higienica", label: "Tosa Higienica", category: "tosa" },
@@ -320,7 +320,7 @@ export default function ConfiguracoesPrecos() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Home className="h-5 w-5 text-blue-600" />
-                  Precos de hospedagem, Day Care e pernoite
+                  Preços de hospedagem, Day Care e pernoite
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -340,7 +340,7 @@ export default function ConfiguracoesPrecos() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Bath className="h-5 w-5 text-cyan-600" />
-                  Precos de banho por raca
+                  Preços de banho por raça
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -360,7 +360,7 @@ export default function ConfiguracoesPrecos() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Scissors className="h-5 w-5 text-purple-600" />
-                  Precos de tosa
+                  Preços de tosa
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -380,7 +380,7 @@ export default function ConfiguracoesPrecos() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Truck className="h-5 w-5 text-amber-600" />
-                  Precos de transporte
+                  Preços de transporte
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -450,13 +450,13 @@ export default function ConfiguracoesPrecos() {
 
             {(formData.tipo?.includes("banho") || formData.tipo?.includes("tosa")) && (
               <div>
-                <Label>Raca</Label>
+                <Label>Raça</Label>
                 <Select value={formData.raca || "all"} onValueChange={(value) => setFormData((prev) => ({ ...prev, raca: value === "all" ? "" : value }))}>
                   <SelectTrigger className="mt-2">
-                    <SelectValue placeholder="Padrao (todas as racas)" />
+                  <SelectValue placeholder="Padrão (todas as raças)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Padrao (todas as racas)</SelectItem>
+                    <SelectItem value="all">Padrão (todas as raças)</SelectItem>
                     {RACES.map((race) => (
                       <SelectItem key={race} value={race}>
                         {race}

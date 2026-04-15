@@ -31,10 +31,12 @@ export default function ValidarPin() {
   const nextPath = useMemo(() => getSafeNextPathFromSearch(location.search), [location.search]);
   const [currentUser, setCurrentUser] = useState(null);
   const [pairs, setPairs] = useState(() => shufflePairs());
-  const [selectedPairs, setSelectedPairs] = useState([]);
+  const [selectedEntries, setSelectedEntries] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const selectedPairs = useMemo(() => selectedEntries.map((entry) => entry.pair), [selectedEntries]);
+  const selectedDigits = useMemo(() => selectedEntries.map((entry) => entry.digit), [selectedEntries]);
 
   useEffect(() => {
     let mounted = true;
@@ -69,7 +71,7 @@ export default function ValidarPin() {
         }
       } catch (error) {
         if (mounted) {
-          setErrorMessage(error?.message || "Nao foi possivel validar o dispositivo.");
+      setErrorMessage(error?.message || "Não foi possível validar o dispositivo.");
         }
       } finally {
         if (mounted) {
@@ -85,12 +87,12 @@ export default function ValidarPin() {
     };
   }, [location.hash, location.pathname, location.search, navigate, nextPath]);
 
-  const handleSelectPair = (pair) => {
-    setSelectedPairs((current) => current.length >= 6 ? current : [...current, pair]);
+  const handleSelectDigit = (pair, digit) => {
+    setSelectedEntries((current) => current.length >= 6 ? current : [...current, { pair, digit }]);
   };
 
   const handleBackspace = () => {
-    setSelectedPairs((current) => current.slice(0, -1));
+    setSelectedEntries((current) => current.slice(0, -1));
   };
 
   const handleShuffle = () => {
@@ -105,8 +107,8 @@ export default function ValidarPin() {
   async function handleSubmit(event) {
     event.preventDefault();
 
-    if (selectedPairs.length !== 6) {
-      setErrorMessage("Selecione os 6 pares correspondentes ao seu PIN.");
+    if (selectedDigits.length !== 6) {
+      setErrorMessage("Selecione os 6 dígitos correspondentes ao seu PIN.");
       return;
     }
 
@@ -114,12 +116,12 @@ export default function ValidarPin() {
     setErrorMessage("");
 
     try {
-      await User.verifyCurrentDevicePin?.({ selectedPairs });
+      await User.verifyCurrentDevicePin?.({ selectedPairs, selectedDigits, pin: selectedDigits.join("") });
       window.location.replace(nextPath);
     } catch (error) {
-      setErrorMessage(error?.message || "Nao foi possivel validar o PIN.");
+      setErrorMessage(error?.message || "Não foi possível validar o PIN.");
       setIsSubmitting(false);
-      setSelectedPairs([]);
+      setSelectedEntries([]);
       setPairs(shufflePairs());
     }
   }
@@ -170,8 +172,8 @@ export default function ValidarPin() {
               </div>
               <PinPairPad
                 pairs={pairs}
-                selectedPairs={selectedPairs}
-                onSelectPair={handleSelectPair}
+                selectedCount={selectedEntries.length}
+                onSelectDigit={handleSelectDigit}
                 onBackspace={handleBackspace}
                 onShuffle={handleShuffle}
                 disabled={isSubmitting}

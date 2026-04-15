@@ -44,17 +44,20 @@ export default function Login() {
   const inviteToken = useMemo(() => new URLSearchParams(location.search).get("invite"), [location.search]);
   const [email, setEmail] = useState("");
   const [pairs, setPairs] = useState(() => shufflePairs());
-  const [selectedPairs, setSelectedPairs] = useState([]);
+  const [selectedEntries, setSelectedEntries] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const handleSelectPair = (pair) => {
-    setSelectedPairs((current) => current.length >= 6 ? current : [...current, pair]);
+  const selectedPairs = useMemo(() => selectedEntries.map((entry) => entry.pair), [selectedEntries]);
+  const selectedDigits = useMemo(() => selectedEntries.map((entry) => entry.digit), [selectedEntries]);
+
+  const handleSelectDigit = (pair, digit) => {
+    setSelectedEntries((current) => current.length >= 6 ? current : [...current, { pair, digit }]);
   };
 
   const handleBackspace = () => {
-    setSelectedPairs((current) => current.slice(0, -1));
+    setSelectedEntries((current) => current.slice(0, -1));
   };
 
   const handleShuffle = () => {
@@ -63,7 +66,7 @@ export default function Login() {
 
   const handleGoogleLogin = async () => {
     if (!User.isEnabled?.()) {
-      setErrorMessage("Supabase nao configurado para autenticacao neste ambiente.");
+      setErrorMessage("Supabase não configurado para autenticação neste ambiente.");
       return;
     }
 
@@ -77,7 +80,7 @@ export default function Login() {
       });
     } catch (error) {
       console.error("Erro ao iniciar login Google:", error);
-      setErrorMessage(error?.message || "Nao foi possivel iniciar o login com Google.");
+      setErrorMessage(error?.message || "Não foi possível iniciar o login com Google.");
       setIsGoogleSubmitting(false);
     }
   };
@@ -90,8 +93,8 @@ export default function Login() {
       return;
     }
 
-    if (selectedPairs.length !== 6) {
-      setErrorMessage("Selecione os 6 pares correspondentes ao PIN.");
+    if (selectedDigits.length !== 6) {
+      setErrorMessage("Selecione os 6 dígitos correspondentes ao PIN.");
       return;
     }
 
@@ -102,6 +105,8 @@ export default function Login() {
       await User.signInWithPinPairs?.({
         email: email.trim().toLowerCase(),
         selectedPairs,
+        selectedDigits,
+        pin: selectedDigits.join(""),
       });
 
       const currentUser = await User.me();
@@ -127,9 +132,9 @@ export default function Login() {
       navigate(nextPath, { replace: true });
     } catch (error) {
       console.error("Erro ao autenticar com PIN:", error);
-      setErrorMessage(error?.message || "Nao foi possivel autenticar com email e PIN.");
+      setErrorMessage(error?.message || "Não foi possível autenticar com email e PIN.");
       setIsSubmitting(false);
-      setSelectedPairs([]);
+      setSelectedEntries([]);
       setPairs(shufflePairs());
     }
   };
@@ -160,7 +165,7 @@ export default function Login() {
 
             {isBlocked && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-                Este acesso foi cancelado ou desativado. Fale com a administracao central para liberar uma nova vinculacao.
+                Este acesso foi cancelado ou desativado. Fale com a administração central para liberar uma nova vinculação.
               </div>
             )}
 
@@ -186,8 +191,8 @@ export default function Login() {
               </div>
               <PinPairPad
                 pairs={pairs}
-                selectedPairs={selectedPairs}
-                onSelectPair={handleSelectPair}
+                selectedCount={selectedEntries.length}
+                onSelectDigit={handleSelectDigit}
                 onBackspace={handleBackspace}
                 onShuffle={handleShuffle}
                 disabled={isSubmitting || isGoogleSubmitting}

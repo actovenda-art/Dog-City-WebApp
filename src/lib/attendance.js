@@ -284,6 +284,30 @@ export function getAppointmentDateKey(appointment) {
   );
 }
 
+export function getAppointmentEndDateKey(appointment) {
+  if (!appointment) return "";
+  return (
+    appointment.data_fim ||
+    appointment.end_date ||
+    (appointment.data_hora_saida || "").slice(0, 10) ||
+    getAppointmentDateKey(appointment)
+  );
+}
+
+export function doesAppointmentOccurOnDate(appointment, dateKey) {
+  if (!appointment || !dateKey) return false;
+
+  const startDateKey = getAppointmentDateKey(appointment);
+  if (!startDateKey) return false;
+
+  if (appointment.service_type !== "hospedagem") {
+    return startDateKey === dateKey;
+  }
+
+  const endDateKey = getAppointmentEndDateKey(appointment) || startDateKey;
+  return dateKey >= startDateKey && dateKey <= endDateKey;
+}
+
 export function getAppointmentTimeValue(appointment, type = "entrada") {
   if (!appointment) return "";
   const value =

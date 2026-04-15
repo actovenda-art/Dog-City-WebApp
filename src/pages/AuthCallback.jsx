@@ -23,7 +23,7 @@ export default function AuthCallback() {
         const currentUser = await User.me();
 
         if (!currentUser) {
-          throw new Error("A sessao nao foi criada corretamente.");
+          throw new Error("A sessão não foi criada corretamente.");
         }
 
         if (isMounted) {
@@ -61,7 +61,7 @@ export default function AuthCallback() {
       } catch (error) {
         console.error("Erro ao concluir login Google:", error);
         if (isMounted) {
-          setErrorMessage(error?.message || "Nao foi possivel concluir o login com Google.");
+          setErrorMessage(error?.message || "Não foi possível concluir o login com Google.");
         }
       }
     }

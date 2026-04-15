@@ -21,7 +21,7 @@ import {
 } from "recharts";
 import { format, subMonths, startOfMonth, endOfMonth, subDays, differenceInDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { filterAppointmentsByApprovedOrcamentos, getAppointmentDateKey, isApprovedOrcamento } from "@/lib/attendance";
+import { doesAppointmentOccurOnDate, filterAppointmentsByApprovedOrcamentos, isApprovedOrcamento } from "@/lib/attendance";
 
 export default function Cockpit() {
   const [transactions, setTransactions] = useState([]);
@@ -89,7 +89,7 @@ export default function Cockpit() {
   const pendentesReceber = scheduled.filter(s => s.status === "pendente" && s.type === "entrada").reduce((acc, s) => acc + (s.value || 0), 0);
   const pendentesPagar = scheduled.filter(s => s.status === "pendente" && s.type === "saida").reduce((acc, s) => acc + (s.value || 0), 0);
 
-  const agendamentosHoje = appointments.filter((appointment) => getAppointmentDateKey(appointment) === hoje).length;
+  const agendamentosHoje = appointments.filter((appointment) => doesAppointmentOccurOnDate(appointment, hoje)).length;
   const servicosHoje = servicesProvided.filter(s => s.date === hoje).length;
 
   const totalReposicoes = replacements.filter(r => r.status === "disponivel").length;

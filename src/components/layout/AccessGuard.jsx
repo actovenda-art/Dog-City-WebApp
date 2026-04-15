@@ -18,12 +18,12 @@ export default function AccessGuard({ pageName, currentUser, children }) {
             <div className="flex items-start gap-3">
               <ShieldAlert className="mt-0.5 h-6 w-6 text-rose-600" />
               <div>
-                <h1 className="text-xl font-semibold text-gray-900">Acesso nao autorizado</h1>
+                <h1 className="text-xl font-semibold text-gray-900">Acesso não autorizado</h1>
                 <p className="mt-2 text-sm text-gray-700">
-                  Seu perfil de acesso nao permite abrir esta pagina.
+                  Seu perfil de acesso não permite abrir esta página.
                 </p>
                 <p className="mt-2 text-sm text-gray-600">
-                  Se voce precisa desta area, ajuste o tipo de acesso do usuario na Gestao de Usuarios.
+                  Se você precisa desta área, ajuste o tipo de acesso do usuário na Gestão de Usuários.
                 </p>
               </div>
             </div>

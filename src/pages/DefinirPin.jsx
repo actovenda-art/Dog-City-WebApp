@@ -56,7 +56,7 @@ export default function DefinirPin() {
         }
       } catch (error) {
         if (mounted) {
-          setErrorMessage(error?.message || "Nao foi possivel validar sua sessao.");
+          setErrorMessage(error?.message || "Não foi possível validar sua sessão.");
         }
       } finally {
         if (mounted) {
@@ -90,7 +90,7 @@ export default function DefinirPin() {
     }
 
     if (normalizedPin !== normalizedConfirmPin) {
-      setErrorMessage("A confirmacao nao corresponde ao PIN informado.");
+      setErrorMessage("A confirmação não corresponde ao PIN informado.");
       return;
     }
 
@@ -101,7 +101,7 @@ export default function DefinirPin() {
       await User.setPin?.({ pin: normalizedPin });
       window.location.replace(nextPath);
     } catch (error) {
-      setErrorMessage(error?.message || "Nao foi possivel definir o PIN.");
+      setErrorMessage(error?.message || "Não foi possível definir o PIN.");
       setIsSubmitting(false);
     }
   }
@@ -114,7 +114,7 @@ export default function DefinirPin() {
             <LoaderCircle className="w-10 h-10 mx-auto animate-spin text-orange-400" />
             <h1 className="mt-4 text-2xl font-semibold">Preparando acesso</h1>
             <p className="mt-2 text-sm text-slate-300">
-              Estamos conferindo se este usuario precisa definir um novo PIN.
+              Estamos conferindo se este usuário precisa definir um novo PIN.
             </p>
           </CardContent>
         </Card>
@@ -135,7 +135,7 @@ export default function DefinirPin() {
             <p className="mt-6 text-xs font-semibold uppercase tracking-[0.25em] text-orange-500">Seguranca</p>
             <h1 className="mt-3 text-3xl font-brand text-slate-900">Definir PIN</h1>
             <p className="mt-3 text-sm text-slate-600">
-              {currentUser?.full_name ? `${currentUser.full_name},` : "Voce"} este acesso precisa de um novo PIN antes de continuar.
+              {currentUser?.full_name ? `${currentUser.full_name},` : "Você"} este acesso precisa de um novo PIN antes de continuar.
             </p>
           </div>
 
@@ -171,7 +171,7 @@ export default function DefinirPin() {
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
               <div className="flex items-start gap-2">
                 <KeyRound className="w-4 h-4 mt-0.5" />
-                <span>O PIN deve conter 6 numeros e nao pode ser sequencial.</span>
+                <span>O PIN deve conter 6 números e não pode ser sequencial.</span>
               </div>
             </div>
 

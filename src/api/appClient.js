@@ -389,6 +389,19 @@ const mockFunctions = {
       };
     }
 
+    if (action === 'verify_cpf') {
+      const fullName = String(payload?.full_name || '').trim();
+      const firstName = fullName.split(/\s+/).filter(Boolean)[0]?.toLowerCase() || '';
+      return {
+        ok: true,
+        configured: false,
+        valid_format: /^\d{11}$/.test(String(payload?.cpf || '').replace(/\D/g, '')),
+        first_name_matches: firstName ? true : null,
+        api_name: fullName,
+        api_first_name: firstName,
+      };
+    }
+
     const token = String(payload?.token || '').trim();
     const rowIndex = links.findIndex((item) => item.token === token);
     const row = rowIndex >= 0 ? links[rowIndex] : null;

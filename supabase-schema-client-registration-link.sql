@@ -10,7 +10,8 @@ alter table if exists public.dogs
   add column if not exists castrado boolean default false,
   add column if not exists alergias text,
   add column if not exists restricoes_cuidados text,
-  add column if not exists observacoes_gerais text;
+  add column if not exists observacoes_gerais text,
+  add column if not exists medicamentos_continuos jsonb default '[]'::jsonb;
 
 alter table if exists public.carteira
   add column if not exists street text,

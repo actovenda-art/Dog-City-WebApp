@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
+import { normalizeCpfDigits, validateCpfWithGov } from "@/lib/cpf-validation";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -102,6 +103,7 @@ function createEmptyDog() {
     veterinario_clinica_telefone: "",
     veterinario_endereco: "",
     observacoes_gerais: "",
+    medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
   };
 }
 
@@ -386,6 +388,37 @@ export default function CadastroClientePublico() {
     )));
   }
 
+  function updateDogMedication(dogIndex, medicationIndex, field, value) {
+    const dog = caesForm[dogIndex] || createEmptyDog();
+    const nextItems = [...(dog.medicamentos_continuos || [])];
+    nextItems[medicationIndex] = { ...(nextItems[medicationIndex] || {}), [field]: value };
+    updateDog(dogIndex, { medicamentos_continuos: nextItems });
+  }
+
+  function addDogMedication(dogIndex) {
+    const dog = caesForm[dogIndex] || createEmptyDog();
+    updateDog(dogIndex, {
+      medicamentos_continuos: [
+        ...(dog.medicamentos_continuos || []),
+        { especificacoes: "", cuidados: "", horario: "", dose: "" },
+      ],
+    });
+  }
+
+  function removeDogMedication(dogIndex, medicationIndex) {
+    const dog = caesForm[dogIndex] || createEmptyDog();
+    const currentItems = dog.medicamentos_continuos || [];
+    if (currentItems.length <= 1) {
+      updateDog(dogIndex, {
+        medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
+      });
+      return;
+    }
+    updateDog(dogIndex, {
+      medicamentos_continuos: currentItems.filter((_, index) => index !== medicationIndex),
+    });
+  }
+
   function addDog() {
     setCaesForm((current) => [...current, createEmptyDog()]);
     setActiveDogIndex(caesForm.length);
@@ -400,20 +433,8 @@ export default function CadastroClientePublico() {
     setActiveDogIndex((current) => Math.max(0, Math.min(current, caesForm.length - 2)));
   }
 
-  function handleNextStep() {
-    const validationError = currentStep === 0
-      ? validateResponsavel(responsavelForm)
-      : currentStep === 1
-        ? validateDogs(caesForm)
-        : validateFinanceiro(financeiroForm);
-
-    if (validationError) {
-      setErrorMessage(validationError);
-      return;
-    }
-
-    setErrorMessage("");
-    setCurrentStep((current) => Math.min(current + 1, STEP_DEFINITIONS.length - 1));
+  async function handleNextStep() {
+    await validateAndAdvanceStep();
   }
 
   function handlePreviousStep() {
@@ -426,6 +447,23 @@ export default function CadastroClientePublico() {
     if (financeError) {
       setErrorMessage(financeError);
       return;
+    }
+
+    const financeCpfDigits = normalizeCpfDigits(financeiroForm.cpf_cnpj);
+    if (financeCpfDigits.length === 11) {
+      try {
+        const cpfValidation = await validateCpfWithGov({
+          cpf: financeiroForm.cpf_cnpj,
+          fullName: financeiroForm.nome_razao_social,
+        });
+        if (cpfValidation.shouldBlock) {
+          setErrorMessage(cpfValidation.message);
+          return;
+        }
+      } catch (error) {
+        setErrorMessage(error?.message || "Não foi possível validar o CPF do responsável financeiro.");
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -453,6 +491,38 @@ export default function CadastroClientePublico() {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function validateAndAdvanceStep() {
+    const validationError = currentStep === 0
+      ? validateResponsavel(responsavelForm)
+      : currentStep === 1
+        ? validateDogs(caesForm)
+        : validateFinanceiro(financeiroForm);
+
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
+    if (currentStep === 0) {
+      try {
+        const cpfValidation = await validateCpfWithGov({
+          cpf: responsavelForm.cpf,
+          fullName: responsavelForm.nome_completo,
+        });
+        if (cpfValidation.shouldBlock) {
+          setErrorMessage(cpfValidation.message);
+          return;
+        }
+      } catch (error) {
+        setErrorMessage(error?.message || "Não foi possível validar o CPF do responsável.");
+        return;
+      }
+    }
+
+    setErrorMessage("");
+    setCurrentStep((current) => Math.min(current + 1, STEP_DEFINITIONS.length - 1));
   }
 
   function renderResponsavelStep() {
@@ -651,6 +721,51 @@ export default function CadastroClientePublico() {
         <div>
           <Label>Endereço veterinário / clínica</Label>
           <Input value={dog.veterinario_endereco} onChange={(event) => updateDog(dogIndex, { veterinario_endereco: event.target.value })} />
+        </div>
+        <div className="md:col-span-2">
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Medicamentos de longo período / vitalício</p>
+                <p className="text-xs text-slate-500">Informe especificações, cuidados, horário e dose.</p>
+              </div>
+              <Button type="button" variant="outline" onClick={() => addDogMedication(dogIndex)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Adicionar
+              </Button>
+            </div>
+            <div className="space-y-3">
+              {(dog.medicamentos_continuos || []).map((medicacao, medicationIndex) => (
+                <div key={`medicacao-publica-${medicationIndex}`} className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-900">Medicamento {medicationIndex + 1}</p>
+                    <Button type="button" variant="outline" size="sm" onClick={() => removeDogMedication(dogIndex, medicationIndex)}>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Remover
+                    </Button>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div>
+                      <Label>Especificações</Label>
+                      <Input value={medicacao.especificacoes || ""} onChange={(event) => updateDogMedication(dogIndex, medicationIndex, "especificacoes", event.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Cuidados</Label>
+                      <Input value={medicacao.cuidados || ""} onChange={(event) => updateDogMedication(dogIndex, medicationIndex, "cuidados", event.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Horário</Label>
+                      <TimePickerInput value={medicacao.horario || ""} onChange={(value) => updateDogMedication(dogIndex, medicationIndex, "horario", value)} />
+                    </div>
+                    <div>
+                      <Label>Dose</Label>
+                      <Input value={medicacao.dose || ""} onChange={(event) => updateDogMedication(dogIndex, medicationIndex, "dose", event.target.value)} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );

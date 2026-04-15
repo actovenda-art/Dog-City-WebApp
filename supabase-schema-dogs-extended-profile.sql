@@ -4,6 +4,9 @@
 alter table if exists public.dogs
   add column if not exists cores_pelagem text,
   add column if not exists pelagem text,
+  add column if not exists sexo text,
+  add column if not exists porte text,
+  add column if not exists castrado boolean default false,
   add column if not exists foto_carteirinha_vacina_url text,
   add column if not exists data_revacinacao_1 date,
   add column if not exists data_revacinacao_2 date,
@@ -27,4 +30,8 @@ alter table if exists public.dogs
   add column if not exists refeicao_3_obs text,
   add column if not exists refeicao_4_qnt text,
   add column if not exists refeicao_4_horario time,
-  add column if not exists refeicao_4_obs text;
+  add column if not exists refeicao_4_obs text,
+  add column if not exists alergias text,
+  add column if not exists restricoes_cuidados text,
+  add column if not exists observacoes_gerais text,
+  add column if not exists medicamentos_continuos jsonb default '[]'::jsonb;

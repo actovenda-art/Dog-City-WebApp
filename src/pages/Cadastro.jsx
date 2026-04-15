@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
+import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 
 export default function Cadastro() {
@@ -45,7 +46,8 @@ export default function Cadastro() {
     refeicao_1_qnt: "", refeicao_1_horario: "", refeicao_1_obs: "",
     refeicao_2_qnt: "", refeicao_2_horario: "", refeicao_2_obs: "",
     refeicao_3_qnt: "", refeicao_3_horario: "", refeicao_3_obs: "",
-    refeicao_4_qnt: "", refeicao_4_horario: "", refeicao_4_obs: ""
+    refeicao_4_qnt: "", refeicao_4_horario: "", refeicao_4_obs: "",
+    medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }]
   };
   const [dogForm, setDogForm] = useState(emptyDog);
 
@@ -71,9 +73,49 @@ export default function Cadastro() {
   };
   const formatCEP = (v) => v.replace(/\D/g, '').replace(/(\d{5})(\d{3})/, '$1-$2').slice(0, 9);
   const optional = (v) => v === "" ? null : v;
+  const normalizeMedications = (items) => (Array.isArray(items) ? items : [])
+    .map((item) => ({
+      especificacoes: optional(item?.especificacoes),
+      cuidados: optional(item?.cuidados),
+      horario: optional(item?.horario),
+      dose: optional(item?.dose),
+    }))
+    .filter((item) => item.especificacoes || item.cuidados || item.horario || item.dose);
   const buildClientRegistrationLink = (token) => {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     return `${origin}${createPageUrl("CadastroClientePublico")}?token=${encodeURIComponent(token)}`;
+  };
+
+  const updateDogMedication = (index, field, value) => {
+    const nextItems = [...(dogForm.medicamentos_continuos || [])];
+    nextItems[index] = { ...(nextItems[index] || {}), [field]: value };
+    setDogForm({ ...dogForm, medicamentos_continuos: nextItems });
+  };
+
+  const addDogMedication = () => {
+    setDogForm({
+      ...dogForm,
+      medicamentos_continuos: [
+        ...(dogForm.medicamentos_continuos || []),
+        { especificacoes: "", cuidados: "", horario: "", dose: "" },
+      ],
+    });
+  };
+
+  const removeDogMedication = (index) => {
+    const currentItems = dogForm.medicamentos_continuos || [];
+    if (currentItems.length <= 1) {
+      setDogForm({
+        ...dogForm,
+        medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
+      });
+      return;
+    }
+
+    setDogForm({
+      ...dogForm,
+      medicamentos_continuos: currentItems.filter((_, itemIndex) => itemIndex !== index),
+    });
   };
 
   const handleUpload = async (file, field) => {
@@ -155,6 +197,7 @@ export default function Cadastro() {
         refeicao_4_qnt: optional(dogForm.refeicao_4_qnt),
         refeicao_4_horario: optional(dogForm.refeicao_4_horario),
         refeicao_4_obs: optional(dogForm.refeicao_4_obs),
+        medicamentos_continuos: normalizeMedications(dogForm.medicamentos_continuos),
       });
       setNotifyTitle("Sucesso"); setNotifyMessage("Cão cadastrado com sucesso!"); setNotifyOpen(true);
       setDogForm(emptyDog); loadDogs();
@@ -168,6 +211,18 @@ export default function Cadastro() {
     }
     setIsSaving(true);
     try {
+      const cpfValidation = await validateCpfWithGov({
+        cpf: responsavelForm.cpf,
+        fullName: responsavelForm.nome_completo,
+      });
+      if (cpfValidation.shouldBlock) {
+        setNotifyTitle("CPF não validado");
+        setNotifyMessage(cpfValidation.message);
+        setNotifyOpen(true);
+        setIsSaving(false);
+        return;
+      }
+
       await Responsavel.create({
         empresa_id: currentUser?.empresa_id || null,
         nome_completo: responsavelForm.nome_completo.trim(),
@@ -196,6 +251,21 @@ export default function Cadastro() {
     }
     setIsSaving(true);
     try {
+      const cpfOrCnpjDigits = (carteiraForm.cpf_cnpj || "").replace(/\D/g, "");
+      if (cpfOrCnpjDigits.length === 11) {
+        const cpfValidation = await validateCpfWithGov({
+          cpf: carteiraForm.cpf_cnpj,
+          fullName: carteiraForm.nome_razao_social,
+        });
+        if (cpfValidation.shouldBlock) {
+          setNotifyTitle("CPF não validado");
+          setNotifyMessage(cpfValidation.message);
+          setNotifyOpen(true);
+          setIsSaving(false);
+          return;
+        }
+      }
+
       await Carteira.create({
         empresa_id: currentUser?.empresa_id || null,
         nome_razao_social: carteiraForm.nome_razao_social.trim(),
@@ -221,13 +291,11 @@ export default function Cadastro() {
   };
 
   const openClientLinkModal = () => {
-    setClientLinkForm({ responsavel_nome: "", responsavel_email: "" });
-    setHasCopiedClientLink(false);
-    setShowClientLinkModal(true);
+    handleCreateClientLink();
   };
 
   const handleCreateClientLink = async () => {
-    if (!clientLinkForm.responsavel_nome || !clientLinkForm.responsavel_email) {
+    if (false && (!clientLinkForm.responsavel_nome || !clientLinkForm.responsavel_email)) {
       setNotifyTitle("Campos obrigatórios");
       setNotifyMessage("Preencha nome do responsável e email para gerar o link.");
       setNotifyOpen(true);
@@ -286,7 +354,7 @@ export default function Cadastro() {
           <div className="flex gap-2">
             <Button variant="outline" onClick={openClientLinkModal}>
               <LinkIcon className="w-4 h-4 mr-2" />
-              Compartilhar link de cadastro
+              Gerar link universal de cadastro
             </Button>
           </div>
         </div>
@@ -339,6 +407,38 @@ export default function Cadastro() {
                   ))}
                 </div>
                 <Button onClick={handleSaveDog} disabled={isSaving} className="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Cão"}</Button>
+              </CardContent>
+            </Card>
+            <Card className="mt-4 border-blue-100 bg-white">
+              <CardContent className="p-4 sm:p-6">
+                <h4 className="font-semibold text-gray-900 mb-3">Medicamentos de longo período / vitalício</h4>
+                <div className="space-y-3">
+                  {(dogForm.medicamentos_continuos || []).map((medicacao, index) => (
+                    <div key={`medicacao-${index}`} className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-gray-900">Medicamento {index + 1}</p>
+                        <Button type="button" variant="outline" size="sm" onClick={() => removeDogMedication(index)}>
+                          <X className="w-4 h-4 mr-1" />
+                          Remover
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div><Label>Especificações</Label><Input value={medicacao.especificacoes || ""} onChange={(e) => updateDogMedication(index, "especificacoes", e.target.value)} placeholder="Nome e orientação" /></div>
+                        <div><Label>Cuidados</Label><Input value={medicacao.cuidados || ""} onChange={(e) => updateDogMedication(index, "cuidados", e.target.value)} placeholder="Ex: após refeição" /></div>
+                        <div><Label>Horário</Label><TimePickerInput value={medicacao.horario || ""} onChange={(value) => updateDogMedication(index, "horario", value)} /></div>
+                        <div><Label>Dose</Label><Input value={medicacao.dose || ""} onChange={(e) => updateDogMedication(index, "dose", e.target.value)} placeholder="Ex: 1 comprimido" /></div>
+                      </div>
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" onClick={addDogMedication} className="border-dashed">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Adicionar medicamento
+                  </Button>
+                  <Button onClick={handleSaveDog} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+                    <Save className="w-4 h-4 mr-2" />
+                    {isSaving ? "Salvando..." : "Cadastrar Cão"}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

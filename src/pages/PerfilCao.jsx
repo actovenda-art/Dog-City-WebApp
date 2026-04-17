@@ -81,13 +81,22 @@ export default function PerfilCao() {
   const getProximasVacinas = () => {
     if (!dog) return [];
     const hoje = new Date();
-    const limite = addDays(hoje, 90);
     const result = [];
-    [dog.data_revacinacao_1, dog.data_revacinacao_2, dog.data_revacinacao_3].forEach((dataRev, idx) => {
+    [
+      { data: dog.data_revacinacao_1, nome: dog.nome_vacina_revacinacao_1, numero: 1 },
+      { data: dog.data_revacinacao_2, nome: dog.nome_vacina_revacinacao_2, numero: 2 },
+      { data: dog.data_revacinacao_3, nome: dog.nome_vacina_revacinacao_3, numero: 3 },
+    ].forEach(({ data: dataRev, nome, numero }) => {
       if (dataRev) {
         const data = new Date(dataRev);
         const diasRestantes = differenceInDays(data, hoje);
-        result.push({ data: dataRev, diasRestantes, numero: idx + 1, vencida: diasRestantes < 0 });
+        result.push({
+          data: dataRev,
+          diasRestantes,
+          numero,
+          nomeVacina: nome || "",
+          vencida: diasRestantes < 0,
+        });
       }
     });
     return result.sort((a, b) => a.diasRestantes - b.diasRestantes);
@@ -222,7 +231,7 @@ export default function PerfilCao() {
                         <div key={i} className={`flex items-center justify-between p-3 rounded-lg border ${v.vencida ? 'bg-red-50 border-red-200' : v.diasRestantes <= 7 ? 'bg-yellow-50 border-yellow-200' : 'bg-purple-50 border-purple-200'}`}>
                           <div>
                             <p className="font-medium">{v.numero}ª Revacinação</p>
-                            <p className="text-sm text-gray-600">{formatDate(v.data)}</p>
+                            <p className="text-sm text-gray-600">{v.nomeVacina ? `${v.nomeVacina} • ${formatDate(v.data)}` : formatDate(v.data)}</p>
                           </div>
                           <Badge className={v.vencida ? 'bg-red-100 text-red-700' : v.diasRestantes <= 7 ? 'bg-yellow-100 text-yellow-700' : 'bg-purple-100 text-purple-700'}>
                             {v.vencida ? 'Vencida' : v.diasRestantes === 0 ? 'Hoje!' : `${v.diasRestantes} dias`}

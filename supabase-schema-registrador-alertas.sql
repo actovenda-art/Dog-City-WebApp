@@ -2,6 +2,7 @@
 -- Execute apos os schemas base e supabase-schema-attendance-flow.sql
 
 alter table if exists public.checkins
+  add column if not exists tipo text,
   add column if not exists monitor_id text,
   add column if not exists tarefa_lembrete_setor text,
   add column if not exists tarefa_lembrete_horario text,

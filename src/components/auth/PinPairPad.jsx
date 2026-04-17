@@ -1,58 +1,64 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Delete } from "lucide-react";
+import { Delete, RotateCcw } from "lucide-react";
 
-function PairButton({ pair, onClick, disabled }) {
+const DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+
+function DigitButton({ digit, disabled, onClick }) {
   return (
-    <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center rounded-2xl border border-slate-700 bg-slate-900 px-2 text-white">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onClick(pair, pair[0])}
-        className="flex h-11 items-center justify-center rounded-xl text-lg font-semibold transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {pair[0]}
-      </button>
-
-      <span className="px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-        ou
-      </span>
-
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onClick(pair, pair[1])}
-        className="flex h-11 items-center justify-center rounded-xl text-lg font-semibold transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {pair[1]}
-      </button>
-    </div>
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onClick(digit)}
+      className="flex h-16 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-xl font-semibold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {digit}
+    </button>
   );
 }
 
 export default function PinPairPad({
-  pairs = [],
-  selectedCount = 0,
-  onSelectDigit,
+  value = "",
+  onInputDigit,
   onBackspace,
-  onShuffle,
+  onClear,
   disabled = false,
 }) {
+  const normalizedValue = String(value || "").replace(/\D/g, "").slice(0, 6);
+  const selectedCount = normalizedValue.length;
+
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-400">
-        Toque no número correto dentro de cada par para montar seu PIN.
+        Digite seu PIN usando o teclado numérico abaixo.
       </p>
 
       <div className="grid grid-cols-3 gap-3">
-        {pairs.map((pair, index) => (
-          <PairButton
-            key={`${pair.join("-")}-${index}`}
-            pair={pair}
-            onClick={onSelectDigit}
+        {DIGITS.slice(0, 9).map((digit) => (
+          <DigitButton
+            key={digit}
+            digit={digit}
             disabled={disabled || selectedCount >= 6}
+            onClick={onInputDigit}
           />
         ))}
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClear}
+          disabled={disabled || selectedCount === 0}
+          className="h-16 rounded-2xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
+        >
+          <RotateCcw className="h-5 w-5" />
+        </Button>
+
+        <DigitButton
+          digit="0"
+          disabled={disabled || selectedCount >= 6}
+          onClick={onInputDigit}
+        />
+
         <Button
           type="button"
           variant="outline"
@@ -64,7 +70,7 @@ export default function PinPairPad({
         </Button>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           {Array.from({ length: 6 }).map((_, index) => (
             <span
@@ -76,9 +82,9 @@ export default function PinPairPad({
           ))}
         </div>
 
-        <Button type="button" variant="ghost" onClick={onShuffle} disabled={disabled} className="text-slate-300 hover:bg-slate-800 hover:text-white">
-          Reembaralhar
-        </Button>
+        <div className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400">
+          {selectedCount}/6
+        </div>
       </div>
     </div>
   );

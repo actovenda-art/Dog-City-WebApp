@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { User } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
 import { getSafeNextPathFromSearch, isSameAppLocation } from "@/lib/auth-navigation";
+import { normalizePin } from "@/lib/pin-auth";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,33 +11,18 @@ import { Input } from "@/components/ui/input";
 import PinPairPad from "@/components/auth/PinPairPad";
 import { AlertTriangle, KeyRound, LoaderCircle, LogOut } from "lucide-react";
 
-function shufflePairs() {
-  const digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
-  for (let index = digits.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(Math.random() * (index + 1));
-    [digits[index], digits[randomIndex]] = [digits[randomIndex], digits[index]];
-  }
-
-  const result = [];
-  for (let index = 0; index < digits.length; index += 2) {
-    result.push([digits[index], digits[index + 1]]);
-  }
-  return result;
-}
-
 export default function ValidarPin() {
   const location = useLocation();
   const navigate = useNavigate();
   const { companyName, logoUrl, isResolved } = useBranding({ variant: "base" });
   const nextPath = useMemo(() => getSafeNextPathFromSearch(location.search), [location.search]);
   const [currentUser, setCurrentUser] = useState(null);
-  const [pairs, setPairs] = useState(() => shufflePairs());
-  const [selectedEntries, setSelectedEntries] = useState([]);
+  const [pin, setPin] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const selectedPairs = useMemo(() => selectedEntries.map((entry) => entry.pair), [selectedEntries]);
-  const selectedDigits = useMemo(() => selectedEntries.map((entry) => entry.digit), [selectedEntries]);
+
+  const normalizedPin = normalizePin(pin);
 
   useEffect(() => {
     let mounted = true;
@@ -71,7 +57,7 @@ export default function ValidarPin() {
         }
       } catch (error) {
         if (mounted) {
-      setErrorMessage(error?.message || "Não foi possível validar o dispositivo.");
+          setErrorMessage(error?.message || "Não foi possível validar o dispositivo.");
         }
       } finally {
         if (mounted) {
@@ -87,16 +73,16 @@ export default function ValidarPin() {
     };
   }, [location.hash, location.pathname, location.search, navigate, nextPath]);
 
-  const handleSelectDigit = (pair, digit) => {
-    setSelectedEntries((current) => current.length >= 6 ? current : [...current, { pair, digit }]);
+  const handleSelectDigit = (digit) => {
+    setPin((current) => normalizePin(`${current}${digit}`));
   };
 
   const handleBackspace = () => {
-    setSelectedEntries((current) => current.slice(0, -1));
+    setPin((current) => current.slice(0, -1));
   };
 
-  const handleShuffle = () => {
-    setPairs(shufflePairs());
+  const handleClear = () => {
+    setPin("");
   };
 
   async function handleLogout() {
@@ -107,8 +93,8 @@ export default function ValidarPin() {
   async function handleSubmit(event) {
     event.preventDefault();
 
-    if (selectedDigits.length !== 6) {
-      setErrorMessage("Selecione os 6 dígitos correspondentes ao seu PIN.");
+    if (normalizedPin.length !== 6) {
+      setErrorMessage("Informe os 6 dígitos do seu PIN.");
       return;
     }
 
@@ -116,13 +102,12 @@ export default function ValidarPin() {
     setErrorMessage("");
 
     try {
-      await User.verifyCurrentDevicePin?.({ selectedPairs, selectedDigits, pin: selectedDigits.join("") });
+      await User.verifyCurrentDevicePin?.({ pin: normalizedPin });
       window.location.replace(nextPath);
     } catch (error) {
       setErrorMessage(error?.message || "Não foi possível validar o PIN.");
       setIsSubmitting(false);
-      setSelectedEntries([]);
-      setPairs(shufflePairs());
+      setPin("");
     }
   }
 
@@ -168,14 +153,13 @@ export default function ValidarPin() {
             <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
               <div className="mb-4 flex items-center gap-2 text-slate-200">
                 <KeyRound className="h-4 w-4 text-blue-300" />
-                <span className="text-sm font-medium">Selecione os pares do seu PIN</span>
+                <span className="text-sm font-medium">Digite seu PIN</span>
               </div>
               <PinPairPad
-                pairs={pairs}
-                selectedCount={selectedEntries.length}
-                onSelectDigit={handleSelectDigit}
+                value={pin}
+                onInputDigit={handleSelectDigit}
                 onBackspace={handleBackspace}
-                onShuffle={handleShuffle}
+                onClear={handleClear}
                 disabled={isSubmitting}
               />
             </div>

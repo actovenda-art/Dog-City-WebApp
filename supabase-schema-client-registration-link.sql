@@ -11,6 +11,9 @@ alter table if exists public.dogs
   add column if not exists alergias text,
   add column if not exists restricoes_cuidados text,
   add column if not exists observacoes_gerais text,
+  add column if not exists nome_vacina_revacinacao_1 text,
+  add column if not exists nome_vacina_revacinacao_2 text,
+  add column if not exists nome_vacina_revacinacao_3 text,
   add column if not exists medicamentos_continuos jsonb default '[]'::jsonb;
 
 alter table if exists public.carteira

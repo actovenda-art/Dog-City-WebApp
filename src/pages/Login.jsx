@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { User } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
 import { getSafeNextPathFromSearch } from "@/lib/auth-navigation";
+import { normalizePin } from "@/lib/pin-auth";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,20 +12,6 @@ import PinPairPad from "@/components/auth/PinPairPad";
 import { AlertTriangle, LoaderCircle, LogIn, Mail, ShieldCheck } from "lucide-react";
 
 const APP_SITE_URL = import.meta.env.VITE_SITE_URL;
-
-function shufflePairs() {
-  const digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
-  for (let index = digits.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(Math.random() * (index + 1));
-    [digits[index], digits[randomIndex]] = [digits[randomIndex], digits[index]];
-  }
-
-  const result = [];
-  for (let index = 0; index < digits.length; index += 2) {
-    result.push([digits[index], digits[index + 1]]);
-  }
-  return result;
-}
 
 function GoogleIcon() {
   return (
@@ -43,25 +30,23 @@ export default function Login() {
   const wasRecovered = useMemo(() => new URLSearchParams(location.search).get("recovered") === "1", [location.search]);
   const inviteToken = useMemo(() => new URLSearchParams(location.search).get("invite"), [location.search]);
   const [email, setEmail] = useState("");
-  const [pairs, setPairs] = useState(() => shufflePairs());
-  const [selectedEntries, setSelectedEntries] = useState([]);
+  const [pin, setPin] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const selectedPairs = useMemo(() => selectedEntries.map((entry) => entry.pair), [selectedEntries]);
-  const selectedDigits = useMemo(() => selectedEntries.map((entry) => entry.digit), [selectedEntries]);
+  const normalizedPin = normalizePin(pin);
 
-  const handleSelectDigit = (pair, digit) => {
-    setSelectedEntries((current) => current.length >= 6 ? current : [...current, { pair, digit }]);
+  const handleSelectDigit = (digit) => {
+    setPin((current) => normalizePin(`${current}${digit}`));
   };
 
   const handleBackspace = () => {
-    setSelectedEntries((current) => current.slice(0, -1));
+    setPin((current) => current.slice(0, -1));
   };
 
-  const handleShuffle = () => {
-    setPairs(shufflePairs());
+  const handleClear = () => {
+    setPin("");
   };
 
   const handleGoogleLogin = async () => {
@@ -93,8 +78,8 @@ export default function Login() {
       return;
     }
 
-    if (selectedDigits.length !== 6) {
-      setErrorMessage("Selecione os 6 dígitos correspondentes ao PIN.");
+    if (normalizedPin.length !== 6) {
+      setErrorMessage("Informe os 6 dígitos do PIN.");
       return;
     }
 
@@ -102,11 +87,9 @@ export default function Login() {
     setErrorMessage("");
 
     try {
-      await User.signInWithPinPairs?.({
+      await User.signInWithPin?.({
         email: email.trim().toLowerCase(),
-        selectedPairs,
-        selectedDigits,
-        pin: selectedDigits.join(""),
+        pin: normalizedPin,
       });
 
       const currentUser = await User.me();
@@ -134,8 +117,7 @@ export default function Login() {
       console.error("Erro ao autenticar com PIN:", error);
       setErrorMessage(error?.message || "Não foi possível autenticar com email e PIN.");
       setIsSubmitting(false);
-      setSelectedEntries([]);
-      setPairs(shufflePairs());
+      setPin("");
     }
   };
 
@@ -159,7 +141,7 @@ export default function Login() {
           <form onSubmit={handlePinLogin} className="mt-8 space-y-5">
             {wasRecovered && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
-                Encontramos um estado antigo de sessao neste navegador e limpamos o acesso local para recuperar o login. Entre novamente para continuar.
+                Encontramos um estado antigo de sessão neste navegador e limpamos o acesso local para recuperar o login. Entre novamente para continuar.
               </div>
             )}
 
@@ -187,14 +169,13 @@ export default function Login() {
             <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
               <div className="mb-4 flex items-center gap-2 text-slate-200">
                 <ShieldCheck className="h-4 w-4 text-blue-300" />
-                <span className="text-sm font-medium">Senha PIN em pares aleatorios</span>
+                <span className="text-sm font-medium">Senha PIN numérica</span>
               </div>
               <PinPairPad
-                pairs={pairs}
-                selectedCount={selectedEntries.length}
-                onSelectDigit={handleSelectDigit}
+                value={pin}
+                onInputDigit={handleSelectDigit}
                 onBackspace={handleBackspace}
-                onShuffle={handleShuffle}
+                onClear={handleClear}
                 disabled={isSubmitting || isGoogleSubmitting}
               />
             </div>
@@ -234,7 +215,7 @@ export default function Login() {
 
             {!User.isEnabled?.() && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-                Este ambiente esta em modo local/mock. O login real so funciona com Supabase configurado.
+                Este ambiente está em modo local/mock. O login real só funciona com Supabase configurado.
               </div>
             )}
           </form>

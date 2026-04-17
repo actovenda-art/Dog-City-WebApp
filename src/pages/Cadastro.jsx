@@ -40,7 +40,10 @@ export default function Cadastro() {
   // Dog Form
   const emptyDog = {
     nome: "", apelido: "", raca: "", cores_pelagem: "", pelagem: "", peso: "", data_nascimento: "",
-    foto_url: "", foto_carteirinha_vacina_url: "", data_revacinacao_1: "", data_revacinacao_2: "", data_revacinacao_3: "",
+    foto_url: "", foto_carteirinha_vacina_url: "",
+    data_revacinacao_1: "", nome_vacina_revacinacao_1: "",
+    data_revacinacao_2: "", nome_vacina_revacinacao_2: "",
+    data_revacinacao_3: "", nome_vacina_revacinacao_3: "",
     veterinario_responsavel: "", veterinario_horario_atendimento: "", veterinario_telefone: "", veterinario_clinica_telefone: "", veterinario_endereco: "",
     alimentacao_marca_racao: "", alimentacao_sabor: "", alimentacao_tipo: "",
     refeicao_1_qnt: "", refeicao_1_horario: "", refeicao_1_obs: "",
@@ -175,8 +178,11 @@ export default function Cadastro() {
         foto_url: optional(dogForm.foto_url),
         foto_carteirinha_vacina_url: optional(dogForm.foto_carteirinha_vacina_url),
         data_revacinacao_1: optional(dogForm.data_revacinacao_1),
+        nome_vacina_revacinacao_1: optional(dogForm.nome_vacina_revacinacao_1),
         data_revacinacao_2: optional(dogForm.data_revacinacao_2),
+        nome_vacina_revacinacao_2: optional(dogForm.nome_vacina_revacinacao_2),
         data_revacinacao_3: optional(dogForm.data_revacinacao_3),
+        nome_vacina_revacinacao_3: optional(dogForm.nome_vacina_revacinacao_3),
         veterinario_responsavel: optional(dogForm.veterinario_responsavel),
         veterinario_horario_atendimento: optional(dogForm.veterinario_horario_atendimento),
         veterinario_telefone: optional(dogForm.veterinario_telefone),
@@ -412,6 +418,11 @@ export default function Cadastro() {
             <Card className="mt-4 border-blue-100 bg-white">
               <CardContent className="p-4 sm:p-6">
                 <h4 className="font-semibold text-gray-900 mb-3">Medicamentos de longo período / vitalício</h4>
+                <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div><Label>Vacina da 1Âª RevacinaÃ§Ã£o</Label><Input value={dogForm.nome_vacina_revacinacao_1} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_1: e.target.value })} placeholder="Ex: V10, AntirrÃ¡bica" /></div>
+                  <div><Label>Vacina da 2Âª RevacinaÃ§Ã£o</Label><Input value={dogForm.nome_vacina_revacinacao_2} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_2: e.target.value })} placeholder="Ex: V10, AntirrÃ¡bica" /></div>
+                  <div><Label>Vacina da 3Âª RevacinaÃ§Ã£o</Label><Input value={dogForm.nome_vacina_revacinacao_3} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_3: e.target.value })} placeholder="Ex: V10, AntirrÃ¡bica" /></div>
+                </div>
                 <div className="space-y-3">
                   {(dogForm.medicamentos_continuos || []).map((medicacao, index) => (
                     <div key={`medicacao-${index}`} className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">

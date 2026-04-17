@@ -529,6 +529,10 @@ const createMockAuth = () => {
     list: async () => [currentUser],
     signInWithGoogle: async () => ({ provider: 'google', user: currentUser }),
     exchangeCodeForSession: async () => ({ session: { user: currentUser }, user: currentUser }),
+    signInWithPin: async () => {
+      markDeviceTrustedForUser(currentUser);
+      return { ok: true, session: { user: currentUser }, user: currentUser };
+    },
     signInWithPinPairs: async () => {
       markDeviceTrustedForUser(currentUser);
       return { ok: true, session: { user: currentUser }, user: currentUser };
@@ -1367,7 +1371,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       if (error) throw error;
       return data;
     },
-    signInWithPinPairs: async ({ email, selectedPairs, selectedDigits, pin } = {}) => {
+    signInWithPin: async ({ email, selectedPairs, selectedDigits, pin } = {}) => {
       const result = await supabaseFunctions.userAdmin({
         action: 'pin_login',
         email,
@@ -1401,6 +1405,14 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         session: result?.session || null,
         user: mergedUser || result?.user || null,
       };
+    },
+    signInWithPinPairs: async ({ email, selectedPairs, selectedDigits, pin } = {}) => {
+      return supabaseAuth.signInWithPin({
+        email,
+        selectedPairs,
+        selectedDigits,
+        pin,
+      });
     },
     exchangeCodeForSession: async (currentUrl) => {
       const origin = getAppOrigin();

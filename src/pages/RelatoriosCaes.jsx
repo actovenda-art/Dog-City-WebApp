@@ -82,12 +82,16 @@ export default function RelatoriosCaes() {
     const limite = addDays(hoje, dias);
     const result = [];
     dogs.forEach(d => {
-      [d.data_revacinacao_1, d.data_revacinacao_2, d.data_revacinacao_3].forEach((dataRev, idx) => {
+      [
+        { dataRev: d.data_revacinacao_1, nomeVacina: d.nome_vacina_revacinacao_1, numeroVacina: 1 },
+        { dataRev: d.data_revacinacao_2, nomeVacina: d.nome_vacina_revacinacao_2, numeroVacina: 2 },
+        { dataRev: d.data_revacinacao_3, nomeVacina: d.nome_vacina_revacinacao_3, numeroVacina: 3 },
+      ].forEach(({ dataRev, nomeVacina, numeroVacina }) => {
         if (dataRev) {
           const data = new Date(dataRev);
           if (isAfter(data, subDays(hoje, 1)) && isBefore(data, limite)) {
             const diasRestantes = differenceInDays(data, hoje);
-            result.push({ ...d, dataRevacinacao: dataRev, diasRestantes, numeroVacina: idx + 1 });
+            result.push({ ...d, dataRevacinacao: dataRev, diasRestantes, numeroVacina, nomeVacina: nomeVacina || "" });
           }
         }
       });

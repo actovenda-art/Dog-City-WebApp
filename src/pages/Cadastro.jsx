@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Dog } from "@/api/entities";
 import { Responsavel } from "@/api/entities";
 import { Carteira } from "@/api/entities";
@@ -8,7 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Search, Check, Link as LinkIcon, Copy, ExternalLink } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Search, Check, Link as LinkIcon, Copy, ExternalLink, ArrowRight, ClipboardList, HeartPulse } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -18,24 +19,49 @@ import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeIn
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+
+const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+function getLinkedDogIds(record) {
+  return RELATION_SLOTS
+    .map((slot) => record?.[`dog_id_${slot}`])
+    .filter(Boolean);
+}
+
+function buildDogRelationPayload(existingRecord, linkedDogIds) {
+  const nextPayload = {};
+  RELATION_SLOTS.forEach((slot, index) => {
+    nextPayload[`dog_id_${slot}`] = linkedDogIds[index] || null;
+  });
+  return nextPayload;
+}
 
 export default function Cadastro() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [notifyTitle, setNotifyTitle] = useState("");
   const [notifyMessage, setNotifyMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [dogs, setDogs] = useState([]);
+  const [responsaveis, setResponsaveis] = useState([]);
+  const [carteiras, setCarteiras] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [activeTab, setActiveTab] = useState("caes");
+  const [editingDogId, setEditingDogId] = useState("");
+  const [selectedResponsavelIds, setSelectedResponsavelIds] = useState([]);
+  const [selectedCarteiraIds, setSelectedCarteiraIds] = useState([]);
+  const [searchLinkedResponsavel, setSearchLinkedResponsavel] = useState("");
+  const [searchLinkedCarteira, setSearchLinkedCarteira] = useState("");
   const [showClientLinkModal, setShowClientLinkModal] = useState(false);
   const [showClientLinkFeedback, setShowClientLinkFeedback] = useState(false);
   const [hasCopiedClientLink, setHasCopiedClientLink] = useState(false);
   const [clientLinkForm, setClientLinkForm] = useState({ responsavel_nome: "", responsavel_email: "" });
   const [clientLinkValue, setClientLinkValue] = useState("");
 
-  useEffect(() => { loadDogs(); loadCurrentUser(); }, []);
-  const loadDogs = async () => { const data = await Dog.list("-created_date", 500); setDogs(data); };
-  const loadCurrentUser = async () => { const me = await User.me(); setCurrentUser(me); };
+  useEffect(() => { loadData(); }, []);
 
   // Dog Form
   const emptyDog = {
@@ -44,6 +70,7 @@ export default function Cadastro() {
     data_revacinacao_1: "", nome_vacina_revacinacao_1: "",
     data_revacinacao_2: "", nome_vacina_revacinacao_2: "",
     data_revacinacao_3: "", nome_vacina_revacinacao_3: "",
+    alergias: "", restricoes_cuidados: "", observacoes_gerais: "",
     veterinario_responsavel: "", veterinario_horario_atendimento: "", veterinario_telefone: "", veterinario_clinica_telefone: "", veterinario_endereco: "",
     alimentacao_marca_racao: "", alimentacao_sabor: "", alimentacao_tipo: "",
     refeicao_1_qnt: "", refeicao_1_horario: "", refeicao_1_obs: "",
@@ -87,6 +114,145 @@ export default function Cadastro() {
   const buildClientRegistrationLink = (token) => {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     return `${origin}${createPageUrl("CadastroClientePublico")}?token=${encodeURIComponent(token)}`;
+  };
+
+  const filteredResponsaveis = useMemo(() => {
+    const search = searchLinkedResponsavel.trim().toLowerCase();
+    if (!search) return responsaveis;
+    return responsaveis.filter((item) =>
+      [item.nome_completo, item.cpf, item.celular, item.email].some((value) =>
+        String(value || "").toLowerCase().includes(search)
+      )
+    );
+  }, [responsaveis, searchLinkedResponsavel]);
+
+  const filteredCarteiras = useMemo(() => {
+    const search = searchLinkedCarteira.trim().toLowerCase();
+    if (!search) return carteiras;
+    return carteiras.filter((item) =>
+      [item.nome_razao_social, item.cpf_cnpj, item.celular, item.email].some((value) =>
+        String(value || "").toLowerCase().includes(search)
+      )
+    );
+  }, [carteiras, searchLinkedCarteira]);
+
+  const loadData = async () => {
+    try {
+      const [dogsData, responsaveisData, carteirasData, me] = await Promise.all([
+        Dog.list("-created_date", 500),
+        Responsavel.list("-created_date", 500),
+        Carteira.list("-created_date", 500),
+        User.me(),
+      ]);
+      setDogs(dogsData || []);
+      setResponsaveis(responsaveisData || []);
+      setCarteiras(carteirasData || []);
+      setCurrentUser(me || null);
+    } catch (error) {
+      setNotifyTitle("Erro");
+      setNotifyMessage(error?.message || "Não foi possível carregar os cadastros.");
+      setNotifyOpen(true);
+    }
+  };
+
+  const resetDogEditor = () => {
+    setDogForm({
+      ...emptyDog,
+      medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
+    });
+    setSelectedResponsavelIds([]);
+    setSelectedCarteiraIds([]);
+    setSearchLinkedResponsavel("");
+    setSearchLinkedCarteira("");
+    setEditingDogId("");
+  };
+
+  const openDogForEditing = (dogId) => {
+    const targetDog = dogs.find((item) => item.id === dogId);
+    if (!targetDog) return;
+
+    setActiveTab("caes");
+    setEditingDogId(targetDog.id);
+    setDogForm({
+      ...emptyDog,
+      ...targetDog,
+      peso: targetDog.peso ?? "",
+      medicamentos_continuos:
+        Array.isArray(targetDog.medicamentos_continuos) && targetDog.medicamentos_continuos.length > 0
+          ? targetDog.medicamentos_continuos.map((item) => ({
+              especificacoes: item?.especificacoes || "",
+              cuidados: item?.cuidados || "",
+              horario: item?.horario || "",
+              dose: item?.dose || "",
+            }))
+          : [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
+    });
+    setSelectedResponsavelIds(
+      responsaveis
+        .filter((item) => getLinkedDogIds(item).includes(targetDog.id))
+        .map((item) => item.id)
+    );
+    setSelectedCarteiraIds(
+      carteiras
+        .filter((item) => getLinkedDogIds(item).includes(targetDog.id))
+        .map((item) => item.id)
+    );
+  };
+
+  useEffect(() => {
+    if (!dogs.length) return;
+    const params = new URLSearchParams(location.search);
+    const editDogId = params.get("editDogId");
+    if (!editDogId) return;
+
+    openDogForEditing(editDogId);
+  }, [location.search, dogs, responsaveis, carteiras]);
+
+  const clearDogEditQuery = () => {
+    const params = new URLSearchParams(location.search);
+    if (!params.has("editDogId")) return;
+    params.delete("editDogId");
+    navigate(
+      {
+        pathname: location.pathname,
+        search: params.toString() ? `?${params.toString()}` : "",
+      },
+      { replace: true }
+    );
+  };
+
+  const toggleLinkedRecord = (recordId, setter) => {
+    setter((current) => (
+      current.includes(recordId)
+        ? current.filter((item) => item !== recordId)
+        : [...current, recordId]
+    ));
+  };
+
+  const validateRelationCapacity = (records, selectedIds, dogId, label) => {
+    for (const record of records) {
+      const currentIds = getLinkedDogIds(record);
+      const willBeSelected = selectedIds.includes(record.id);
+      const alreadyLinked = currentIds.includes(dogId);
+      if (willBeSelected && !alreadyLinked && currentIds.length >= RELATION_SLOTS.length) {
+        throw new Error(`${label} ${record.nome_completo || record.nome_razao_social || ""} já atingiu o limite de 8 cães vinculados.`);
+      }
+    }
+  };
+
+  const syncDogLinks = async (entityApi, records, selectedIds, dogId) => {
+    const selectedSet = new Set(selectedIds);
+    const recordsToSync = records.filter((record) => {
+      const linkedDogIds = getLinkedDogIds(record);
+      return linkedDogIds.includes(dogId) || selectedSet.has(record.id);
+    });
+
+    for (const record of recordsToSync) {
+      const currentIds = getLinkedDogIds(record).filter((linkedId) => linkedId !== dogId);
+      if (selectedSet.has(record.id)) currentIds.push(dogId);
+      const uniqueIds = [...new Set(currentIds)].slice(0, RELATION_SLOTS.length);
+      await entityApi.update(record.id, buildDogRelationPayload(record, uniqueIds));
+    }
   };
 
   const updateDogMedication = (index, field, value) => {
@@ -166,7 +332,7 @@ export default function Cadastro() {
     if (!dogForm.nome) { setNotifyTitle("Campo obrigatório"); setNotifyMessage("Informe o nome do cão."); setNotifyOpen(true); return; }
     setIsSaving(true);
     try {
-      await Dog.create({
+      const payload = {
         empresa_id: currentUser?.empresa_id || null,
         nome: dogForm.nome.trim(),
         apelido: optional(dogForm.apelido),
@@ -183,6 +349,9 @@ export default function Cadastro() {
         nome_vacina_revacinacao_2: optional(dogForm.nome_vacina_revacinacao_2),
         data_revacinacao_3: optional(dogForm.data_revacinacao_3),
         nome_vacina_revacinacao_3: optional(dogForm.nome_vacina_revacinacao_3),
+        alergias: optional(dogForm.alergias),
+        restricoes_cuidados: optional(dogForm.restricoes_cuidados),
+        observacoes_gerais: optional(dogForm.observacoes_gerais),
         veterinario_responsavel: optional(dogForm.veterinario_responsavel),
         veterinario_horario_atendimento: optional(dogForm.veterinario_horario_atendimento),
         veterinario_telefone: optional(dogForm.veterinario_telefone),
@@ -204,9 +373,25 @@ export default function Cadastro() {
         refeicao_4_horario: optional(dogForm.refeicao_4_horario),
         refeicao_4_obs: optional(dogForm.refeicao_4_obs),
         medicamentos_continuos: normalizeMedications(dogForm.medicamentos_continuos),
-      });
-      setNotifyTitle("Sucesso"); setNotifyMessage("Cão cadastrado com sucesso!"); setNotifyOpen(true);
-      setDogForm(emptyDog); loadDogs();
+      };
+      validateRelationCapacity(responsaveis, selectedResponsavelIds, editingDogId, "O responsável");
+      validateRelationCapacity(carteiras, selectedCarteiraIds, editingDogId, "O responsável financeiro");
+
+      setNotifyOpen(false);
+      const savedDog = editingDogId
+        ? await Dog.update(editingDogId, payload)
+        : await Dog.create(payload);
+
+      const effectiveDogId = savedDog?.id || editingDogId;
+      await syncDogLinks(Responsavel, responsaveis, selectedResponsavelIds, effectiveDogId);
+      await syncDogLinks(Carteira, carteiras, selectedCarteiraIds, effectiveDogId);
+
+      setNotifyTitle("Sucesso");
+      setNotifyMessage(editingDogId ? "Cadastro do cão atualizado com sucesso!" : "Cão cadastrado com sucesso!");
+      setNotifyOpen(true);
+      resetDogEditor();
+      clearDogEditQuery();
+      await loadData();
     } catch (error) { setNotifyTitle("Erro"); setNotifyMessage(error?.message || "Erro ao cadastrar."); setNotifyOpen(true); }
     setIsSaving(false);
   };
@@ -247,6 +432,7 @@ export default function Cadastro() {
       });
       setNotifyTitle("Sucesso"); setNotifyMessage("Responsável cadastrado!"); setNotifyOpen(true);
       setResponsavelForm(emptyResponsavel);
+      await loadData();
     } catch (error) { setNotifyTitle("Erro"); setNotifyMessage(error?.message || "Erro ao cadastrar."); setNotifyOpen(true); }
     setIsSaving(false);
   };
@@ -292,6 +478,7 @@ export default function Cadastro() {
       });
       setNotifyTitle("Sucesso"); setNotifyMessage("Carteira cadastrada!"); setNotifyOpen(true);
       setCarteiraForm(emptyCarteira);
+      await loadData();
     } catch (error) { setNotifyTitle("Erro"); setNotifyMessage(error?.message || "Erro ao cadastrar."); setNotifyOpen(true); }
     setIsSaving(false);
   };
@@ -342,31 +529,138 @@ export default function Cadastro() {
     }
   };
 
+  const activeDogRecord = editingDogId ? dogs.find((item) => item.id === editingDogId) : null;
+  const cadastroStats = [
+    {
+      id: "dogs",
+      label: "Cães cadastrados",
+      value: dogs.length,
+      icon: DogIcon,
+      shellClass: "border-blue-200 bg-blue-50",
+      iconClass: "bg-blue-100 text-blue-700",
+      valueClass: "text-blue-700",
+    },
+    {
+      id: "responsaveis",
+      label: "Responsáveis",
+      value: responsaveis.length,
+      icon: Users,
+      shellClass: "border-emerald-200 bg-emerald-50",
+      iconClass: "bg-emerald-100 text-emerald-700",
+      valueClass: "text-emerald-700",
+    },
+    {
+      id: "carteiras",
+      label: "Responsáveis financeiros",
+      value: carteiras.length,
+      icon: Wallet,
+      shellClass: "border-orange-200 bg-orange-50",
+      iconClass: "bg-orange-100 text-orange-700",
+      valueClass: "text-orange-700",
+    },
+  ];
+
+  const tabItems = [
+    {
+      id: "caes",
+      label: "Cães",
+      description: "Ficha do cão, saúde, medicação e vínculos.",
+      icon: DogIcon,
+      count: dogs.length,
+      activeClass: "data-[state=active]:bg-blue-600 data-[state=active]:text-white",
+      badgeClass: "bg-blue-100 text-blue-700",
+    },
+    {
+      id: "responsaveis",
+      label: "Responsáveis",
+      description: "Contatos, CPF e associação com os cães.",
+      icon: Users,
+      count: responsaveis.length,
+      activeClass: "data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
+      badgeClass: "bg-emerald-100 text-emerald-700",
+    },
+    {
+      id: "carteiras",
+      label: "Financeiro",
+      description: "Cobrança, vencimento e vínculo financeiro.",
+      icon: Wallet,
+      count: carteiras.length,
+      activeClass: "data-[state=active]:bg-orange-600 data-[state=active]:text-white",
+      badgeClass: "bg-orange-100 text-orange-700",
+    },
+  ];
+  const activeTabItem = tabItems.find((item) => item.id === activeTab) || tabItems[0];
+
   
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="mt-1">
-              <DogIcon className="w-6 h-6 text-orange-500" />
+      <div className="mx-auto max-w-7xl">
+        <Card className="mb-6 overflow-hidden border-0 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-xl">
+          <CardContent className="p-5 sm:p-6">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-2xl">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-100">
+                  <ClipboardList className="h-3.5 w-3.5" />
+                  Central de cadastros
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 rounded-2xl bg-white/10 p-3">
+                    <DogIcon className="h-6 w-6 text-orange-300" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-bold sm:text-3xl">Cadastro</h1>
+                    <p className="mt-2 text-sm leading-6 text-slate-200 sm:text-base">
+                      Organize cães, responsáveis e financeiro em um único fluxo. A navegação agora destaca melhor o que estamos preenchendo e o que já existe no sistema.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:min-w-[280px]">
+                <Button variant="secondary" onClick={openClientLinkModal} className="justify-between bg-white text-slate-900 hover:bg-slate-100">
+                  <span className="flex items-center gap-2">
+                    <LinkIcon className="h-4 w-4" />
+                    Gerar link universal de cadastro
+                  </span>
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-200">
+                  <p className="mb-1 font-medium text-white">{activeTabItem.label}</p>
+                  {activeTab === "caes" ? (
+                    activeDogRecord ? `Editando agora: ${activeDogRecord.nome}.` : "Use esta área para criar novas fichas de cães."
+                  ) : activeTab === "responsaveis" ? (
+                    "Cadastre contatos, documentos e vínculos dos responsáveis."
+                  ) : (
+                    "Mantenha os responsáveis financeiros vinculados aos cães corretos."
+                  )}
+                </div>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Cadastro</h1>
-              <p className="text-sm text-gray-600 mt-1">Gerenciamento de cadastros</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={openClientLinkModal}>
-              <LinkIcon className="w-4 h-4 mr-2" />
-              Gerar link universal de cadastro
-            </Button>
-          </div>
+          </CardContent>
+        </Card>
+
+        <div className="mb-6 grid gap-4 sm:grid-cols-3">
+          {cadastroStats.map((stat) => {
+            const Icon = stat.icon;
+            return (
+              <Card key={stat.id} className={`border ${stat.shellClass}`}>
+                <CardContent className="flex items-center justify-between p-4">
+                  <div>
+                    <p className="text-sm text-slate-600">{stat.label}</p>
+                    <p className={`mt-2 text-2xl font-bold ${stat.valueClass}`}>{stat.value}</p>
+                  </div>
+                  <div className={`rounded-2xl p-3 ${stat.iconClass}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
 
-        <Tabs defaultValue="caes" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="mb-6 grid h-auto w-full grid-cols-1 gap-2 rounded-3xl bg-white p-2 shadow-sm sm:grid-cols-3">
             <TabsTrigger value="caes" className="flex items-center gap-2"><DogIcon className="w-4 h-4" /><span className="hidden sm:inline">Cães</span></TabsTrigger>
             <TabsTrigger value="responsaveis" className="flex items-center gap-2"><Users className="w-4 h-4" /><span className="hidden sm:inline">Responsáveis</span></TabsTrigger>
             <TabsTrigger value="carteiras" className="flex items-center gap-2"><Wallet className="w-4 h-4" /><span className="hidden sm:inline">Carteiras</span></TabsTrigger>
@@ -374,9 +668,54 @@ export default function Cadastro() {
 
           {/* Cães Tab */}
           <TabsContent value="caes">
-            <Card className="border-blue-200 bg-white">
+            <div className="mb-4 grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
+              <Card className="border-blue-200 bg-blue-50/70">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-2xl bg-blue-100 p-3 text-blue-700">
+                      <HeartPulse className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-blue-900">Cadastro do cão</p>
+                      <p className="mt-1 text-sm text-blue-800">
+                        Separei o preenchimento em blocos para ficar mais fácil revisar saúde, alimentação, medicação e vínculos antes de salvar.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-slate-200 bg-white">
+                <CardContent className="p-4">
+                  <p className="text-sm font-semibold text-slate-900">Resumo rápido</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} responsável(is)</Badge>
+                    <Badge className="bg-orange-100 text-orange-700">{selectedCarteiraIds.length} financeiro(s)</Badge>
+                    <Badge className="bg-purple-100 text-purple-700">{(dogForm.medicamentos_continuos || []).length} medicamento(s)</Badge>
+                    {activeDogRecord ? <Badge className="bg-emerald-100 text-emerald-700">Editando {activeDogRecord.nome}</Badge> : null}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            <Card className="border-blue-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><DogIcon className="w-5 h-5 text-blue-600" />Cadastrar Cão</h3>
+                {editingDogId ? (
+                  <div className="mb-4 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-blue-700">
+                      Você está atualizando este cão e pode revisar vínculos, vacinas e cadastro completo.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        resetDogEditor();
+                        clearDogEditQuery();
+                      }}
+                    >
+                      Limpar edição
+                    </Button>
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div><Label>Nome *</Label><Input value={dogForm.nome} onChange={(e) => setDogForm({ ...dogForm, nome: e.target.value })} placeholder="Nome do cão" /></div>
                   <div><Label>Apelido</Label><Input value={dogForm.apelido} onChange={(e) => setDogForm({ ...dogForm, apelido: e.target.value })} /></div>
@@ -419,9 +758,9 @@ export default function Cadastro() {
               <CardContent className="p-4 sm:p-6">
                 <h4 className="font-semibold text-gray-900 mb-3">Medicamentos de longo período / vitalício</h4>
                 <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div><Label>Vacina da 1Âª RevacinaÃ§Ã£o</Label><Input value={dogForm.nome_vacina_revacinacao_1} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_1: e.target.value })} placeholder="Ex: V10, AntirrÃ¡bica" /></div>
-                  <div><Label>Vacina da 2Âª RevacinaÃ§Ã£o</Label><Input value={dogForm.nome_vacina_revacinacao_2} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_2: e.target.value })} placeholder="Ex: V10, AntirrÃ¡bica" /></div>
-                  <div><Label>Vacina da 3Âª RevacinaÃ§Ã£o</Label><Input value={dogForm.nome_vacina_revacinacao_3} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_3: e.target.value })} placeholder="Ex: V10, AntirrÃ¡bica" /></div>
+                  <div><Label>Vacina da 1ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_1} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_1: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
+                  <div><Label>Vacina da 2ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_2} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_2: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
+                  <div><Label>Vacina da 3ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_3} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_3: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
                 </div>
                 <div className="space-y-3">
                   {(dogForm.medicamentos_continuos || []).map((medicacao, index) => (
@@ -445,6 +784,112 @@ export default function Cadastro() {
                     <Plus className="w-4 h-4 mr-2" />
                     Adicionar medicamento
                   </Button>
+                  <div className="rounded-xl border border-blue-100 bg-white p-4">
+                    <h5 className="mb-3 text-sm font-semibold text-gray-900">Saúde e observações</h5>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <Label>Alergias</Label>
+                        <Textarea
+                          value={dogForm.alergias}
+                          onChange={(e) => setDogForm({ ...dogForm, alergias: e.target.value })}
+                          rows={2}
+                          placeholder="Alergias, intolerâncias ou sensibilidades do cão"
+                        />
+                      </div>
+                      <div>
+                        <Label>Restrições e cuidados</Label>
+                        <Textarea
+                          value={dogForm.restricoes_cuidados}
+                          onChange={(e) => setDogForm({ ...dogForm, restricoes_cuidados: e.target.value })}
+                          rows={3}
+                          placeholder="Cuidados especiais, restrições de manejo e observações clínicas"
+                        />
+                      </div>
+                      <div>
+                        <Label>Observações gerais</Label>
+                        <Textarea
+                          value={dogForm.observacoes_gerais}
+                          onChange={(e) => setDogForm({ ...dogForm, observacoes_gerais: e.target.value })}
+                          rows={3}
+                          placeholder="Comportamento, preferências e demais observações importantes"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-blue-100 bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <h5 className="text-sm font-semibold text-gray-900">Vincular responsáveis existentes</h5>
+                        <p className="text-xs text-gray-500">Selecione quem já existe no sistema e deve ficar associado a este cão.</p>
+                      </div>
+                      <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} selecionado(s)</Badge>
+                    </div>
+                    <SearchFiltersToolbar
+                      searchTerm={searchLinkedResponsavel}
+                      onSearchChange={setSearchLinkedResponsavel}
+                      searchPlaceholder="Buscar responsável por nome, CPF, celular ou email..."
+                      hasActiveFilters={Boolean(searchLinkedResponsavel)}
+                      onClear={() => setSearchLinkedResponsavel("")}
+                    />
+                    <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+                      {filteredResponsaveis.length > 0 ? filteredResponsaveis.map((responsavel) => {
+                        const isSelected = selectedResponsavelIds.includes(responsavel.id);
+                        return (
+                          <button
+                            key={responsavel.id}
+                            type="button"
+                            onClick={() => toggleLinkedRecord(responsavel.id, setSelectedResponsavelIds)}
+                            className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors ${isSelected ? "border-blue-300 bg-blue-50" : "border-transparent bg-white hover:border-gray-200"}`}
+                          >
+                            <div>
+                              <p className="font-medium text-gray-900">{responsavel.nome_completo}</p>
+                              <p className="text-xs text-gray-500">{responsavel.celular || responsavel.email || responsavel.cpf || "Sem contato cadastrado"}</p>
+                            </div>
+                            {isSelected ? <Check className="h-4 w-4 text-blue-600" /> : null}
+                          </button>
+                        );
+                      }) : (
+                        <p className="p-3 text-sm text-gray-500">Nenhum responsável encontrado.</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-blue-100 bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <h5 className="text-sm font-semibold text-gray-900">Vincular responsável financeiro existente</h5>
+                        <p className="text-xs text-gray-500">Use esta lista quando o responsável financeiro já tiver sido cadastrado antes do cão.</p>
+                      </div>
+                      <Badge className="bg-orange-100 text-orange-700">{selectedCarteiraIds.length} selecionado(s)</Badge>
+                    </div>
+                    <SearchFiltersToolbar
+                      searchTerm={searchLinkedCarteira}
+                      onSearchChange={setSearchLinkedCarteira}
+                      searchPlaceholder="Buscar responsável financeiro por nome, CPF/CNPJ, celular ou email..."
+                      hasActiveFilters={Boolean(searchLinkedCarteira)}
+                      onClear={() => setSearchLinkedCarteira("")}
+                    />
+                    <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+                      {filteredCarteiras.length > 0 ? filteredCarteiras.map((carteira) => {
+                        const isSelected = selectedCarteiraIds.includes(carteira.id);
+                        return (
+                          <button
+                            key={carteira.id}
+                            type="button"
+                            onClick={() => toggleLinkedRecord(carteira.id, setSelectedCarteiraIds)}
+                            className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors ${isSelected ? "border-orange-300 bg-orange-50" : "border-transparent bg-white hover:border-gray-200"}`}
+                          >
+                            <div>
+                              <p className="font-medium text-gray-900">{carteira.nome_razao_social}</p>
+                              <p className="text-xs text-gray-500">{carteira.celular || carteira.email || carteira.cpf_cnpj || "Sem contato cadastrado"}</p>
+                            </div>
+                            {isSelected ? <Check className="h-4 w-4 text-orange-600" /> : null}
+                          </button>
+                        );
+                      }) : (
+                        <p className="p-3 text-sm text-gray-500">Nenhum responsável financeiro encontrado.</p>
+                      )}
+                    </div>
+                  </div>
                   <Button onClick={handleSaveDog} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
                     <Save className="w-4 h-4 mr-2" />
                     {isSaving ? "Salvando..." : "Cadastrar Cão"}
@@ -452,11 +897,55 @@ export default function Cadastro() {
                 </div>
               </CardContent>
             </Card>
+            <Card className="mt-4 border-blue-100 bg-white">
+              <CardContent className="p-4 sm:p-6">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-semibold text-gray-900">Cães cadastrados</h4>
+                    <p className="text-sm text-gray-500">Abra a ficha do cão ou reutilize o cadastro para atualização.</p>
+                  </div>
+                  <Badge variant="outline">{dogs.length} registro(s)</Badge>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {dogs.map((dog) => (
+                    <div key={dog.id} className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-gray-900">{dog.nome}</p>
+                        <p className="truncate text-sm text-gray-500">{dog.raca || "Raça não informada"}</p>
+                      </div>
+                      <div className="ml-3 flex gap-2">
+                        <Link to={`${createPageUrl("PerfilCao")}?id=${dog.id}`}>
+                          <Button type="button" variant="outline">Ficha</Button>
+                        </Link>
+                        <Button type="button" onClick={() => openDogForEditing(dog.id)}>
+                          Editar
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Responsáveis Tab */}
           <TabsContent value="responsaveis">
-            <Card className="border-green-200 bg-white">
+            <Card className="mb-4 border-emerald-200 bg-emerald-50/70">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-700">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-900">Responsáveis do dia a dia</p>
+                    <p className="mt-1 text-sm text-emerald-800">
+                      Cadastre os contatos principais, documentos e os cães vinculados para facilitar operação e comunicação.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-green-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-green-600" />Cadastrar Responsável</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -519,7 +1008,22 @@ export default function Cadastro() {
 
           {/* Carteiras Tab */}
           <TabsContent value="carteiras">
-            <Card className="border-orange-200 bg-white">
+            <Card className="mb-4 border-orange-200 bg-orange-50/70">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-2xl bg-orange-100 p-3 text-orange-700">
+                    <Wallet className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-orange-900">Financeiro vinculado ao cão</p>
+                    <p className="mt-1 text-sm text-orange-800">
+                      Mantenha quem paga, dados de cobrança e vencimento dos planos organizados em um bloco separado.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-orange-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Wallet className="w-5 h-5 text-orange-600" />Cadastrar Carteira</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

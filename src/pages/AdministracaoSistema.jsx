@@ -452,6 +452,12 @@ export default function AdministracaoSistema() {
     setUnitSelectionDialog({ open: false, unit: null });
   }
 
+  function separateMergedUnits() {
+    const targetUnitId = selectedUnitId || selectedUnitIds[0];
+    if (!targetUnitId) return;
+    activateSingleUnit(targetUnitId);
+  }
+
   function handleUnitCardSelection(unit) {
     if (!unit?.id) return;
 
@@ -845,7 +851,7 @@ export default function AdministracaoSistema() {
       } else if (isSilentPermissionBlock) {
         alert("Não foi possível excluir este tipo de acesso. O registro continuou no banco, o que normalmente indica bloqueio por permissão ou regra do Supabase.");
       } else {
-        alert(formatApiError(error, "NÃƒÂ£o foi possÃƒÂ­vel excluir o perfil de acesso."));
+        alert(formatApiError(error, "Não foi possível excluir o perfil de acesso."));
       }
     } finally {
       setIsSaving(false);
@@ -983,13 +989,11 @@ export default function AdministracaoSistema() {
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
-              Unidade em acesso
-              <div className="mt-1 font-semibold text-gray-900">{selectedUnit?.nome_fantasia || "Nenhuma unidade ativa"}</div>
-              {isUnitUnionActive ? (
-                <div className="mt-1 text-xs text-blue-600">{selectedUnitIds.length} unidades na visão unificada</div>
-              ) : null}
-            </div>
+            {isUnitUnionActive ? (
+              <Button variant="outline" onClick={separateMergedUnits}>
+                Separar
+              </Button>
+            ) : null}
             <Link to={createPageUrl("ConfiguracoesPrecos")}>
               <Button variant="outline">
                 <Tags className="w-4 h-4 mr-2" />
@@ -1386,7 +1390,7 @@ export default function AdministracaoSistema() {
           <DialogHeader>
             <DialogTitle>{editingProfile ? "Editar perfil de acesso" : "Novo perfil de acesso"}</DialogTitle>
             <DialogDescription>
-              Configure os perfis que seráo atribuídos aos usuários das unidades e da administração central.
+              Configure os perfis que serão atribuídos aos usuários das unidades e da administração central.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -1589,7 +1593,7 @@ export default function AdministracaoSistema() {
               <div>
                 <Label>Endereço</Label>
                 <p className="mt-1 text-xs text-gray-500">
-                  {unitAddressLoading ? "Buscando endereço..." : "Rua, bairro, cidade e estado seráo preenchidos pelo CEP."}
+                  {unitAddressLoading ? "Buscando endereço..." : "Rua, bairro, cidade e estado serão preenchidos pelo CEP."}
                 </p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

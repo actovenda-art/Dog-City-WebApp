@@ -570,6 +570,31 @@ export default function Orcamentos() {
     });
 
   const exigeConfirmacaoDestinatario = Boolean(searchTerm) && clientesFiltrados.length > 1;
+  const selectedDogIds = [...new Set(caes.map((cao) => cao?.dog_id).filter(Boolean))];
+  const eligibleCarteirasForSelectedDogs = selectedDogIds.length === 0
+    ? []
+    : carteiras.filter((cliente) => getLinkedDogIds(cliente).some((dogId) => selectedDogIds.includes(dogId)));
+  const isClienteSelecionadoElegivel = !clienteSelecionado
+    || selectedDogIds.length === 0
+    || eligibleCarteirasForSelectedDogs.some((cliente) => cliente.id === clienteSelecionado.id);
+
+  function getClienteSelecionadoError() {
+    if (!clienteSelecionado || selectedDogIds.length === 0 || isClienteSelecionadoElegivel) {
+      return "";
+    }
+
+    return "O responsavel financeiro selecionado precisa estar vinculado a pelo menos um dos caes deste orcamento.";
+  }
+
+  function canAdvanceToResumo() {
+    const validationError = getClienteSelecionadoError();
+    if (validationError) {
+      alert(validationError);
+      return false;
+    }
+
+    return true;
+  }
 
   function addCao() {
     setCaes((prev) => [...prev, { ...emptyCao }]);
@@ -586,6 +611,12 @@ export default function Orcamentos() {
   async function handleSave(status = "rascunho") {
     if (!calculo) {
       alert("Preencha os dados do orçamento");
+      return;
+    }
+
+    const validationError = getClienteSelecionadoError();
+    if (validationError) {
+      alert(validationError);
       return;
     }
 
@@ -799,6 +830,12 @@ export default function Orcamentos() {
                     </div>
                   )}
 
+                  {getClienteSelecionadoError() ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                      <p className="text-sm text-red-700">{getClienteSelecionadoError()}</p>
+                    </div>
+                  ) : null}
+
                   {caes.map((cao, index) => (
                     <OrcamentoCaoForm
                       key={index}
@@ -873,7 +910,15 @@ export default function Orcamentos() {
             {etapa === "caes" && (
               <>
                 <Button variant="outline" onClick={() => setEtapa("cliente")}>Voltar</Button>
-                <Button onClick={() => setEtapa("resumo")} disabled={!calculo} className="bg-blue-600 text-white hover:bg-blue-700">
+                <Button
+                  onClick={() => {
+                    if (canAdvanceToResumo()) {
+                      setEtapa("resumo");
+                    }
+                  }}
+                  disabled={!calculo}
+                  className="bg-blue-600 text-white hover:bg-blue-700"
+                >
                   Ver Resumo
                 </Button>
               </>

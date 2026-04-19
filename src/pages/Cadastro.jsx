@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Dog } from "@/api/entities";
 import { Responsavel } from "@/api/entities";
 import { Carteira } from "@/api/entities";
@@ -20,8 +20,14 @@ import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
+const panelMotion = {
+  initial: { opacity: 0, y: 18 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.28, ease: "easeOut" },
+};
 
 function getLinkedDogIds(record) {
   return RELATION_SLOTS
@@ -60,6 +66,9 @@ export default function Cadastro() {
   const [hasCopiedClientLink, setHasCopiedClientLink] = useState(false);
   const [clientLinkForm, setClientLinkForm] = useState({ responsavel_nome: "", responsavel_email: "" });
   const [clientLinkValue, setClientLinkValue] = useState("");
+  const dogSectionRef = useRef(null);
+  const responsavelSectionRef = useRef(null);
+  const carteiraSectionRef = useRef(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -219,6 +228,22 @@ export default function Cadastro() {
       },
       { replace: true }
     );
+  };
+
+  const openCadastroStage = (tabId) => {
+    const refMap = {
+      caes: dogSectionRef,
+      responsaveis: responsavelSectionRef,
+      carteiras: carteiraSectionRef,
+    };
+
+    setActiveTab(tabId);
+    window.setTimeout(() => {
+      refMap[tabId]?.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 140);
   };
 
   const toggleLinkedRecord = (recordId, setter) => {
@@ -532,7 +557,7 @@ export default function Cadastro() {
   const activeDogRecord = editingDogId ? dogs.find((item) => item.id === editingDogId) : null;
   const cadastroStats = [
     {
-      id: "dogs",
+      id: "caes",
       label: "Cães cadastrados",
       value: dogs.length,
       icon: DogIcon,
@@ -590,6 +615,62 @@ export default function Cadastro() {
     },
   ];
   const activeTabItem = tabItems.find((item) => item.id === activeTab) || tabItems[0];
+  const dogDraftCompleted = [
+    dogForm.nome,
+    dogForm.raca,
+    dogForm.data_nascimento,
+    dogForm.alimentacao_tipo || dogForm.alimentacao_marca_racao,
+    selectedResponsavelIds.length > 0 || selectedCarteiraIds.length > 0,
+  ].filter(Boolean).length;
+  const responsavelDraftCompleted = [
+    responsavelForm.nome_completo,
+    responsavelForm.cpf,
+    responsavelForm.celular,
+    responsavelForm.email,
+    [1, 2, 3, 4, 5, 6, 7, 8].some((slot) => Boolean(responsavelForm[`dog_id_${slot}`])),
+  ].filter(Boolean).length;
+  const carteiraDraftCompleted = [
+    carteiraForm.nome_razao_social,
+    carteiraForm.cpf_cnpj,
+    carteiraForm.celular,
+    carteiraForm.vencimento_planos,
+    [1, 2, 3, 4, 5, 6, 7, 8].some((slot) => Boolean(carteiraForm[`dog_id_${slot}`])),
+  ].filter(Boolean).length;
+  const jornadaCadastro = [
+    {
+      id: "caes",
+      title: editingDogId ? "Continuar ficha do cão" : "Iniciar cadastro do cão",
+      caption: editingDogId ? `Retome a edição de ${activeDogRecord?.nome}.` : "Preencha dados básicos, saúde, alimentação e vínculos.",
+      icon: DogIcon,
+      progress: Math.round((dogDraftCompleted / 5) * 100),
+      counter: `${dogDraftCompleted}/5`,
+      themeClass: "border-blue-200/30 bg-blue-400/10 hover:bg-blue-400/15",
+      iconClass: "bg-blue-300/20 text-blue-100",
+      progressClass: "bg-blue-300",
+    },
+    {
+      id: "responsaveis",
+      title: "Cadastrar responsável",
+      caption: "Organize contatos principais e conecte os cães corretos.",
+      icon: Users,
+      progress: Math.round((responsavelDraftCompleted / 5) * 100),
+      counter: `${responsavelDraftCompleted}/5`,
+      themeClass: "border-emerald-200/30 bg-emerald-400/10 hover:bg-emerald-400/15",
+      iconClass: "bg-emerald-300/20 text-emerald-100",
+      progressClass: "bg-emerald-300",
+    },
+    {
+      id: "carteiras",
+      title: "Configurar financeiro",
+      caption: "Defina cobrança, vencimento e vínculo financeiro do cão.",
+      icon: Wallet,
+      progress: Math.round((carteiraDraftCompleted / 5) * 100),
+      counter: `${carteiraDraftCompleted}/5`,
+      themeClass: "border-orange-200/30 bg-orange-400/10 hover:bg-orange-400/15",
+      iconClass: "bg-orange-300/20 text-orange-100",
+      progressClass: "bg-orange-300",
+    },
+  ];
 
   
 

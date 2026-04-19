@@ -16,6 +16,12 @@ import {
   isDeviceTrustedForUser,
   markDeviceTrustedForUser,
 } from '@/lib/device-trust';
+import {
+  buildInternalEntityCode,
+  getInternalEntityCode,
+  hasInternalEntityCodeConfig,
+  normalizeEntityUnitCode,
+} from '@/lib/entity-identifiers';
 
 const STORAGE_PREFIX = 'local_app_client_';
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -56,7 +62,7 @@ const UNIT_SCOPED_ENTITIES = new Set([
 function readStorage(key) {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_PREFIX + key) || '[]');
-  } catch (e) {
+  } catch {
     return [];
   }
 }
@@ -183,6 +189,41 @@ function getMockScopedUnitIds() {
 
 function createMockEntity(name, options = {}) {
   const { unitScoped = false } = options;
+  const resolveMockUnitCode = (item = {}) => {
+    const explicitUnitCode = item?.empresa_codigo || item?.empresaCode || item?.unit_code || item?.unitCode;
+    if (explicitUnitCode) return normalizeEntityUnitCode(explicitUnitCode);
+
+    const unitId = item?.empresa_id || item?.empresaId || (unitScoped ? getMockScopedUnitId() : '');
+    if (!unitId) return '00';
+
+    const companies = readStorage('Empresa');
+    const company = companies.find((entry) => entry?.id === unitId);
+    return normalizeEntityUnitCode(company?.codigo || unitId);
+  };
+
+  const ensureMockEntityCodes = (items) => {
+    const normalizedItems = Array.isArray(items) ? items.map((item) => ({ ...item })) : [];
+    if (!hasInternalEntityCodeConfig(name)) return normalizedItems;
+
+    let hasChanged = false;
+    normalizedItems.forEach((item) => {
+      if (getInternalEntityCode(item)) return;
+      item.codigo = buildInternalEntityCode({
+        entityName: name,
+        record: item,
+        existingRecords: normalizedItems,
+        unitCode: resolveMockUnitCode(item),
+      });
+      hasChanged = true;
+    });
+
+    if (hasChanged) {
+      writeStorage(name, normalizedItems);
+    }
+
+    return normalizedItems;
+  };
+
   const applyMockQueryOptions = (items, queryOptions = {}) => {
     const {
       eq = {},
@@ -260,7 +301,7 @@ function createMockEntity(name, options = {}) {
     };
   };
 
-  const getScopedMockItems = () => readStorage(name)
+  const getScopedMockItems = () => ensureMockEntityCodes(readStorage(name))
     .filter((item) => !unitScoped || !item.empresa_id || getMockScopedUnitIds().includes(item.empresa_id));
 
   return {
@@ -298,9 +339,17 @@ function createMockEntity(name, options = {}) {
     ),
     create: (data) => {
       if (unitScoped) ensureSingleUnitWrite(name);
-      const items = readStorage(name);
+      const items = ensureMockEntityCodes(readStorage(name));
       const item = { ...data };
       if (unitScoped && !item.empresa_id) item.empresa_id = getMockScopedUnitId();
+      if (hasInternalEntityCodeConfig(name)) {
+        item.codigo = getInternalEntityCode(item) || buildInternalEntityCode({
+          entityName: name,
+          record: item,
+          existingRecords: items,
+          unitCode: resolveMockUnitCode(item),
+        });
+      }
       if (!item.id) item.id = makeId();
       if (!item.created_date) item.created_date = new Date().toISOString();
       items.push(item);
@@ -309,16 +358,25 @@ function createMockEntity(name, options = {}) {
     },
     update: (id, data) => {
       if (unitScoped) ensureSingleUnitWrite(name);
-      const items = readStorage(name);
+      const items = ensureMockEntityCodes(readStorage(name));
       const idx = items.findIndex((item) => item.id === id);
       if (idx === -1) return Promise.reject(new Error('Not found'));
-      items[idx] = { ...items[idx], ...data, updated_date: new Date().toISOString() };
+      const nextItem = { ...items[idx], ...data, updated_date: new Date().toISOString() };
+      if (hasInternalEntityCodeConfig(name)) {
+        nextItem.codigo = getInternalEntityCode(items[idx]) || getInternalEntityCode(nextItem) || buildInternalEntityCode({
+          entityName: name,
+          record: nextItem,
+          existingRecords: items,
+          unitCode: resolveMockUnitCode(nextItem),
+        });
+      }
+      items[idx] = nextItem;
       writeStorage(name, items);
       return Promise.resolve(items[idx]);
     },
     delete: (id) => {
       if (unitScoped) ensureSingleUnitWrite(name);
-      const items = readStorage(name);
+      const items = ensureMockEntityCodes(readStorage(name));
       const idx = items.findIndex((item) => item.id === id);
       if (idx === -1) return Promise.reject(new Error('Not found'));
       const [removed] = items.splice(idx, 1);
@@ -460,7 +518,7 @@ const mockIntegrations = {
             const key = 'uploaded_' + makeId();
             try {
               localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify({ name: file.name, dataUrl }));
-            } catch (e) {
+            } catch {
               // ignore localStorage quota errors
             }
             resolve({ file_url: dataUrl, file_key: key });
@@ -491,7 +549,7 @@ const mockIntegrations = {
         if (!raw) return { data: null };
         const obj = JSON.parse(raw);
         return { data: { name: obj.name, size: (obj.dataUrl || '').length } };
-      } catch (e) {
+      } catch {
         return { data: null };
       }
     },
@@ -610,7 +668,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         if (!error) {
           return [...new Set((data || []).map((item) => item.id).filter(Boolean))];
         }
-      } catch (error) {
+      } catch {
         return [];
       }
     }
@@ -666,7 +724,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         });
       }
       return resolvedUnitId;
-    } catch (error) {
+    } catch {
       return allowedUnitIds[0] || profile?.empresa_id || '';
     }
   }
@@ -960,7 +1018,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
             updated_date: new Date().toISOString(),
           }]);
         }
-      } catch (e) {
+      } catch {
         // ignore notification write failures
       }
       return { ok: true };
@@ -977,7 +1035,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
             const errorPayload = await cloned.json();
             details = errorPayload?.details || errorPayload?.error || '';
           }
-        } catch (parseError) {
+        } catch {
           details = '';
         }
         throw new Error(details || error.message || 'Falha na integração com Banco Inter.');
@@ -996,7 +1054,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
             const errorPayload = await cloned.json();
             details = errorPayload?.details || errorPayload?.error || '';
           }
-        } catch (parseError) {
+        } catch {
           details = '';
         }
         const baseMessage = details || error.message || 'Falha na administração de usuários.';
@@ -1017,7 +1075,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
             const errorPayload = await cloned.json();
             details = errorPayload?.details || errorPayload?.error || '';
           }
-        } catch (parseError) {
+        } catch {
           details = '';
         }
         const baseMessage = details || error.message || 'Falha no cadastro do cliente.';
@@ -1048,7 +1106,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
             try {
               const errorPayload = await response.json();
               details = errorPayload?.details?.message || errorPayload?.details || errorPayload?.error || '';
-            } catch (error) {
+            } catch {
               details = '';
             }
             throw new Error(details ? `Falha ao enviar email (${response.status}): ${details}` : `Falha ao enviar email (${response.status})`);
@@ -1095,7 +1153,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
           const { data, error } = await supabase.storage.from(bucket).list(folder);
           if (error) return { data: null };
           return { data };
-        } catch (e) {
+        } catch {
           return { data: null };
         }
       },
@@ -1146,7 +1204,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
 
       if (error) return [];
       return data || [];
-    } catch (error) {
+    } catch {
       return [];
     }
   };
@@ -1187,7 +1245,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
 
       if (error) return null;
       return data?.[0] || null;
-    } catch (error) {
+    } catch {
       return null;
     }
   };

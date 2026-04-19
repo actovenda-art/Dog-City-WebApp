@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Dog } from "@/api/entities";
 import { Responsavel } from "@/api/entities";
 import { Carteira } from "@/api/entities";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Search, Check, Link as LinkIcon, Copy, ExternalLink, ArrowRight, ClipboardList, HeartPulse } from "lucide-react";
+import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Check, Link as LinkIcon, Copy, ExternalLink, ArrowRight, ClipboardList, HeartPulse } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -18,16 +18,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
+import { findEntityByReference, getInternalEntityReference } from "@/lib/entity-identifiers";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
-const panelMotion = {
-  initial: { opacity: 0, y: 18 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.28, ease: "easeOut" },
-};
 
 const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "Médio", "Grande", "Gigante"];
 const DOG_COAT_OPTIONS = ["Curto", "Médio", "Longo"];
@@ -163,14 +157,10 @@ export default function Cadastro() {
   const [hasCopiedClientLink, setHasCopiedClientLink] = useState(false);
   const [clientLinkForm, setClientLinkForm] = useState({ responsavel_nome: "", responsavel_email: "" });
   const [clientLinkValue, setClientLinkValue] = useState("");
-  const dogSectionRef = useRef(null);
-  const responsavelSectionRef = useRef(null);
-  const carteiraSectionRef = useRef(null);
-
   useEffect(() => { loadData(); }, []);
 
   // Dog Form
-  const emptyDog = {
+  const emptyDog = useMemo(() => ({
     nome: "", apelido: "", raca: "", porte: "", cores_pelagem: "", pelagem: "", peso: "", data_nascimento: "",
     foto_url: "", foto_carteirinha_vacina_url: "",
     data_revacinacao_1: "", nome_vacina_revacinacao_1: "",
@@ -184,7 +174,7 @@ export default function Cadastro() {
     refeicao_3_qnt: "", refeicao_3_horario: "", refeicao_3_obs: "",
     refeicao_4_qnt: "", refeicao_4_horario: "", refeicao_4_obs: "",
     medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }]
-  };
+  }), []);
   const [dogForm, setDogForm] = useState(emptyDog);
 
   // Responsavel Form
@@ -273,8 +263,8 @@ export default function Cadastro() {
     setEditingDogId("");
   };
 
-  const openDogForEditing = (dogId) => {
-    const targetDog = dogs.find((item) => item.id === dogId);
+  const openDogForEditing = useCallback((dogReference) => {
+    const targetDog = findEntityByReference(dogs, dogReference);
     if (!targetDog) return;
 
     setActiveTab("caes");
@@ -305,7 +295,7 @@ export default function Cadastro() {
         .filter((item) => getLinkedDogIds(item).includes(targetDog.id))
         .map((item) => item.id)
     );
-  };
+  }, [dogs, responsaveis, carteiras, emptyDog]);
 
   useEffect(() => {
     if (!dogs.length) return;
@@ -314,7 +304,7 @@ export default function Cadastro() {
     if (!editDogId) return;
 
     openDogForEditing(editDogId);
-  }, [location.search, dogs, responsaveis, carteiras]);
+  }, [location.search, dogs, openDogForEditing]);
 
   const clearDogEditQuery = () => {
     const params = new URLSearchParams(location.search);
@@ -327,22 +317,6 @@ export default function Cadastro() {
       },
       { replace: true }
     );
-  };
-
-  const openCadastroStage = (tabId) => {
-    const refMap = {
-      caes: dogSectionRef,
-      responsaveis: responsavelSectionRef,
-      carteiras: carteiraSectionRef,
-    };
-
-    setActiveTab(tabId);
-    window.setTimeout(() => {
-      refMap[tabId]?.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 140);
   };
 
   const toggleLinkedRecord = (recordId, setter) => {
@@ -426,7 +400,7 @@ export default function Cadastro() {
         const { file_url } = await UploadFile({ file });
         setDogForm(prev => ({ ...prev, [field]: file_url }));
       }
-    } catch (error) {
+    } catch {
       setNotifyTitle("Erro"); setNotifyMessage("Erro ao enviar arquivo."); setNotifyOpen(true);
     }
     setIsUploading(false);
@@ -445,7 +419,7 @@ export default function Cadastro() {
       }
 
       window.open(url, "_blank", "noopener,noreferrer");
-    } catch (error) {
+    } catch {
       setNotifyTitle("Erro");
       setNotifyMessage("Não foi possível abrir o documento.");
       setNotifyOpen(true);
@@ -613,7 +587,7 @@ export default function Cadastro() {
   };
 
   const handleCreateClientLink = async () => {
-    if (false && (!clientLinkForm.responsavel_nome || !clientLinkForm.responsavel_email)) {
+    if (!clientLinkForm.responsavel_nome || !clientLinkForm.responsavel_email) {
       setNotifyTitle("Campos obrigatórios");
       setNotifyMessage("Preencha nome do responsável e email para gerar o link.");
       setNotifyOpen(true);
@@ -647,7 +621,7 @@ export default function Cadastro() {
       await navigator.clipboard.writeText(clientLinkValue);
       setHasCopiedClientLink(true);
       window.setTimeout(() => setHasCopiedClientLink(false), 2000);
-    } catch (error) {
+    } catch {
       setNotifyTitle("Erro");
       setNotifyMessage("Não foi possível copiar o link.");
       setNotifyOpen(true);
@@ -774,6 +748,7 @@ export default function Cadastro() {
       progressClass: "bg-orange-300",
     },
   ];
+  void jornadaCadastro;
 
   
 
@@ -1133,7 +1108,7 @@ export default function Cadastro() {
                         <p className="truncate text-sm text-gray-500">{dog.raca || "Raça não informada"}</p>
                       </div>
                       <div className="ml-3 flex gap-2">
-                        <Link to={`${createPageUrl("PerfilCao")}?id=${dog.id}`}>
+                        <Link to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dog))}`}>
                           <Button type="button" variant="outline">Ficha</Button>
                         </Link>
                         <Button type="button" onClick={() => openDogForEditing(dog.id)}>

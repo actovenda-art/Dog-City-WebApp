@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Appointment, Carteira, Dog, Orcamento, Responsavel, ServiceProvided } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertTriangle,
   ArrowLeft,
-  Calendar,
   ClipboardList,
   Dog as DogIcon,
   Pencil,
@@ -26,6 +25,7 @@ import {
   getServiceLabel,
   shouldIncludeLinkedRecord,
 } from "@/lib/attendance";
+import { findEntityByReference, getInternalEntityReference } from "@/lib/entity-identifiers";
 import { createPageUrl, openImageViewer } from "@/utils";
 
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -103,15 +103,9 @@ export default function PerfilCao() {
   const [vaccineCardUrl, setVaccineCardUrl] = useState("");
 
   const urlParams = new URLSearchParams(window.location.search);
-  const dogId = urlParams.get("id");
+  const dogReference = urlParams.get("id");
 
-  useEffect(() => {
-    if (dogId) {
-      loadData();
-    }
-  }, [dogId]);
-
-  const resolveMediaUrl = async (path) => {
+  const resolveMediaUrl = useCallback(async (path) => {
     if (!path) return "";
     if (/^(https?:)?\/\//i.test(path) || path.startsWith("data:")) return path;
 
@@ -122,9 +116,9 @@ export default function PerfilCao() {
       console.error("Erro ao resolver arquivo privado:", error);
       return "";
     }
-  };
+  }, []);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [dogsData, responsaveisData, carteirasData, servicosData, appointmentsData, orcamentosData] = await Promise.all([
@@ -136,13 +130,14 @@ export default function PerfilCao() {
         Orcamento.listAll("-created_date", 1000, 5000),
       ]);
 
-      const foundDog = (dogsData || []).find((item) => item.id === dogId);
+      const foundDog = findEntityByReference(dogsData || [], dogReference);
+      const resolvedDogId = foundDog?.id || "";
       setDog(foundDog || null);
       setDogPhotoUrl(await resolveMediaUrl(foundDog?.foto_url));
       setVaccineCardUrl(await resolveMediaUrl(foundDog?.foto_carteirinha_vacina_url));
 
-      const linkedResponsaveis = (responsaveisData || []).filter((item) => getLinkedDogIds(item).includes(dogId));
-      const linkedCarteiras = (carteirasData || []).filter((item) => getLinkedDogIds(item).includes(dogId));
+      const linkedResponsaveis = (responsaveisData || []).filter((item) => getLinkedDogIds(item).includes(resolvedDogId));
+      const linkedCarteiras = (carteirasData || []).filter((item) => getLinkedDogIds(item).includes(resolvedDogId));
       setResponsaveis(linkedResponsaveis);
       setCarteiras(linkedCarteiras);
 
@@ -151,12 +146,12 @@ export default function PerfilCao() {
       const appointmentsById = Object.fromEntries(visibleAppointments.map((item) => [item.id, item]));
 
       const visibleServices = (servicosData || [])
-        .filter((item) => item.dog_id === dogId)
+        .filter((item) => item.dog_id === resolvedDogId)
         .filter((item) => shouldIncludeLinkedRecord(item, appointmentsById, orcamentosById))
         .sort((left, right) => String(right.data_utilizacao || right.created_date || "").localeCompare(String(left.data_utilizacao || left.created_date || "")));
 
       const absentAppointments = visibleAppointments
-        .filter((item) => item.dog_id === dogId && item.status === "faltou")
+        .filter((item) => item.dog_id === resolvedDogId && item.status === "faltou")
         .sort((left, right) => String(getAppointmentDateKey(right)).localeCompare(String(getAppointmentDateKey(left))));
 
       setServicos(visibleServices);
@@ -166,7 +161,13 @@ export default function PerfilCao() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [dogReference, resolveMediaUrl]);
+
+  useEffect(() => {
+    if (dogReference) {
+      loadData();
+    }
+  }, [dogReference, loadData]);
 
   const vaccineRows = useMemo(() => buildVaccineRows(dog), [dog]);
 
@@ -246,7 +247,7 @@ export default function PerfilCao() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <h1 className="text-3xl font-bold text-gray-900">{dog.nome}</h1>
-                      {dog.apelido ? <p className="text-lg text-gray-600">"{dog.apelido}"</p> : null}
+                      {dog.apelido ? <p className="text-lg text-gray-600">&quot;{dog.apelido}&quot;</p> : null}
                       <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
                         {dog.raca ? <Badge className="bg-blue-100 text-blue-700">{dog.raca}</Badge> : null}
                         <Badge className="bg-purple-100 text-purple-700">{getAgeLabel(dog.data_nascimento)}</Badge>
@@ -257,7 +258,7 @@ export default function PerfilCao() {
                       </div>
                     </div>
 
-                    <Link to={`${createPageUrl("Cadastro")}?editDogId=${dog.id}`}>
+                    <Link to={`${createPageUrl("Cadastro")}?editDogId=${encodeURIComponent(getInternalEntityReference(dog))}`}>
                       <Button type="button" className="bg-blue-600 text-white hover:bg-blue-700">
                         <Pencil className="mr-2 h-4 w-4" />
                         Atualizar cadastro

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, User } from "@/api/entities";
 import {
@@ -12,6 +12,7 @@ import {
   getChargeTypeLabel,
   getServiceLabel,
 } from "@/lib/attendance";
+import { getInternalEntityReference } from "@/lib/entity-identifiers";
 import { isOperationalProfile } from "@/lib/access-control";
 import { createPageUrl } from "@/utils";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { AlertTriangle, Calendar, ClipboardList, RefreshCw, Search, Tag } from "lucide-react";
+import { AlertTriangle, Calendar, ClipboardList, RefreshCw, Tag } from "lucide-react";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -230,7 +231,7 @@ export default function Agendamentos() {
       await resolveReceivableIfNeeded(nextAppointment);
       const dog = dogsById[appointment.dog_id];
       navigate(
-        `${createPageUrl("Orcamentos")}?dogId=${encodeURIComponent(appointment.dog_id)}&service=${encodeURIComponent(appointment.service_type || "")}&date=${encodeURIComponent(getAppointmentDateKey(appointment) || "")}&appointmentId=${encodeURIComponent(appointment.id)}&owner=${encodeURIComponent(ownerByDogId[appointment.dog_id]?.nome || dog?.nome || "")}`
+        `${createPageUrl("Orcamentos")}?dogId=${encodeURIComponent(getInternalEntityReference(dog) || appointment.dog_id)}&service=${encodeURIComponent(appointment.service_type || "")}&date=${encodeURIComponent(getAppointmentDateKey(appointment) || "")}&appointmentId=${encodeURIComponent(appointment.id)}&owner=${encodeURIComponent(ownerByDogId[appointment.dog_id]?.nome || dog?.nome || "")}`
       );
     } catch (error) {
       console.error("Erro ao preparar orçamento avulso:", error);

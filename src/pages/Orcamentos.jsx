@@ -1,21 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User } from "@/api/entities";
 import { useLocation } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { Calculator, Dog as DogIcon, FileText, Plus, Save, Search, Send } from "lucide-react";
-import { differenceInDays, format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { Calculator, Dog as DogIcon, FileText, Plus, Save, Send } from "lucide-react";
+import { differenceInDays } from "date-fns";
 
 import OrcamentoCaoForm from "@/components/orcamento/OrcamentoCaoForm";
 import OrcamentosHistoricoPanel from "@/components/orcamento/OrcamentosHistoricoPanel";
 import OrcamentoResumo from "@/components/orcamento/OrcamentoResumo";
+import { findEntityByReference } from "@/lib/entity-identifiers";
 
 const PRECOS_PADRAO = {
   diaria_normal: 150,
@@ -413,19 +412,23 @@ export default function Orcamentos() {
     if (isLoading || prefillApplied || !dogs.length) return;
 
     const params = new URLSearchParams(location.search);
-    const dogId = params.get("dogId");
+    const dogReference = params.get("dogId");
     const service = params.get("service");
     const date = params.get("date") || new Date().toISOString().slice(0, 10);
     const appointmentId = params.get("appointmentId");
-    if (!dogId || !service) return;
+    if (!dogReference || !service) return;
+
+    const selectedDog = findEntityByReference(dogs, dogReference);
+    const resolvedDogId = selectedDog?.id || "";
+    if (!resolvedDogId) return;
 
     const selectedCarteira = carteiras.find((cliente) =>
-      [1, 2, 3, 4, 5, 6, 7, 8].some((index) => cliente[`dog_id_${index}`] === dogId)
+      [1, 2, 3, 4, 5, 6, 7, 8].some((index) => cliente[`dog_id_${index}`] === resolvedDogId)
     ) || null;
 
     const prefilledCao = {
       ...emptyCao,
-      dog_id: dogId,
+      dog_id: resolvedDogId,
       servicos: {
         ...emptyCao.servicos,
       },
@@ -481,7 +484,7 @@ export default function Orcamentos() {
 
       setDogs((dogsData || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteirasData || []).filter((cliente) => cliente.ativo !== false));
-      setResponsaveis((responsaveisData || []).filter((responsavel) => responsável.ativo !== false));
+      setResponsaveis((responsaveisData || []).filter((responsavel) => responsavel.ativo !== false));
       setOrcamentos(orcamentosData || []);
       setCurrentUser(userData || null);
       setPrecos(buildPricingConfig(precosData || [], userData?.empresa_id || null));
@@ -539,7 +542,7 @@ export default function Orcamentos() {
       );
 
       const matchedResponsaveis = responsaveisDoCliente.filter((responsavel) =>
-        [responsavel.nome_completo, responsável.cpf, responsavel.celular, responsavel.email]
+        [responsavel.nome_completo, responsavel.cpf, responsavel.celular, responsavel.email]
           .some((value) => normalizeSearchValue(value).includes(searchTerm))
       );
 
@@ -645,22 +648,6 @@ export default function Orcamentos() {
       alert(error?.message || "Erro ao salvar orçamento.");
     }
     setIsSaving(false);
-  }
-
-  function formatDate(value) {
-    return value ? format(new Date(value), "dd/MM/yyyy", { locale: ptBR }) : "-";
-  }
-
-  function getStatusBadge(status) {
-    const config = {
-      rascunho: { color: "bg-gray-100 text-gray-700", label: "Rascunho" },
-      enviado: { color: "bg-blue-100 text-blue-700", label: "Enviado" },
-      aprovado: { color: "bg-green-100 text-green-700", label: "Aprovado" },
-      recusado: { color: "bg-red-100 text-red-700", label: "Recusado" },
-      expirado: { color: "bg-orange-100 text-orange-700", label: "Expirado" },
-    };
-    const current = config[status] || config.rascunho;
-    return <Badge className={current.color}>{current.label}</Badge>;
   }
 
   if (isLoading) {
@@ -919,310 +906,6 @@ export default function Orcamentos() {
                   disabled={!calculo}
                   className="bg-blue-600 text-white hover:bg-blue-700"
                 >
-                  Ver Resumo
-                </Button>
-              </>
-            )}
-            {etapa === "resumo" && (
-              <>
-                <Button variant="outline" onClick={() => setEtapa("caes")}>Voltar</Button>
-                <Button variant="outline" onClick={() => handleSave("rascunho")} disabled={isSaving || !calculo}>
-                  <Save className="mr-2 h-4 w-4" />
-                  Salvar Rascunho
-                </Button>
-                <Button onClick={() => handleSave("enviado")} disabled={isSaving || !calculo} className="bg-green-600 text-white hover:bg-green-700">
-                  <Send className="mr-2 h-4 w-4" />
-                  {isSaving ? "Salvando..." : "Enviar Orçamento"}
-                </Button>
-              </>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="mt-1">
-              <Calculator className="h-6 w-6 text-blue-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Orçamentos</h1>
-              <p className="mt-1 text-sm text-gray-600">Geração de orçamentos para serviços</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-                Histórico
-            <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-blue-600 text-white hover:bg-blue-700">
-              <Plus className="mr-2 h-4 w-4" />
-              Novo Orçamento
-            </Button>
-          </div>
-        </div>
-
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {[
-            { label: "Total", val: orcamentos.length, color: "text-blue-600", border: "border-blue-200" },
-            { label: "Aprovados", val: orcamentos.filter((item) => item.status === "aprovado").length, color: "text-green-600", border: "border-green-200" },
-            { label: "Enviados", val: orcamentos.filter((item) => item.status === "enviado").length, color: "text-orange-600", border: "border-orange-200" },
-            { label: "Rascunhos", val: orcamentos.filter((item) => item.status === "rascunho").length, color: "text-gray-600", border: "border-gray-200" },
-          ].map((stat) => (
-            <Card key={stat.label} className={`bg-white ${stat.border}`}>
-              <CardContent className="flex items-center justify-between p-4">
-                <div>
-                  <p className="text-sm text-gray-600">{stat.label}</p>
-                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.val}</p>
-                </div>
-                <FileText className={`h-10 w-10 ${stat.color} opacity-60`} />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        <Card className="border-gray-200 bg-white">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-blue-600" />
-              Orçamentos Recentes
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {orcamentos.length === 0 ? (
-              <div className="py-12 text-center">
-                <FileText className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-                <p className="text-gray-500">Nenhum orçamento criado</p>
-                <Button onClick={() => { resetForm(); setShowModal(true); }} className="mt-4 bg-blue-600 text-white hover:bg-blue-700">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Criar Primeiro Orçamento
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {orcamentos.slice(0, 10).map((orcamento) => (
-                  <div key={orcamento.id} className="rounded-lg bg-gray-50 p-4 transition-colors hover:bg-gray-100">
-                    <div className="mb-2 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-                          <FileText className="h-5 w-5 text-blue-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {orcamento.caes?.length || 0} cão(es) • {formatDate(orcamento.data_criacao)}
-                          </p>
-                          <p className="text-sm text-gray-500">Validade: {formatDate(orcamento.data_validade)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className="text-lg font-bold text-green-600">{formatCurrency(orcamento.valor_total)}</span>
-                        {getStatusBadge(orcamento.status)}
-                      </div>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2 pl-0 text-xs text-gray-500 sm:pl-13">
-                      <span>Hospedagem: {formatCurrency(orcamento.subtotal_hospedagem)}</span>
-                      <span>•</span>
-                      <span>Serviços: {formatCurrency(orcamento.subtotal_servicos)}</span>
-                      <span>•</span>
-                      <span>Transporte: {formatCurrency(orcamento.subtotal_transporte)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="flex max-h-[95vh] w-[98vw] max-w-[1100px] flex-col overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Calculator className="h-5 w-5 text-blue-600" />
-              {etapa === "cliente" && "Novo Orçamento - Selecione o Cliente"}
-              {etapa === "caes" && "Novo Orçamento - Serviços por Cão"}
-              {etapa === "resumo" && "Novo Orçamento - Revisão Final"}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              Fluxo de criação de orçamento com busca ampla por destinatário financeiro, responsável e cão.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex items-center gap-2 border-b border-gray-100 px-1 py-2">
-            {[
-              { id: "cliente", label: "1. Cliente" },
-              { id: "caes", label: "2. Serviços" },
-              { id: "resumo", label: "3. Revisão" },
-            ].map((step, index) => (
-              <React.Fragment key={step.id}>
-                <div className={`rounded-full px-3 py-1 text-xs font-medium ${etapa === step.id ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500"}`}>
-                  {step.label}
-                </div>
-                {index < 2 && <div className="h-px flex-1 bg-gray-200" />}
-              </React.Fragment>
-            ))}
-          </div>
-
-          {etapa === "cliente" && (
-            <div className="flex-1 space-y-4 overflow-y-auto p-4">
-              <p className="text-sm text-gray-600">Selecione o cliente ou pule para criar orçamento avulso.</p>
-
-              <SearchFiltersToolbar
-                searchTerm={searchCliente}
-                onSearchChange={setSearchCliente}
-                searchPlaceholder="Buscar por responsável financeiro, responsável, cão, CPF/CNPJ ou celular..."
-                hasActiveFilters={Boolean(searchCliente)}
-                onClear={() => setSearchCliente("")}
-              />
-
-              {exigeConfirmacaoDestinatario && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <p className="text-sm text-amber-700">
-                    Encontramos mais de um destinatério financeiro para esta busca. Confirme para quem o orçamento será destinado.
-                  </p>
-                </div>
-              )}
-
-              <div className="max-h-[45vh] space-y-2 overflow-y-auto">
-                {clientesFiltrados.slice(0, 20).map((resultado) => {
-                  const { cliente, dogsDoCliente, responsaveisDoCliente, destaqueBusca } = resultado;
-                  const numCaes = dogsDoCliente.length;
-                  const selected = clienteSelecionado?.id === cliente.id;
-
-                  return (
-                    <div
-                      key={cliente.id}
-                      onClick={() => setClienteSelecionado((prev) => prev?.id === cliente.id ? null : cliente)}
-                      className={`cursor-pointer rounded-lg border-2 p-4 transition-all ${selected ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white hover:border-gray-300"}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-gray-900">{cliente.nome_razao_social}</p>
-                          {destaqueBusca ? (
-                            <p className="mt-1 text-xs text-blue-700">{destaqueBusca}</p>
-                          ) : null}
-                          {dogsDoCliente.length > 0 ?(
-                            <p className="mt-1 text-xs text-gray-500">
-                              Cães: {dogsDoCliente.map((dog) => dog.nome).join(", ")}
-                            </p>
-                          ) : null}
-                          {responsaveisDoCliente.length > 0 ?(
-                            <p className="mt-1 text-xs text-gray-500">
-                              Responsáveis: {responsaveisDoCliente.map((responsavel) => responsavel.nome_completo).join(", ")}
-                            </p>
-                          ) : null}
-                          <p className="text-sm text-gray-500">{cliente.celular} • {cliente.cpf_cnpj}</p>
-                        </div>
-                        <Badge variant="outline">{numCaes} cão(es)</Badge>
-                      </div>
-                    </div>
-                  );
-                })}
-                {clientesFiltrados.length === 0 && (
-                  <p className="py-8 text-center text-gray-500">Nenhum cliente encontrado</p>
-                )}
-              </div>
-
-              {clienteSelecionado && (
-                <div className="rounded-lg border border-green-200 bg-green-50 p-3">
-                  <p className="text-sm text-green-700">
-                    <strong>Selecionado:</strong> {clienteSelecionado.nome_razao_social}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {etapa === "caes" && (
-            <div className="flex-1 overflow-y-auto">
-              <div className="grid h-full grid-cols-1 gap-0 lg:grid-cols-3">
-                <div className="space-y-4 overflow-y-auto p-4 lg:col-span-2">
-                  {clienteSelecionado && (
-                    <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3">
-                      <DogIcon className="h-4 w-4 text-blue-600" />
-                      <p className="text-sm text-blue-700">
-                        Cliente: <strong>{clienteSelecionado.nome_razao_social}</strong>
-                      </p>
-                    </div>
-                  )}
-
-                  {caes.map((cao, index) => (
-                    <OrcamentoCaoForm
-                      key={index}
-                      cao={cao}
-                      index={index}
-                      allCaes={caes}
-                      dogs={getCaesDoCliente()}
-                      precos={precos}
-                      onUpdate={updateCao}
-                      onRemove={removeCao}
-                      canRemove={caes.length > 1}
-                    />
-                  ))}
-
-                  <Button variant="outline" onClick={addCao} className="w-full border-dashed">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Adicionar Outro Cão
-                  </Button>
-
-                  <Card className="border-gray-200 bg-white">
-                    <CardContent className="p-4">
-                      <Label className="text-sm font-medium">Observações Gerais</Label>
-                      <Textarea
-                        value={observacoes}
-                        onChange={(event) => setObservacoes(event.target.value)}
-                        placeholder="Informações adicionais sobre o orçamento..."
-                        rows={2}
-                        className="mt-2"
-                      />
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="overflow-y-auto border-l border-gray-100 bg-gray-50 p-4 lg:col-span-1">
-                  <OrcamentoResumo calculo={calculo} caes={caes} dogs={dogs} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {etapa === "resumo" && (
-            <div className="flex-1 space-y-4 overflow-y-auto p-4">
-              {clienteSelecionado && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                  <p className="mb-1 text-sm font-medium text-gray-600">Cliente</p>
-                  <p className="font-semibold text-gray-900">{clienteSelecionado.nome_razao_social}</p>
-                  <p className="text-sm text-gray-500">{clienteSelecionado.celular}</p>
-                </div>
-              )}
-
-              <OrcamentoResumo calculo={calculo} caes={caes} dogs={dogs} />
-
-              {observacoes && (
-                <div className="rounded-lg border-l-4 border-yellow-400 bg-yellow-50 p-3">
-                  <p className="mb-1 text-xs font-semibold text-yellow-700">Observações</p>
-                  <p className="text-sm text-gray-700">{observacoes}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          <DialogFooter className="gap-2 border-t pt-4">
-            {etapa === "cliente" && (
-              <>
-                <Button variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
-                <Button variant="outline" onClick={() => setEtapa("caes")}>Pular (sem cliente)</Button>
-                <Button onClick={() => setEtapa("caes")} className="bg-blue-600 text-white hover:bg-blue-700">
-                  {clienteSelecionado ? "Continuar" : "Continuar sem cliente"}
-                </Button>
-              </>
-            )}
-            {etapa === "caes" && (
-              <>
-                <Button variant="outline" onClick={() => setEtapa("cliente")}>Voltar</Button>
-                <Button onClick={() => setEtapa("resumo")} disabled={!calculo} className="bg-blue-600 text-white hover:bg-blue-700">
                   Ver Resumo
                 </Button>
               </>

@@ -13,6 +13,7 @@ const PAGE_ACCESS_REQUIREMENTS = {
   Agendamentos: ["platform:*", "empresa:*", "empresa:update", "agenda:*"],
   Agenda_Comercial: ["platform:*", "empresa:*", "empresa:update", "agenda:*", "orcamentos:*"],
   Cadastro: ["platform:*", "empresa:*", "empresa:update", "dogs:*"],
+  Perfis: ["platform:*", "empresa:*", "empresa:update", "dogs:*"],
   PerfilCao: ["platform:*", "empresa:*", "empresa:update", "dogs:*"],
   Planos: ["platform:*", "empresa:*", "empresa:update", "agenda:*", "dogs:*"],
   PlanosConfig: ["platform:*", "empresa:*", "empresa:update", "agenda:*", "dogs:*"],

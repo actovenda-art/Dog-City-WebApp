@@ -236,6 +236,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
       items: [
         { title: "Orçamentos", url: createPageUrl("Orcamentos"), icon: FileText },
         { title: "Cadastro", url: createPageUrl("Cadastro"), icon: UserPlus },
+        { title: "Perfis", url: createPageUrl("Perfis"), icon: Users },
         { title: "Planos Recorrentes", url: createPageUrl("PlanosConfig"), icon: CreditCard },
         { title: "Config. Preços", url: createPageUrl("ConfiguracoesPrecos"), icon: Settings },
       ],

@@ -27,6 +27,7 @@ import Backup from "./Backup";
 import Registrador from "./Registrador";
 import Agenda_Comercial from "./Agenda_Comercial";
 import Cadastro from "./Cadastro";
+import Perfis from "./Perfis";
 import Planos from "./Planos";
 import Cockpit from "./Cockpit";
 import ControleGerencial from "./ControleGerencial";
@@ -59,6 +60,7 @@ const PAGES = {
   Registrador,
   Agenda_Comercial,
   Cadastro,
+  Perfis,
   Planos,
   Cockpit,
   ControleGerencial,

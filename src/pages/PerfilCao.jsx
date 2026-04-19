@@ -289,6 +289,7 @@ export default function PerfilCao() {
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Nascimento</span><span className="font-medium">{formatDateValue(dog.data_nascimento)}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Idade</span><span className="font-medium">{getAgeLabel(dog.data_nascimento)}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Raça</span><span className="font-medium">{dog.raca || "-"}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-gray-600">Porte</span><span className="font-medium">{dog.porte || "-"}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Peso</span><span className="font-medium">{dog.peso ? `${dog.peso} kg` : "-"}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Pelagem</span><span className="font-medium">{dog.pelagem || "-"}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Cores</span><span className="font-medium">{dog.cores_pelagem || "-"}</span></div>

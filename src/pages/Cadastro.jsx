@@ -29,6 +29,57 @@ const panelMotion = {
   transition: { duration: 0.28, ease: "easeOut" },
 };
 
+const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "Médio", "Grande", "Gigante"];
+const DOG_COAT_OPTIONS = ["Curto", "Médio", "Longo"];
+const DOG_BREED_OPTIONS = [
+  "SRD",
+  "Akita",
+  "American Bully",
+  "Basset Hound",
+  "Beagle",
+  "Bichon Frise",
+  "Border Collie",
+  "Boston Terrier",
+  "Boxer",
+  "Bulldog Frances",
+  "Bulldog Ingles",
+  "Cane Corso",
+  "Cavalier King Charles Spaniel",
+  "Chihuahua",
+  "Chow Chow",
+  "Cocker Spaniel",
+  "Dachshund",
+  "Dalmata",
+  "Dobermann",
+  "Dogue Alemao",
+  "Fila Brasileiro",
+  "Golden Retriever",
+  "Husky Siberiano",
+  "Jack Russell Terrier",
+  "Labrador",
+  "Lhasa Apso",
+  "Lulu da Pomerania",
+  "Maltes",
+  "Pastor Alemao",
+  "Pastor Australiano",
+  "Pastor Belga",
+  "Pequines",
+  "Pinscher Miniatura",
+  "Poodle",
+  "Pug",
+  "Rottweiler",
+  "Samoieda",
+  "Sao Bernardo",
+  "Schnauzer",
+  "Shih Tzu",
+  "Spitz Alemao",
+  "Terrier Brasileiro",
+  "Weimaraner",
+  "Welsh Corgi Pembroke",
+  "Yorkshire",
+  "Outro",
+];
+
 function getLinkedDogIds(record) {
   return RELATION_SLOTS
     .map((slot) => record?.[`dog_id_${slot}`])
@@ -41,6 +92,52 @@ function buildDogRelationPayload(existingRecord, linkedDogIds) {
     nextPayload[`dog_id_${slot}`] = linkedDogIds[index] || null;
   });
   return nextPayload;
+}
+
+function normalizeDogSize(value) {
+  const normalized = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+  const sizeMap = {
+    mini: "Mini",
+    pequeno: "Pequeno",
+    medio: "M\u00e9dio",
+    grande: "Grande",
+    gigante: "Gigante",
+  };
+
+  return sizeMap[normalized] || String(value || "").trim();
+}
+
+function normalizeDogCoat(value) {
+  const normalized = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+  const coatMap = {
+    curto: "Curto",
+    curta: "Curto",
+    medio: "M\u00e9dio",
+    media: "M\u00e9dio",
+    longo: "Longo",
+    longa: "Longo",
+  };
+
+  return coatMap[normalized] || String(value || "").trim();
+}
+
+function buildSelectOptions(options, currentValue) {
+  const trimmedValue = String(currentValue || "").trim();
+  if (!trimmedValue || options.includes(trimmedValue)) {
+    return options;
+  }
+
+  return [trimmedValue, ...options];
 }
 
 export default function Cadastro() {
@@ -74,7 +171,7 @@ export default function Cadastro() {
 
   // Dog Form
   const emptyDog = {
-    nome: "", apelido: "", raca: "", cores_pelagem: "", pelagem: "", peso: "", data_nascimento: "",
+    nome: "", apelido: "", raca: "", porte: "", cores_pelagem: "", pelagem: "", peso: "", data_nascimento: "",
     foto_url: "", foto_carteirinha_vacina_url: "",
     data_revacinacao_1: "", nome_vacina_revacinacao_1: "",
     data_revacinacao_2: "", nome_vacina_revacinacao_2: "",
@@ -185,6 +282,8 @@ export default function Cadastro() {
     setDogForm({
       ...emptyDog,
       ...targetDog,
+      porte: normalizeDogSize(targetDog.porte),
+      pelagem: normalizeDogCoat(targetDog.pelagem),
       peso: targetDog.peso ?? "",
       medicamentos_continuos:
         Array.isArray(targetDog.medicamentos_continuos) && targetDog.medicamentos_continuos.length > 0
@@ -362,8 +461,9 @@ export default function Cadastro() {
         nome: dogForm.nome.trim(),
         apelido: optional(dogForm.apelido),
         raca: optional(dogForm.raca),
+        porte: optional(normalizeDogSize(dogForm.porte)),
         cores_pelagem: optional(dogForm.cores_pelagem),
-        pelagem: optional(dogForm.pelagem),
+        pelagem: optional(normalizeDogCoat(dogForm.pelagem)),
         peso: dogForm.peso ? parseFloat(dogForm.peso) : null,
         data_nascimento: optional(dogForm.data_nascimento),
         foto_url: optional(dogForm.foto_url),
@@ -615,6 +715,9 @@ export default function Cadastro() {
     },
   ];
   const activeTabItem = tabItems.find((item) => item.id === activeTab) || tabItems[0];
+  const dogBreedOptions = buildSelectOptions(DOG_BREED_OPTIONS, dogForm.raca);
+  const dogSizeOptions = buildSelectOptions(DOG_SIZE_OPTIONS, normalizeDogSize(dogForm.porte));
+  const dogCoatOptions = buildSelectOptions(DOG_COAT_OPTIONS, normalizeDogCoat(dogForm.pelagem));
   const dogDraftCompleted = [
     dogForm.nome,
     dogForm.raca,
@@ -800,9 +903,46 @@ export default function Cadastro() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div><Label>Nome *</Label><Input value={dogForm.nome} onChange={(e) => setDogForm({ ...dogForm, nome: e.target.value })} placeholder="Nome do cão" /></div>
                   <div><Label>Apelido</Label><Input value={dogForm.apelido} onChange={(e) => setDogForm({ ...dogForm, apelido: e.target.value })} /></div>
-                  <div><Label>Raça</Label><Input value={dogForm.raca} onChange={(e) => setDogForm({ ...dogForm, raca: e.target.value })} /></div>
+                  <div>
+                    <Label>Raça</Label>
+                    <Select value={dogForm.raca || ""} onValueChange={(value) => setDogForm({ ...dogForm, raca: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a raça" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {dogBreedOptions.map((breed) => (
+                          <SelectItem key={breed} value={breed}>{breed}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Porte</Label>
+                    <Select value={normalizeDogSize(dogForm.porte) || ""} onValueChange={(value) => setDogForm({ ...dogForm, porte: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o porte" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {dogSizeOptions.map((size) => (
+                          <SelectItem key={size} value={size}>{size}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div><Label>Cores da Pelagem</Label><Input value={dogForm.cores_pelagem} onChange={(e) => setDogForm({ ...dogForm, cores_pelagem: e.target.value })} /></div>
-                  <div><Label>Pelagem</Label><Input value={dogForm.pelagem} onChange={(e) => setDogForm({ ...dogForm, pelagem: e.target.value })} placeholder="Ex: Curta, Longa" /></div>
+                  <div>
+                    <Label>Pelagem</Label>
+                    <Select value={normalizeDogCoat(dogForm.pelagem) || ""} onValueChange={(value) => setDogForm({ ...dogForm, pelagem: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a pelagem" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {dogCoatOptions.map((coat) => (
+                          <SelectItem key={coat} value={coat}>{coat}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div><Label>Peso (KG)</Label><Input type="number" step="0.1" value={dogForm.peso} onChange={(e) => setDogForm({ ...dogForm, peso: e.target.value })} /></div>
                   <div><Label>Data de Nascimento</Label><DatePickerInput value={dogForm.data_nascimento} onChange={(value) => setDogForm({ ...dogForm, data_nascimento: value })} /></div>
                   <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <button type="button" onClick={() => openImageViewer(dogForm.foto_url, "Foto do perfil")} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>

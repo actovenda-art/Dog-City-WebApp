@@ -22,6 +22,7 @@ import {
   ChevronRight,
   Settings,
   Dog,
+  Users,
   Wallet,
   Building2,
 } from "lucide-react";

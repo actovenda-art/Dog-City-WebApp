@@ -950,6 +950,9 @@ export default function Cadastro() {
                   <div><Label>1ª Revacinação</Label><DatePickerInput value={dogForm.data_revacinacao_1} onChange={(value) => setDogForm({ ...dogForm, data_revacinacao_1: value })} /></div>
                   <div><Label>2ª Revacinação</Label><DatePickerInput value={dogForm.data_revacinacao_2} onChange={(value) => setDogForm({ ...dogForm, data_revacinacao_2: value })} /></div>
                   <div><Label>3ª Revacinação</Label><DatePickerInput value={dogForm.data_revacinacao_3} onChange={(value) => setDogForm({ ...dogForm, data_revacinacao_3: value })} /></div>
+                  <div><Label>Vacina da 1ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_1} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_1: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
+                  <div><Label>Vacina da 2ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_2} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_2: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
+                  <div><Label>Vacina da 3ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_3} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_3: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
 
                   <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Veterinário</h4></div>
                   <div><Label>Veterinário Responsável</Label><Input value={dogForm.veterinario_responsavel} onChange={(e) => setDogForm({ ...dogForm, veterinario_responsavel: e.target.value })} /></div>
@@ -978,11 +981,6 @@ export default function Cadastro() {
             <Card className="mt-4 border-blue-100 bg-white">
               <CardContent className="p-4 sm:p-6">
                 <h4 className="font-semibold text-gray-900 mb-3">Medicamentos de longo período / vitalício</h4>
-                <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div><Label>Vacina da 1ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_1} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_1: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
-                  <div><Label>Vacina da 2ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_2} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_2: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
-                  <div><Label>Vacina da 3ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_3} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_3: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
-                </div>
                 <div className="space-y-3">
                   {(dogForm.medicamentos_continuos || []).map((medicacao, index) => (
                     <div key={`medicacao-${index}`} className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">

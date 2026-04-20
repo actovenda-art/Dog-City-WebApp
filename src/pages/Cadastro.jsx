@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Check, Link as LinkIcon, Copy, ExternalLink, ArrowRight, ClipboardList, HeartPulse } from "lucide-react";
+import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Check, Link as LinkIcon, Copy, ExternalLink, ArrowRight, ClipboardList, HeartPulse, CircleAlert } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -21,6 +21,7 @@ import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { createEmptyDogMeal, extractDogMeals, isNaturalFoodType, serializeDogMeals } from "@/lib/dog-form-utils";
 import { findEntityByReference, getInternalEntityReference } from "@/lib/entity-identifiers";
+import { cn } from "@/lib/utils";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -75,6 +76,25 @@ const DOG_BREED_OPTIONS = [
   "Yorkshire",
   "Outro",
 ];
+
+const HEADER_TONE_BY_TAB = {
+  caes: {
+    panelClass: "border-blue-200 bg-blue-50/80",
+    iconClass: "bg-blue-100 text-blue-700",
+  },
+  responsaveis: {
+    panelClass: "border-emerald-200 bg-emerald-50/80",
+    iconClass: "bg-emerald-100 text-emerald-700",
+  },
+  carteiras: {
+    panelClass: "border-orange-200 bg-orange-50/80",
+    iconClass: "bg-orange-100 text-orange-700",
+  },
+};
+
+const OPTIONAL_TEXT = "opcional";
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const WEIGHT_REGEX = /^\d+(?:[.,]\d{1,2})?$/;
 
 function getLinkedDogIds(record) {
   return RELATION_SLOTS
@@ -140,6 +160,44 @@ function normalizeDocumentDigits(value, maxLength = 14) {
   return String(value || "").replace(/\D/g, "").slice(0, maxLength);
 }
 
+function hasValue(value) {
+  return String(value ?? "").trim().length > 0;
+}
+
+function getTextFieldError({
+  value,
+  optional = false,
+  kind = "text",
+  requiredMessage = "Preencha este campo.",
+}) {
+  const rawValue = String(value ?? "");
+  const trimmedValue = rawValue.trim();
+  const digits = rawValue.replace(/\D/g, "");
+
+  if (!trimmedValue) {
+    return optional ? "" : requiredMessage;
+  }
+
+  switch (kind) {
+    case "email":
+      return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email válido.";
+    case "cpf":
+      return digits.length === 11 ? "" : "Digite um CPF com 11 números.";
+    case "cpf_cnpj":
+      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ válido.";
+    case "phone":
+      return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular válido.";
+    case "cep":
+      return digits.length === 8 ? "" : "Digite um CEP válido.";
+    case "state":
+      return trimmedValue.length === 2 ? "" : "Use a sigla do estado com 2 letras.";
+    case "weight":
+      return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas números, vírgula ou ponto.";
+    default:
+      return "";
+  }
+}
+
 export default function Cadastro() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -153,17 +211,16 @@ export default function Cadastro() {
   const [carteiras, setCarteiras] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState("caes");
+  const [fieldTouched, setFieldTouched] = useState({});
   const [editingDogId, setEditingDogId] = useState("");
   const [selectedResponsavelIds, setSelectedResponsavelIds] = useState([]);
   const [selectedCarteiraIds, setSelectedCarteiraIds] = useState([]);
   const [searchLinkedResponsavel, setSearchLinkedResponsavel] = useState("");
   const [searchLinkedCarteira, setSearchLinkedCarteira] = useState("");
-  const [showClientLinkModal, setShowClientLinkModal] = useState(false);
   const [showClientLinkFeedback, setShowClientLinkFeedback] = useState(false);
   const [hasCopiedClientLink, setHasCopiedClientLink] = useState(false);
   const [carteiraIgualResponsavel, setCarteiraIgualResponsavel] = useState(false);
   const [addressLoading, setAddressLoading] = useState(false);
-  const [clientLinkForm, setClientLinkForm] = useState({ responsavel_nome: "", responsavel_email: "" });
   const [clientLinkValue, setClientLinkValue] = useState("");
   useEffect(() => { loadData(); }, []);
 
@@ -224,6 +281,319 @@ export default function Cadastro() {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     return `${origin}${createPageUrl("CadastroClientePublico")}?token=${encodeURIComponent(token)}`;
   };
+
+  function touchField(fieldKey) {
+    setFieldTouched((current) => (current[fieldKey] ? current : { ...current, [fieldKey]: true }));
+  }
+
+  function getFieldFeedback(fieldKey, options) {
+    const error = getTextFieldError(options);
+    const showError = fieldTouched[fieldKey] && Boolean(error);
+    const showValid = !options.disabled && hasValue(options.value) && !error;
+
+    return {
+      error: showError ? error : "",
+      showError,
+      showValid,
+    };
+  }
+
+  function getFieldClassNames(showError, showValid, extraClassName = "") {
+    return cn(
+      "h-12 rounded-2xl border px-4 text-[15px] shadow-sm transition-all duration-200",
+      "bg-white/90 placeholder:text-slate-400 focus-visible:ring-4 focus-visible:ring-blue-100 focus-visible:ring-offset-0",
+      showError
+        ? "border-rose-300 bg-rose-50/80 text-rose-900 focus-visible:border-rose-400"
+        : showValid
+          ? "border-emerald-300 bg-emerald-50/70 text-slate-900 focus-visible:border-emerald-400"
+          : "border-slate-200 text-slate-900 focus-visible:border-blue-400",
+      extraClassName
+    );
+  }
+
+  function renderFieldShell({
+    label,
+    optional = false,
+    description = "",
+    message = "",
+    messageTone = "default",
+    className = "",
+    children,
+  }) {
+    return (
+      <div className={className}>
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Label className="text-[13px] font-semibold text-slate-800">{label}</Label>
+            {optional ? (
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                {OPTIONAL_TEXT}
+              </span>
+            ) : null}
+          </div>
+          {children}
+          {message ? (
+            <p className={`text-xs ${messageTone === "error" ? "text-rose-600" : "text-slate-500"}`}>
+              {message}
+            </p>
+          ) : description ? (
+            <p className="text-xs text-slate-500">{description}</p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  function renderTextField({
+    fieldKey,
+    label,
+    value,
+    onChange,
+    placeholder,
+    optional = false,
+    kind = "text",
+    requiredMessage,
+    description = "",
+    className = "",
+    inputClassName = "",
+    disabled = false,
+    ...inputProps
+  }) {
+    const { error, showError, showValid } = getFieldFeedback(fieldKey, {
+      value,
+      optional,
+      kind,
+      requiredMessage,
+      disabled,
+    });
+
+    const StatusIcon = showError ? CircleAlert : showValid ? Check : null;
+
+    return renderFieldShell({
+      label,
+      optional,
+      description,
+      message: error,
+      messageTone: showError ? "error" : "default",
+      className,
+      children: (
+        <div className="relative">
+          <Input
+            value={value}
+            onChange={onChange}
+            onBlur={() => touchField(fieldKey)}
+            placeholder={placeholder}
+            disabled={disabled}
+            className={getFieldClassNames(showError, showValid, cn(StatusIcon && "pr-11", inputClassName))}
+            {...inputProps}
+          />
+          {StatusIcon ? (
+            <span
+              className={`pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 ${
+                showError ? "text-rose-500" : "text-emerald-500"
+              }`}
+            >
+              <StatusIcon className="h-4.5 w-4.5" />
+            </span>
+          ) : null}
+        </div>
+      ),
+    });
+  }
+
+  function renderTextAreaField({
+    fieldKey,
+    label,
+    value,
+    onChange,
+    placeholder,
+    optional = false,
+    description = "",
+    requiredMessage,
+    className = "",
+    rows = 4,
+    disabled = false,
+  }) {
+    const { error, showError, showValid } = getFieldFeedback(fieldKey, {
+      value,
+      optional,
+      requiredMessage,
+      disabled,
+    });
+
+    const StatusIcon = showError ? CircleAlert : showValid ? Check : null;
+
+    return renderFieldShell({
+      label,
+      optional,
+      description,
+      message: error,
+      messageTone: showError ? "error" : "default",
+      className,
+      children: (
+        <div className="relative">
+          <Textarea
+            value={value}
+            onChange={onChange}
+            onBlur={() => touchField(fieldKey)}
+            placeholder={placeholder}
+            rows={rows}
+            disabled={disabled}
+            className={cn(
+              "min-h-[108px] rounded-[24px] border px-4 py-3 text-[15px] shadow-sm transition-all duration-200",
+              "bg-white/90 placeholder:text-slate-400 focus-visible:ring-4 focus-visible:ring-blue-100 focus-visible:ring-offset-0",
+              showError
+                ? "border-rose-300 bg-rose-50/80 pr-11 text-rose-900 focus-visible:border-rose-400"
+                : showValid
+                  ? "border-emerald-300 bg-emerald-50/70 pr-11 text-slate-900 focus-visible:border-emerald-400"
+                  : "border-slate-200 text-slate-900 focus-visible:border-blue-400"
+            )}
+          />
+          {StatusIcon ? (
+            <span
+              className={`pointer-events-none absolute right-4 top-4 ${
+                showError ? "text-rose-500" : "text-emerald-500"
+              }`}
+            >
+              <StatusIcon className="h-4.5 w-4.5" />
+            </span>
+          ) : null}
+        </div>
+      ),
+    });
+  }
+
+  function renderSelectField({
+    fieldKey,
+    label,
+    value,
+    placeholder,
+    optional = false,
+    requiredMessage,
+    description = "",
+    className = "",
+    children,
+  }) {
+    const { error, showError, showValid } = getFieldFeedback(fieldKey, {
+      value,
+      optional,
+      requiredMessage,
+    });
+
+    return renderFieldShell({
+      label,
+      optional,
+      description,
+      message: error,
+      messageTone: showError ? "error" : "default",
+      className,
+      children: (
+        <div onBlur={() => touchField(fieldKey)}>
+          {children({
+            triggerClassName: cn(
+              "h-12 rounded-2xl px-4 text-[15px] shadow-sm transition-all duration-200",
+              showError
+                ? "border-rose-300 bg-rose-50/80 text-rose-900 focus:ring-rose-100"
+                : showValid
+                  ? "border-emerald-300 bg-emerald-50/70 text-slate-900 focus:ring-emerald-100"
+                  : "border-slate-200 bg-white/90 text-slate-900 focus:ring-blue-100"
+            ),
+            placeholder,
+          })}
+        </div>
+      ),
+    });
+  }
+
+  function renderDateField({
+    fieldKey,
+    label,
+    value,
+    onChange,
+    placeholder,
+    optional = false,
+    requiredMessage,
+    description = "",
+    className = "",
+  }) {
+    const { error, showError, showValid } = getFieldFeedback(fieldKey, {
+      value,
+      optional,
+      requiredMessage,
+    });
+
+    return renderFieldShell({
+      label,
+      optional,
+      description,
+      message: error,
+      messageTone: showError ? "error" : "default",
+      className,
+      children: (
+        <DatePickerInput
+          value={value}
+          onChange={(nextValue) => {
+            onChange(nextValue);
+            touchField(fieldKey);
+          }}
+          placeholder={placeholder}
+          className={cn(
+            "h-12 rounded-2xl px-4 text-[15px] shadow-sm transition-all duration-200",
+            showError
+              ? "border-rose-300 bg-rose-50/80 text-rose-900"
+              : showValid
+                ? "border-emerald-300 bg-emerald-50/70 text-slate-900"
+                : "border-slate-200 bg-white/90 text-slate-900"
+          )}
+        />
+      ),
+    });
+  }
+
+  function renderTimeField({
+    fieldKey,
+    label,
+    value,
+    onChange,
+    placeholder,
+    optional = false,
+    requiredMessage,
+    description = "",
+    className = "",
+  }) {
+    const { error, showError, showValid } = getFieldFeedback(fieldKey, {
+      value,
+      optional,
+      requiredMessage,
+    });
+
+    return renderFieldShell({
+      label,
+      optional,
+      description,
+      message: error,
+      messageTone: showError ? "error" : "default",
+      className,
+      children: (
+        <TimePickerInput
+          value={value}
+          onChange={(nextValue) => {
+            onChange(nextValue);
+            touchField(fieldKey);
+          }}
+          placeholder={placeholder}
+          className={cn(
+            "h-12 rounded-2xl px-4 text-[15px] shadow-sm transition-all duration-200",
+            showError
+              ? "border-rose-300 bg-rose-50/80 text-rose-900"
+              : showValid
+                ? "border-emerald-300 bg-emerald-50/70 text-slate-900"
+                : "border-slate-200 bg-white/90 text-slate-900"
+          )}
+        />
+      ),
+    });
+  }
 
   useEffect(() => {
     if (!carteiraIgualResponsavel) return;
@@ -746,24 +1116,15 @@ export default function Cadastro() {
   };
 
   const handleCreateClientLink = async () => {
-    if (!clientLinkForm.responsavel_nome || !clientLinkForm.responsavel_email) {
-      setNotifyTitle("Campos obrigatórios");
-      setNotifyMessage("Preencha nome do responsável e email para gerar o link.");
-      setNotifyOpen(true);
-      return;
-    }
-
     setIsSaving(true);
     try {
       const result = await clientRegistration({
         action: "create_link",
-        responsavel_nome: clientLinkForm.responsavel_nome.trim(),
-        responsavel_email: clientLinkForm.responsavel_email.trim().toLowerCase(),
         empresa_id: currentUser?.empresa_id || null,
       });
       const link = buildClientRegistrationLink(result?.link?.token);
+      setHasCopiedClientLink(false);
       setClientLinkValue(link);
-      setShowClientLinkModal(false);
       setShowClientLinkFeedback(true);
     } catch (error) {
       setNotifyTitle("Erro");
@@ -848,6 +1209,8 @@ export default function Cadastro() {
     },
   ];
   const activeTabItem = tabItems.find((item) => item.id === activeTab) || tabItems[0];
+  const ActiveTabHeaderIcon = activeTabItem.icon;
+  const activeHeaderTone = HEADER_TONE_BY_TAB[activeTabItem.id] || HEADER_TONE_BY_TAB.caes;
   const dogBreedOptions = buildSelectOptions(DOG_BREED_OPTIONS, dogForm.raca);
   const dogSizeOptions = buildSelectOptions(DOG_SIZE_OPTIONS, normalizeDogSize(dogForm.porte));
   const dogCoatOptions = buildSelectOptions(DOG_COAT_OPTIONS, normalizeDogCoat(dogForm.pelagem));
@@ -914,44 +1277,82 @@ export default function Cadastro() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-7xl">
-        <Card className="mb-6 overflow-hidden border-0 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-xl">
+        <Card className="mb-6 overflow-hidden border border-gray-200 bg-white shadow-sm">
+          <div className="h-1 bg-gradient-to-r from-blue-500 via-emerald-500 to-orange-400" />
           <CardContent className="p-5 sm:p-6">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-              <div className="max-w-2xl">
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-100">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+              <div className="max-w-3xl">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
                   <ClipboardList className="h-3.5 w-3.5" />
                   Central de cadastros
                 </div>
-                <div className="flex items-start gap-3">
-                  <div className="mt-1 rounded-2xl bg-white/10 p-3">
-                    <DogIcon className="h-6 w-6 text-orange-300" />
+                <div className="flex items-start gap-4">
+                  <div className="mt-1 rounded-2xl bg-blue-100 p-3 text-blue-700 shadow-sm">
+                    <DogIcon className="h-6 w-6" />
                   </div>
                   <div>
-                    <h1 className="text-2xl font-bold sm:text-3xl">Cadastro</h1>
-                    <p className="mt-2 text-sm leading-6 text-slate-200 sm:text-base">
-                      Organize cães, responsáveis e financeiro em um único fluxo. A navegação agora destaca melhor o que estamos preenchendo e o que já existe no sistema.
+                    <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Cadastro</h1>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
+                      Organize cães, responsáveis e financeiro em um único fluxo, com leitura mais clara e ações rápidas no mesmo padrão visual do restante do sistema.
                     </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {tabItems.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = activeTab === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setActiveTab(item.id)}
+                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                              isActive
+                                ? `${item.badgeClass} border-transparent`
+                                : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                            }`}
+                          >
+                            <Icon className="h-3.5 w-3.5" />
+                            {item.label}
+                            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-gray-700">
+                              {item.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 sm:min-w-[280px]">
-                <Button variant="secondary" onClick={openClientLinkModal} className="justify-between bg-white text-slate-900 hover:bg-slate-100">
+              <div className="flex w-full max-w-sm flex-col gap-3">
+                <Button onClick={openClientLinkModal} className="justify-between bg-blue-600 text-white hover:bg-blue-700">
                   <span className="flex items-center gap-2">
                     <LinkIcon className="h-4 w-4" />
                     Gerar link universal de cadastro
                   </span>
                   <ArrowRight className="h-4 w-4" />
                 </Button>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-200">
-                  <p className="mb-1 font-medium text-white">{activeTabItem.label}</p>
-                  {activeTab === "caes" ? (
-                    activeDogRecord ? `Editando agora: ${activeDogRecord.nome}.` : "Use esta área para criar novas fichas de cães."
-                  ) : activeTab === "responsaveis" ? (
-                    "Cadastre contatos, documentos e vínculos dos responsáveis."
-                  ) : (
-                    "Mantenha os responsáveis financeiros vinculados aos cães corretos."
-                  )}
+                <div className={`rounded-2xl border p-4 ${activeHeaderTone.panelClass}`}>
+                  <div className="flex items-start gap-3">
+                    <div className={`rounded-2xl p-3 ${activeHeaderTone.iconClass}`}>
+                      <ActiveTabHeaderIcon className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-gray-900">{activeTabItem.label}</p>
+                        <Badge className={activeTabItem.badgeClass}>{activeTabItem.count} cadastro(s)</Badge>
+                      </div>
+                      <p className="text-sm text-gray-600">{activeTabItem.description}</p>
+                      <p className="mt-2 text-xs font-medium text-gray-500">
+                        {activeTab === "caes"
+                          ? activeDogRecord
+                            ? `Editando agora: ${activeDogRecord.nome}.`
+                            : "Use esta área para criar novas fichas de cães."
+                          : activeTab === "responsaveis"
+                            ? "Cadastre contatos, documentos e vínculos dos responsáveis."
+                            : "Mantenha os responsáveis financeiros vinculados aos cães corretos."}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1557,49 +1958,10 @@ export default function Cadastro() {
         </Tabs>
       </div>
 
-      <Dialog open={showClientLinkModal} onOpenChange={setShowClientLinkModal}>
-        <DialogContent className="w-[92vw] max-w-[520px]">
-          <DialogHeader>
-            <DialogTitle>Compartilhar link de cadastro</DialogTitle>
-            <DialogDescription>
-              Gere um link para o cliente preencher responsável, cães e responsável financeiro em etapas.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div>
-              <Label>Nome do responsável</Label>
-              <Input
-                value={clientLinkForm.responsavel_nome}
-                onChange={(event) => setClientLinkForm((current) => ({ ...current, responsavel_nome: event.target.value }))}
-                placeholder="Nome do responsável"
-              />
-            </div>
-            <div>
-              <Label>Email do responsável</Label>
-              <Input
-                type="email"
-                value={clientLinkForm.responsavel_email}
-                onChange={(event) => setClientLinkForm((current) => ({ ...current, responsavel_email: event.target.value }))}
-                placeholder="email@cliente.com"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowClientLinkModal(false)}>Cancelar</Button>
-            <Button onClick={handleCreateClientLink} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white">
-              <LinkIcon className="w-4 h-4 mr-2" />
-              {isSaving ? "Gerando..." : "Gerar link"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={showClientLinkFeedback} onOpenChange={setShowClientLinkFeedback}>
         <DialogContent className="w-[92vw] max-w-[560px]">
           <DialogHeader>
-            <DialogTitle>Link gerado com sucesso</DialogTitle>
+            <DialogTitle>Link universal gerado com sucesso</DialogTitle>
             <DialogDescription>
               Compartilhe este link com o cliente para que ele preencha a ficha de cadastro completa.
             </DialogDescription>
@@ -1607,7 +1969,7 @@ export default function Cadastro() {
 
           <div className="space-y-3 py-2">
             <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
-              O link abre um fluxo em etapas com responsável, cães e responsável financeiro.
+              O link abre um fluxo em etapas com responsável, cães e responsável financeiro, sem exigir nome ou email prévios para gerar.
             </div>
             <div>
               <Label>Link do cadastro</Label>
@@ -1651,3 +2013,6 @@ export default function Cadastro() {
     </div>
   );
 }
+
+
+

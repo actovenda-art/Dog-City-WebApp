@@ -25,6 +25,38 @@ const SERVICE_TYPES = [
   { id: "transporte_km", label: "Transporte (por km)", category: "transporte" },
 ];
 
+const DAY_CARE_PACKAGE_TYPE = "day_care_pacote";
+
+const DAY_CARE_PACKAGE_FREQUENCIES = [
+  { id: "1x_semana", label: "Pacotes de 1x por semana" },
+  { id: "2x_semana", label: "Pacotes de 2x por semana" },
+  { id: "3x_semana", label: "Pacotes de 3x por semana" },
+  { id: "4x_semana", label: "Pacotes de 4x por semana" },
+  { id: "5x_semana", label: "Pacotes de 5x por semana" },
+];
+
+const DAY_CARE_PACKAGE_DOG_COUNTS = [
+  { id: "1_cao", label: "1 cÃ£o", quantity: 1 },
+  { id: "2_caes", label: "2 cÃ£es", quantity: 2 },
+  { id: "3_caes", label: "3 cÃ£es", quantity: 3 },
+  { id: "4_caes", label: "4 cÃ£es", quantity: 4 },
+];
+
+const CATEGORY_BY_TYPE = {
+  hospedagem: "hospedagem",
+  hospedagem_mensalista: "hospedagem",
+  pernoite: "hospedagem",
+  day_care_avulso_sem_pacote: "day_care",
+  day_care_avulso_com_pacote: "day_care",
+  adaptacao: "day_care",
+  [DAY_CARE_PACKAGE_TYPE]: "day_care",
+  banho: "banho_tosa",
+  tosa_higienica: "banho_tosa",
+  tosa_geral: "banho_tosa",
+  tosa_detalhada: "banho_tosa",
+  transporte_km: "transporte",
+};
+
 const FIXED_CONFIG_TYPES = new Set([
   "hospedagem",
   "hospedagem_mensalista",
@@ -94,17 +126,31 @@ function buildBreedCatalogKey(value) {
   return `catalogo_raca:${normalized || "sem_nome"}`;
 }
 
+function buildDayCarePackageKey(frequencyId, dogCountId) {
+  return `day_care_pacote:${frequencyId}:${dogCountId}`;
+}
+
+function buildDayCarePackageDescription(frequencyLabel, dogCountLabel) {
+  return `${frequencyLabel} - ${dogCountLabel}`;
+}
+
+function buildDayCarePackageFormState(rows) {
+  return DAY_CARE_PACKAGE_FREQUENCIES.reduce((accumulator, frequency) => {
+    accumulator[frequency.id] = DAY_CARE_PACKAGE_DOG_COUNTS.reduce((rowAccumulator, dogCount) => {
+      const row = rows.find((item) => item.config_key === buildDayCarePackageKey(frequency.id, dogCount.id));
+      rowAccumulator[dogCount.id] = row?.valor != null ? String(row.valor) : "";
+      return rowAccumulator;
+    }, {});
+    return accumulator;
+  }, {});
+}
+
 function getTypeLabel(type) {
   return SERVICE_TYPES.find((item) => item.id === type)?.label || type || "-";
 }
 
 function getCategoryRows(rows, category) {
-  return rows.filter((row) => {
-    if (category === "hospitalidade") {
-      return SERVICE_TYPES.some((item) => item.category === "hospitalidade" && item.id === row.tipo);
-    }
-    return SERVICE_TYPES.some((item) => item.category === category && item.id === row.tipo);
-  });
+  return rows.filter((row) => CATEGORY_BY_TYPE[row.tipo] === category);
 }
 
 export default function ConfiguracoesPrecos() {
@@ -116,7 +162,8 @@ export default function ConfiguracoesPrecos() {
   const [editingItem, setEditingItem] = useState(null);
   const [editingBreed, setEditingBreed] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState("hospitalidade");
+  const [isSavingDayCarePackages, setIsSavingDayCarePackages] = useState(false);
+  const [activeTab, setActiveTab] = useState("day_care");
   const [formData, setFormData] = useState({
     tipo: "",
     raca: "",
@@ -127,12 +174,18 @@ export default function ConfiguracoesPrecos() {
   const [breedFormData, setBreedFormData] = useState({
     raca: "",
   });
+  const [dayCarePackageForm, setDayCarePackageForm] = useState(() => buildDayCarePackageFormState([]));
 
   const empresaId = currentUser?.empresa_id || null;
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const packageRows = prices.filter((item) => item.tipo === DAY_CARE_PACKAGE_TYPE);
+    setDayCarePackageForm(buildDayCarePackageFormState(packageRows));
+  }, [prices]);
 
   async function loadData() {
     setIsLoading(true);
@@ -276,6 +329,56 @@ export default function ConfiguracoesPrecos() {
     setIsSaving(false);
   }
 
+  async function handleSaveDayCarePackages() {
+    setIsSavingDayCarePackages(true);
+    try {
+      const currentRows = prices.filter((item) => item.tipo === DAY_CARE_PACKAGE_TYPE);
+
+      for (const frequency of DAY_CARE_PACKAGE_FREQUENCIES) {
+        for (const dogCount of DAY_CARE_PACKAGE_DOG_COUNTS) {
+          const rawValue = dayCarePackageForm?.[frequency.id]?.[dogCount.id] ?? "";
+          const normalizedValue = String(rawValue).trim();
+          const existingRow = currentRows.find(
+            (item) => item.config_key === buildDayCarePackageKey(frequency.id, dogCount.id)
+          );
+
+          if (!normalizedValue) {
+            if (existingRow) {
+              await TabelaPrecos.delete(existingRow.id);
+            }
+            continue;
+          }
+
+          const parsedValue = Number.parseFloat(normalizedValue.replace(",", "."));
+          if (!Number.isFinite(parsedValue)) continue;
+
+          const payload = {
+            tipo: DAY_CARE_PACKAGE_TYPE,
+            raca: null,
+            valor: parsedValue,
+            descricao: buildDayCarePackageDescription(frequency.label, dogCount.label),
+            ativo: true,
+            empresa_id: empresaId,
+            config_key: buildDayCarePackageKey(frequency.id, dogCount.id),
+          };
+
+          if (existingRow) {
+            await TabelaPrecos.update(existingRow.id, payload);
+          } else {
+            await TabelaPrecos.create(payload);
+          }
+        }
+      }
+
+      await loadData();
+      alert("Pacotes de Day Care atualizados.");
+    } catch (error) {
+      console.error("Erro ao salvar pacotes de Day Care:", error);
+      alert("Erro ao salvar pacotes de Day Care.");
+    }
+    setIsSavingDayCarePackages(false);
+  }
+
   async function handleDelete(id) {
     if (!confirm("Excluir este preco?")) return;
     await TabelaPrecos.delete(id);
@@ -295,9 +398,9 @@ export default function ConfiguracoesPrecos() {
 
   const rowsByCategory = useMemo(
     () => ({
-      hospitalidade: getCategoryRows(prices, "hospitalidade"),
-      banho: getCategoryRows(prices, "banho"),
-      tosa: getCategoryRows(prices, "tosa"),
+      day_care: getCategoryRows(prices, "day_care"),
+      hospedagem: getCategoryRows(prices, "hospedagem"),
+      banho_tosa: getCategoryRows(prices, "banho_tosa"),
       transporte: getCategoryRows(prices, "transporte"),
       descontos: prices.filter((item) => item.tipo === "desconto" || item.config_key?.startsWith("desconto_")),
       racas: prices
@@ -305,6 +408,16 @@ export default function ConfiguracoesPrecos() {
         .sort((left, right) => String(left.raca || "").localeCompare(String(right.raca || ""), "pt-BR")),
     }),
     [prices]
+  );
+
+  const dayCareFixedRows = useMemo(
+    () => rowsByCategory.day_care.filter((item) => item.tipo !== DAY_CARE_PACKAGE_TYPE),
+    [rowsByCategory.day_care]
+  );
+
+  const dayCarePackageRows = useMemo(
+    () => rowsByCategory.day_care.filter((item) => item.tipo === DAY_CARE_PACKAGE_TYPE),
+    [rowsByCategory.day_care]
   );
 
   const breedOptions = useMemo(() => {
@@ -403,22 +516,22 @@ export default function ConfiguracoesPrecos() {
           <Card className="border-blue-200 bg-white">
             <CardContent className="p-4 text-center">
               <Home className="mx-auto mb-2 h-8 w-8 text-blue-600" />
-              <p className="text-2xl font-bold text-blue-600">{rowsByCategory.hospitalidade.length}</p>
-              <p className="text-sm text-gray-600">Hospitalidade e Day Care</p>
+              <p className="text-2xl font-bold text-blue-600">{rowsByCategory.day_care.length}</p>
+              <p className="text-sm text-gray-600">Day Care</p>
             </CardContent>
           </Card>
           <Card className="border-cyan-200 bg-white">
             <CardContent className="p-4 text-center">
-              <Bath className="mx-auto mb-2 h-8 w-8 text-cyan-600" />
-              <p className="text-2xl font-bold text-cyan-600">{rowsByCategory.banho.length}</p>
-              <p className="text-sm text-gray-600">Banho</p>
+              <Home className="mx-auto mb-2 h-8 w-8 text-cyan-600" />
+              <p className="text-2xl font-bold text-cyan-600">{rowsByCategory.hospedagem.length}</p>
+              <p className="text-sm text-gray-600">Hospedagem</p>
             </CardContent>
           </Card>
           <Card className="border-purple-200 bg-white">
             <CardContent className="p-4 text-center">
-              <Scissors className="mx-auto mb-2 h-8 w-8 text-purple-600" />
-              <p className="text-2xl font-bold text-purple-600">{rowsByCategory.tosa.length}</p>
-              <p className="text-sm text-gray-600">Tosa</p>
+              <Bath className="mx-auto mb-2 h-8 w-8 text-purple-600" />
+              <p className="text-2xl font-bold text-purple-600">{rowsByCategory.banho_tosa.length}</p>
+              <p className="text-sm text-gray-600">Banho & Tosa</p>
             </CardContent>
           </Card>
           <Card className="border-amber-200 bg-white">
@@ -432,47 +545,155 @@ export default function ConfiguracoesPrecos() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-6 grid w-full grid-cols-6">
-            <TabsTrigger value="hospitalidade">Hospedagem e Day Care</TabsTrigger>
-            <TabsTrigger value="banho">Banho</TabsTrigger>
-            <TabsTrigger value="tosa">Tosa</TabsTrigger>
+            <TabsTrigger value="day_care">Day Care</TabsTrigger>
+            <TabsTrigger value="hospedagem">Hospedagem</TabsTrigger>
+            <TabsTrigger value="banho_tosa">Banho & Tosa</TabsTrigger>
             <TabsTrigger value="transporte">Transporte</TabsTrigger>
             <TabsTrigger value="descontos">Descontos</TabsTrigger>
             <TabsTrigger value="racas">Raças</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="hospitalidade">
+          <TabsContent value="day_care">
             <Card className="border-gray-200 bg-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Home className="h-5 w-5 text-blue-600" />
-                  Preços de hospedagem, Day Care e pernoite
+                  Precos de Day Care e adaptacao
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {rowsByCategory.hospitalidade.length === 0 ? (
-                  <p className="py-8 text-center text-gray-500">Nenhum preco cadastrado.</p>
-                ) : (
-                  rowsByCategory.hospitalidade.map((item) =>
-                    renderRow(item, "border-blue-200 bg-blue-50", "text-blue-600")
-                  )
-                )}
+              <CardContent className="space-y-6">
+                <div className="rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-sky-50 p-4">
+                  <p className="text-sm font-medium text-blue-900">Valores avulsos e matriz de pacotes</p>
+                  <p className="mt-1 text-sm text-blue-700">
+                    Configure aqui os valores avulsos de Day Care, adaptaÃ§Ã£o e tambÃ©m os pacotes semanais de 1 a 5 vezes por semana para atÃ© 4 cÃ£es.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Valores base</p>
+                      <p className="text-sm text-gray-500">Usados para Day Care avulso, adaptaÃ§Ã£o e demais itens unitÃ¡rios.</p>
+                    </div>
+                    <Badge className="bg-blue-100 text-blue-700">{dayCareFixedRows.length} item(ns)</Badge>
+                  </div>
+
+                  {dayCareFixedRows.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
+                      Nenhum preco base cadastrado.
+                    </div>
+                  ) : (
+                    dayCareFixedRows.map((item) =>
+                      renderRow(item, "border-blue-200 bg-blue-50", "text-blue-600")
+                    )
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 sm:p-5">
+                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-base font-semibold text-gray-900">Pacotes semanais de Day Care</p>
+                      <p className="text-sm text-gray-600">
+                        Preencha os valores mensais por frequÃªncia e quantidade de cÃ£es. Se deixar uma cÃ©lula vazia, ela serÃ¡ removida da tabela.
+                      </p>
+                    </div>
+                    <Badge className="bg-white text-blue-700">
+                      {dayCarePackageRows.length} valor(es) salvo(s)
+                    </Badge>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border-separate border-spacing-0 overflow-hidden rounded-2xl">
+                      <thead>
+                        <tr>
+                          <th className="rounded-tl-2xl border border-blue-200 bg-blue-100 px-4 py-3 text-left text-sm font-semibold text-blue-950">
+                            FrequÃªncia
+                          </th>
+                          {DAY_CARE_PACKAGE_DOG_COUNTS.map((dogCount, index) => (
+                            <th
+                              key={dogCount.id}
+                              className={`border border-blue-200 bg-blue-100 px-4 py-3 text-center text-sm font-semibold text-blue-950 ${
+                                index === DAY_CARE_PACKAGE_DOG_COUNTS.length - 1 ? "rounded-tr-2xl" : ""
+                              }`}
+                            >
+                              {dogCount.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {DAY_CARE_PACKAGE_FREQUENCIES.map((frequency, frequencyIndex) => (
+                          <tr key={frequency.id}>
+                            <td
+                              className={`border border-blue-200 bg-white px-4 py-3 text-sm font-medium text-gray-900 ${
+                                frequencyIndex === DAY_CARE_PACKAGE_FREQUENCIES.length - 1 ? "rounded-bl-2xl" : ""
+                              }`}
+                            >
+                              {frequency.label}
+                            </td>
+                            {DAY_CARE_PACKAGE_DOG_COUNTS.map((dogCount, dogCountIndex) => (
+                              <td
+                                key={dogCount.id}
+                                className={`border border-blue-200 bg-white p-2 ${
+                                  frequencyIndex === DAY_CARE_PACKAGE_FREQUENCIES.length - 1
+                                  && dogCountIndex === DAY_CARE_PACKAGE_DOG_COUNTS.length - 1
+                                    ? "rounded-br-2xl"
+                                    : ""
+                                }`}
+                              >
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  inputMode="decimal"
+                                  value={dayCarePackageForm?.[frequency.id]?.[dogCount.id] ?? ""}
+                                  onChange={(event) =>
+                                    setDayCarePackageForm((current) => ({
+                                      ...current,
+                                      [frequency.id]: {
+                                        ...(current?.[frequency.id] || {}),
+                                        [dogCount.id]: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="0,00"
+                                  className="h-11 border-blue-200 bg-blue-50/40 text-center font-semibold text-blue-950 focus-visible:border-blue-400 focus-visible:ring-blue-200"
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      onClick={handleSaveDayCarePackages}
+                      disabled={isSavingDayCarePackages}
+                      className="bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      {isSavingDayCarePackages ? "Salvando pacotes..." : "Salvar pacotes de Day Care"}
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="banho">
+          <TabsContent value="hospedagem">
             <Card className="border-gray-200 bg-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Bath className="h-5 w-5 text-cyan-600" />
-                  Preços de banho por raça
+                  <Home className="h-5 w-5 text-cyan-600" />
+                  Precos de hospedagem e pernoite
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {rowsByCategory.banho.length === 0 ? (
-                  <p className="py-8 text-center text-gray-500 sm:col-span-2 lg:col-span-3">Nenhum preco cadastrado.</p>
+              <CardContent className="space-y-3">
+                {rowsByCategory.hospedagem.length === 0 ? (
+                  <p className="py-8 text-center text-gray-500">Nenhum preco cadastrado.</p>
                 ) : (
-                  rowsByCategory.banho.map((item) =>
+                  rowsByCategory.hospedagem.map((item) =>
                     renderRow(item, "border-cyan-200 bg-cyan-50", "text-cyan-600")
                   )
                 )}
@@ -480,19 +701,19 @@ export default function ConfiguracoesPrecos() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="tosa">
+          <TabsContent value="banho_tosa">
             <Card className="border-gray-200 bg-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Scissors className="h-5 w-5 text-purple-600" />
-                  Preços de tosa
+                  Precos de banho e tosa
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {rowsByCategory.tosa.length === 0 ? (
-                  <p className="py-8 text-center text-gray-500 sm:col-span-2 lg:col-span-3">Nenhum preco cadastrado.</p>
+                {rowsByCategory.banho_tosa.length === 0 ? (
+                  <p className="py-8 text-center text-gray-500">Nenhum preco cadastrado.</p>
                 ) : (
-                  rowsByCategory.tosa.map((item) =>
+                  rowsByCategory.banho_tosa.map((item) =>
                     renderRow(item, "border-purple-200 bg-purple-50", "text-purple-600")
                   )
                 )}

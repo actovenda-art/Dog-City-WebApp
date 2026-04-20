@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User } from "@/api/entities";
+import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User, UserInvite, UserProfile, UserUnitAccess } from "@/api/entities";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { createPageUrl, openImageViewer } from "@/utils";
 import { MISSING_BRANDING_IMAGE_URL, notifyBrandingChanged } from "@/hooks/use-branding";
@@ -137,6 +137,20 @@ function formatCEP(value) {
 function formatApiError(error, fallbackMessage) {
   const details = error?.message || error?.details || error?.hint || "";
   return details ? `${fallbackMessage}\n${details}` : fallbackMessage;
+}
+
+function summarizeProfileUsage(items = [], getLabel) {
+  const total = items.length;
+  if (!total) return "";
+  const sample = items
+    .slice(0, 3)
+    .map((item) => getLabel(item))
+    .filter(Boolean)
+    .join(", ");
+
+  if (!sample) return `${total} vínculo(s)`;
+  if (total <= 3) return sample;
+  return `${sample} e mais ${total - 3}`;
 }
 
 function isMissingAdminTablesError(error) {
@@ -821,9 +835,44 @@ export default function AdministracaoSistema() {
     setIsSaving(true);
     setActiveTab("acessos");
     try {
+      const [userRows, inviteRows, accessRows] = await Promise.all([
+        UserProfile.list("-created_date", 500),
+        UserInvite.list("-created_date", 500),
+        UserUnitAccess.list("-created_date", 1000),
+      ]);
+
+      const linkedUsers = (userRows || []).filter((item) => item.access_profile_id === profile.id);
+      const linkedInvites = (inviteRows || []).filter((item) =>
+        item.access_profile_id === profile.id && item.status !== "cancelado"
+      );
+      const linkedUnitAccess = (accessRows || []).filter((item) =>
+        item.access_profile_id === profile.id && item.active !== false
+      );
+
+      if (linkedUsers.length || linkedInvites.length || linkedUnitAccess.length) {
+        const usageDetails = [
+          linkedUsers.length
+            ? `Usuários: ${summarizeProfileUsage(linkedUsers, (item) => item.full_name || item.email || item.id)}`
+            : "",
+          linkedInvites.length
+            ? `Convites: ${summarizeProfileUsage(linkedInvites, (item) => item.full_name || item.email || item.id)}`
+            : "",
+          linkedUnitAccess.length
+            ? `Acessos por unidade: ${summarizeProfileUsage(linkedUnitAccess, (item) => item.user_id || item.id)}`
+            : "",
+        ].filter(Boolean);
+
+        alert(
+          `Não foi possível excluir este tipo de acesso porque ele ainda está em uso.\n\n${usageDetails.join("\n")}`
+        );
+        return;
+      }
+
       await PerfilAcesso.delete(profile.id);
       const refreshedProfiles = await PerfilAcesso.list("-created_date", 200);
-      const stillExists = refreshedProfiles.some((item) => item.id === profile.id);
+      const profileStillExists = await PerfilAcesso.filter({ id: profile.id }, "-created_date", 1);
+      const stillExists = (profileStillExists || []).some((item) => item.id === profile.id)
+        || refreshedProfiles.some((item) => item.id === profile.id);
 
       if (stillExists) {
         throw new Error("O perfil permaneceu salvo no banco apos a tentativa de exclusao.");
@@ -844,12 +893,14 @@ export default function AdministracaoSistema() {
         || rawMessage.includes("violates foreign key")
         || rawMessage.includes("still referenced");
 
-      const isSilentPermissionBlock = rawMessage.includes("permaneceu salvo no banco");
+      const isSilentPermissionBlock = error?.code === "NO_ROWS_DELETED"
+        || rawMessage.includes("permaneceu salvo no banco")
+        || rawMessage.includes("nenhum registro foi excluído");
 
       if (isInUseError) {
         alert("Não foi possível excluir este tipo de acesso porque ele ainda está vinculado a usuários, convites ou acessos de unidade.");
       } else if (isSilentPermissionBlock) {
-        alert("Não foi possível excluir este tipo de acesso. O registro continuou no banco, o que normalmente indica bloqueio por permissão ou regra do Supabase.");
+        alert("Não foi possível excluir este tipo de acesso. O Supabase bloqueou a exclusão ou o perfil não pertence ao contexto ativo desta unidade.");
       } else {
         alert(formatApiError(error, "Não foi possível excluir o perfil de acesso."));
       }

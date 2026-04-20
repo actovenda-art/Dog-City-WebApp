@@ -946,7 +946,16 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       }
       const { data, error } = await query.select();
       if (error) throw toAppError(error, `Erro ao excluir registro em ${table}.`);
-      return Array.isArray(data) ? (data[0] || { id }) : (data || { id });
+      const deletedRows = Array.isArray(data) ? data.filter(Boolean) : (data ? [data] : []);
+      if (!deletedRows.length) {
+        const noRowsError = new Error(
+          `Nenhum registro foi excluído em ${table}. O item pode estar protegido por permissão, fora do contexto ativo ou já removido.`
+        );
+        noRowsError.code = 'NO_ROWS_DELETED';
+        noRowsError.table = table;
+        throw noRowsError;
+      }
+      return deletedRows[0];
     },
   });
 

@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react"
 import { DayPicker } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
@@ -9,16 +9,42 @@ function Calendar({
   className,
   classNames,
   showOutsideDays = true,
+  captionLayout,
+  fixedWeeks,
+  components,
+  fromDate,
+  fromMonth,
+  fromYear,
+  toDate,
+  toMonth,
+  toYear,
   ...props
 }) {
+  const currentYear = new Date().getFullYear()
+  const resolvedCaptionLayout = captionLayout ?? "dropdown-buttons"
+  const resolvedFixedWeeks = fixedWeeks ?? true
+  const resolvedFromYear =
+    fromDate || fromMonth || typeof fromYear === "number" ? fromYear : currentYear - 100
+  const resolvedToYear =
+    toDate || toMonth || typeof toYear === "number" ? toYear : currentYear + 10
+
   return (
     (<DayPicker
       showOutsideDays={showOutsideDays}
+      captionLayout={resolvedCaptionLayout}
+      fixedWeeks={resolvedFixedWeeks}
+      fromDate={fromDate}
+      fromMonth={fromMonth}
+      fromYear={resolvedFromYear}
+      toDate={toDate}
+      toMonth={toMonth}
+      toYear={resolvedToYear}
       className={cn("p-3", className)}
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
         month: "space-y-4",
         caption: "flex justify-center pt-1 relative items-center",
+        caption_dropdowns: "flex items-center gap-2",
         caption_label: "text-sm font-medium",
         nav: "space-x-1 flex items-center",
         nav_button: cn(
@@ -27,6 +53,10 @@ function Calendar({
         ),
         nav_button_previous: "absolute left-1",
         nav_button_next: "absolute right-1",
+        dropdown: "absolute inset-0 cursor-pointer opacity-0",
+        dropdown_month: "relative",
+        dropdown_year: "relative",
+        dropdown_icon: "h-3.5 w-3.5",
         table: "w-full border-collapse space-y-1",
         head_row: "flex",
         head_cell:
@@ -62,6 +92,10 @@ function Calendar({
         IconRight: ({ className, ...props }) => (
           <ChevronRight className={cn("h-4 w-4", className)} {...props} />
         ),
+        IconDropdown: ({ className, ...props }) => (
+          <ChevronDown className={cn("h-3.5 w-3.5", className)} {...props} />
+        ),
+        ...components,
       }}
       {...props} />)
   );

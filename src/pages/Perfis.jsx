@@ -1,6 +1,7 @@
 import PropTypes from "prop-types";
 import { useEffect, useMemo, useState } from "react";
 import { Carteira, Dog, Responsavel } from "@/api/entities";
+import { clientRegistration } from "@/api/functions";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
@@ -29,9 +30,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Check,
+  Copy,
   Dog as DogIcon,
   ExternalLink,
   FileText,
+  Link2,
   Pencil,
   Save,
   ShieldCheck,
@@ -73,6 +76,16 @@ const EMPTY_CARTEIRA_FORM = {
   dog_id_6: "",
   dog_id_7: "",
   dog_id_8: "",
+};
+
+const EMPTY_LINK_DIALOG_STATE = {
+  open: false,
+  responsavelId: "",
+  mode: "dog_only",
+  carteiraId: "",
+  search: "",
+  generatedLink: "",
+  feedback: null,
 };
 
 function getLinkedDogIds(record) {
@@ -378,6 +391,8 @@ export default function Perfis() {
   const [carteiraForm, setCarteiraForm] = useState(EMPTY_CARTEIRA_FORM);
   const [searchDogResp, setSearchDogResp] = useState("");
   const [searchDogCart, setSearchDogCart] = useState("");
+  const [linkDialog, setLinkDialog] = useState(EMPTY_LINK_DIALOG_STATE);
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -540,10 +555,64 @@ export default function Perfis() {
     () => getLinkedDogIds(carteiraForm),
     [carteiraForm]
   );
+  const selectedLinkResponsavel = useMemo(
+    () => responsaveisView.find((item) => item.id === linkDialog.responsavelId) || null,
+    [responsaveisView, linkDialog.responsavelId]
+  );
+  const selectedLinkCarteira = useMemo(
+    () => carteirasView.find((item) => item.id === linkDialog.carteiraId) || null,
+    [carteirasView, linkDialog.carteiraId]
+  );
+  const availableCarteirasForLink = useMemo(() => {
+    const linkedDogIds = new Set(selectedLinkResponsavel?.linkedDogIds || []);
+    const normalizedSearch = normalizeSearchValue(linkDialog.search);
+    const filtered = carteirasView.filter((carteira) => {
+      if (!normalizedSearch) return true;
+      return matchesSearch(
+        [
+          carteira.nome_razao_social,
+          carteira.cpf_cnpj,
+          carteira.celular,
+          carteira.email,
+          ...carteira.linkedDogNames,
+        ],
+        normalizedSearch
+      );
+    });
+
+    return filtered.sort((left, right) => {
+      const leftIsRelated = left.linkedDogIds.some((dogId) => linkedDogIds.has(dogId));
+      const rightIsRelated = right.linkedDogIds.some((dogId) => linkedDogIds.has(dogId));
+      if (leftIsRelated === rightIsRelated) {
+        return String(left.nome_razao_social || "").localeCompare(String(right.nome_razao_social || ""));
+      }
+      return leftIsRelated ? -1 : 1;
+    });
+  }, [carteirasView, selectedLinkResponsavel, linkDialog.search]);
 
   const resetEditorFeedback = () => {
     setEditorFeedback(null);
     setPageFeedback(null);
+  };
+
+  const buildClientRegistrationLink = (token) => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return `${origin}${createPageUrl("CadastroClientePublico")}?token=${encodeURIComponent(token)}`;
+  };
+
+  const closeLinkDialog = () => {
+    setLinkDialog(EMPTY_LINK_DIALOG_STATE);
+    setIsGeneratingLink(false);
+  };
+
+  const openLinkDialog = (responsavelId, mode) => {
+    setPageFeedback(null);
+    setLinkDialog({
+      ...EMPTY_LINK_DIALOG_STATE,
+      open: true,
+      responsavelId,
+      mode,
+    });
   };
 
   const closeResponsavelEditor = () => {
@@ -789,6 +858,96 @@ export default function Perfis() {
     }
   };
 
+  const handleGenerateCadastroLink = async () => {
+    if (!selectedLinkResponsavel) {
+      setLinkDialog((current) => ({
+        ...current,
+        feedback: {
+          tone: "error",
+          title: "Responsável não encontrado",
+          message: "Selecione novamente o responsável para gerar o link.",
+        },
+      }));
+      return;
+    }
+
+    if (linkDialog.mode === "dog_only" && !selectedLinkCarteira) {
+      setLinkDialog((current) => ({
+        ...current,
+        feedback: {
+          tone: "error",
+          title: "Selecione o responsável financeiro",
+          message: "Para cadastrar apenas o cão, escolha o responsável financeiro que ficará vinculado.",
+        },
+      }));
+      return;
+    }
+
+    setIsGeneratingLink(true);
+
+    try {
+      const result = await clientRegistration({
+        action: "create_link",
+        empresa_id: selectedLinkResponsavel.empresa_id || selectedLinkCarteira?.empresa_id || null,
+        registration_mode: linkDialog.mode,
+        responsavel_id: selectedLinkResponsavel.id,
+        carteira_id: linkDialog.mode === "dog_only" ? selectedLinkCarteira?.id || null : null,
+      });
+
+      const nextLink = buildClientRegistrationLink(result?.link?.token);
+
+      setLinkDialog((current) => ({
+        ...current,
+        generatedLink: nextLink,
+        feedback: {
+          tone: "success",
+          title: "Link gerado com sucesso",
+          message:
+            current.mode === "dog_only"
+              ? "O link foi preparado para cadastrar apenas o novo cão, usando o responsável e o financeiro já vinculados."
+              : "O link foi preparado para cadastrar um novo cão e um novo responsável financeiro com o responsável já vinculado.",
+        },
+      }));
+    } catch (error) {
+      console.error("Erro ao gerar link de cadastro pelo perfil:", error);
+      setLinkDialog((current) => ({
+        ...current,
+        feedback: {
+          tone: "error",
+          title: "Erro ao gerar link",
+          message: error?.message || "Tente novamente em instantes.",
+        },
+      }));
+    } finally {
+      setIsGeneratingLink(false);
+    }
+  };
+
+  const handleCopyGeneratedLink = async () => {
+    if (!linkDialog.generatedLink) return;
+
+    try {
+      await navigator.clipboard.writeText(linkDialog.generatedLink);
+      setLinkDialog((current) => ({
+        ...current,
+        feedback: {
+          tone: "success",
+          title: "Link copiado",
+          message: "O link de cadastro foi copiado para a área de transferência.",
+        },
+      }));
+    } catch {
+      setLinkDialog((current) => ({
+        ...current,
+        feedback: {
+          tone: "error",
+          title: "Não foi possível copiar",
+          message: "Copie o link manualmente pelo campo exibido.",
+        },
+      }));
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -1018,15 +1177,36 @@ export default function Perfis() {
                               <Badge className="bg-violet-100 text-violet-700">
                                 {responsavel.linkedDogIds.length} cão(ães)
                               </Badge>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openResponsavelEditor(responsavel.id)}
-                              >
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Editar
-                              </Button>
                             </div>
+                          </div>
+
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-violet-200 text-violet-700 hover:bg-violet-50"
+                              onClick={() => openLinkDialog(responsavel.id, "dog_only")}
+                            >
+                              <Link2 className="mr-2 h-4 w-4" />
+                              Link: apenas cÃ£o
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-violet-200 text-violet-700 hover:bg-violet-50"
+                              onClick={() => openLinkDialog(responsavel.id, "dog_and_financeiro")}
+                            >
+                              <Wallet className="mr-2 h-4 w-4" />
+                              Link: cÃ£o + financeiro
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openResponsavelEditor(responsavel.id)}
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Editar
+                            </Button>
                           </div>
 
                           <div className="mt-4">
@@ -1405,6 +1585,175 @@ export default function Perfis() {
             >
               <Save className="mr-2 h-4 w-4" />
               {isSaving ? "Salvando..." : "Salvar carteira"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={linkDialog.open} onOpenChange={(open) => !open && closeLinkDialog()}>
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {linkDialog.mode === "dog_only"
+                ? "Gerar link para cadastrar apenas o cão"
+                : "Gerar link para cadastrar cão e responsável financeiro"}
+            </DialogTitle>
+            <DialogDescription>
+              {linkDialog.mode === "dog_only"
+                ? "Esse link abrirá o cadastro já com o responsável preenchido. Antes de gerar, escolha qual responsável financeiro ficará vinculado ao novo cão."
+                : "Esse link abrirá o cadastro com o responsável já preenchido, permitindo incluir o novo cão e um novo responsável financeiro na mesma jornada."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5">
+            <FeedbackBanner feedback={linkDialog.feedback} />
+
+            <div className="rounded-3xl border border-violet-100 bg-violet-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">
+                Responsável do link
+              </p>
+              <div className="mt-2">
+                <p className="text-base font-semibold text-gray-900">
+                  {selectedLinkResponsavel?.nome_completo || "Responsável não encontrado"}
+                </p>
+                <div className="mt-1 space-y-1 text-sm text-gray-600">
+                  <p>{selectedLinkResponsavel?.cpf || "CPF não informado"}</p>
+                  <p>{selectedLinkResponsavel?.email || "Email não informado"}</p>
+                </div>
+              </div>
+            </div>
+
+            {linkDialog.mode === "dog_only" ? (
+              <div className="space-y-4 rounded-3xl border border-orange-100 bg-orange-50/70 p-4">
+                <div>
+                  <Label>Nome do responsável financeiro</Label>
+                  <Input
+                    value={linkDialog.search}
+                    onChange={(event) =>
+                      setLinkDialog((current) => ({
+                        ...current,
+                        search: event.target.value,
+                        generatedLink: "",
+                        feedback: null,
+                      }))
+                    }
+                    placeholder="Busque por nome, CPF/CNPJ, email ou celular..."
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    Esse vínculo já seguirá preenchido quando a pessoa abrir o link.
+                  </p>
+                </div>
+
+                <div className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-orange-100 bg-white p-2">
+                  {availableCarteirasForLink.length > 0 ? (
+                    availableCarteirasForLink.map((carteira) => {
+                      const isSelected = carteira.id === linkDialog.carteiraId;
+                      const linkedDogNames = getDogDisplayNames(carteira.linkedDogIds, dogMap);
+
+                      return (
+                        <button
+                          key={carteira.id}
+                          type="button"
+                          onClick={() =>
+                            setLinkDialog((current) => ({
+                              ...current,
+                              carteiraId: carteira.id,
+                              generatedLink: "",
+                              feedback: null,
+                            }))
+                          }
+                          className={`w-full rounded-2xl border p-4 text-left transition ${
+                            isSelected
+                              ? "border-orange-300 bg-orange-50 shadow-sm"
+                              : "border-transparent bg-gray-50 hover:border-orange-200 hover:bg-orange-50/60"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-gray-900">
+                                {carteira.nome_razao_social || "Sem nome"}
+                              </p>
+                              <div className="mt-1 space-y-1 text-xs text-gray-600">
+                                <p>{carteira.cpf_cnpj || "CPF/CNPJ não informado"}</p>
+                                <p className="truncate">{carteira.email || "Email não informado"}</p>
+                                <p>{carteira.celular || "Celular não informado"}</p>
+                              </div>
+                            </div>
+                            {isSelected ? (
+                              <Badge className="bg-orange-500 text-white">Selecionado</Badge>
+                            ) : null}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {linkedDogNames.length > 0 ? (
+                              linkedDogNames.map((dogName) => (
+                                <Badge
+                                  key={`${carteira.id}-${dogName}`}
+                                  className="border border-orange-200 bg-orange-50 text-orange-700"
+                                >
+                                  {dogName}
+                                </Badge>
+                              ))
+                            ) : (
+                              <Badge className="bg-gray-100 text-gray-600">
+                                Ainda sem cães vinculados
+                              </Badge>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-orange-200 bg-orange-50/60 p-4 text-sm text-orange-800">
+                      Nenhum responsável financeiro foi encontrado com esse filtro.
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {linkDialog.generatedLink ? (
+              <div className="space-y-3 rounded-3xl border border-emerald-100 bg-emerald-50/60 p-4">
+                <Label>Link gerado</Label>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Input readOnly value={linkDialog.generatedLink} className="font-mono text-xs" />
+                  <Button
+                    type="button"
+                    onClick={handleCopyGeneratedLink}
+                    className="bg-emerald-600 text-white hover:bg-emerald-700"
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copiar
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeLinkDialog} disabled={isGeneratingLink}>
+              {linkDialog.generatedLink ? "Fechar" : "Cancelar"}
+            </Button>
+            <Button
+              onClick={linkDialog.generatedLink ? handleCopyGeneratedLink : handleGenerateCadastroLink}
+              disabled={isGeneratingLink || (!linkDialog.generatedLink && !selectedLinkResponsavel)}
+              className="bg-violet-600 text-white hover:bg-violet-700"
+            >
+              {isGeneratingLink ? (
+                <>
+                  <Save className="mr-2 h-4 w-4 animate-pulse" />
+                  Gerando...
+                </>
+              ) : linkDialog.generatedLink ? (
+                <>
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copiar link
+                </>
+              ) : (
+                <>
+                  <Link2 className="mr-2 h-4 w-4" />
+                  Gerar link
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

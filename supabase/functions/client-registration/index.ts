@@ -327,6 +327,91 @@ function buildDogSlots(dogIds: string[]) {
   return slots;
 }
 
+const DOG_SLOT_SELECT = "id, empresa_id, dog_id_1, dog_id_2, dog_id_3, dog_id_4, dog_id_5, dog_id_6, dog_id_7, dog_id_8";
+
+function getLinkMetadata(link: Record<string, unknown>) {
+  return link?.metadata && typeof link.metadata === "object"
+    ? link.metadata as Record<string, unknown>
+    : {};
+}
+
+function getRegistrationMode(metadata: Record<string, unknown>) {
+  const mode = sanitizeText(metadata.registration_mode);
+  if (mode === "dog_only" || mode === "dog_and_financeiro") {
+    return mode;
+  }
+  return "full";
+}
+
+function getLinkedDogIds(record: Record<string, unknown>) {
+  return [1, 2, 3, 4, 5, 6, 7, 8]
+    .map((slot) => sanitizeText(record[`dog_id_${slot}`]))
+    .filter(Boolean);
+}
+
+async function loadResponsavelById(responsavelId: string, empresaId: string) {
+  const { data, error } = await admin
+    .from("responsavel")
+    .select("id, empresa_id, nome_completo, cpf, celular, celular_alternativo, email")
+    .eq("id", responsavelId)
+    .eq("empresa_id", empresaId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error("Não foi possível localizar o responsável selecionado para este link.");
+  }
+
+  return data;
+}
+
+async function loadCarteiraById(carteiraId: string, empresaId: string) {
+  const { data, error } = await admin
+    .from("carteira")
+    .select("id, empresa_id, nome_razao_social, cpf_cnpj, celular, email, cep, numero_residencia, street, neighborhood, city, state, vencimento_planos, contato_orcamentos, contato_alinhamentos")
+    .eq("id", carteiraId)
+    .eq("empresa_id", empresaId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error("Não foi possível localizar o responsável financeiro selecionado para este link.");
+  }
+
+  return data;
+}
+
+async function appendDogsToExistingRecord(table: "responsavel" | "carteira", recordId: string, empresaId: string, dogIds: string[]) {
+  const { data, error } = await admin
+    .from(table)
+    .select(DOG_SLOT_SELECT)
+    .eq("id", recordId)
+    .eq("empresa_id", empresaId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error(`Não foi possível localizar o cadastro existente em ${table}.`);
+  }
+
+  const existingDogIds = getLinkedDogIds(data);
+  const nextDogIds = [...new Set([...existingDogIds, ...dogIds.filter(Boolean)])];
+
+  if (nextDogIds.length > 8) {
+    throw new Error("O cadastro selecionado já atingiu o limite de 8 cães vinculados.");
+  }
+
+  const { error: updateError } = await admin
+    .from(table)
+    .update({
+      ...buildDogSlots(nextDogIds),
+      updated_date: new Date().toISOString(),
+    })
+    .eq("id", recordId)
+    .eq("empresa_id", empresaId);
+
+  if (updateError) {
+    throw new Error(updateError.message || `Não foi possível vincular o novo cão em ${table}.`);
+  }
+}
+
 function sanitizeContinuousMedications(value: unknown) {
   if (!Array.isArray(value)) return [];
 
@@ -338,6 +423,47 @@ function sanitizeContinuousMedications(value: unknown) {
       dose: nullableText((item as Record<string, unknown>)?.dose),
     }))
     .filter((item) => item.especificacoes || item.cuidados || item.horario || item.dose);
+}
+
+function isNaturalFoodSelection(value: unknown) {
+  return sanitizeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .includes("natural");
+}
+
+function buildDogMealSlots(cao: Record<string, unknown>) {
+  const rawMeals = Array.isArray(cao.refeicoes)
+    ? cao.refeicoes.slice(0, 4)
+    : [];
+
+  const normalizedMeals = rawMeals.length > 0
+    ? rawMeals.map((item) => ({
+      qnt: nullableText((item as Record<string, unknown>)?.qnt),
+      horario: nullableText((item as Record<string, unknown>)?.horario),
+      obs: nullableText((item as Record<string, unknown>)?.obs),
+    }))
+    : [1, 2, 3, 4].map((index) => ({
+      qnt: nullableText(cao[`refeicao_${index}_qnt`]),
+      horario: nullableText(cao[`refeicao_${index}_horario`]),
+      obs: nullableText(cao[`refeicao_${index}_obs`]),
+    }));
+
+  return {
+    refeicao_1_qnt: normalizedMeals[0]?.qnt || null,
+    refeicao_1_horario: normalizedMeals[0]?.horario || null,
+    refeicao_1_obs: normalizedMeals[0]?.obs || null,
+    refeicao_2_qnt: normalizedMeals[1]?.qnt || null,
+    refeicao_2_horario: normalizedMeals[1]?.horario || null,
+    refeicao_2_obs: normalizedMeals[1]?.obs || null,
+    refeicao_3_qnt: normalizedMeals[2]?.qnt || null,
+    refeicao_3_horario: normalizedMeals[2]?.horario || null,
+    refeicao_3_obs: normalizedMeals[2]?.obs || null,
+    refeicao_4_qnt: normalizedMeals[3]?.qnt || null,
+    refeicao_4_horario: normalizedMeals[3]?.horario || null,
+    refeicao_4_obs: normalizedMeals[3]?.obs || null,
+  };
 }
 
 async function loadLinkByToken(token: string) {
@@ -377,12 +503,12 @@ async function loadEmpresaSummary(empresaId: string) {
   return data || null;
 }
 
-function validatePayload(payload: Record<string, unknown>) {
+function validatePayload(payload: Record<string, unknown>, registrationMode = "full") {
   const responsavel = (payload?.responsavel || {}) as Record<string, unknown>;
   const financeiro = (payload?.financeiro || {}) as Record<string, unknown>;
   const caes = Array.isArray(payload?.caes) ? payload.caes as Record<string, unknown>[] : [];
 
-  if (!sanitizeText(responsavel.nome_completo) || !sanitizeText(responsavel.cpf) || !sanitizeText(responsavel.celular) || !sanitizeText(responsavel.email)) {
+  if (registrationMode === "full" && (!sanitizeText(responsavel.nome_completo) || !sanitizeText(responsavel.cpf) || !sanitizeText(responsavel.celular) || !sanitizeText(responsavel.email))) {
     throw new Error("Preencha nome, CPF, celular e email do responsavel.");
   }
 
@@ -394,7 +520,7 @@ function validatePayload(payload: Record<string, unknown>) {
     throw new Error("Cada cao precisa ter ao menos nome e raca.");
   }
 
-  if (!sanitizeText(financeiro.nome_razao_social) || !sanitizeText(financeiro.cpf_cnpj) || !sanitizeText(financeiro.celular) || !sanitizeText(financeiro.email)) {
+  if ((registrationMode === "full" || registrationMode === "dog_and_financeiro") && (!sanitizeText(financeiro.nome_razao_social) || !sanitizeText(financeiro.cpf_cnpj) || !sanitizeText(financeiro.celular) || !sanitizeText(financeiro.email))) {
     throw new Error("Preencha os dados principais do responsavel financeiro.");
   }
 }
@@ -412,16 +538,75 @@ async function handleCreateLink(request: Request, payload: Record<string, unknow
 
   try {
     const now = new Date().toISOString();
+    const registrationMode = sanitizeText(payload.registration_mode) || "full";
+    const metadata: Record<string, unknown> = {
+      source: "cadastro",
+    };
+    let responsavelNome = nullableText(payload.responsavel_nome);
+    let responsavelEmail = nullableText(payload.responsavel_email)?.toLowerCase() || null;
+
+    if (registrationMode === "dog_only" || registrationMode === "dog_and_financeiro") {
+      const responsavelId = sanitizeText(payload.responsavel_id);
+      if (!responsavelId) {
+        return jsonResponse({ error: "Selecione o responsável para gerar este link." }, 400);
+      }
+
+      const responsavel = await loadResponsavelById(responsavelId, empresaId);
+      responsavelNome = nullableText(responsavel.nome_completo);
+      responsavelEmail = nullableText(responsavel.email)?.toLowerCase() || null;
+      metadata.registration_mode = registrationMode;
+      metadata.existing_responsavel_id = responsavel.id;
+      metadata.prefill = {
+        responsavel: {
+          nome_completo: responsavel.nome_completo || "",
+          cpf: responsavel.cpf || "",
+          celular: responsavel.celular || "",
+          celular_alternativo: responsavel.celular_alternativo || "",
+          email: responsavel.email || "",
+        },
+      };
+
+      if (registrationMode === "dog_only") {
+        const carteiraId = sanitizeText(payload.carteira_id);
+        if (!carteiraId) {
+          return jsonResponse({ error: "Selecione o responsável financeiro para gerar o link apenas do cão." }, 400);
+        }
+
+        const carteira = await loadCarteiraById(carteiraId, empresaId);
+        metadata.existing_carteira_id = carteira.id;
+        metadata.prefill = {
+          ...(metadata.prefill as Record<string, unknown>),
+          financeiro: {
+            nome_razao_social: carteira.nome_razao_social || "",
+            cpf_cnpj: carteira.cpf_cnpj || "",
+            celular: carteira.celular || "",
+            email: carteira.email || "",
+            cep: carteira.cep || "",
+            number: carteira.numero_residencia || "",
+            street: carteira.street || "",
+            neighborhood: carteira.neighborhood || "",
+            city: carteira.city || "",
+            state: carteira.state || "",
+            vencimento_planos: carteira.vencimento_planos || "",
+            contato_orcamentos_nome: (carteira.contato_orcamentos as Record<string, unknown> | null)?.nome || "",
+            contato_orcamentos_celular: (carteira.contato_orcamentos as Record<string, unknown> | null)?.celular || "",
+            contato_orcamentos_email: (carteira.contato_orcamentos as Record<string, unknown> | null)?.email || "",
+            contato_alinhamentos_nome: (carteira.contato_alinhamentos as Record<string, unknown> | null)?.nome || "",
+            contato_alinhamentos_celular: (carteira.contato_alinhamentos as Record<string, unknown> | null)?.celular || "",
+            contato_alinhamentos_email: (carteira.contato_alinhamentos as Record<string, unknown> | null)?.email || "",
+          },
+        };
+      }
+    }
+
     const { data, error } = await admin
       .from("client_registration_link")
       .insert([{
         empresa_id: empresaId,
-        responsavel_nome: nullableText(payload.responsavel_nome),
-        responsavel_email: nullableText(payload.responsavel_email)?.toLowerCase() || null,
+        responsavel_nome: responsavelNome,
+        responsavel_email: responsavelEmail,
         status: "pendente",
-        metadata: {
-          source: "cadastro",
-        },
+        metadata,
         created_by_user_id: ctx.profile.id,
         created_date: now,
         updated_date: now,
@@ -540,7 +725,9 @@ async function handleSubmit(payload: Record<string, unknown>) {
     }
 
     const formPayload = (payload?.payload || {}) as Record<string, unknown>;
-    validatePayload(formPayload);
+    const metadata = getLinkMetadata(link as Record<string, unknown>);
+    const registrationMode = getRegistrationMode(metadata);
+    validatePayload(formPayload, registrationMode);
 
     const responsavel = (formPayload.responsavel || {}) as Record<string, unknown>;
     const financeiro = (formPayload.financeiro || {}) as Record<string, unknown>;
@@ -549,6 +736,9 @@ async function handleSubmit(payload: Record<string, unknown>) {
 
     const createdDogIds: string[] = [];
     for (const cao of caes) {
+      const dogMeals = buildDogMealSlots(cao);
+      const isNaturalFood = Boolean(cao.alimentacao_natural) || isNaturalFoodSelection(cao.alimentacao_tipo);
+
       const { data: dogRow, error: dogError } = await admin
         .from("dogs")
         .insert([{
@@ -560,25 +750,23 @@ async function handleSubmit(payload: Record<string, unknown>) {
           data_nascimento: nullableText(cao.data_nascimento),
           sexo: nullableText(cao.sexo),
           porte: nullableText(cao.porte),
+          cores_pelagem: nullableText(cao.cores_pelagem),
+          pelagem: nullableText(cao.pelagem),
           castrado: !!cao.castrado,
-          alimentacao_marca_racao: nullableText(cao.alimentacao_marca_racao),
-          alimentacao_sabor: nullableText(cao.alimentacao_sabor),
-          alimentacao_tipo: nullableText(cao.alimentacao_tipo),
-          refeicao_1_qnt: nullableText(cao.refeicao_1_qnt),
-          refeicao_1_horario: nullableText(cao.refeicao_1_horario),
-          refeicao_1_obs: nullableText(cao.refeicao_1_obs),
-          refeicao_2_qnt: nullableText(cao.refeicao_2_qnt),
-          refeicao_2_horario: nullableText(cao.refeicao_2_horario),
-          refeicao_2_obs: nullableText(cao.refeicao_2_obs),
-          refeicao_3_qnt: nullableText(cao.refeicao_3_qnt),
-          refeicao_3_horario: nullableText(cao.refeicao_3_horario),
-          refeicao_3_obs: nullableText(cao.refeicao_3_obs),
-          refeicao_4_qnt: nullableText(cao.refeicao_4_qnt),
-          refeicao_4_horario: nullableText(cao.refeicao_4_horario),
-          refeicao_4_obs: nullableText(cao.refeicao_4_obs),
+          data_revacinacao_1: nullableText(cao.data_revacinacao_1),
+          nome_vacina_revacinacao_1: nullableText(cao.nome_vacina_revacinacao_1),
+          data_revacinacao_2: nullableText(cao.data_revacinacao_2),
+          nome_vacina_revacinacao_2: nullableText(cao.nome_vacina_revacinacao_2),
+          data_revacinacao_3: nullableText(cao.data_revacinacao_3),
+          nome_vacina_revacinacao_3: nullableText(cao.nome_vacina_revacinacao_3),
+          alimentacao_marca_racao: isNaturalFood ? null : nullableText(cao.alimentacao_marca_racao),
+          alimentacao_sabor: isNaturalFood ? null : nullableText(cao.alimentacao_sabor),
+          alimentacao_tipo: isNaturalFood ? "Alimentação natural" : nullableText(cao.alimentacao_tipo),
+          ...dogMeals,
           alergias: nullableText(cao.alergias),
           restricoes_cuidados: nullableText(cao.restricoes_cuidados),
           veterinario_responsavel: nullableText(cao.veterinario_responsavel),
+          veterinario_horario_atendimento: nullableText(cao.veterinario_horario_atendimento),
           veterinario_telefone: nullableText(cao.veterinario_telefone),
           veterinario_clinica_telefone: nullableText(cao.veterinario_clinica_telefone),
           veterinario_endereco: nullableText(cao.veterinario_endereco),
@@ -599,26 +787,37 @@ async function handleSubmit(payload: Record<string, unknown>) {
     }
 
     const dogSlots = buildDogSlots(createdDogIds);
+    let responsavelId = sanitizeText(metadata.existing_responsavel_id);
 
-    const { data: responsavelRow, error: responsavelError } = await admin
-      .from("responsavel")
-      .insert([{
-        empresa_id: link.empresa_id,
-        nome_completo: sanitizeText(responsavel.nome_completo),
-        cpf: nullableText(responsavel.cpf),
-        celular: nullableText(responsavel.celular),
-        celular_alternativo: nullableText(responsavel.celular_alternativo),
-        email: nullableText(responsavel.email)?.toLowerCase() || null,
-        ativo: true,
-        created_date: now,
-        updated_date: now,
-        ...dogSlots,
-      }])
-      .select("id")
-      .maybeSingle();
+    if (registrationMode === "full") {
+      const { data: responsavelRow, error: responsavelError } = await admin
+        .from("responsavel")
+        .insert([{
+          empresa_id: link.empresa_id,
+          nome_completo: sanitizeText(responsavel.nome_completo),
+          cpf: nullableText(responsavel.cpf),
+          celular: nullableText(responsavel.celular),
+          celular_alternativo: nullableText(responsavel.celular_alternativo),
+          email: nullableText(responsavel.email)?.toLowerCase() || null,
+          ativo: true,
+          created_date: now,
+          updated_date: now,
+          ...dogSlots,
+        }])
+        .select("id")
+        .maybeSingle();
 
-    if (responsavelError || !responsavelRow?.id) {
-      return jsonResponse({ error: withSchemaHint(responsavelError, "Nao foi possivel criar o responsavel.") }, 500);
+      if (responsavelError || !responsavelRow?.id) {
+        return jsonResponse({ error: withSchemaHint(responsavelError, "Nao foi possivel criar o responsavel.") }, 500);
+      }
+
+      responsavelId = responsavelRow.id;
+    } else {
+      if (!responsavelId) {
+        return jsonResponse({ error: "Este link nao possui um responsavel existente vinculado." }, 400);
+      }
+
+      await appendDogsToExistingRecord("responsavel", responsavelId, link.empresa_id, createdDogIds);
     }
 
     const contatoOrcamentos = {
@@ -632,42 +831,53 @@ async function handleSubmit(payload: Record<string, unknown>) {
       celular: nullableText(financeiro.contato_alinhamentos_celular),
       email: nullableText(financeiro.contato_alinhamentos_email)?.toLowerCase() || null,
     };
+    let carteiraId = sanitizeText(metadata.existing_carteira_id);
 
-    const { data: carteiraRow, error: carteiraError } = await admin
-      .from("carteira")
-      .insert([{
-        empresa_id: link.empresa_id,
-        nome_razao_social: sanitizeText(financeiro.nome_razao_social),
-        cpf_cnpj: nullableText(financeiro.cpf_cnpj),
-        celular: nullableText(financeiro.celular),
-        email: nullableText(financeiro.email)?.toLowerCase() || null,
-        cep: nullableText(financeiro.cep),
-        numero_residencia: nullableText(financeiro.number),
-        street: nullableText(financeiro.street),
-        neighborhood: nullableText(financeiro.neighborhood),
-        city: nullableText(financeiro.city),
-        state: nullableText(financeiro.state),
-        vencimento_planos: nullableText(financeiro.vencimento_planos),
-        contato_orcamentos: contatoOrcamentos,
-        contato_alinhamentos: contatoAlinhamentos,
-        ativo: true,
-        created_date: now,
-        updated_date: now,
-        ...dogSlots,
-      }])
-      .select("id")
-      .maybeSingle();
+    if (registrationMode === "dog_only") {
+      if (!carteiraId) {
+        return jsonResponse({ error: "Este link nao possui um responsavel financeiro existente vinculado." }, 400);
+      }
 
-    if (carteiraError || !carteiraRow?.id) {
-      return jsonResponse({ error: withSchemaHint(carteiraError, "Nao foi possivel criar o responsavel financeiro.") }, 500);
+      await appendDogsToExistingRecord("carteira", carteiraId, link.empresa_id, createdDogIds);
+    } else {
+      const { data: carteiraRow, error: carteiraError } = await admin
+        .from("carteira")
+        .insert([{
+          empresa_id: link.empresa_id,
+          nome_razao_social: sanitizeText(financeiro.nome_razao_social),
+          cpf_cnpj: nullableText(financeiro.cpf_cnpj),
+          celular: nullableText(financeiro.celular),
+          email: nullableText(financeiro.email)?.toLowerCase() || null,
+          cep: nullableText(financeiro.cep),
+          numero_residencia: nullableText(financeiro.number),
+          street: nullableText(financeiro.street),
+          neighborhood: nullableText(financeiro.neighborhood),
+          city: nullableText(financeiro.city),
+          state: nullableText(financeiro.state),
+          vencimento_planos: nullableText(financeiro.vencimento_planos),
+          contato_orcamentos: contatoOrcamentos,
+          contato_alinhamentos: contatoAlinhamentos,
+          ativo: true,
+          created_date: now,
+          updated_date: now,
+          ...dogSlots,
+        }])
+        .select("id")
+        .maybeSingle();
+
+      if (carteiraError || !carteiraRow?.id) {
+        return jsonResponse({ error: withSchemaHint(carteiraError, "Nao foi possivel criar o responsavel financeiro.") }, 500);
+      }
+
+      carteiraId = carteiraRow.id;
     }
 
     const { error: updateError } = await admin
       .from("client_registration_link")
       .update({
         status: "concluido",
-        responsavel_id: responsavelRow.id,
-        carteira_id: carteiraRow.id,
+        responsavel_id: responsavelId,
+        carteira_id: carteiraId,
         dog_ids: createdDogIds,
         submitted_payload: formPayload,
         completed_at: now,
@@ -681,8 +891,8 @@ async function handleSubmit(payload: Record<string, unknown>) {
 
     return jsonResponse({
       ok: true,
-      responsavel_id: responsavelRow.id,
-      carteira_id: carteiraRow.id,
+      responsavel_id: responsavelId,
+      carteira_id: carteiraId,
       dog_ids: createdDogIds,
     });
   } catch (error) {

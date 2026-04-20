@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User } from "@/api/entities";
+import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment } from "@/api/entities";
 import { useLocation } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { Calculator, Dog as DogIcon, FileText, Plus, Save, Send } from "lucide-react";
+import { getAppointmentMeta } from "@/lib/attendance";
+import { AlertTriangle, Calculator, Dog as DogIcon, FileText, Plus, Save, Send } from "lucide-react";
 import { differenceInDays } from "date-fns";
 
 import OrcamentoCaoForm from "@/components/orcamento/OrcamentoCaoForm";
@@ -388,6 +389,7 @@ export default function Orcamentos() {
   const [currentUser, setCurrentUser] = useState(null);
   const [prefillApplied, setPrefillApplied] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  const [prefillNotice, setPrefillNotice] = useState(null);
 
   const [showModal, setShowModal] = useState(false);
   const [etapa, setEtapa] = useState("cliente");
@@ -409,66 +411,107 @@ export default function Orcamentos() {
   }, [caes, dogs, precos]);
 
   useEffect(() => {
-    if (isLoading || prefillApplied || !dogs.length) return;
+    if (isLoading || prefillApplied || !dogs.length) return undefined;
 
-    const params = new URLSearchParams(location.search);
-    const dogReference = params.get("dogId");
-    const service = params.get("service");
-    const date = params.get("date") || new Date().toISOString().slice(0, 10);
-    const appointmentId = params.get("appointmentId");
-    if (!dogReference || !service) return;
+    let cancelled = false;
 
-    const selectedDog = findEntityByReference(dogs, dogReference);
-    const resolvedDogId = selectedDog?.id || "";
-    if (!resolvedDogId) return;
+    async function applyPrefill() {
+      const params = new URLSearchParams(location.search);
+      const dogReference = params.get("dogId");
+      const service = params.get("service");
+      const date = params.get("date") || new Date().toISOString().slice(0, 10);
+      const appointmentId = params.get("appointmentId");
+      if (!dogReference || !service) return;
 
-    const selectedCarteira = carteiras.find((cliente) =>
-      [1, 2, 3, 4, 5, 6, 7, 8].some((index) => cliente[`dog_id_${index}`] === resolvedDogId)
-    ) || null;
+      const selectedDog = findEntityByReference(dogs, dogReference);
+      const resolvedDogId = selectedDog?.id || "";
+      if (!resolvedDogId) return;
 
-    const prefilledCao = {
-      ...emptyCao,
-      dog_id: resolvedDogId,
-      servicos: {
-        ...emptyCao.servicos,
-      },
-    };
+      const selectedCarteira = carteiras.find((cliente) =>
+        [1, 2, 3, 4, 5, 6, 7, 8].some((index) => cliente[`dog_id_${index}`] === resolvedDogId)
+      ) || null;
 
-    if (service === "banho") {
-      prefilledCao.servicos.banho = true;
-      prefilledCao.banho_data = date;
-      prefilledCao.banho_horario = "09:00";
-      prefilledCao.banho_horario_inicio = "09:00";
-      prefilledCao.banho_horario_saida = "10:00";
-    } else if (service === "hospedagem") {
-      prefilledCao.servicos.hospedagem = true;
-      prefilledCao.hosp_data_entrada = date;
-      prefilledCao.hosp_horario_entrada = "09:00";
-      prefilledCao.hosp_data_saida = date;
-      prefilledCao.hosp_horario_saida = "18:00";
-    } else if (service === "day_care") {
-      prefilledCao.servicos.day_care = true;
-      prefilledCao.day_care_data = date;
-      prefilledCao.day_care_horario_entrada = "08:00";
-      prefilledCao.day_care_horario_saida = "18:00";
-    } else if (service === "adaptacao") {
-      prefilledCao.servicos.adaptacao = true;
-      prefilledCao.adaptacao_data = date;
-      prefilledCao.adaptacao_horario_entrada = "09:00";
-      prefilledCao.adaptacao_horario_saida = "10:00";
+      const prefilledCao = {
+        ...emptyCao,
+        dog_id: resolvedDogId,
+        servicos: {
+          ...emptyCao.servicos,
+        },
+      };
+
+      if (service === "banho") {
+        prefilledCao.servicos.banho = true;
+        prefilledCao.banho_data = date;
+        prefilledCao.banho_horario = "09:00";
+        prefilledCao.banho_horario_inicio = "09:00";
+        prefilledCao.banho_horario_saida = "10:00";
+      } else if (service === "hospedagem") {
+        prefilledCao.servicos.hospedagem = true;
+        prefilledCao.hosp_data_entrada = date;
+        prefilledCao.hosp_horario_entrada = "09:00";
+        prefilledCao.hosp_data_saida = date;
+        prefilledCao.hosp_horario_saida = "18:00";
+      } else if (service === "day_care") {
+        prefilledCao.servicos.day_care = true;
+        prefilledCao.day_care_data = date;
+        prefilledCao.day_care_horario_entrada = "08:00";
+        prefilledCao.day_care_horario_saida = "18:00";
+      } else if (service === "adaptacao") {
+        prefilledCao.servicos.adaptacao = true;
+        prefilledCao.adaptacao_data = date;
+        prefilledCao.adaptacao_horario_entrada = "09:00";
+        prefilledCao.adaptacao_horario_saida = "10:00";
+      }
+
+      let nextPrefillNotice = null;
+
+      if (appointmentId) {
+        try {
+          const appointmentRows = await Appointment.filter({ id: appointmentId }, "-created_date", 1);
+          const appointment = Array.isArray(appointmentRows) ? appointmentRows[0] : appointmentRows;
+          const metadata = getAppointmentMeta(appointment);
+          const shouldShowNotice = appointment
+            ? appointment.source_type === "manual_registrador"
+              && (appointment.charge_type === "pendente_comercial" || metadata.commercial_review_pending === true)
+            : true;
+
+          if (shouldShowNotice) {
+            nextPrefillNotice = {
+              title: "Agendamento manual do registrador",
+              message: "Confira valores, destinatario financeiro e confirmacoes antes de enviar este orcamento.",
+            };
+          }
+        } catch (error) {
+          console.error("Erro ao verificar a origem do agendamento:", error);
+          nextPrefillNotice = {
+            title: "Agendamento manual do registrador",
+            message: "Confira valores, destinatario financeiro e confirmacoes antes de enviar este orcamento.",
+          };
+        }
+      } else {
+        nextPrefillNotice = {
+          title: "Agendamento manual do registrador",
+          message: "Confira valores, destinatario financeiro e confirmacoes antes de enviar este orcamento.",
+        };
+      }
+
+      if (cancelled) return;
+
+      setClienteSelecionado(selectedCarteira);
+      setCaes([prefilledCao]);
+      setObservacoes("");
+      setPrefillNotice(nextPrefillNotice);
+      setEtapa("caes");
+      setShowModal(true);
+      setPrefillApplied(true);
     }
 
-    setClienteSelecionado(selectedCarteira);
-    setCaes([prefilledCao]);
-    setObservacoes(
-      appointmentId
-        ? `Origem: agendamento manual ${appointmentId}. Revise valores e confirmacoes antes de enviar.`
-        : "Origem: agendamento manual. Revise valores e confirmacoes antes de enviar."
-    );
-    setEtapa("caes");
-    setShowModal(true);
-    setPrefillApplied(true);
-  }, [caes.length, carteiras, dogs, isLoading, location.search, prefillApplied]);
+    applyPrefill();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [carteiras, dogs, isLoading, location.search, prefillApplied]);
 
   async function loadData() {
     setIsLoading(true);
@@ -501,6 +544,7 @@ export default function Orcamentos() {
     setCaes([{ ...emptyCao }]);
     setObservacoes("");
     setCalculo(null);
+    setPrefillNotice(null);
   }
 
   function getCaesDoCliente() {
@@ -733,6 +777,18 @@ export default function Orcamentos() {
               </React.Fragment>
             ))}
           </div>
+
+          {prefillNotice ? (
+            <div className="mx-1 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">{prefillNotice.title}</p>
+                  <p className="mt-1 text-sm text-amber-800">{prefillNotice.message}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {etapa === "cliente" && (
             <div className="flex-1 space-y-4 overflow-y-auto p-4">

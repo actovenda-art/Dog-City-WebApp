@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bath, Home, Pencil, Percent, Plus, Save, Scissors, Settings, Trash2, Truck } from "lucide-react";
+import { Bath, Home, Pencil, Percent, Plus, Save, Scissors, Settings, Tags, Trash2, Truck } from "lucide-react";
 
 const SERVICE_TYPES = [
   { id: "hospedagem", label: "Hospedagem (Não mensalista)", category: "hospitalidade" },
@@ -35,7 +35,7 @@ const FIXED_CONFIG_TYPES = new Set([
   "transporte_km",
 ]);
 
-const RACES = [
+const DEFAULT_RACES = [
   "Poodle",
   "Shih Tzu",
   "Yorkshire",
@@ -60,6 +60,8 @@ const RACES = [
   "Outro",
 ];
 
+const BREED_CATALOG_TYPE = "catalogo_raca";
+
 const DEFAULT_DISCOUNTS = [
   {
     id: "desconto_canil",
@@ -77,6 +79,19 @@ const DEFAULT_DISCOUNTS = [
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
+}
+
+function normalizeLookupValue(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function buildBreedCatalogKey(value) {
+  const normalized = normalizeLookupValue(value).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return `catalogo_raca:${normalized || "sem_nome"}`;
 }
 
 function getTypeLabel(type) {
@@ -97,7 +112,9 @@ export default function ConfiguracoesPrecos() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showBreedModal, setShowBreedModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [editingBreed, setEditingBreed] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("hospitalidade");
   const [formData, setFormData] = useState({
@@ -106,6 +123,9 @@ export default function ConfiguracoesPrecos() {
     valor: "",
     descricao: "",
     ativo: true,
+  });
+  const [breedFormData, setBreedFormData] = useState({
+    raca: "",
   });
 
   const empresaId = currentUser?.empresa_id || null;
@@ -143,6 +163,13 @@ export default function ConfiguracoesPrecos() {
     setEditingItem(null);
   }
 
+  function resetBreedForm() {
+    setBreedFormData({
+      raca: "",
+    });
+    setEditingBreed(null);
+  }
+
   function openEditModal(item) {
     setEditingItem(item);
     setFormData({
@@ -153,6 +180,14 @@ export default function ConfiguracoesPrecos() {
       ativo: item.ativo !== false,
     });
     setShowModal(true);
+  }
+
+  function openBreedModal(item = null) {
+    setEditingBreed(item);
+    setBreedFormData({
+      raca: item?.raca || "",
+    });
+    setShowBreedModal(true);
   }
 
   async function handleSave() {
@@ -190,8 +225,65 @@ export default function ConfiguracoesPrecos() {
     setIsSaving(false);
   }
 
+  async function handleSaveBreed() {
+    const breedName = String(breedFormData.raca || "").trim();
+    if (!breedName) {
+      alert("Preencha o nome da raca.");
+      return;
+    }
+
+    const normalizedBreedName = normalizeLookupValue(breedName);
+    const duplicatedDefault = DEFAULT_RACES.some(
+      (item) => normalizeLookupValue(item) === normalizedBreedName
+    );
+    const duplicatedCustom = prices.some(
+      (item) =>
+        item.tipo === BREED_CATALOG_TYPE
+        && item.id !== editingBreed?.id
+        && normalizeLookupValue(item.raca) === normalizedBreedName
+    );
+
+    if (duplicatedDefault || duplicatedCustom) {
+      alert("Essa raca ja esta disponivel na lista.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const payload = {
+        tipo: BREED_CATALOG_TYPE,
+        raca: breedName,
+        valor: 0,
+        descricao: "Raca adicional disponivel para precificacao.",
+        ativo: true,
+        empresa_id: empresaId,
+        config_key: buildBreedCatalogKey(breedName),
+      };
+
+      if (editingBreed) {
+        await TabelaPrecos.update(editingBreed.id, payload);
+      } else {
+        await TabelaPrecos.create(payload);
+      }
+
+      await loadData();
+      setShowBreedModal(false);
+      resetBreedForm();
+    } catch (error) {
+      console.error("Erro ao salvar raca:", error);
+      alert("Erro ao salvar raca.");
+    }
+    setIsSaving(false);
+  }
+
   async function handleDelete(id) {
     if (!confirm("Excluir este preco?")) return;
+    await TabelaPrecos.delete(id);
+    await loadData();
+  }
+
+  async function handleDeleteBreed(id) {
+    if (!confirm("Excluir esta raca adicional?")) return;
     await TabelaPrecos.delete(id);
     await loadData();
   }
@@ -208,9 +300,27 @@ export default function ConfiguracoesPrecos() {
       tosa: getCategoryRows(prices, "tosa"),
       transporte: getCategoryRows(prices, "transporte"),
       descontos: prices.filter((item) => item.tipo === "desconto" || item.config_key?.startsWith("desconto_")),
+      racas: prices
+        .filter((item) => item.tipo === BREED_CATALOG_TYPE)
+        .sort((left, right) => String(left.raca || "").localeCompare(String(right.raca || ""), "pt-BR")),
     }),
     [prices]
   );
+
+  const breedOptions = useMemo(() => {
+    const catalogBreeds = rowsByCategory.racas.map((item) => item.raca).filter(Boolean);
+    const uniqueBreeds = [];
+    const seen = new Set();
+
+    [...DEFAULT_RACES, ...catalogBreeds].forEach((item) => {
+      const key = normalizeLookupValue(item);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      uniqueBreeds.push(item);
+    });
+
+    return uniqueBreeds;
+  }, [rowsByCategory.racas]);
 
   if (isLoading) {
     return (
@@ -254,7 +364,7 @@ export default function ConfiguracoesPrecos() {
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
+          <div className="hidden">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600">
               <Settings className="h-6 w-6 text-white" />
             </div>
@@ -263,15 +373,29 @@ export default function ConfiguracoesPrecos() {
               <p className="text-sm text-gray-600">Gerencie Day Care, hospedagem, banho, tosa, transporte e descontos.</p>
             </div>
           </div>
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600">
+              <Settings className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Preços e descontos</h1>
+              <p className="text-sm text-gray-600">Gerencie Day Care, hospedagem, banho, tosa, transporte, descontos e o catálogo de raças.</p>
+            </div>
+          </div>
           <Button
             onClick={() => {
+              if (activeTab === "racas") {
+                resetBreedForm();
+                setShowBreedModal(true);
+                return;
+              }
               resetForm();
               setShowModal(true);
             }}
             className="bg-blue-600 text-white hover:bg-blue-700"
           >
             <Plus className="mr-2 h-4 w-4" />
-            Novo preco
+            {activeTab === "racas" ? "Nova raça" : "Novo preço"}
           </Button>
         </div>
 
@@ -307,12 +431,13 @@ export default function ConfiguracoesPrecos() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-6 grid w-full grid-cols-5">
+          <TabsList className="mb-6 grid w-full grid-cols-6">
             <TabsTrigger value="hospitalidade">Hospedagem e Day Care</TabsTrigger>
             <TabsTrigger value="banho">Banho</TabsTrigger>
             <TabsTrigger value="tosa">Tosa</TabsTrigger>
             <TabsTrigger value="transporte">Transporte</TabsTrigger>
             <TabsTrigger value="descontos">Descontos</TabsTrigger>
+            <TabsTrigger value="racas">Raças</TabsTrigger>
           </TabsList>
 
           <TabsContent value="hospitalidade">
@@ -422,6 +547,51 @@ export default function ConfiguracoesPrecos() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="racas">
+            <Card className="border-gray-200 bg-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Tags className="h-5 w-5 text-indigo-600" />
+                  Catálogo de raças
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+                  <p className="text-sm font-medium text-indigo-900">Raças extras para precificação</p>
+                  <p className="mt-1 text-sm text-indigo-700">
+                    As raças padrão do sistema continuam disponíveis. Aqui você adiciona, edita ou exclui raças extras
+                    para usar nos preços de banho e tosa.
+                  </p>
+                </div>
+
+                {rowsByCategory.racas.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
+                    Nenhuma raça extra cadastrada.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {rowsByCategory.racas.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-gray-900">{item.raca || "Sem nome"}</p>
+                          <p className="mt-1 text-xs text-gray-500">Disponível no seletor de preços</p>
+                        </div>
+                        <div className="ml-3 flex items-center gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openBreedModal(item)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteBreed(item.id)}>
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -457,7 +627,7 @@ export default function ConfiguracoesPrecos() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Padrão (todas as raças)</SelectItem>
-                    {RACES.map((race) => (
+                    {breedOptions.map((race) => (
                       <SelectItem key={race} value={race}>
                         {race}
                       </SelectItem>
@@ -508,6 +678,52 @@ export default function ConfiguracoesPrecos() {
             <Button onClick={handleSave} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
               <Save className="mr-2 h-4 w-4" />
               {isSaving ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showBreedModal}
+        onOpenChange={(open) => {
+          setShowBreedModal(open);
+          if (!open) resetBreedForm();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingBreed ? "Editar raça" : "Nova raça"}</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div>
+              <Label>Nome da raça *</Label>
+              <Input
+                className="mt-2"
+                value={breedFormData.raca}
+                onChange={(event) => setBreedFormData({ raca: event.target.value })}
+                placeholder="Ex: Basset Hound"
+              />
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <p className="text-sm text-gray-600">
+                A raça ficará disponível no seletor de preços de banho e tosa desta unidade.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowBreedModal(false);
+                resetBreedForm();
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveBreed} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
+              <Save className="mr-2 h-4 w-4" />
+              {isSaving ? "Salvando..." : "Salvar raça"}
             </Button>
           </DialogFooter>
         </DialogContent>

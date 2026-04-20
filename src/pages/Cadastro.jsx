@@ -15,9 +15,11 @@ import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integr
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
+import { createEmptyDogMeal, extractDogMeals, isNaturalFoodType, serializeDogMeals } from "@/lib/dog-form-utils";
 import { findEntityByReference, getInternalEntityReference } from "@/lib/entity-identifiers";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -134,6 +136,10 @@ function buildSelectOptions(options, currentValue) {
   return [trimmedValue, ...options];
 }
 
+function normalizeDocumentDigits(value, maxLength = 14) {
+  return String(value || "").replace(/\D/g, "").slice(0, maxLength);
+}
+
 export default function Cadastro() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -155,6 +161,8 @@ export default function Cadastro() {
   const [showClientLinkModal, setShowClientLinkModal] = useState(false);
   const [showClientLinkFeedback, setShowClientLinkFeedback] = useState(false);
   const [hasCopiedClientLink, setHasCopiedClientLink] = useState(false);
+  const [carteiraIgualResponsavel, setCarteiraIgualResponsavel] = useState(false);
+  const [addressLoading, setAddressLoading] = useState(false);
   const [clientLinkForm, setClientLinkForm] = useState({ responsavel_nome: "", responsavel_email: "" });
   const [clientLinkValue, setClientLinkValue] = useState("");
   useEffect(() => { loadData(); }, []);
@@ -162,17 +170,15 @@ export default function Cadastro() {
   // Dog Form
   const emptyDog = useMemo(() => ({
     nome: "", apelido: "", raca: "", porte: "", cores_pelagem: "", pelagem: "", peso: "", data_nascimento: "",
+    sexo: "", castrado: false,
     foto_url: "", foto_carteirinha_vacina_url: "",
     data_revacinacao_1: "", nome_vacina_revacinacao_1: "",
     data_revacinacao_2: "", nome_vacina_revacinacao_2: "",
     data_revacinacao_3: "", nome_vacina_revacinacao_3: "",
     alergias: "", restricoes_cuidados: "", observacoes_gerais: "",
     veterinario_responsavel: "", veterinario_horario_atendimento: "", veterinario_telefone: "", veterinario_clinica_telefone: "", veterinario_endereco: "",
-    alimentacao_marca_racao: "", alimentacao_sabor: "", alimentacao_tipo: "",
-    refeicao_1_qnt: "", refeicao_1_horario: "", refeicao_1_obs: "",
-    refeicao_2_qnt: "", refeicao_2_horario: "", refeicao_2_obs: "",
-    refeicao_3_qnt: "", refeicao_3_horario: "", refeicao_3_obs: "",
-    refeicao_4_qnt: "", refeicao_4_horario: "", refeicao_4_obs: "",
+    alimentacao_marca_racao: "", alimentacao_sabor: "", alimentacao_tipo: "", alimentacao_natural: false,
+    refeicoes: [createEmptyDogMeal()],
     medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }]
   }), []);
   const [dogForm, setDogForm] = useState(emptyDog);
@@ -183,7 +189,14 @@ export default function Cadastro() {
   const [searchDogResp, setSearchDogResp] = useState("");
 
   // Carteira Form
-  const emptyCarteira = { nome_razao_social: "", cpf_cnpj: "", celular: "", email: "", cep: "", numero_residencia: "", vencimento_planos: "", dog_id_1: "", dog_id_2: "", dog_id_3: "", dog_id_4: "", dog_id_5: "", dog_id_6: "", dog_id_7: "", dog_id_8: "" };
+  const emptyCarteira = {
+    nome_razao_social: "", cpf_cnpj: "", celular: "", email: "",
+    cep: "", numero_residencia: "", street: "", neighborhood: "", city: "", state: "",
+    vencimento_planos: "",
+    contato_orcamentos_nome: "", contato_orcamentos_celular: "", contato_orcamentos_email: "",
+    contato_alinhamentos_nome: "", contato_alinhamentos_celular: "", contato_alinhamentos_email: "",
+    dog_id_1: "", dog_id_2: "", dog_id_3: "", dog_id_4: "", dog_id_5: "", dog_id_6: "", dog_id_7: "", dog_id_8: "",
+  };
   const [carteiraForm, setCarteiraForm] = useState(emptyCarteira);
   const [searchDogCart, setSearchDogCart] = useState("");
 
@@ -211,6 +224,58 @@ export default function Cadastro() {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     return `${origin}${createPageUrl("CadastroClientePublico")}?token=${encodeURIComponent(token)}`;
   };
+
+  useEffect(() => {
+    if (!carteiraIgualResponsavel) return;
+
+    setCarteiraForm((current) => ({
+      ...current,
+      nome_razao_social: responsavelForm.nome_completo || current.nome_razao_social,
+      cpf_cnpj: responsavelForm.cpf || current.cpf_cnpj,
+      celular: responsavelForm.celular || current.celular,
+      email: responsavelForm.email || current.email,
+      contato_orcamentos_nome: responsavelForm.nome_completo || current.contato_orcamentos_nome,
+      contato_orcamentos_celular: responsavelForm.celular || current.contato_orcamentos_celular,
+      contato_orcamentos_email: responsavelForm.email || current.contato_orcamentos_email,
+      contato_alinhamentos_nome: responsavelForm.nome_completo || current.contato_alinhamentos_nome,
+      contato_alinhamentos_celular: responsavelForm.celular || current.contato_alinhamentos_celular,
+      contato_alinhamentos_email: responsavelForm.email || current.contato_alinhamentos_email,
+    }));
+  }, [carteiraIgualResponsavel, responsavelForm]);
+
+  useEffect(() => {
+    const cepDigits = normalizeDocumentDigits(carteiraForm.cep, 8);
+    if (cepDigits.length !== 8) return undefined;
+
+    let cancelled = false;
+
+    async function fetchAddress() {
+      setAddressLoading(true);
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
+        const data = await response.json();
+        if (cancelled || data?.erro) return;
+
+        setCarteiraForm((current) => ({
+          ...current,
+          street: data.logradouro || current.street,
+          neighborhood: data.bairro || current.neighborhood,
+          city: data.localidade || current.city,
+          state: data.uf || current.state,
+        }));
+      } catch (error) {
+        console.warn("Erro ao buscar CEP do responsável financeiro:", error);
+      } finally {
+        if (!cancelled) setAddressLoading(false);
+      }
+    }
+
+    fetchAddress();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [carteiraForm.cep]);
 
   const filteredResponsaveis = useMemo(() => {
     const search = searchLinkedResponsavel.trim().toLowerCase();
@@ -254,6 +319,7 @@ export default function Cadastro() {
   const resetDogEditor = () => {
     setDogForm({
       ...emptyDog,
+      refeicoes: [createEmptyDogMeal()],
       medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
     });
     setSelectedResponsavelIds([]);
@@ -272,9 +338,13 @@ export default function Cadastro() {
     setDogForm({
       ...emptyDog,
       ...targetDog,
+      sexo: targetDog.sexo || "",
+      castrado: !!targetDog.castrado,
       porte: normalizeDogSize(targetDog.porte),
       pelagem: normalizeDogCoat(targetDog.pelagem),
       peso: targetDog.peso ?? "",
+      alimentacao_natural: isNaturalFoodType(targetDog.alimentacao_tipo),
+      refeicoes: extractDogMeals(targetDog),
       medicamentos_continuos:
         Array.isArray(targetDog.medicamentos_continuos) && targetDog.medicamentos_continuos.length > 0
           ? targetDog.medicamentos_continuos.map((item) => ({
@@ -359,6 +429,38 @@ export default function Cadastro() {
     setDogForm({ ...dogForm, medicamentos_continuos: nextItems });
   };
 
+  const updateDogMeal = (index, field, value) => {
+    const nextMeals = [...(dogForm.refeicoes || [createEmptyDogMeal()])];
+    nextMeals[index] = { ...(nextMeals[index] || createEmptyDogMeal()), [field]: value };
+    setDogForm({ ...dogForm, refeicoes: nextMeals });
+  };
+
+  const addDogMeal = () => {
+    const currentMeals = dogForm.refeicoes || [createEmptyDogMeal()];
+    if (currentMeals.length >= 4) return;
+
+    setDogForm({
+      ...dogForm,
+      refeicoes: [...currentMeals, createEmptyDogMeal()],
+    });
+  };
+
+  const removeDogMeal = (index) => {
+    const currentMeals = dogForm.refeicoes || [createEmptyDogMeal()];
+    if (currentMeals.length <= 1) {
+      setDogForm({
+        ...dogForm,
+        refeicoes: [createEmptyDogMeal()],
+      });
+      return;
+    }
+
+    setDogForm({
+      ...dogForm,
+      refeicoes: currentMeals.filter((_, mealIndex) => mealIndex !== index),
+    });
+  };
+
   const addDogMedication = () => {
     setDogForm({
       ...dogForm,
@@ -430,6 +532,7 @@ export default function Cadastro() {
     if (!dogForm.nome) { setNotifyTitle("Campo obrigatório"); setNotifyMessage("Informe o nome do cão."); setNotifyOpen(true); return; }
     setIsSaving(true);
     try {
+      const mealPayload = serializeDogMeals(dogForm.refeicoes);
       const payload = {
         empresa_id: currentUser?.empresa_id || null,
         nome: dogForm.nome.trim(),
@@ -440,6 +543,8 @@ export default function Cadastro() {
         pelagem: optional(normalizeDogCoat(dogForm.pelagem)),
         peso: dogForm.peso ? parseFloat(dogForm.peso) : null,
         data_nascimento: optional(dogForm.data_nascimento),
+        sexo: optional(dogForm.sexo),
+        castrado: !!dogForm.castrado,
         foto_url: optional(dogForm.foto_url),
         foto_carteirinha_vacina_url: optional(dogForm.foto_carteirinha_vacina_url),
         data_revacinacao_1: optional(dogForm.data_revacinacao_1),
@@ -456,21 +561,21 @@ export default function Cadastro() {
         veterinario_telefone: optional(dogForm.veterinario_telefone),
         veterinario_clinica_telefone: optional(dogForm.veterinario_clinica_telefone),
         veterinario_endereco: optional(dogForm.veterinario_endereco),
-        alimentacao_marca_racao: optional(dogForm.alimentacao_marca_racao),
-        alimentacao_sabor: optional(dogForm.alimentacao_sabor),
-        alimentacao_tipo: optional(dogForm.alimentacao_tipo),
-        refeicao_1_qnt: optional(dogForm.refeicao_1_qnt),
-        refeicao_1_horario: optional(dogForm.refeicao_1_horario),
-        refeicao_1_obs: optional(dogForm.refeicao_1_obs),
-        refeicao_2_qnt: optional(dogForm.refeicao_2_qnt),
-        refeicao_2_horario: optional(dogForm.refeicao_2_horario),
-        refeicao_2_obs: optional(dogForm.refeicao_2_obs),
-        refeicao_3_qnt: optional(dogForm.refeicao_3_qnt),
-        refeicao_3_horario: optional(dogForm.refeicao_3_horario),
-        refeicao_3_obs: optional(dogForm.refeicao_3_obs),
-        refeicao_4_qnt: optional(dogForm.refeicao_4_qnt),
-        refeicao_4_horario: optional(dogForm.refeicao_4_horario),
-        refeicao_4_obs: optional(dogForm.refeicao_4_obs),
+        alimentacao_marca_racao: dogForm.alimentacao_natural ? null : optional(dogForm.alimentacao_marca_racao),
+        alimentacao_sabor: dogForm.alimentacao_natural ? null : optional(dogForm.alimentacao_sabor),
+        alimentacao_tipo: dogForm.alimentacao_natural ? "Alimentação natural" : optional(dogForm.alimentacao_tipo),
+        refeicao_1_qnt: optional(mealPayload.refeicao_1_qnt),
+        refeicao_1_horario: optional(mealPayload.refeicao_1_horario),
+        refeicao_1_obs: optional(mealPayload.refeicao_1_obs),
+        refeicao_2_qnt: optional(mealPayload.refeicao_2_qnt),
+        refeicao_2_horario: optional(mealPayload.refeicao_2_horario),
+        refeicao_2_obs: optional(mealPayload.refeicao_2_obs),
+        refeicao_3_qnt: optional(mealPayload.refeicao_3_qnt),
+        refeicao_3_horario: optional(mealPayload.refeicao_3_horario),
+        refeicao_3_obs: optional(mealPayload.refeicao_3_obs),
+        refeicao_4_qnt: optional(mealPayload.refeicao_4_qnt),
+        refeicao_4_horario: optional(mealPayload.refeicao_4_horario),
+        refeicao_4_obs: optional(mealPayload.refeicao_4_obs),
         medicamentos_continuos: normalizeMedications(dogForm.medicamentos_continuos),
       };
       validateRelationCapacity(responsaveis, selectedResponsavelIds, editingDogId, "O responsável");
@@ -501,6 +606,16 @@ export default function Cadastro() {
     }
     setIsSaving(true);
     try {
+      const responsavelCpfDigits = normalizeDocumentDigits(responsavelForm.cpf, 11);
+      const hasDuplicateCpf = responsaveis.some((item) => normalizeDocumentDigits(item.cpf, 11) === responsavelCpfDigits);
+      if (responsavelCpfDigits && hasDuplicateCpf) {
+        setNotifyTitle("CPF já cadastrado");
+        setNotifyMessage("Este CPF já possui cadastro no sistema.");
+        setNotifyOpen(true);
+        setIsSaving(false);
+        return;
+      }
+
       const cpfValidation = await validateCpfWithGov({
         cpf: responsavelForm.cpf,
         fullName: responsavelForm.nome_completo,
@@ -537,12 +652,42 @@ export default function Cadastro() {
   };
 
   const handleSaveCarteira = async () => {
-    if (!carteiraForm.nome_razao_social || !carteiraForm.cpf_cnpj || !carteiraForm.celular) {
-      setNotifyTitle("Campos obrigatórios"); setNotifyMessage("Preencha nome/razão social, CPF/CNPJ e celular."); setNotifyOpen(true); return;
+    if (
+      !carteiraForm.nome_razao_social
+      || !carteiraForm.cpf_cnpj
+      || !carteiraForm.celular
+      || !carteiraForm.email
+      || !carteiraForm.cep
+      || !carteiraForm.street
+      || !carteiraForm.numero_residencia
+      || !carteiraForm.neighborhood
+      || !carteiraForm.city
+      || !carteiraForm.state
+      || !carteiraForm.vencimento_planos
+      || !carteiraForm.contato_orcamentos_nome
+      || !carteiraForm.contato_orcamentos_celular
+      || !carteiraForm.contato_orcamentos_email
+      || !carteiraForm.contato_alinhamentos_nome
+      || !carteiraForm.contato_alinhamentos_celular
+      || !carteiraForm.contato_alinhamentos_email
+    ) {
+      setNotifyTitle("Campos obrigatórios");
+      setNotifyMessage("Preencha os dados principais, endereço, vencimento e os contatos de orçamentos e alinhamentos.");
+      setNotifyOpen(true);
+      return;
     }
     setIsSaving(true);
     try {
       const cpfOrCnpjDigits = (carteiraForm.cpf_cnpj || "").replace(/\D/g, "");
+      const hasDuplicateDocument = carteiras.some((item) => normalizeDocumentDigits(item.cpf_cnpj) === cpfOrCnpjDigits);
+      if (cpfOrCnpjDigits && hasDuplicateDocument) {
+        setNotifyTitle("Documento já cadastrado");
+        setNotifyMessage(cpfOrCnpjDigits.length === 11 ? "Este CPF já possui cadastro no sistema." : "Este CNPJ já possui cadastro no sistema.");
+        setNotifyOpen(true);
+        setIsSaving(false);
+        return;
+      }
+
       if (cpfOrCnpjDigits.length === 11) {
         const cpfValidation = await validateCpfWithGov({
           cpf: carteiraForm.cpf_cnpj,
@@ -565,7 +710,21 @@ export default function Cadastro() {
         email: optional(carteiraForm.email),
         cep: optional(carteiraForm.cep),
         numero_residencia: optional(carteiraForm.numero_residencia),
+        street: optional(carteiraForm.street),
+        neighborhood: optional(carteiraForm.neighborhood),
+        city: optional(carteiraForm.city),
+        state: optional(carteiraForm.state),
         vencimento_planos: optional(carteiraForm.vencimento_planos),
+        contato_orcamentos: {
+          nome: optional(carteiraForm.contato_orcamentos_nome),
+          celular: optional(carteiraForm.contato_orcamentos_celular),
+          email: optional(carteiraForm.contato_orcamentos_email),
+        },
+        contato_alinhamentos: {
+          nome: optional(carteiraForm.contato_alinhamentos_nome),
+          celular: optional(carteiraForm.contato_alinhamentos_celular),
+          email: optional(carteiraForm.contato_alinhamentos_email),
+        },
         dog_id_1: optional(carteiraForm.dog_id_1),
         dog_id_2: optional(carteiraForm.dog_id_2),
         dog_id_3: optional(carteiraForm.dog_id_3),
@@ -920,6 +1079,25 @@ export default function Cadastro() {
                   </div>
                   <div><Label>Peso (KG)</Label><Input type="number" step="0.1" value={dogForm.peso} onChange={(e) => setDogForm({ ...dogForm, peso: e.target.value })} /></div>
                   <div><Label>Data de Nascimento</Label><DatePickerInput value={dogForm.data_nascimento} onChange={(value) => setDogForm({ ...dogForm, data_nascimento: value })} /></div>
+                  <div>
+                    <Label>Sexo</Label>
+                    <Select value={dogForm.sexo || ""} onValueChange={(value) => setDogForm({ ...dogForm, sexo: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o sexo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="macho">Macho</SelectItem>
+                        <SelectItem value="femea">Fêmea</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Castrado</p>
+                      <p className="text-xs text-gray-500">Informe se o cão já é castrado.</p>
+                    </div>
+                    <Switch checked={!!dogForm.castrado} onCheckedChange={(checked) => setDogForm({ ...dogForm, castrado: checked })} />
+                  </div>
                   <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <button type="button" onClick={() => openImageViewer(dogForm.foto_url, "Foto do perfil")} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
                   <div><Label>Carteirinha Vacinação</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
                   <div><Label>1ª Revacinação</Label><DatePickerInput value={dogForm.data_revacinacao_1} onChange={(value) => setDogForm({ ...dogForm, data_revacinacao_1: value })} /></div>
@@ -937,18 +1115,73 @@ export default function Cadastro() {
                   <div className="sm:col-span-2"><Label>Endereço Vet/Clínica</Label><Input value={dogForm.veterinario_endereco} onChange={(e) => setDogForm({ ...dogForm, veterinario_endereco: e.target.value })} /></div>
 
                   <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Alimentação</h4></div>
-                  <div><Label>Marca Ração</Label><Input value={dogForm.alimentacao_marca_racao} onChange={(e) => setDogForm({ ...dogForm, alimentacao_marca_racao: e.target.value })} /></div>
-                  <div><Label>Sabor</Label><Input value={dogForm.alimentacao_sabor} onChange={(e) => setDogForm({ ...dogForm, alimentacao_sabor: e.target.value })} /></div>
-                  <div><Label>Tipo</Label><Input value={dogForm.alimentacao_tipo} onChange={(e) => setDogForm({ ...dogForm, alimentacao_tipo: e.target.value })} /></div>
+                  <div className="col-span-full flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Alimentação natural</p>
+                      <p className="text-xs text-gray-500">Ao marcar, os campos de marca e sabor são ocultados.</p>
+                    </div>
+                    <Switch
+                      checked={!!dogForm.alimentacao_natural}
+                      onCheckedChange={(checked) => setDogForm({
+                        ...dogForm,
+                        alimentacao_natural: checked,
+                        alimentacao_tipo: checked ? "Alimentação natural" : dogForm.alimentacao_tipo,
+                        alimentacao_marca_racao: checked ? "" : dogForm.alimentacao_marca_racao,
+                        alimentacao_sabor: checked ? "" : dogForm.alimentacao_sabor,
+                      })}
+                    />
+                  </div>
+                  {!dogForm.alimentacao_natural ? (
+                    <>
+                      <div><Label>Marca Ração</Label><Input value={dogForm.alimentacao_marca_racao} onChange={(e) => setDogForm({ ...dogForm, alimentacao_marca_racao: e.target.value })} /></div>
+                      <div><Label>Sabor</Label><Input value={dogForm.alimentacao_sabor} onChange={(e) => setDogForm({ ...dogForm, alimentacao_sabor: e.target.value })} /></div>
+                      <div><Label>Tipo</Label><Input value={dogForm.alimentacao_tipo} onChange={(e) => setDogForm({ ...dogForm, alimentacao_tipo: e.target.value })} /></div>
+                    </>
+                  ) : (
+                    <div className="col-span-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                      O cão está marcado com alimentação natural.
+                    </div>
+                  )}
 
-                  {[1, 2, 3, 4].map(n => (
-                    <React.Fragment key={n}>
-                      <div className="col-span-full"><h5 className="text-sm font-medium text-gray-700 mt-2">{n}ª Refeição</h5></div>
-                      <div><Label>Qnt (g)</Label><Input value={dogForm[`refeicao_${n}_qnt`]} onChange={(e) => setDogForm({ ...dogForm, [`refeicao_${n}_qnt`]: e.target.value })} /></div>
-                      <div><Label>Horário</Label><TimePickerInput value={dogForm[`refeicao_${n}_horario`]} onChange={(value) => setDogForm({ ...dogForm, [`refeicao_${n}_horario`]: value })} /></div>
-                      <div><Label>Observação</Label><Input value={dogForm[`refeicao_${n}_obs`]} onChange={(e) => setDogForm({ ...dogForm, [`refeicao_${n}_obs`]: e.target.value })} /></div>
-                    </React.Fragment>
-                  ))}
+                  <div className="col-span-full rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <h5 className="text-sm font-semibold text-gray-900">Refeições</h5>
+                        <p className="text-xs text-gray-500">Comece com uma linha e adicione outras conforme necessário.</p>
+                      </div>
+                      <Button type="button" variant="outline" onClick={addDogMeal} disabled={(dogForm.refeicoes || []).length >= 4}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Adicionar refeição
+                      </Button>
+                    </div>
+                    <div className="space-y-3">
+                      {(dogForm.refeicoes || [createEmptyDogMeal()]).map((meal, index) => (
+                        <div key={`meal-${index}`} className="rounded-xl border border-gray-200 bg-white p-4">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-gray-900">{index + 1}ª refeição</p>
+                            <Button type="button" variant="outline" size="sm" onClick={() => removeDogMeal(index)}>
+                              <X className="mr-2 h-4 w-4" />
+                              Remover
+                            </Button>
+                          </div>
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                            <div>
+                              <Label>Qnt (g)</Label>
+                              <Input value={meal.qnt || ""} onChange={(e) => updateDogMeal(index, "qnt", e.target.value)} />
+                            </div>
+                            <div>
+                              <Label>Horário</Label>
+                              <TimePickerInput value={meal.horario || ""} onChange={(value) => updateDogMeal(index, "horario", value)} />
+                            </div>
+                            <div>
+                              <Label>Observação</Label>
+                              <Input value={meal.obs || ""} onChange={(e) => updateDogMeal(index, "obs", e.target.value)} />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 <Button onClick={handleSaveDog} disabled={isSaving} className="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Cão"}</Button>
               </CardContent>
@@ -1220,6 +1453,13 @@ export default function Cadastro() {
             <Card className="border-orange-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Wallet className="w-5 h-5 text-orange-600" />Cadastrar Carteira</h3>
+                <div className="mb-4 flex items-center justify-between rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-orange-900">Usar os mesmos dados do responsável</p>
+                    <p className="text-xs text-orange-700">Preenche nome, documento, contato principal e contatos de orçamento/alinhamento.</p>
+                  </div>
+                  <Switch checked={carteiraIgualResponsavel} onCheckedChange={setCarteiraIgualResponsavel} />
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><Label>Nome / Razão Social *</Label><Input value={carteiraForm.nome_razao_social} onChange={(e) => setCarteiraForm({ ...carteiraForm, nome_razao_social: e.target.value })} /></div>
                   <div><Label>CPF / CNPJ *</Label><Input value={carteiraForm.cpf_cnpj} onChange={(e) => setCarteiraForm({ ...carteiraForm, cpf_cnpj: formatCPF(e.target.value) })} maxLength={18} /></div>
@@ -1227,6 +1467,10 @@ export default function Cadastro() {
                   <div><Label>Email</Label><Input type="email" value={carteiraForm.email} onChange={(e) => setCarteiraForm({ ...carteiraForm, email: e.target.value })} /></div>
                   <div><Label>CEP</Label><Input value={carteiraForm.cep} onChange={(e) => setCarteiraForm({ ...carteiraForm, cep: formatCEP(e.target.value) })} maxLength={9} /></div>
                   <div><Label>Nº Residência</Label><Input value={carteiraForm.numero_residencia} onChange={(e) => setCarteiraForm({ ...carteiraForm, numero_residencia: e.target.value })} /></div>
+                  <div><Label>Rua</Label><Input value={carteiraForm.street} onChange={(e) => setCarteiraForm({ ...carteiraForm, street: e.target.value })} placeholder={addressLoading ? "Buscando CEP..." : ""} /></div>
+                  <div><Label>Bairro</Label><Input value={carteiraForm.neighborhood} onChange={(e) => setCarteiraForm({ ...carteiraForm, neighborhood: e.target.value })} /></div>
+                  <div><Label>Cidade</Label><Input value={carteiraForm.city} onChange={(e) => setCarteiraForm({ ...carteiraForm, city: e.target.value })} /></div>
+                  <div><Label>Estado</Label><Input value={carteiraForm.state} onChange={(e) => setCarteiraForm({ ...carteiraForm, state: e.target.value })} maxLength={2} /></div>
                   <div>
                     <Label>Vencimento Planos</Label>
                     <Select
@@ -1243,6 +1487,22 @@ export default function Cadastro() {
                     </Select>
                   </div>
                   <div></div>
+                  <div className="sm:col-span-2 rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
+                    <h4 className="mb-3 text-sm font-semibold text-orange-900">Contato para envio de orçamentos</h4>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div><Label>Nome</Label><Input value={carteiraForm.contato_orcamentos_nome} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_nome: e.target.value })} /></div>
+                      <div><Label>Celular</Label><Input value={carteiraForm.contato_orcamentos_celular} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_celular: formatPhone(e.target.value) })} maxLength={15} /></div>
+                      <div><Label>Email</Label><Input type="email" value={carteiraForm.contato_orcamentos_email} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_email: e.target.value })} /></div>
+                    </div>
+                  </div>
+                  <div className="sm:col-span-2 rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
+                    <h4 className="mb-3 text-sm font-semibold text-orange-900">Contato para avisos e tratativas de alinhamento</h4>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div><Label>Nome</Label><Input value={carteiraForm.contato_alinhamentos_nome} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_nome: e.target.value })} /></div>
+                      <div><Label>Celular</Label><Input value={carteiraForm.contato_alinhamentos_celular} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_celular: formatPhone(e.target.value) })} maxLength={15} /></div>
+                      <div><Label>Email</Label><Input type="email" value={carteiraForm.contato_alinhamentos_email} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_email: e.target.value })} /></div>
+                    </div>
+                  </div>
                   <div className="sm:col-span-2">
                     <Label>Vincular Cães (até 8)</Label>
                     <div className="mt-2">

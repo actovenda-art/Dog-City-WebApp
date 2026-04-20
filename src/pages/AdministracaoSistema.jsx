@@ -997,7 +997,7 @@ export default function AdministracaoSistema() {
             <Link to={createPageUrl("ConfiguracoesPrecos")}>
               <Button variant="outline">
                 <Tags className="w-4 h-4 mr-2" />
-                Configurar preços
+                Preços e descontos
               </Button>
             </Link>
           </div>

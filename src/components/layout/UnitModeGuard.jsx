@@ -36,6 +36,7 @@ export default function UnitModeGuard({ pageName, children }) {
   }, []);
 
   const policy = useMemo(() => getUnitPagePolicy(pageName), [pageName]);
+  const policyLabel = pageName === "ConfiguracoesPrecos" ? "Preços e descontos" : policy.label;
   const isMergedMode = (selection?.selectedUnitIds || []).length > 1;
 
   const exitMergedMode = () => {
@@ -61,7 +62,7 @@ export default function UnitModeGuard({ pageName, children }) {
               <div className="flex items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-6 w-6 text-amber-600" />
                 <div>
-                  <h1 className="text-xl font-semibold text-gray-900">{policy.label}</h1>
+                  <h1 className="text-xl font-semibold text-gray-900">{policyLabel}</h1>
                   <p className="mt-2 text-sm text-gray-700">{policy.description}</p>
                   <p className="mt-2 text-sm text-gray-600">
                     A visão unificada continua ativa para telas analíticas, mas esta página exige uma única unidade para preservar o isolamento operacional.

@@ -276,7 +276,14 @@ export default function Layout({ children, currentPageName, initialUser = null }
       .filter((section) => !isOperationalUser || section.id === "operacional")
       .map((section) => ({
         ...section,
-        items: section.items.filter((item) => hasPageAccess(currentUser, getPageNameFromPath(item.url))),
+        items: section.items
+          .filter((item) => hasPageAccess(currentUser, getPageNameFromPath(item.url)))
+          .map((item) => ({
+            ...item,
+            title: getPageNameFromPath(item.url) === "ConfiguracoesPrecos"
+              ? "Preços e descontos"
+              : item.title,
+          })),
       }))
       .filter((section) => section.items.length > 0),
     [currentUser, isOperationalUser, isUnitUnionActive],

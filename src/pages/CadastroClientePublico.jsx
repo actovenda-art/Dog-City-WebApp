@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import { normalizeCpfDigits, validateCpfWithGov } from "@/lib/cpf-validation";
+import { createEmptyDogMeal } from "@/lib/dog-form-utils";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -42,6 +43,26 @@ const DOG_SECTION_DEFINITIONS = [
   { id: "cuidados", label: "Restrições e Cuidados", icon: HeartPulse },
   { id: "observacoes", label: "Observações", icon: NotebookPen },
 ];
+
+function getRegistrationMode(link) {
+  const mode = String(link?.metadata?.registration_mode || "").trim();
+  if (mode === "dog_only" || mode === "dog_and_financeiro") {
+    return mode;
+  }
+  return "full";
+}
+
+function getVisibleStepDefinitions(mode) {
+  if (mode === "dog_only") {
+    return STEP_DEFINITIONS.filter((step) => step.id === "caes");
+  }
+
+  if (mode === "dog_and_financeiro") {
+    return STEP_DEFINITIONS.filter((step) => step.id === "caes" || step.id === "financeiro");
+  }
+
+  return STEP_DEFINITIONS;
+}
 
 const EMPTY_RESPONSAVEL = {
   nome_completo: "",
@@ -80,25 +101,24 @@ function createEmptyDog() {
     data_nascimento: "",
     sexo: "",
     porte: "",
+    cores_pelagem: "",
+    pelagem: "",
     castrado: false,
+    data_revacinacao_1: "",
+    nome_vacina_revacinacao_1: "",
+    data_revacinacao_2: "",
+    nome_vacina_revacinacao_2: "",
+    data_revacinacao_3: "",
+    nome_vacina_revacinacao_3: "",
     alimentacao_marca_racao: "",
     alimentacao_sabor: "",
     alimentacao_tipo: "",
-    refeicao_1_qnt: "",
-    refeicao_1_horario: "",
-    refeicao_1_obs: "",
-    refeicao_2_qnt: "",
-    refeicao_2_horario: "",
-    refeicao_2_obs: "",
-    refeicao_3_qnt: "",
-    refeicao_3_horario: "",
-    refeicao_3_obs: "",
-    refeicao_4_qnt: "",
-    refeicao_4_horario: "",
-    refeicao_4_obs: "",
+    alimentacao_natural: false,
+    refeicoes: [createEmptyDogMeal()],
     alergias: "",
     restricoes_cuidados: "",
     veterinario_responsavel: "",
+    veterinario_horario_atendimento: "",
     veterinario_telefone: "",
     veterinario_clinica_telefone: "",
     veterinario_endereco: "",
@@ -201,10 +221,10 @@ function validateFinanceiro(form) {
   return "";
 }
 
-function StepSidebar({ currentStep }) {
+function StepSidebar({ currentStep, steps }) {
   return (
     <div className="space-y-3">
-      {STEP_DEFINITIONS.map((step, index) => {
+      {steps.map((step, index) => {
         const Icon = step.icon;
         const isActive = currentStep === index;
         const isDone = currentStep > index;
@@ -299,10 +319,17 @@ export default function CadastroClientePublico() {
   const [responsavelForm, setResponsavelForm] = useState(EMPTY_RESPONSAVEL);
   const [caesForm, setCaesForm] = useState([createEmptyDog()]);
   const [financeiroForm, setFinanceiroForm] = useState(EMPTY_FINANCEIRO);
+  const registrationMode = useMemo(() => getRegistrationMode(context?.link), [context?.link]);
+  const visibleStepDefinitions = useMemo(() => getVisibleStepDefinitions(registrationMode), [registrationMode]);
+  const currentStepDefinition = visibleStepDefinitions[currentStep] || visibleStepDefinitions[0] || STEP_DEFINITIONS[0];
 
   useEffect(() => {
     loadContext();
   }, [token]);
+
+  useEffect(() => {
+    setCurrentStep((current) => Math.min(current, Math.max(visibleStepDefinitions.length - 1, 0)));
+  }, [visibleStepDefinitions.length]);
 
   useEffect(() => {
     const cepDigits = financeiroForm.cep.replace(/\D/g, "");
@@ -349,6 +376,12 @@ export default function CadastroClientePublico() {
       cpf_cnpj: responsavelForm.cpf || current.cpf_cnpj,
       celular: responsavelForm.celular || current.celular,
       email: responsavelForm.email || current.email,
+      contato_orcamentos_nome: responsavelForm.nome_completo || current.contato_orcamentos_nome,
+      contato_orcamentos_celular: responsavelForm.celular || current.contato_orcamentos_celular,
+      contato_orcamentos_email: responsavelForm.email || current.contato_orcamentos_email,
+      contato_alinhamentos_nome: responsavelForm.nome_completo || current.contato_alinhamentos_nome,
+      contato_alinhamentos_celular: responsavelForm.celular || current.contato_alinhamentos_celular,
+      contato_alinhamentos_email: responsavelForm.email || current.contato_alinhamentos_email,
     }));
   }, [financeiroIgualResponsavel, responsavelForm]);
 
@@ -369,11 +402,21 @@ export default function CadastroClientePublico() {
         token,
       });
       setContext(data || null);
+      const prefillResponsavel = data?.link?.metadata?.prefill?.responsavel || {};
+      const prefillFinanceiro = data?.link?.metadata?.prefill?.financeiro || {};
       setResponsavelForm((current) => ({
         ...current,
-        nome_completo: data?.link?.responsavel_nome || current.nome_completo,
-        email: data?.link?.responsavel_email || current.email,
+        ...prefillResponsavel,
+        nome_completo: prefillResponsavel?.nome_completo || data?.link?.responsavel_nome || current.nome_completo,
+        email: prefillResponsavel?.email || data?.link?.responsavel_email || current.email,
       }));
+      setFinanceiroForm((current) => ({
+        ...current,
+        ...prefillFinanceiro,
+      }));
+      if (prefillFinanceiro?.nome_razao_social || data?.link?.metadata?.existing_carteira_id) {
+        setFinanceiroIgualResponsavel(false);
+      }
     } catch (error) {
       console.error("Erro ao carregar contexto do cadastro do cliente:", error);
       setErrorMessage(error?.message || "Não foi possível carregar este link de cadastro.");
@@ -386,6 +429,36 @@ export default function CadastroClientePublico() {
     setCaesForm((current) => current.map((dog, dogIndex) => (
       dogIndex === index ? { ...dog, ...patch } : dog
     )));
+  }
+
+  function updateDogMeal(dogIndex, mealIndex, field, value) {
+    const dog = caesForm[dogIndex] || createEmptyDog();
+    const nextMeals = [...(dog.refeicoes || [createEmptyDogMeal()])];
+    nextMeals[mealIndex] = { ...(nextMeals[mealIndex] || createEmptyDogMeal()), [field]: value };
+    updateDog(dogIndex, { refeicoes: nextMeals });
+  }
+
+  function addDogMeal(dogIndex) {
+    const dog = caesForm[dogIndex] || createEmptyDog();
+    const currentMeals = dog.refeicoes || [createEmptyDogMeal()];
+    if (currentMeals.length >= 4) return;
+
+    updateDog(dogIndex, {
+      refeicoes: [...currentMeals, createEmptyDogMeal()],
+    });
+  }
+
+  function removeDogMeal(dogIndex, mealIndex) {
+    const dog = caesForm[dogIndex] || createEmptyDog();
+    const currentMeals = dog.refeicoes || [createEmptyDogMeal()];
+    if (currentMeals.length <= 1) {
+      updateDog(dogIndex, { refeicoes: [createEmptyDogMeal()] });
+      return;
+    }
+
+    updateDog(dogIndex, {
+      refeicoes: currentMeals.filter((_, index) => index !== mealIndex),
+    });
   }
 
   function updateDogMedication(dogIndex, medicationIndex, field, value) {
@@ -443,26 +516,28 @@ export default function CadastroClientePublico() {
   }
 
   async function handleSubmit() {
-    const financeError = validateFinanceiro(financeiroForm);
-    if (financeError) {
-      setErrorMessage(financeError);
-      return;
-    }
+    if (visibleStepDefinitions.some((step) => step.id === "financeiro")) {
+      const financeError = validateFinanceiro(financeiroForm);
+      if (financeError) {
+        setErrorMessage(financeError);
+        return;
+      }
 
-    const financeCpfDigits = normalizeCpfDigits(financeiroForm.cpf_cnpj);
-    if (financeCpfDigits.length === 11) {
-      try {
-        const cpfValidation = await validateCpfWithGov({
-          cpf: financeiroForm.cpf_cnpj,
-          fullName: financeiroForm.nome_razao_social,
-        });
-        if (cpfValidation.shouldBlock) {
-          setErrorMessage(cpfValidation.message);
+      const financeCpfDigits = normalizeCpfDigits(financeiroForm.cpf_cnpj);
+      if (financeCpfDigits.length === 11) {
+        try {
+          const cpfValidation = await validateCpfWithGov({
+            cpf: financeiroForm.cpf_cnpj,
+            fullName: financeiroForm.nome_razao_social,
+          });
+          if (cpfValidation.shouldBlock) {
+            setErrorMessage(cpfValidation.message);
+            return;
+          }
+        } catch (error) {
+          setErrorMessage(error?.message || "Não foi possível validar o CPF do responsável financeiro.");
           return;
         }
-      } catch (error) {
-        setErrorMessage(error?.message || "Não foi possível validar o CPF do responsável financeiro.");
-        return;
       }
     }
 
@@ -494,9 +569,9 @@ export default function CadastroClientePublico() {
   }
 
   async function validateAndAdvanceStep() {
-    const validationError = currentStep === 0
+    const validationError = currentStepDefinition?.id === "responsavel"
       ? validateResponsavel(responsavelForm)
-      : currentStep === 1
+      : currentStepDefinition?.id === "caes"
         ? validateDogs(caesForm)
         : validateFinanceiro(financeiroForm);
 
@@ -505,7 +580,7 @@ export default function CadastroClientePublico() {
       return;
     }
 
-    if (currentStep === 0) {
+    if (currentStepDefinition?.id === "responsavel") {
       try {
         const cpfValidation = await validateCpfWithGov({
           cpf: responsavelForm.cpf,
@@ -522,7 +597,7 @@ export default function CadastroClientePublico() {
     }
 
     setErrorMessage("");
-    setCurrentStep((current) => Math.min(current + 1, STEP_DEFINITIONS.length - 1));
+    setCurrentStep((current) => Math.min(current + 1, visibleStepDefinitions.length - 1));
   }
 
   function renderResponsavelStep() {
@@ -620,6 +695,14 @@ export default function CadastroClientePublico() {
             </SelectContent>
           </Select>
         </div>
+        <div>
+          <Label>Cores da pelagem</Label>
+          <Input value={dog.cores_pelagem} onChange={(event) => updateDog(dogIndex, { cores_pelagem: event.target.value })} />
+        </div>
+        <div>
+          <Label>Pelagem</Label>
+          <Input value={dog.pelagem} onChange={(event) => updateDog(dogIndex, { pelagem: event.target.value })} placeholder="Ex: curta, média, longa" />
+        </div>
         <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
           <div>
             <p className="text-sm font-semibold text-slate-900">Castrado</p>
@@ -627,36 +710,66 @@ export default function CadastroClientePublico() {
           </div>
           <Switch checked={!!dog.castrado} onCheckedChange={(checked) => updateDog(dogIndex, { castrado: checked })} />
         </div>
+        <div>
+          <Label>1ª revacinação</Label>
+          <DatePickerInput value={dog.data_revacinacao_1} onChange={(value) => updateDog(dogIndex, { data_revacinacao_1: value })} />
+        </div>
+        <div>
+          <Label>Vacina da 1ª revacinação</Label>
+          <Input value={dog.nome_vacina_revacinacao_1} onChange={(event) => updateDog(dogIndex, { nome_vacina_revacinacao_1: event.target.value })} placeholder="Ex: V10, Antirrábica" />
+        </div>
+        <div>
+          <Label>2ª revacinação</Label>
+          <DatePickerInput value={dog.data_revacinacao_2} onChange={(value) => updateDog(dogIndex, { data_revacinacao_2: value })} />
+        </div>
+        <div>
+          <Label>Vacina da 2ª revacinação</Label>
+          <Input value={dog.nome_vacina_revacinacao_2} onChange={(event) => updateDog(dogIndex, { nome_vacina_revacinacao_2: event.target.value })} placeholder="Ex: V10, Antirrábica" />
+        </div>
+        <div>
+          <Label>3ª revacinação</Label>
+          <DatePickerInput value={dog.data_revacinacao_3} onChange={(value) => updateDog(dogIndex, { data_revacinacao_3: value })} />
+        </div>
+        <div>
+          <Label>Vacina da 3ª revacinação</Label>
+          <Input value={dog.nome_vacina_revacinacao_3} onChange={(event) => updateDog(dogIndex, { nome_vacina_revacinacao_3: event.target.value })} placeholder="Ex: V10, Antirrábica" />
+        </div>
       </div>
     );
   }
 
   function renderDogMealRow(dog, dogIndex, mealIndex) {
-    const key = mealIndex + 1;
+    const meal = (dog.refeicoes || [createEmptyDogMeal()])[mealIndex] || createEmptyDogMeal();
     return (
-      <div key={key} className="rounded-2xl border border-slate-200 p-4">
-        <p className="text-sm font-semibold text-slate-900">{key}ª refeição</p>
+      <div key={`meal-public-${mealIndex}`} className="rounded-2xl border border-slate-200 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-slate-900">{mealIndex + 1}ª refeição</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => removeDogMeal(dogIndex, mealIndex)}>
+            <Trash2 className="mr-2 h-4 w-4" />
+            Remover
+          </Button>
+        </div>
         <div className="mt-3 grid gap-4 md:grid-cols-3">
           <div>
             <Label>Quantidade</Label>
             <Input
-              value={dog[`refeicao_${key}_qnt`]}
-              onChange={(event) => updateDog(dogIndex, { [`refeicao_${key}_qnt`]: event.target.value })}
+              value={meal.qnt || ""}
+              onChange={(event) => updateDogMeal(dogIndex, mealIndex, "qnt", event.target.value)}
               placeholder="Ex: 120g"
             />
           </div>
           <div>
             <Label>Horário</Label>
             <TimePickerInput
-              value={dog[`refeicao_${key}_horario`]}
-              onChange={(value) => updateDog(dogIndex, { [`refeicao_${key}_horario`]: value })}
+              value={meal.horario || ""}
+              onChange={(value) => updateDogMeal(dogIndex, mealIndex, "horario", value)}
             />
           </div>
           <div>
             <Label>Observação</Label>
             <Input
-              value={dog[`refeicao_${key}_obs`]}
-              onChange={(event) => updateDog(dogIndex, { [`refeicao_${key}_obs`]: event.target.value })}
+              value={meal.obs || ""}
+              onChange={(event) => updateDogMeal(dogIndex, mealIndex, "obs", event.target.value)}
               placeholder="Ex: misturar com sachê"
             />
           </div>
@@ -668,21 +781,56 @@ export default function CadastroClientePublico() {
   function renderDogAlimentacaoSection(dog, dogIndex) {
     return (
       <div className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
           <div>
-            <Label>Marca da ração</Label>
-            <Input value={dog.alimentacao_marca_racao} onChange={(event) => updateDog(dogIndex, { alimentacao_marca_racao: event.target.value })} />
+            <p className="text-sm font-semibold text-slate-900">Alimentação natural</p>
+            <p className="text-xs text-slate-500">Ao marcar, os campos de marca e sabor são ocultados.</p>
           </div>
-          <div>
-            <Label>Sabor</Label>
-            <Input value={dog.alimentacao_sabor} onChange={(event) => updateDog(dogIndex, { alimentacao_sabor: event.target.value })} />
+          <Switch
+            checked={!!dog.alimentacao_natural}
+            onCheckedChange={(checked) => updateDog(dogIndex, {
+              alimentacao_natural: checked,
+              alimentacao_tipo: checked ? "Alimentação natural" : dog.alimentacao_tipo,
+              alimentacao_marca_racao: checked ? "" : dog.alimentacao_marca_racao,
+              alimentacao_sabor: checked ? "" : dog.alimentacao_sabor,
+            })}
+          />
+        </div>
+        {!dog.alimentacao_natural ? (
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <Label>Marca da ração</Label>
+              <Input value={dog.alimentacao_marca_racao} onChange={(event) => updateDog(dogIndex, { alimentacao_marca_racao: event.target.value })} />
+            </div>
+            <div>
+              <Label>Sabor</Label>
+              <Input value={dog.alimentacao_sabor} onChange={(event) => updateDog(dogIndex, { alimentacao_sabor: event.target.value })} />
+            </div>
+            <div>
+              <Label>Tipo</Label>
+              <Input value={dog.alimentacao_tipo} onChange={(event) => updateDog(dogIndex, { alimentacao_tipo: event.target.value })} placeholder="Ex: seca, úmida, natural" />
+            </div>
           </div>
-          <div>
-            <Label>Tipo</Label>
-            <Input value={dog.alimentacao_tipo} onChange={(event) => updateDog(dogIndex, { alimentacao_tipo: event.target.value })} placeholder="Ex: seca, úmida, natural" />
+        ) : (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            O cão está marcado com alimentação natural.
+          </div>
+        )}
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Refeições</p>
+              <p className="text-xs text-slate-500">Comece com uma linha e adicione outras quando necessário.</p>
+            </div>
+            <Button type="button" variant="outline" onClick={() => addDogMeal(dogIndex)} disabled={(dog.refeicoes || []).length >= 4}>
+              <Plus className="mr-2 h-4 w-4" />
+              Adicionar
+            </Button>
+          </div>
+          <div className="space-y-3">
+            {(dog.refeicoes || [createEmptyDogMeal()]).map((_, mealIndex) => renderDogMealRow(dog, dogIndex, mealIndex))}
           </div>
         </div>
-        {[0, 1, 2, 3].map((mealIndex) => renderDogMealRow(dog, dogIndex, mealIndex))}
       </div>
     );
   }
@@ -701,6 +849,10 @@ export default function CadastroClientePublico() {
         <div>
           <Label>Veterinário responsável</Label>
           <Input value={dog.veterinario_responsavel} onChange={(event) => updateDog(dogIndex, { veterinario_responsavel: event.target.value })} />
+        </div>
+        <div>
+          <Label>Horário de atendimento</Label>
+          <Input value={dog.veterinario_horario_atendimento} onChange={(event) => updateDog(dogIndex, { veterinario_horario_atendimento: event.target.value })} />
         </div>
         <div>
           <Label>Telefone do veterinário</Label>
@@ -949,7 +1101,7 @@ export default function CadastroClientePublico() {
     );
   }
 
-  const progressValue = ((currentStep + 1) / STEP_DEFINITIONS.length) * 100;
+  const progressValue = ((currentStep + 1) / visibleStepDefinitions.length) * 100;
   const pageTitle = context?.empresa?.nome_fantasia || companyName;
 
   if (isLoading) {
@@ -1030,20 +1182,20 @@ export default function CadastroClientePublico() {
               </CardContent>
             </Card>
 
-            <StepSidebar currentStep={currentStep} />
-          </div>
+                <StepSidebar currentStep={currentStep} steps={visibleStepDefinitions} />
+              </div>
 
-          <div className="space-y-5">
-            <Card className="border-slate-200 bg-white shadow-sm">
-              <CardHeader className="border-b border-slate-100">
-                <CardTitle className="text-2xl text-slate-900">{STEP_DEFINITIONS[currentStep].label}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-6">
-                {currentStep === 0 ? renderResponsavelStep() : null}
-                {currentStep === 1 ? renderDogsStep() : null}
-                {currentStep === 2 ? renderFinanceiroStep() : null}
-              </CardContent>
-            </Card>
+              <div className="space-y-5">
+                <Card className="border-slate-200 bg-white shadow-sm">
+                  <CardHeader className="border-b border-slate-100">
+                    <CardTitle className="text-2xl text-slate-900">{currentStepDefinition?.label}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    {currentStepDefinition?.id === "responsavel" ? renderResponsavelStep() : null}
+                    {currentStepDefinition?.id === "caes" ? renderDogsStep() : null}
+                    {currentStepDefinition?.id === "financeiro" ? renderFinanceiroStep() : null}
+                  </CardContent>
+                </Card>
 
             {errorMessage ? (
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
@@ -1056,14 +1208,14 @@ export default function CadastroClientePublico() {
 
             <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm text-slate-500">
-                Etapa {currentStep + 1} de {STEP_DEFINITIONS.length}
+                Etapa {currentStep + 1} de {visibleStepDefinitions.length}
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button type="button" variant="outline" onClick={handlePreviousStep} disabled={currentStep === 0 || isSaving}>
                   <ChevronLeft className="mr-2 h-4 w-4" />
                   Voltar
                 </Button>
-                {currentStep < STEP_DEFINITIONS.length - 1 ? (
+                {currentStep < visibleStepDefinitions.length - 1 ? (
                   <Button type="button" onClick={handleNextStep} className="bg-blue-600 hover:bg-blue-700 text-white">
                     Continuar
                     <ChevronRight className="ml-2 h-4 w-4" />

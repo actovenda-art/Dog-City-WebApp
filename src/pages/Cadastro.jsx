@@ -26,8 +26,8 @@ import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 
-const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "Médio", "Grande", "Gigante"];
-const DOG_COAT_OPTIONS = ["Curto", "Médio", "Longo"];
+const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "M?dio", "Grande", "Gigante"];
+const DOG_COAT_OPTIONS = ["Curto", "M?dio", "Longo"];
 const DOG_BREED_OPTIONS = [
   "SRD",
   "Akita",
@@ -180,19 +180,19 @@ function getTextFieldError({
 
   switch (kind) {
     case "email":
-      return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email válido.";
+      return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email v?lido.";
     case "cpf":
-      return digits.length === 11 ? "" : "Digite um CPF com 11 números.";
+      return digits.length === 11 ? "" : "Digite um CPF com 11 n?meros.";
     case "cpf_cnpj":
-      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ válido.";
+      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ v?lido.";
     case "phone":
-      return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular válido.";
+      return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular v?lido.";
     case "cep":
-      return digits.length === 8 ? "" : "Digite um CEP válido.";
+      return digits.length === 8 ? "" : "Digite um CEP v?lido.";
     case "state":
       return trimmedValue.length === 2 ? "" : "Use a sigla do estado com 2 letras.";
     case "weight":
-      return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas números, vírgula ou ponto.";
+      return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas n?meros, v?rgula ou ponto.";
     default:
       return "";
   }
@@ -634,7 +634,7 @@ export default function Cadastro() {
           state: data.uf || current.state,
         }));
       } catch (error) {
-        console.warn("Erro ao buscar CEP do responsável financeiro:", error);
+        console.warn("Erro ao buscar CEP do respons?vel financeiro:", error);
       } finally {
         if (!cancelled) setAddressLoading(false);
       }
@@ -681,7 +681,7 @@ export default function Cadastro() {
       setCurrentUser(me || null);
     } catch (error) {
       setNotifyTitle("Erro");
-      setNotifyMessage(error?.message || "Não foi possível carregar os cadastros.");
+      setNotifyMessage(error?.message || "N?o foi poss?vel carregar os cadastros.");
       setNotifyOpen(true);
     }
   };
@@ -773,7 +773,7 @@ export default function Cadastro() {
       const willBeSelected = selectedIds.includes(record.id);
       const alreadyLinked = currentIds.includes(dogId);
       if (willBeSelected && !alreadyLinked && currentIds.length >= RELATION_SLOTS.length) {
-        throw new Error(`${label} ${record.nome_completo || record.nome_razao_social || ""} já atingiu o limite de 8 cães vinculados.`);
+        throw new Error(`${label} ${record.nome_completo || record.nome_razao_social || ""} j? atingiu o limite de 8 c?es vinculados.`);
       }
     }
   };
@@ -893,13 +893,13 @@ export default function Cadastro() {
       window.open(url, "_blank", "noopener,noreferrer");
     } catch {
       setNotifyTitle("Erro");
-      setNotifyMessage("Não foi possível abrir o documento.");
+      setNotifyMessage("N?o foi poss?vel abrir o documento.");
       setNotifyOpen(true);
     }
   };
 
   const handleSaveDog = async () => {
-    if (!dogForm.nome) { setNotifyTitle("Campo obrigatório"); setNotifyMessage("Informe o nome do cão."); setNotifyOpen(true); return; }
+    if (!dogForm.nome) { setNotifyTitle("Campo obrigat?rio"); setNotifyMessage("Informe o nome do c?o."); setNotifyOpen(true); return; }
     setIsSaving(true);
     try {
       const mealPayload = serializeDogMeals(dogForm.refeicoes);
@@ -933,7 +933,7 @@ export default function Cadastro() {
         veterinario_endereco: optional(dogForm.veterinario_endereco),
         alimentacao_marca_racao: dogForm.alimentacao_natural ? null : optional(dogForm.alimentacao_marca_racao),
         alimentacao_sabor: dogForm.alimentacao_natural ? null : optional(dogForm.alimentacao_sabor),
-        alimentacao_tipo: dogForm.alimentacao_natural ? "Alimentação natural" : optional(dogForm.alimentacao_tipo),
+        alimentacao_tipo: dogForm.alimentacao_natural ? "Alimenta??o natural" : optional(dogForm.alimentacao_tipo),
         refeicao_1_qnt: optional(mealPayload.refeicao_1_qnt),
         refeicao_1_horario: optional(mealPayload.refeicao_1_horario),
         refeicao_1_obs: optional(mealPayload.refeicao_1_obs),
@@ -948,8 +948,8 @@ export default function Cadastro() {
         refeicao_4_obs: optional(mealPayload.refeicao_4_obs),
         medicamentos_continuos: normalizeMedications(dogForm.medicamentos_continuos),
       };
-      validateRelationCapacity(responsaveis, selectedResponsavelIds, editingDogId, "O responsável");
-      validateRelationCapacity(carteiras, selectedCarteiraIds, editingDogId, "O responsável financeiro");
+      validateRelationCapacity(responsaveis, selectedResponsavelIds, editingDogId, "O respons?vel");
+      validateRelationCapacity(carteiras, selectedCarteiraIds, editingDogId, "O respons?vel financeiro");
 
       setNotifyOpen(false);
       const savedDog = editingDogId
@@ -961,7 +961,7 @@ export default function Cadastro() {
       await syncDogLinks(Carteira, carteiras, selectedCarteiraIds, effectiveDogId);
 
       setNotifyTitle("Sucesso");
-      setNotifyMessage(editingDogId ? "Cadastro do cão atualizado com sucesso!" : "Cão cadastrado com sucesso!");
+      setNotifyMessage(editingDogId ? "Cadastro do c?o atualizado com sucesso!" : "C?o cadastrado com sucesso!");
       setNotifyOpen(true);
       resetDogEditor();
       clearDogEditQuery();
@@ -972,15 +972,15 @@ export default function Cadastro() {
 
   const handleSaveResponsavel = async () => {
     if (!responsavelForm.nome_completo || !responsavelForm.cpf || !responsavelForm.celular) {
-      setNotifyTitle("Campos obrigatórios"); setNotifyMessage("Preencha nome, CPF e celular."); setNotifyOpen(true); return;
+      setNotifyTitle("Campos obrigat?rios"); setNotifyMessage("Preencha nome, CPF e celular."); setNotifyOpen(true); return;
     }
     setIsSaving(true);
     try {
       const responsavelCpfDigits = normalizeDocumentDigits(responsavelForm.cpf, 11);
       const hasDuplicateCpf = responsaveis.some((item) => normalizeDocumentDigits(item.cpf, 11) === responsavelCpfDigits);
       if (responsavelCpfDigits && hasDuplicateCpf) {
-        setNotifyTitle("CPF já cadastrado");
-        setNotifyMessage("Este CPF já possui cadastro no sistema.");
+        setNotifyTitle("CPF j? cadastrado");
+        setNotifyMessage("Este CPF j? possui cadastro no sistema.");
         setNotifyOpen(true);
         setIsSaving(false);
         return;
@@ -991,7 +991,7 @@ export default function Cadastro() {
         fullName: responsavelForm.nome_completo,
       });
       if (cpfValidation.shouldBlock) {
-        setNotifyTitle("CPF não validado");
+        setNotifyTitle("CPF n?o validado");
         setNotifyMessage(cpfValidation.message);
         setNotifyOpen(true);
         setIsSaving(false);
@@ -1014,7 +1014,7 @@ export default function Cadastro() {
         dog_id_7: optional(responsavelForm.dog_id_7),
         dog_id_8: optional(responsavelForm.dog_id_8),
       });
-      setNotifyTitle("Sucesso"); setNotifyMessage("Responsável cadastrado!"); setNotifyOpen(true);
+      setNotifyTitle("Sucesso"); setNotifyMessage("Respons?vel cadastrado!"); setNotifyOpen(true);
       setResponsavelForm(emptyResponsavel);
       await loadData();
     } catch (error) { setNotifyTitle("Erro"); setNotifyMessage(error?.message || "Erro ao cadastrar."); setNotifyOpen(true); }
@@ -1041,8 +1041,8 @@ export default function Cadastro() {
       || !carteiraForm.contato_alinhamentos_celular
       || !carteiraForm.contato_alinhamentos_email
     ) {
-      setNotifyTitle("Campos obrigatórios");
-      setNotifyMessage("Preencha os dados principais, endereço, vencimento e os contatos de orçamentos e alinhamentos.");
+      setNotifyTitle("Campos obrigat?rios");
+      setNotifyMessage("Preencha os dados principais, endere?o, vencimento e os contatos de or?amentos e alinhamentos.");
       setNotifyOpen(true);
       return;
     }
@@ -1051,8 +1051,8 @@ export default function Cadastro() {
       const cpfOrCnpjDigits = (carteiraForm.cpf_cnpj || "").replace(/\D/g, "");
       const hasDuplicateDocument = carteiras.some((item) => normalizeDocumentDigits(item.cpf_cnpj) === cpfOrCnpjDigits);
       if (cpfOrCnpjDigits && hasDuplicateDocument) {
-        setNotifyTitle("Documento já cadastrado");
-        setNotifyMessage(cpfOrCnpjDigits.length === 11 ? "Este CPF já possui cadastro no sistema." : "Este CNPJ já possui cadastro no sistema.");
+        setNotifyTitle("Documento j? cadastrado");
+        setNotifyMessage(cpfOrCnpjDigits.length === 11 ? "Este CPF j? possui cadastro no sistema." : "Este CNPJ j? possui cadastro no sistema.");
         setNotifyOpen(true);
         setIsSaving(false);
         return;
@@ -1064,7 +1064,7 @@ export default function Cadastro() {
           fullName: carteiraForm.nome_razao_social,
         });
         if (cpfValidation.shouldBlock) {
-          setNotifyTitle("CPF não validado");
+          setNotifyTitle("CPF n?o validado");
           setNotifyMessage(cpfValidation.message);
           setNotifyOpen(true);
           setIsSaving(false);
@@ -1128,7 +1128,7 @@ export default function Cadastro() {
       setShowClientLinkFeedback(true);
     } catch (error) {
       setNotifyTitle("Erro");
-      setNotifyMessage(error?.message || "Não foi possível gerar o link de cadastro.");
+      setNotifyMessage(error?.message || "N?o foi poss?vel gerar o link de cadastro.");
       setNotifyOpen(true);
     } finally {
       setIsSaving(false);
@@ -1143,7 +1143,7 @@ export default function Cadastro() {
       window.setTimeout(() => setHasCopiedClientLink(false), 2000);
     } catch {
       setNotifyTitle("Erro");
-      setNotifyMessage("Não foi possível copiar o link.");
+      setNotifyMessage("N?o foi poss?vel copiar o link.");
       setNotifyOpen(true);
     }
   };
@@ -1152,7 +1152,7 @@ export default function Cadastro() {
   const cadastroStats = [
     {
       id: "caes",
-      label: "Cães cadastrados",
+      label: "C?es cadastrados",
       value: dogs.length,
       icon: DogIcon,
       shellClass: "border-blue-200 bg-blue-50",
@@ -1161,7 +1161,7 @@ export default function Cadastro() {
     },
     {
       id: "responsaveis",
-      label: "Responsáveis",
+      label: "Respons?veis",
       value: responsaveis.length,
       icon: Users,
       shellClass: "border-emerald-200 bg-emerald-50",
@@ -1170,7 +1170,7 @@ export default function Cadastro() {
     },
     {
       id: "carteiras",
-      label: "Responsáveis financeiros",
+      label: "Respons?veis financeiros",
       value: carteiras.length,
       icon: Wallet,
       shellClass: "border-orange-200 bg-orange-50",
@@ -1182,8 +1182,8 @@ export default function Cadastro() {
   const tabItems = [
     {
       id: "caes",
-      label: "Cães",
-      description: "Ficha do cão, saúde, medicação e vínculos.",
+      label: "C?es",
+      description: "Ficha do c?o, sa?de, medica??o e v?nculos.",
       icon: DogIcon,
       count: dogs.length,
       activeClass: "data-[state=active]:bg-blue-600 data-[state=active]:text-white",
@@ -1191,8 +1191,8 @@ export default function Cadastro() {
     },
     {
       id: "responsaveis",
-      label: "Responsáveis",
-      description: "Contatos, CPF e associação com os cães.",
+      label: "Respons?veis",
+      description: "Contatos, CPF e associa??o com os c?es.",
       icon: Users,
       count: responsaveis.length,
       activeClass: "data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
@@ -1201,7 +1201,7 @@ export default function Cadastro() {
     {
       id: "carteiras",
       label: "Financeiro",
-      description: "Cobrança, vencimento e vínculo financeiro.",
+      description: "Cobran?a, vencimento e v?nculo financeiro.",
       icon: Wallet,
       count: carteiras.length,
       activeClass: "data-[state=active]:bg-orange-600 data-[state=active]:text-white",
@@ -1238,8 +1238,8 @@ export default function Cadastro() {
   const jornadaCadastro = [
     {
       id: "caes",
-      title: editingDogId ? "Continuar ficha do cão" : "Iniciar cadastro do cão",
-      caption: editingDogId ? `Retome a edição de ${activeDogRecord?.nome}.` : "Preencha dados básicos, saúde, alimentação e vínculos.",
+      title: editingDogId ? "Continuar ficha do c?o" : "Iniciar cadastro do c?o",
+      caption: editingDogId ? `Retome a edi??o de ${activeDogRecord?.nome}.` : "Preencha dados b?sicos, sa?de, alimenta??o e v?nculos.",
       icon: DogIcon,
       progress: Math.round((dogDraftCompleted / 5) * 100),
       counter: `${dogDraftCompleted}/5`,
@@ -1249,8 +1249,8 @@ export default function Cadastro() {
     },
     {
       id: "responsaveis",
-      title: "Cadastrar responsável",
-      caption: "Organize contatos principais e conecte os cães corretos.",
+      title: "Cadastrar respons?vel",
+      caption: "Organize contatos principais e conecte os c?es corretos.",
       icon: Users,
       progress: Math.round((responsavelDraftCompleted / 5) * 100),
       counter: `${responsavelDraftCompleted}/5`,
@@ -1261,7 +1261,7 @@ export default function Cadastro() {
     {
       id: "carteiras",
       title: "Configurar financeiro",
-      caption: "Defina cobrança, vencimento e vínculo financeiro do cão.",
+      caption: "Defina cobran?a, vencimento e v?nculo financeiro do c?o.",
       icon: Wallet,
       progress: Math.round((carteiraDraftCompleted / 5) * 100),
       counter: `${carteiraDraftCompleted}/5`,
@@ -1293,7 +1293,7 @@ export default function Cadastro() {
                   <div>
                     <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Cadastro</h1>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
-                      Organize cães, responsáveis e financeiro em um único fluxo, com leitura mais clara e ações rápidas no mesmo padrão visual do restante do sistema.
+                      Organize c?es, respons?veis e financeiro em um ?nico fluxo, com leitura mais clara e a??es r?pidas no mesmo padr?o visual do restante do sistema.
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
                       {tabItems.map((item) => {
@@ -1346,10 +1346,10 @@ export default function Cadastro() {
                         {activeTab === "caes"
                           ? activeDogRecord
                             ? `Editando agora: ${activeDogRecord.nome}.`
-                            : "Use esta área para criar novas fichas de cães."
+                            : "Use esta ?rea para criar novas fichas de c?es."
                           : activeTab === "responsaveis"
-                            ? "Cadastre contatos, documentos e vínculos dos responsáveis."
-                            : "Mantenha os responsáveis financeiros vinculados aos cães corretos."}
+                            ? "Cadastre contatos, documentos e v?nculos dos respons?veis."
+                            : "Mantenha os respons?veis financeiros vinculados aos c?es corretos."}
                       </p>
                     </div>
                   </div>
@@ -1380,12 +1380,12 @@ export default function Cadastro() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-6 grid h-auto w-full grid-cols-1 gap-2 rounded-3xl bg-white p-2 shadow-sm sm:grid-cols-3">
-            <TabsTrigger value="caes" className="flex items-center gap-2"><DogIcon className="w-4 h-4" /><span className="hidden sm:inline">Cães</span></TabsTrigger>
-            <TabsTrigger value="responsaveis" className="flex items-center gap-2"><Users className="w-4 h-4" /><span className="hidden sm:inline">Responsáveis</span></TabsTrigger>
+            <TabsTrigger value="caes" className="flex items-center gap-2"><DogIcon className="w-4 h-4" /><span className="hidden sm:inline">C?es</span></TabsTrigger>
+            <TabsTrigger value="responsaveis" className="flex items-center gap-2"><Users className="w-4 h-4" /><span className="hidden sm:inline">Respons?veis</span></TabsTrigger>
             <TabsTrigger value="carteiras" className="flex items-center gap-2"><Wallet className="w-4 h-4" /><span className="hidden sm:inline">Carteiras</span></TabsTrigger>
           </TabsList>
 
-          {/* Cães Tab */}
+          {/* C?es Tab */}
           <TabsContent value="caes">
             <div className="mb-4 grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
               <Card className="border-blue-200 bg-blue-50/70">
@@ -1395,9 +1395,9 @@ export default function Cadastro() {
                       <HeartPulse className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-blue-900">Cadastro do cão</p>
+                      <p className="text-sm font-semibold text-blue-900">Cadastro do c?o</p>
                       <p className="mt-1 text-sm text-blue-800">
-                        Separei o preenchimento em blocos para ficar mais fácil revisar saúde, alimentação, medicação e vínculos antes de salvar.
+                        Separei o preenchimento em blocos para ficar mais f?cil revisar sa?de, alimenta??o, medica??o e v?nculos antes de salvar.
                       </p>
                     </div>
                   </div>
@@ -1405,9 +1405,9 @@ export default function Cadastro() {
               </Card>
               <Card className="border-slate-200 bg-white">
                 <CardContent className="p-4">
-                  <p className="text-sm font-semibold text-slate-900">Resumo rápido</p>
+                  <p className="text-sm font-semibold text-slate-900">Resumo r?pido</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} responsável(is)</Badge>
+                    <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} respons?vel(is)</Badge>
                     <Badge className="bg-orange-100 text-orange-700">{selectedCarteiraIds.length} financeiro(s)</Badge>
                     <Badge className="bg-purple-100 text-purple-700">{(dogForm.medicamentos_continuos || []).length} medicamento(s)</Badge>
                     {activeDogRecord ? <Badge className="bg-emerald-100 text-emerald-700">Editando {activeDogRecord.nome}</Badge> : null}
@@ -1417,11 +1417,11 @@ export default function Cadastro() {
             </div>
             <Card className="border-blue-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><DogIcon className="w-5 h-5 text-blue-600" />Cadastrar Cão</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><DogIcon className="w-5 h-5 text-blue-600" />Cadastrar C?o</h3>
                 {editingDogId ? (
                   <div className="mb-4 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-blue-700">
-                      Você está atualizando este cão e pode revisar vínculos, vacinas e cadastro completo.
+                      Voc? est? atualizando este c?o e pode revisar v?nculos, vacinas e cadastro completo.
                     </p>
                     <Button
                       type="button"
@@ -1431,102 +1431,259 @@ export default function Cadastro() {
                         clearDogEditQuery();
                       }}
                     >
-                      Limpar edição
+                      Limpar edi??o
                     </Button>
                   </div>
                 ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div><Label>Nome *</Label><Input value={dogForm.nome} onChange={(e) => setDogForm({ ...dogForm, nome: e.target.value })} placeholder="Nome do cão" /></div>
-                  <div><Label>Apelido</Label><Input value={dogForm.apelido} onChange={(e) => setDogForm({ ...dogForm, apelido: e.target.value })} /></div>
-                  <div>
-                    <Label>Raça</Label>
-                    <Select value={dogForm.raca || ""} onValueChange={(value) => setDogForm({ ...dogForm, raca: value })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione a raça" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {dogBreedOptions.map((breed) => (
-                          <SelectItem key={breed} value={breed}>{breed}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Porte</Label>
-                    <Select value={normalizeDogSize(dogForm.porte) || ""} onValueChange={(value) => setDogForm({ ...dogForm, porte: value })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o porte" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {dogSizeOptions.map((size) => (
-                          <SelectItem key={size} value={size}>{size}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div><Label>Cores da Pelagem</Label><Input value={dogForm.cores_pelagem} onChange={(e) => setDogForm({ ...dogForm, cores_pelagem: e.target.value })} /></div>
-                  <div>
-                    <Label>Pelagem</Label>
-                    <Select value={normalizeDogCoat(dogForm.pelagem) || ""} onValueChange={(value) => setDogForm({ ...dogForm, pelagem: value })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione a pelagem" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {dogCoatOptions.map((coat) => (
-                          <SelectItem key={coat} value={coat}>{coat}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div><Label>Peso (KG)</Label><Input type="number" step="0.1" value={dogForm.peso} onChange={(e) => setDogForm({ ...dogForm, peso: e.target.value })} /></div>
-                  <div><Label>Data de Nascimento</Label><DatePickerInput value={dogForm.data_nascimento} onChange={(value) => setDogForm({ ...dogForm, data_nascimento: value })} /></div>
-                  <div>
-                    <Label>Sexo</Label>
-                    <Select value={dogForm.sexo || ""} onValueChange={(value) => setDogForm({ ...dogForm, sexo: value })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o sexo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="macho">Macho</SelectItem>
-                        <SelectItem value="femea">Fêmea</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {renderTextField({
+                    fieldKey: "dog.nome",
+                    label: "Nome",
+                    value: dogForm.nome,
+                    onChange: (e) => setDogForm({ ...dogForm, nome: e.target.value }),
+                    placeholder: "Nome do cão",
+                    requiredMessage: "Informe o nome do cão.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "dog.apelido",
+                    label: "Apelido",
+                    value: dogForm.apelido,
+                    onChange: (e) => setDogForm({ ...dogForm, apelido: e.target.value }),
+                    placeholder: "Como ele é chamado no dia a dia",
+                    optional: true,
+                  })}
+                  {renderSelectField({
+                    fieldKey: "dog.raca",
+                    label: "Raça",
+                    value: dogForm.raca || "",
+                    placeholder: "Selecione a raça",
+                    requiredMessage: "Selecione a raça.",
+                    children: ({ triggerClassName, placeholder }) => (
+                      <Select value={dogForm.raca || ""} onValueChange={(value) => {
+                        setDogForm({ ...dogForm, raca: value });
+                        touchField("dog.raca");
+                      }}>
+                        <SelectTrigger className={triggerClassName}>
+                          <SelectValue placeholder={placeholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {dogBreedOptions.map((breed) => (
+                            <SelectItem key={breed} value={breed}>{breed}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ),
+                  })}
+                  {renderSelectField({
+                    fieldKey: "dog.porte",
+                    label: "Porte",
+                    value: normalizeDogSize(dogForm.porte) || "",
+                    placeholder: "Selecione o porte",
+                    requiredMessage: "Selecione o porte.",
+                    children: ({ triggerClassName, placeholder }) => (
+                      <Select value={normalizeDogSize(dogForm.porte) || ""} onValueChange={(value) => {
+                        setDogForm({ ...dogForm, porte: value });
+                        touchField("dog.porte");
+                      }}>
+                        <SelectTrigger className={triggerClassName}>
+                          <SelectValue placeholder={placeholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {dogSizeOptions.map((size) => (
+                            <SelectItem key={size} value={size}>{size}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ),
+                  })}
+                  {renderTextField({
+                    fieldKey: "dog.cores_pelagem",
+                    label: "Cores da pelagem",
+                    value: dogForm.cores_pelagem,
+                    onChange: (e) => setDogForm({ ...dogForm, cores_pelagem: e.target.value }),
+                    placeholder: "Ex: caramelo com branco",
+                    requiredMessage: "Informe as cores da pelagem.",
+                  })}
+                  {renderSelectField({
+                    fieldKey: "dog.pelagem",
+                    label: "Pelagem",
+                    value: normalizeDogCoat(dogForm.pelagem) || "",
+                    placeholder: "Selecione a pelagem",
+                    requiredMessage: "Selecione a pelagem.",
+                    children: ({ triggerClassName, placeholder }) => (
+                      <Select value={normalizeDogCoat(dogForm.pelagem) || ""} onValueChange={(value) => {
+                        setDogForm({ ...dogForm, pelagem: value });
+                        touchField("dog.pelagem");
+                      }}>
+                        <SelectTrigger className={triggerClassName}>
+                          <SelectValue placeholder={placeholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {dogCoatOptions.map((coat) => (
+                            <SelectItem key={coat} value={coat}>{coat}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ),
+                  })}
+                  {renderTextField({
+                    fieldKey: "dog.peso",
+                    label: "Peso (kg)",
+                    value: dogForm.peso,
+                    onChange: (e) => setDogForm({ ...dogForm, peso: e.target.value }),
+                    placeholder: "Ex: 12,5",
+                    kind: "weight",
+                    requiredMessage: "Informe o peso.",
+                  })}
+                  {renderDateField({
+                    fieldKey: "dog.data_nascimento",
+                    label: "Data de nascimento",
+                    value: dogForm.data_nascimento,
+                    onChange: (value) => setDogForm({ ...dogForm, data_nascimento: value }),
+                    placeholder: "Selecione a data",
+                    requiredMessage: "Informe a data de nascimento.",
+                  })}
+                  {renderSelectField({
+                    fieldKey: "dog.sexo",
+                    label: "Sexo",
+                    value: dogForm.sexo || "",
+                    placeholder: "Selecione o sexo",
+                    requiredMessage: "Selecione o sexo.",
+                    children: ({ triggerClassName, placeholder }) => (
+                      <Select value={dogForm.sexo || ""} onValueChange={(value) => {
+                        setDogForm({ ...dogForm, sexo: value });
+                        touchField("dog.sexo");
+                      }}>
+                        <SelectTrigger className={triggerClassName}>
+                          <SelectValue placeholder={placeholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="macho">Macho</SelectItem>
+                          <SelectItem value="femea">Fêmea</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ),
+                  })}
                   <div className="flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Castrado</p>
-                      <p className="text-xs text-gray-500">Informe se o cão já é castrado.</p>
+                      <p className="text-xs text-gray-500">Informe se o c?o j? ? castrado.</p>
                     </div>
                     <Switch checked={!!dogForm.castrado} onCheckedChange={(checked) => setDogForm({ ...dogForm, castrado: checked })} />
                   </div>
                   <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <button type="button" onClick={() => openImageViewer(dogForm.foto_url, "Foto do perfil")} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
-                  <div><Label>Carteirinha Vacinação</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
-                  <div><Label>1ª Revacinação</Label><DatePickerInput value={dogForm.data_revacinacao_1} onChange={(value) => setDogForm({ ...dogForm, data_revacinacao_1: value })} /></div>
-                  <div><Label>2ª Revacinação</Label><DatePickerInput value={dogForm.data_revacinacao_2} onChange={(value) => setDogForm({ ...dogForm, data_revacinacao_2: value })} /></div>
-                  <div><Label>3ª Revacinação</Label><DatePickerInput value={dogForm.data_revacinacao_3} onChange={(value) => setDogForm({ ...dogForm, data_revacinacao_3: value })} /></div>
-                  <div><Label>Vacina da 1ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_1} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_1: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
-                  <div><Label>Vacina da 2ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_2} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_2: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
-                  <div><Label>Vacina da 3ª Revacinação</Label><Input value={dogForm.nome_vacina_revacinacao_3} onChange={(e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_3: e.target.value })} placeholder="Ex: V10, Antirrábica" /></div>
+                  <div><Label>Carteirinha Vacina??o</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
+                  {renderDateField({
+                    fieldKey: "dog.data_revacinacao_1",
+                    label: "1ª revacinação",
+                    value: dogForm.data_revacinacao_1,
+                    onChange: (value) => setDogForm({ ...dogForm, data_revacinacao_1: value }),
+                    placeholder: "Selecione a data",
+                    optional: true,
+                  })}
+                  {renderDateField({
+                    fieldKey: "dog.data_revacinacao_2",
+                    label: "2ª revacinação",
+                    value: dogForm.data_revacinacao_2,
+                    onChange: (value) => setDogForm({ ...dogForm, data_revacinacao_2: value }),
+                    placeholder: "Selecione a data",
+                    optional: true,
+                  })}
+                  {renderDateField({
+                    fieldKey: "dog.data_revacinacao_3",
+                    label: "3ª revacinação",
+                    value: dogForm.data_revacinacao_3,
+                    onChange: (value) => setDogForm({ ...dogForm, data_revacinacao_3: value }),
+                    placeholder: "Selecione a data",
+                    optional: true,
+                  })}
+                  {renderTextField({
+                    fieldKey: "dog.nome_vacina_revacinacao_1",
+                    label: "Vacina da 1ª revacinação",
+                    value: dogForm.nome_vacina_revacinacao_1,
+                    onChange: (e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_1: e.target.value }),
+                    placeholder: "Ex: V10, Antirrábica",
+                    optional: !dogForm.data_revacinacao_1,
+                    requiredMessage: "Informe a vacina vinculada a esta data.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "dog.nome_vacina_revacinacao_2",
+                    label: "Vacina da 2ª revacinação",
+                    value: dogForm.nome_vacina_revacinacao_2,
+                    onChange: (e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_2: e.target.value }),
+                    placeholder: "Ex: V10, Antirrábica",
+                    optional: !dogForm.data_revacinacao_2,
+                    requiredMessage: "Informe a vacina vinculada a esta data.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "dog.nome_vacina_revacinacao_3",
+                    label: "Vacina da 3ª revacinação",
+                    value: dogForm.nome_vacina_revacinacao_3,
+                    onChange: (e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_3: e.target.value }),
+                    placeholder: "Ex: V10, Antirrábica",
+                    optional: !dogForm.data_revacinacao_3,
+                    requiredMessage: "Informe a vacina vinculada a esta data.",
+                  })}
 
-                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Veterinário</h4></div>
-                  <div><Label>Veterinário Responsável</Label><Input value={dogForm.veterinario_responsavel} onChange={(e) => setDogForm({ ...dogForm, veterinario_responsavel: e.target.value })} /></div>
-                  <div><Label>Horário Atendimento</Label><Input value={dogForm.veterinario_horario_atendimento} onChange={(e) => setDogForm({ ...dogForm, veterinario_horario_atendimento: e.target.value })} /></div>
-                  <div><Label>Telefone Veterinário</Label><Input value={dogForm.veterinario_telefone} onChange={(e) => setDogForm({ ...dogForm, veterinario_telefone: formatPhone(e.target.value) })} maxLength={15} /></div>
-                  <div><Label>Telefone Clínica</Label><Input value={dogForm.veterinario_clinica_telefone} onChange={(e) => setDogForm({ ...dogForm, veterinario_clinica_telefone: formatPhone(e.target.value) })} maxLength={15} /></div>
-                  <div className="sm:col-span-2"><Label>Endereço Vet/Clínica</Label><Input value={dogForm.veterinario_endereco} onChange={(e) => setDogForm({ ...dogForm, veterinario_endereco: e.target.value })} /></div>
+                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Veterin?rio</h4></div>
+                  {renderTextField({
+                    fieldKey: "dog.veterinario_responsavel",
+                    label: "Veterinário responsável",
+                    value: dogForm.veterinario_responsavel,
+                    onChange: (e) => setDogForm({ ...dogForm, veterinario_responsavel: e.target.value }),
+                    placeholder: "Nome do veterinário",
+                    optional: true,
+                  })}
+                  {renderTextField({
+                    fieldKey: "dog.veterinario_horario_atendimento",
+                    label: "Horário de atendimento",
+                    value: dogForm.veterinario_horario_atendimento,
+                    onChange: (e) => setDogForm({ ...dogForm, veterinario_horario_atendimento: e.target.value }),
+                    placeholder: "Ex: seg a sex, 9h às 18h",
+                    optional: true,
+                  })}
+                  {renderTextField({
+                    fieldKey: "dog.veterinario_telefone",
+                    label: "Telefone do veterinário",
+                    value: dogForm.veterinario_telefone,
+                    onChange: (e) => setDogForm({ ...dogForm, veterinario_telefone: formatPhone(e.target.value) }),
+                    maxLength: 15,
+                    placeholder: "(00) 00000-0000",
+                    kind: "phone",
+                    optional: true,
+                  })}
+                  {renderTextField({
+                    fieldKey: "dog.veterinario_clinica_telefone",
+                    label: "Telefone da clínica",
+                    value: dogForm.veterinario_clinica_telefone,
+                    onChange: (e) => setDogForm({ ...dogForm, veterinario_clinica_telefone: formatPhone(e.target.value) }),
+                    maxLength: 15,
+                    placeholder: "(00) 00000-0000",
+                    kind: "phone",
+                    optional: true,
+                  })}
+                  {renderTextField({
+                    fieldKey: "dog.veterinario_endereco",
+                    label: "Endereço vet/clínica",
+                    value: dogForm.veterinario_endereco,
+                    onChange: (e) => setDogForm({ ...dogForm, veterinario_endereco: e.target.value }),
+                    placeholder: "Endereço completo",
+                    optional: true,
+                    className: "sm:col-span-2",
+                  })}
 
-                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Alimentação</h4></div>
+                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Alimenta??o</h4></div>
                   <div className="col-span-full flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">Alimentação natural</p>
-                      <p className="text-xs text-gray-500">Ao marcar, os campos de marca e sabor são ocultados.</p>
+                      <p className="text-sm font-semibold text-gray-900">Alimenta??o natural</p>
+                      <p className="text-xs text-gray-500">Ao marcar, os campos de marca e sabor s?o ocultados.</p>
                     </div>
                     <Switch
                       checked={!!dogForm.alimentacao_natural}
                       onCheckedChange={(checked) => setDogForm({
                         ...dogForm,
                         alimentacao_natural: checked,
-                        alimentacao_tipo: checked ? "Alimentação natural" : dogForm.alimentacao_tipo,
+                        alimentacao_tipo: checked ? "Alimenta??o natural" : dogForm.alimentacao_tipo,
                         alimentacao_marca_racao: checked ? "" : dogForm.alimentacao_marca_racao,
                         alimentacao_sabor: checked ? "" : dogForm.alimentacao_sabor,
                       })}
@@ -1534,13 +1691,34 @@ export default function Cadastro() {
                   </div>
                   {!dogForm.alimentacao_natural ? (
                     <>
-                      <div><Label>Marca Ração</Label><Input value={dogForm.alimentacao_marca_racao} onChange={(e) => setDogForm({ ...dogForm, alimentacao_marca_racao: e.target.value })} /></div>
-                      <div><Label>Sabor</Label><Input value={dogForm.alimentacao_sabor} onChange={(e) => setDogForm({ ...dogForm, alimentacao_sabor: e.target.value })} /></div>
-                      <div><Label>Tipo</Label><Input value={dogForm.alimentacao_tipo} onChange={(e) => setDogForm({ ...dogForm, alimentacao_tipo: e.target.value })} /></div>
+                      {renderTextField({
+                        fieldKey: "dog.alimentacao_marca_racao",
+                        label: "Marca da ração",
+                        value: dogForm.alimentacao_marca_racao,
+                        onChange: (e) => setDogForm({ ...dogForm, alimentacao_marca_racao: e.target.value }),
+                        placeholder: "Ex: Premier",
+                        optional: true,
+                      })}
+                      {renderTextField({
+                        fieldKey: "dog.alimentacao_sabor",
+                        label: "Sabor",
+                        value: dogForm.alimentacao_sabor,
+                        onChange: (e) => setDogForm({ ...dogForm, alimentacao_sabor: e.target.value }),
+                        placeholder: "Ex: cordeiro",
+                        optional: true,
+                      })}
+                      {renderTextField({
+                        fieldKey: "dog.alimentacao_tipo",
+                        label: "Tipo",
+                        value: dogForm.alimentacao_tipo,
+                        onChange: (e) => setDogForm({ ...dogForm, alimentacao_tipo: e.target.value }),
+                        placeholder: "Ex: sênior, light, filhote",
+                        optional: true,
+                      })}
                     </>
                   ) : (
                     <div className="col-span-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                      O cão está marcado com alimentação natural.
+                      O c?o est? marcado com alimenta??o natural.
                     </div>
                   )}
 
@@ -1566,18 +1744,30 @@ export default function Cadastro() {
                             </Button>
                           </div>
                           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                            <div>
-                              <Label>Qnt (g)</Label>
-                              <Input value={meal.qnt || ""} onChange={(e) => updateDogMeal(index, "qnt", e.target.value)} />
-                            </div>
-                            <div>
-                              <Label>Horário</Label>
-                              <TimePickerInput value={meal.horario || ""} onChange={(value) => updateDogMeal(index, "horario", value)} />
-                            </div>
-                            <div>
-                              <Label>Observação</Label>
-                              <Input value={meal.obs || ""} onChange={(e) => updateDogMeal(index, "obs", e.target.value)} />
-                            </div>
+                            {renderTextField({
+                              fieldKey: `dog.refeicao.${index}.qnt`,
+                              label: "Qnt (g)",
+                              value: meal.qnt || "",
+                              onChange: (e) => updateDogMeal(index, "qnt", e.target.value),
+                              placeholder: "Quantidade em gramas",
+                              requiredMessage: "Informe a quantidade.",
+                            })}
+                            {renderTimeField({
+                              fieldKey: `dog.refeicao.${index}.horario`,
+                              label: "Horário",
+                              value: meal.horario || "",
+                              onChange: (value) => updateDogMeal(index, "horario", value),
+                              placeholder: "Selecione o horário",
+                              requiredMessage: "Informe o horário.",
+                            })}
+                            {renderTextField({
+                              fieldKey: `dog.refeicao.${index}.obs`,
+                              label: "Observação",
+                              value: meal.obs || "",
+                              onChange: (e) => updateDogMeal(index, "obs", e.target.value),
+                              placeholder: "Ex: refeição úmida separada",
+                              optional: true,
+                            })}
                           </div>
                         </div>
                       ))}
@@ -1600,11 +1790,39 @@ export default function Cadastro() {
                           Remover
                         </Button>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div><Label>Especificações</Label><Input value={medicacao.especificacoes || ""} onChange={(e) => updateDogMedication(index, "especificacoes", e.target.value)} placeholder="Nome e orientação" /></div>
-                        <div><Label>Cuidados</Label><Input value={medicacao.cuidados || ""} onChange={(e) => updateDogMedication(index, "cuidados", e.target.value)} placeholder="Ex: após refeição" /></div>
-                        <div><Label>Horário</Label><TimePickerInput value={medicacao.horario || ""} onChange={(value) => updateDogMedication(index, "horario", value)} /></div>
-                        <div><Label>Dose</Label><Input value={medicacao.dose || ""} onChange={(e) => updateDogMedication(index, "dose", e.target.value)} placeholder="Ex: 1 comprimido" /></div>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {renderTextField({
+                          fieldKey: `dog.medicacao.${index}.especificacoes`,
+                          label: "Especificações",
+                          value: medicacao.especificacoes || "",
+                          onChange: (e) => updateDogMedication(index, "especificacoes", e.target.value),
+                          placeholder: "Nome e orientação",
+                          requiredMessage: "Informe as especificações.",
+                        })}
+                        {renderTextField({
+                          fieldKey: `dog.medicacao.${index}.cuidados`,
+                          label: "Cuidados",
+                          value: medicacao.cuidados || "",
+                          onChange: (e) => updateDogMedication(index, "cuidados", e.target.value),
+                          placeholder: "Ex: após refeição",
+                          requiredMessage: "Informe os cuidados.",
+                        })}
+                        {renderTimeField({
+                          fieldKey: `dog.medicacao.${index}.horario`,
+                          label: "Horário",
+                          value: medicacao.horario || "",
+                          onChange: (value) => updateDogMedication(index, "horario", value),
+                          placeholder: "Selecione o horário",
+                          requiredMessage: "Informe o horário.",
+                        })}
+                        {renderTextField({
+                          fieldKey: `dog.medicacao.${index}.dose`,
+                          label: "Dose",
+                          value: medicacao.dose || "",
+                          onChange: (e) => updateDogMedication(index, "dose", e.target.value),
+                          placeholder: "Ex: 1 comprimido",
+                          requiredMessage: "Informe a dose.",
+                        })}
                       </div>
                     </div>
                   ))}
@@ -1615,33 +1833,33 @@ export default function Cadastro() {
                   <div className="rounded-xl border border-blue-100 bg-white p-4">
                     <h5 className="mb-3 text-sm font-semibold text-gray-900">Saúde e observações</h5>
                     <div className="grid grid-cols-1 gap-4">
-                      <div>
-                        <Label>Alergias</Label>
-                        <Textarea
-                          value={dogForm.alergias}
-                          onChange={(e) => setDogForm({ ...dogForm, alergias: e.target.value })}
-                          rows={2}
-                          placeholder="Alergias, intolerâncias ou sensibilidades do cão"
-                        />
-                      </div>
-                      <div>
-                        <Label>Restrições e cuidados</Label>
-                        <Textarea
-                          value={dogForm.restricoes_cuidados}
-                          onChange={(e) => setDogForm({ ...dogForm, restricoes_cuidados: e.target.value })}
-                          rows={3}
-                          placeholder="Cuidados especiais, restrições de manejo e observações clínicas"
-                        />
-                      </div>
-                      <div>
-                        <Label>Observações gerais</Label>
-                        <Textarea
-                          value={dogForm.observacoes_gerais}
-                          onChange={(e) => setDogForm({ ...dogForm, observacoes_gerais: e.target.value })}
-                          rows={3}
-                          placeholder="Comportamento, preferências e demais observações importantes"
-                        />
-                      </div>
+                      {renderTextAreaField({
+                        fieldKey: "dog.alergias",
+                        label: "Alergias",
+                        value: dogForm.alergias,
+                        onChange: (e) => setDogForm({ ...dogForm, alergias: e.target.value }),
+                        rows: 2,
+                        placeholder: "Alergias, intolerâncias ou sensibilidades do cão",
+                        optional: true,
+                      })}
+                      {renderTextAreaField({
+                        fieldKey: "dog.restricoes_cuidados",
+                        label: "Restrições e cuidados",
+                        value: dogForm.restricoes_cuidados,
+                        onChange: (e) => setDogForm({ ...dogForm, restricoes_cuidados: e.target.value }),
+                        rows: 3,
+                        placeholder: "Cuidados especiais, restrições de manejo e observações clínicas",
+                        optional: true,
+                      })}
+                      {renderTextAreaField({
+                        fieldKey: "dog.observacoes_gerais",
+                        label: "Observações gerais",
+                        value: dogForm.observacoes_gerais,
+                        onChange: (e) => setDogForm({ ...dogForm, observacoes_gerais: e.target.value }),
+                        rows: 3,
+                        placeholder: "Comportamento, preferências e demais observações importantes",
+                        optional: true,
+                      })}
                     </div>
                   </div>
                   <div className="rounded-xl border border-blue-100 bg-white p-4">
@@ -1729,8 +1947,8 @@ export default function Cadastro() {
               <CardContent className="p-4 sm:p-6">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
-                    <h4 className="font-semibold text-gray-900">Cães cadastrados</h4>
-                    <p className="text-sm text-gray-500">Abra a ficha do cão ou reutilize o cadastro para atualização.</p>
+                    <h4 className="font-semibold text-gray-900">C?es cadastrados</h4>
+                    <p className="text-sm text-gray-500">Abra a ficha do c?o ou reutilize o cadastro para atualiza??o.</p>
                   </div>
                   <Badge variant="outline">{dogs.length} registro(s)</Badge>
                 </div>
@@ -1739,7 +1957,7 @@ export default function Cadastro() {
                     <div key={dog.id} className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 p-4">
                       <div className="min-w-0">
                         <p className="truncate font-medium text-gray-900">{dog.nome}</p>
-                        <p className="truncate text-sm text-gray-500">{dog.raca || "Raça não informada"}</p>
+                        <p className="truncate text-sm text-gray-500">{dog.raca || "Ra?a n?o informada"}</p>
                       </div>
                       <div className="ml-3 flex gap-2">
                         <Link to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dog))}`}>
@@ -1756,7 +1974,7 @@ export default function Cadastro() {
             </Card>
           </TabsContent>
 
-          {/* Responsáveis Tab */}
+          {/* Respons?veis Tab */}
           <TabsContent value="responsaveis">
             <Card className="mb-4 border-emerald-200 bg-emerald-50/70">
               <CardContent className="p-4">
@@ -1765,9 +1983,9 @@ export default function Cadastro() {
                     <Users className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-emerald-900">Responsáveis do dia a dia</p>
+                    <p className="text-sm font-semibold text-emerald-900">Respons?veis do dia a dia</p>
                     <p className="mt-1 text-sm text-emerald-800">
-                      Cadastre os contatos principais, documentos e os cães vinculados para facilitar operação e comunicação.
+                      Cadastre os contatos principais, documentos e os c?es vinculados para facilitar opera??o e comunica??o.
                     </p>
                   </div>
                 </div>
@@ -1775,20 +1993,64 @@ export default function Cadastro() {
             </Card>
             <Card className="border-green-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-green-600" />Cadastrar Responsável</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-green-600" />Cadastrar Respons?vel</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div><Label>Nome Completo *</Label><Input value={responsavelForm.nome_completo} onChange={(e) => setResponsavelForm({ ...responsavelForm, nome_completo: e.target.value })} /></div>
-                  <div><Label>CPF *</Label><Input value={responsavelForm.cpf} onChange={(e) => setResponsavelForm({ ...responsavelForm, cpf: formatCPF(e.target.value) })} maxLength={14} /></div>
-                  <div><Label>Celular *</Label><Input value={responsavelForm.celular} onChange={(e) => setResponsavelForm({ ...responsavelForm, celular: formatPhone(e.target.value) })} maxLength={15} /></div>
-                  <div><Label>Celular Alternativo</Label><Input value={responsavelForm.celular_alternativo} onChange={(e) => setResponsavelForm({ ...responsavelForm, celular_alternativo: formatPhone(e.target.value) })} maxLength={15} /></div>
-                  <div className="sm:col-span-2"><Label>Email</Label><Input type="email" value={responsavelForm.email} onChange={(e) => setResponsavelForm({ ...responsavelForm, email: e.target.value })} /></div>
+                  {renderTextField({
+                    fieldKey: "responsavel.nome_completo",
+                    label: "Nome completo",
+                    value: responsavelForm.nome_completo,
+                    onChange: (e) => setResponsavelForm({ ...responsavelForm, nome_completo: e.target.value }),
+                    placeholder: "Nome completo do responsável",
+                    requiredMessage: "Informe o nome completo.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "responsavel.cpf",
+                    label: "CPF",
+                    value: responsavelForm.cpf,
+                    onChange: (e) => setResponsavelForm({ ...responsavelForm, cpf: formatCPF(e.target.value) }),
+                    maxLength: 14,
+                    placeholder: "000.000.000-00",
+                    kind: "cpf",
+                    requiredMessage: "Informe o CPF.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "responsavel.celular",
+                    label: "Celular",
+                    value: responsavelForm.celular,
+                    onChange: (e) => setResponsavelForm({ ...responsavelForm, celular: formatPhone(e.target.value) }),
+                    maxLength: 15,
+                    placeholder: "(00) 00000-0000",
+                    kind: "phone",
+                    requiredMessage: "Informe o celular.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "responsavel.celular_alternativo",
+                    label: "Celular alternativo",
+                    value: responsavelForm.celular_alternativo,
+                    onChange: (e) => setResponsavelForm({ ...responsavelForm, celular_alternativo: formatPhone(e.target.value) }),
+                    maxLength: 15,
+                    placeholder: "(00) 00000-0000",
+                    kind: "phone",
+                    optional: true,
+                  })}
+                  {renderTextField({
+                    fieldKey: "responsavel.email",
+                    label: "Email",
+                    value: responsavelForm.email,
+                    onChange: (e) => setResponsavelForm({ ...responsavelForm, email: e.target.value }),
+                    type: "email",
+                    placeholder: "email@exemplo.com",
+                    kind: "email",
+                    requiredMessage: "Informe o email.",
+                    className: "sm:col-span-2",
+                  })}
                   <div className="sm:col-span-2">
-                    <Label>Vincular Cães (até 8)</Label>
+                    <Label>Vincular C?es (at? 8)</Label>
                     <div className="mt-2">
                       <SearchFiltersToolbar
                         searchTerm={searchDogResp}
                         onSearchChange={setSearchDogResp}
-                        searchPlaceholder="Buscar cão por nome..."
+                        searchPlaceholder="Buscar c?o por nome..."
                         hasActiveFilters={Boolean(searchDogResp)}
                         onClear={() => setSearchDogResp("")}
                       />
@@ -1809,7 +2071,7 @@ export default function Cadastro() {
                               }
                             }}>
                             <div className="flex items-center gap-2">
-                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">🐕</div>}
+                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">ðŸ•</div>}
                               <span className="text-sm font-medium">{d.nome}</span>
                               {d.raca && <span className="text-xs text-gray-500">({d.raca})</span>}
                             </div>
@@ -1817,7 +2079,7 @@ export default function Cadastro() {
                           </div>
                         );
                       })}
-                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum cão cadastrado</p>}
+                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum c?o cadastrado</p>}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {[1,2,3,4,5,6,7,8].map(n => {
@@ -1829,7 +2091,7 @@ export default function Cadastro() {
                     </div>
                   </div>
                 </div>
-                <Button onClick={handleSaveResponsavel} disabled={isSaving} className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Responsável"}</Button>
+                <Button onClick={handleSaveResponsavel} disabled={isSaving} className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Respons?vel"}</Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -1843,9 +2105,9 @@ export default function Cadastro() {
                     <Wallet className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-orange-900">Financeiro vinculado ao cão</p>
+                    <p className="text-sm font-semibold text-orange-900">Financeiro vinculado ao c?o</p>
                     <p className="mt-1 text-sm text-orange-800">
-                      Mantenha quem paga, dados de cobrança e vencimento dos planos organizados em um bloco separado.
+                      Mantenha quem paga, dados de cobran?a e vencimento dos planos organizados em um bloco separado.
                     </p>
                   </div>
                 </div>
@@ -1856,61 +2118,200 @@ export default function Cadastro() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Wallet className="w-5 h-5 text-orange-600" />Cadastrar Carteira</h3>
                 <div className="mb-4 flex items-center justify-between rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
                   <div>
-                    <p className="text-sm font-semibold text-orange-900">Usar os mesmos dados do responsável</p>
-                    <p className="text-xs text-orange-700">Preenche nome, documento, contato principal e contatos de orçamento/alinhamento.</p>
+                    <p className="text-sm font-semibold text-orange-900">Usar os mesmos dados do respons?vel</p>
+                    <p className="text-xs text-orange-700">Preenche nome, documento, contato principal e contatos de or?amento/alinhamento.</p>
                   </div>
                   <Switch checked={carteiraIgualResponsavel} onCheckedChange={setCarteiraIgualResponsavel} />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div><Label>Nome / Razão Social *</Label><Input value={carteiraForm.nome_razao_social} onChange={(e) => setCarteiraForm({ ...carteiraForm, nome_razao_social: e.target.value })} /></div>
-                  <div><Label>CPF / CNPJ *</Label><Input value={carteiraForm.cpf_cnpj} onChange={(e) => setCarteiraForm({ ...carteiraForm, cpf_cnpj: formatCPF(e.target.value) })} maxLength={18} /></div>
-                  <div><Label>Celular *</Label><Input value={carteiraForm.celular} onChange={(e) => setCarteiraForm({ ...carteiraForm, celular: formatPhone(e.target.value) })} maxLength={15} /></div>
-                  <div><Label>Email</Label><Input type="email" value={carteiraForm.email} onChange={(e) => setCarteiraForm({ ...carteiraForm, email: e.target.value })} /></div>
-                  <div><Label>CEP</Label><Input value={carteiraForm.cep} onChange={(e) => setCarteiraForm({ ...carteiraForm, cep: formatCEP(e.target.value) })} maxLength={9} /></div>
-                  <div><Label>Nº Residência</Label><Input value={carteiraForm.numero_residencia} onChange={(e) => setCarteiraForm({ ...carteiraForm, numero_residencia: e.target.value })} /></div>
-                  <div><Label>Rua</Label><Input value={carteiraForm.street} onChange={(e) => setCarteiraForm({ ...carteiraForm, street: e.target.value })} placeholder={addressLoading ? "Buscando CEP..." : ""} /></div>
-                  <div><Label>Bairro</Label><Input value={carteiraForm.neighborhood} onChange={(e) => setCarteiraForm({ ...carteiraForm, neighborhood: e.target.value })} /></div>
-                  <div><Label>Cidade</Label><Input value={carteiraForm.city} onChange={(e) => setCarteiraForm({ ...carteiraForm, city: e.target.value })} /></div>
-                  <div><Label>Estado</Label><Input value={carteiraForm.state} onChange={(e) => setCarteiraForm({ ...carteiraForm, state: e.target.value })} maxLength={2} /></div>
-                  <div>
-                    <Label>Vencimento Planos</Label>
-                    <Select
-                      value={carteiraForm.vencimento_planos}
-                      onValueChange={(value) => setCarteiraForm({ ...carteiraForm, vencimento_planos: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o vencimento" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="05">Aos dias 05</SelectItem>
-                        <SelectItem value="20">Aos dias 20</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {renderTextField({
+                    fieldKey: "carteira.nome_razao_social",
+                    label: "Nome / Razão social",
+                    value: carteiraForm.nome_razao_social,
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, nome_razao_social: e.target.value }),
+                    placeholder: "Nome completo do responsável financeiro",
+                    requiredMessage: "Informe o nome ou razão social.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "carteira.cpf_cnpj",
+                    label: "CPF / CNPJ",
+                    value: carteiraForm.cpf_cnpj,
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, cpf_cnpj: formatCPF(e.target.value) }),
+                    maxLength: 18,
+                    placeholder: "CPF ou CNPJ",
+                    kind: "cpf_cnpj",
+                    requiredMessage: "Informe o CPF ou CNPJ.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "carteira.celular",
+                    label: "Celular",
+                    value: carteiraForm.celular,
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, celular: formatPhone(e.target.value) }),
+                    maxLength: 15,
+                    placeholder: "(00) 00000-0000",
+                    kind: "phone",
+                    requiredMessage: "Informe o celular.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "carteira.email",
+                    label: "Email",
+                    value: carteiraForm.email,
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, email: e.target.value }),
+                    type: "email",
+                    placeholder: "email@exemplo.com",
+                    kind: "email",
+                    requiredMessage: "Informe o email.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "carteira.cep",
+                    label: "CEP",
+                    value: carteiraForm.cep,
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, cep: formatCEP(e.target.value) }),
+                    maxLength: 9,
+                    placeholder: "00000-000",
+                    kind: "cep",
+                    requiredMessage: "Informe o CEP.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "carteira.numero_residencia",
+                    label: "Número",
+                    value: carteiraForm.numero_residencia,
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, numero_residencia: e.target.value }),
+                    placeholder: "Ex: 120",
+                    requiredMessage: "Informe o número.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "carteira.street",
+                    label: "Rua",
+                    value: carteiraForm.street,
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, street: e.target.value }),
+                    placeholder: addressLoading ? "Buscando CEP..." : "Rua",
+                    requiredMessage: "Informe a rua.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "carteira.neighborhood",
+                    label: "Bairro",
+                    value: carteiraForm.neighborhood,
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, neighborhood: e.target.value }),
+                    placeholder: "Bairro",
+                    requiredMessage: "Informe o bairro.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "carteira.city",
+                    label: "Cidade",
+                    value: carteiraForm.city,
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, city: e.target.value }),
+                    placeholder: "Cidade",
+                    requiredMessage: "Informe a cidade.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "carteira.state",
+                    label: "Estado",
+                    value: carteiraForm.state,
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, state: e.target.value.toUpperCase() }),
+                    maxLength: 2,
+                    placeholder: "UF",
+                    kind: "state",
+                    requiredMessage: "Informe o estado.",
+                  })}
+                  {renderSelectField({
+                    fieldKey: "carteira.vencimento_planos",
+                    label: "Vencimento dos planos",
+                    value: carteiraForm.vencimento_planos,
+                    placeholder: "Selecione o vencimento",
+                    requiredMessage: "Selecione o vencimento dos planos.",
+                    children: ({ triggerClassName, placeholder }) => (
+                      <Select
+                        value={carteiraForm.vencimento_planos}
+                        onValueChange={(value) => {
+                          setCarteiraForm({ ...carteiraForm, vencimento_planos: value });
+                          touchField("carteira.vencimento_planos");
+                        }}
+                      >
+                        <SelectTrigger className={triggerClassName}>
+                          <SelectValue placeholder={placeholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="05">Aos dias 05</SelectItem>
+                          <SelectItem value="20">Aos dias 20</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ),
+                  })}
                   <div></div>
                   <div className="sm:col-span-2 rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
                     <h4 className="mb-3 text-sm font-semibold text-orange-900">Contato para envio de orçamentos</h4>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <div><Label>Nome</Label><Input value={carteiraForm.contato_orcamentos_nome} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_nome: e.target.value })} /></div>
-                      <div><Label>Celular</Label><Input value={carteiraForm.contato_orcamentos_celular} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_celular: formatPhone(e.target.value) })} maxLength={15} /></div>
-                      <div><Label>Email</Label><Input type="email" value={carteiraForm.contato_orcamentos_email} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_email: e.target.value })} /></div>
+                      {renderTextField({
+                        fieldKey: "carteira.contato_orcamentos_nome",
+                        label: "Nome",
+                        value: carteiraForm.contato_orcamentos_nome,
+                        onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_nome: e.target.value }),
+                        placeholder: "Nome do contato",
+                        requiredMessage: "Informe o nome do contato.",
+                      })}
+                      {renderTextField({
+                        fieldKey: "carteira.contato_orcamentos_celular",
+                        label: "Celular",
+                        value: carteiraForm.contato_orcamentos_celular,
+                        onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_celular: formatPhone(e.target.value) }),
+                        maxLength: 15,
+                        placeholder: "(00) 00000-0000",
+                        kind: "phone",
+                        requiredMessage: "Informe o celular do contato.",
+                      })}
+                      {renderTextField({
+                        fieldKey: "carteira.contato_orcamentos_email",
+                        label: "Email",
+                        value: carteiraForm.contato_orcamentos_email,
+                        onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_email: e.target.value }),
+                        type: "email",
+                        placeholder: "email@exemplo.com",
+                        kind: "email",
+                        requiredMessage: "Informe o email do contato.",
+                      })}
                     </div>
                   </div>
                   <div className="sm:col-span-2 rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
                     <h4 className="mb-3 text-sm font-semibold text-orange-900">Contato para avisos e tratativas de alinhamento</h4>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <div><Label>Nome</Label><Input value={carteiraForm.contato_alinhamentos_nome} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_nome: e.target.value })} /></div>
-                      <div><Label>Celular</Label><Input value={carteiraForm.contato_alinhamentos_celular} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_celular: formatPhone(e.target.value) })} maxLength={15} /></div>
-                      <div><Label>Email</Label><Input type="email" value={carteiraForm.contato_alinhamentos_email} onChange={(e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_email: e.target.value })} /></div>
+                      {renderTextField({
+                        fieldKey: "carteira.contato_alinhamentos_nome",
+                        label: "Nome",
+                        value: carteiraForm.contato_alinhamentos_nome,
+                        onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_nome: e.target.value }),
+                        placeholder: "Nome do contato",
+                        requiredMessage: "Informe o nome do contato.",
+                      })}
+                      {renderTextField({
+                        fieldKey: "carteira.contato_alinhamentos_celular",
+                        label: "Celular",
+                        value: carteiraForm.contato_alinhamentos_celular,
+                        onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_celular: formatPhone(e.target.value) }),
+                        maxLength: 15,
+                        placeholder: "(00) 00000-0000",
+                        kind: "phone",
+                        requiredMessage: "Informe o celular do contato.",
+                      })}
+                      {renderTextField({
+                        fieldKey: "carteira.contato_alinhamentos_email",
+                        label: "Email",
+                        value: carteiraForm.contato_alinhamentos_email,
+                        onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_email: e.target.value }),
+                        type: "email",
+                        placeholder: "email@exemplo.com",
+                        kind: "email",
+                        requiredMessage: "Informe o email do contato.",
+                      })}
                     </div>
                   </div>
                   <div className="sm:col-span-2">
-                    <Label>Vincular Cães (até 8)</Label>
+                    <Label>Vincular C?es (at? 8)</Label>
                     <div className="mt-2">
                       <SearchFiltersToolbar
                         searchTerm={searchDogCart}
                         onSearchChange={setSearchDogCart}
-                        searchPlaceholder="Buscar cão por nome..."
+                        searchPlaceholder="Buscar c?o por nome..."
                         hasActiveFilters={Boolean(searchDogCart)}
                         onClear={() => setSearchDogCart("")}
                       />
@@ -1931,7 +2332,7 @@ export default function Cadastro() {
                               }
                             }}>
                             <div className="flex items-center gap-2">
-                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">🐕</div>}
+                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">ðŸ•</div>}
                               <span className="text-sm font-medium">{d.nome}</span>
                               {d.raca && <span className="text-xs text-gray-500">({d.raca})</span>}
                             </div>
@@ -1939,7 +2340,7 @@ export default function Cadastro() {
                           </div>
                         );
                       })}
-                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum cão cadastrado</p>}
+                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum c?o cadastrado</p>}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {[1,2,3,4,5,6,7,8].map(n => {
@@ -1969,7 +2370,7 @@ export default function Cadastro() {
 
           <div className="space-y-3 py-2">
             <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
-              O link abre um fluxo em etapas com responsável, cães e responsável financeiro, sem exigir nome ou email prévios para gerar.
+              O link abre um fluxo em etapas com respons?vel, c?es e respons?vel financeiro, sem exigir nome ou email pr?vios para gerar.
             </div>
             <div>
               <Label>Link do cadastro</Label>
@@ -2013,6 +2414,7 @@ export default function Cadastro() {
     </div>
   );
 }
+
 
 
 

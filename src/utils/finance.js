@@ -5,7 +5,7 @@ export const FINANCE_RATEIO_FIELDS = [
   { key: "day_care", label: "Day Care" },
   { key: "hospedagem", label: "Hospedagem" },
   { key: "transporte", label: "Transporte" },
-  { key: "adaptacao", label: "Adaptacao" },
+  { key: "adaptacao", label: "Adaptação" },
   { key: "credito", label: "Crédito" },
   { key: "banho", label: "Banho" },
   { key: "tosa", label: "Tosa" },
@@ -207,7 +207,7 @@ function getMovementDisplayScore(record) {
     score += 2;
   }
 
-  if (record?.descricao && /^(Pix (para|de)|Boleto Cobranca)/i.test(record.descricao)) {
+  if (record?.descricao && /^(Pix (para|de)|Boleto Cobran?a)/i.test(record.descricao)) {
     score += 1;
   }
 
@@ -390,7 +390,7 @@ export function getMovementCounterparty(record) {
     record?.raw_data?.nomeFavorecido ||
     record?.raw_data?.nomePagador ||
     record?.descricao ||
-    "Sem identificacao"
+    "Sem identificação"
   );
 }
 

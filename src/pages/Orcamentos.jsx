@@ -478,20 +478,20 @@ export default function Orcamentos() {
           if (shouldShowNotice) {
             nextPrefillNotice = {
               title: "Agendamento manual do registrador",
-              message: "Confira valores, destinatario financeiro e confirmacoes antes de enviar este orcamento.",
+              message: "Confira valores, destinatário financeiro e confirmações antes de enviar este orçamento.",
             };
           }
         } catch (error) {
           console.error("Erro ao verificar a origem do agendamento:", error);
           nextPrefillNotice = {
             title: "Agendamento manual do registrador",
-            message: "Confira valores, destinatario financeiro e confirmacoes antes de enviar este orcamento.",
+            message: "Confira valores, destinatário financeiro e confirmações antes de enviar este orçamento.",
           };
         }
       } else {
         nextPrefillNotice = {
           title: "Agendamento manual do registrador",
-          message: "Confira valores, destinatario financeiro e confirmacoes antes de enviar este orcamento.",
+          message: "Confira valores, destinatário financeiro e confirmações antes de enviar este orçamento.",
         };
       }
 
@@ -630,7 +630,7 @@ export default function Orcamentos() {
       return "";
     }
 
-    return "O responsavel financeiro selecionado precisa estar vinculado a pelo menos um dos caes deste orcamento.";
+    return "O responsável financeiro selecionado precisa estar vinculado a pelo menos um dos cães deste orçamento.";
   }
 
   function canAdvanceToResumo() {

@@ -386,7 +386,7 @@ export default function CompletarCadastro() {
           const { file_key } = await UploadPrivateFile({ file: pendingPhotoFile, path });
           await UserProfile.update(sessionUser.id, { profile_photo_path: file_key });
         } catch (photoError) {
-          console.error("Erro ao enviar foto apos concluir convite:", photoError);
+          console.error("Erro ao enviar foto após concluir convite:", photoError);
           alert("Cadastro concluído, mas não foi possível enviar a foto de perfil. Você pode anexar essa foto depois, dentro do sistema.");
         }
       }
@@ -425,7 +425,7 @@ export default function CompletarCadastro() {
                 <p className="mt-2 text-sm text-slate-600">
                   {isInviteFlow
                     ? "Preencha sua ficha primeiro. Na etapa seguinte você define o PIN e o acesso será liberado automaticamente."
-                    : "Seus dados basicos do convite ja vieram preenchidos. Revise, complemente e salve para liberar o acesso ao sistema."}
+                    : "Seus dados básicos do convite já vieram preenchidos. Revise, complemente e salve para liberar o acesso ao sistema."}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -514,12 +514,12 @@ export default function CompletarCadastro() {
                     />
                   </div>
                   <div>
-                    <Label>Numero *</Label>
+                    <Label>Número *</Label>
                     <Input
                       value={form.number}
                       onChange={(event) => setForm((current) => ({ ...current, number: event.target.value }))}
                       className="mt-2"
-                      placeholder="Informe o numero"
+                      placeholder="Informe o número"
                     />
                   </div>
                   <div>
@@ -561,7 +561,7 @@ export default function CompletarCadastro() {
                         <SelectItem value="cpf">CPF</SelectItem>
                         <SelectItem value="email">Email</SelectItem>
                         <SelectItem value="telefone">Telefone</SelectItem>
-                        <SelectItem value="aleatoria">Aleatoria</SelectItem>
+                        <SelectItem value="aleatoria">Aleatória</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -582,7 +582,7 @@ export default function CompletarCadastro() {
                     />
                   </div>
                   <div className="lg:col-span-2">
-                    <Label>Contato de emergencia *</Label>
+                    <Label>Contato de emergência *</Label>
                     <Input
                       value={form.emergency_contact}
                       onChange={(event) => setForm((current) => ({ ...current, emergency_contact: event.target.value }))}
@@ -623,7 +623,7 @@ export default function CompletarCadastro() {
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between sm:items-center pt-2">
                   <div className="flex items-center gap-2 text-sm text-slate-500">
                     <UserRound className="w-4 h-4" />
-                    <span>{isInviteFlow ? "Seu acesso sera liberado apos a definicao do PIN." : "Seu acesso sera liberado apos concluir esta ficha."}</span>
+                    <span>{isInviteFlow ? "Seu acesso será liberado após a definição do PIN." : "Seu acesso será liberado após concluir esta ficha."}</span>
                   </div>
                   <Button type="submit" disabled={isSaving} className="bg-slate-900 hover:bg-slate-800 text-white">
                     {isSaving ? "Salvando..." : (isInviteFlow ? "Continuar para definir PIN" : "Concluir cadastro")}

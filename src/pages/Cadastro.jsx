@@ -26,8 +26,8 @@ import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 
-const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "M?dio", "Grande", "Gigante"];
-const DOG_COAT_OPTIONS = ["Curto", "M?dio", "Longo"];
+const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "Médio", "Grande", "Gigante"];
+const DOG_COAT_OPTIONS = ["Curto", "Médio", "Longo"];
 const DOG_BREED_OPTIONS = [
   "SRD",
   "Akita",
@@ -38,38 +38,38 @@ const DOG_BREED_OPTIONS = [
   "Border Collie",
   "Boston Terrier",
   "Boxer",
-  "Bulldog Frances",
-  "Bulldog Ingles",
+  "Bulldog Francês",
+  "Bulldog Inglês",
   "Cane Corso",
   "Cavalier King Charles Spaniel",
   "Chihuahua",
   "Chow Chow",
   "Cocker Spaniel",
   "Dachshund",
-  "Dalmata",
+  "Dálmata",
   "Dobermann",
-  "Dogue Alemao",
+  "Dogue Alemão",
   "Fila Brasileiro",
   "Golden Retriever",
   "Husky Siberiano",
   "Jack Russell Terrier",
   "Labrador",
   "Lhasa Apso",
-  "Lulu da Pomerania",
-  "Maltes",
-  "Pastor Alemao",
+  "Lulu da Pomerânia",
+  "Maltês",
+  "Pastor Alemão",
   "Pastor Australiano",
   "Pastor Belga",
-  "Pequines",
+  "Pequinês",
   "Pinscher Miniatura",
   "Poodle",
   "Pug",
   "Rottweiler",
   "Samoieda",
-  "Sao Bernardo",
+  "São Bernardo",
   "Schnauzer",
   "Shih Tzu",
-  "Spitz Alemao",
+  "Spitz Alemão",
   "Terrier Brasileiro",
   "Weimaraner",
   "Welsh Corgi Pembroke",
@@ -180,19 +180,19 @@ function getTextFieldError({
 
   switch (kind) {
     case "email":
-      return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email v?lido.";
+      return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email válido.";
     case "cpf":
-      return digits.length === 11 ? "" : "Digite um CPF com 11 n?meros.";
+      return digits.length === 11 ? "" : "Digite um CPF com 11 números.";
     case "cpf_cnpj":
-      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ v?lido.";
+      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ válido.";
     case "phone":
-      return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular v?lido.";
+      return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular válido.";
     case "cep":
-      return digits.length === 8 ? "" : "Digite um CEP v?lido.";
+      return digits.length === 8 ? "" : "Digite um CEP válido.";
     case "state":
       return trimmedValue.length === 2 ? "" : "Use a sigla do estado com 2 letras.";
     case "weight":
-      return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas n?meros, v?rgula ou ponto.";
+      return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas números, vírgula ou ponto.";
     default:
       return "";
   }
@@ -634,7 +634,7 @@ export default function Cadastro() {
           state: data.uf || current.state,
         }));
       } catch (error) {
-        console.warn("Erro ao buscar CEP do respons?vel financeiro:", error);
+        console.warn("Erro ao buscar CEP do responsável financeiro:", error);
       } finally {
         if (!cancelled) setAddressLoading(false);
       }
@@ -681,7 +681,7 @@ export default function Cadastro() {
       setCurrentUser(me || null);
     } catch (error) {
       setNotifyTitle("Erro");
-      setNotifyMessage(error?.message || "N?o foi poss?vel carregar os cadastros.");
+      setNotifyMessage(error?.message || "Não foi possível carregar os cadastros.");
       setNotifyOpen(true);
     }
   };
@@ -773,7 +773,7 @@ export default function Cadastro() {
       const willBeSelected = selectedIds.includes(record.id);
       const alreadyLinked = currentIds.includes(dogId);
       if (willBeSelected && !alreadyLinked && currentIds.length >= RELATION_SLOTS.length) {
-        throw new Error(`${label} ${record.nome_completo || record.nome_razao_social || ""} j? atingiu o limite de 8 c?es vinculados.`);
+        throw new Error(`${label} ${record.nome_completo || record.nome_razao_social || ""} já atingiu o limite de 8 cães vinculados.`);
       }
     }
   };
@@ -886,20 +886,20 @@ export default function Cadastro() {
       if (!url) return;
 
       if (isImagePreviewable(path) || isImagePreviewable(url)) {
-        openImageViewer(url, "Carteirinha de vacinacao");
+        openImageViewer(url, "Carteirinha de vacinação");
         return;
       }
 
       window.open(url, "_blank", "noopener,noreferrer");
     } catch {
       setNotifyTitle("Erro");
-      setNotifyMessage("N?o foi poss?vel abrir o documento.");
+      setNotifyMessage("Não foi possível abrir o documento.");
       setNotifyOpen(true);
     }
   };
 
   const handleSaveDog = async () => {
-    if (!dogForm.nome) { setNotifyTitle("Campo obrigat?rio"); setNotifyMessage("Informe o nome do c?o."); setNotifyOpen(true); return; }
+    if (!dogForm.nome) { setNotifyTitle("Campo obrigatório"); setNotifyMessage("Informe o nome do cão."); setNotifyOpen(true); return; }
     setIsSaving(true);
     try {
       const mealPayload = serializeDogMeals(dogForm.refeicoes);
@@ -933,7 +933,7 @@ export default function Cadastro() {
         veterinario_endereco: optional(dogForm.veterinario_endereco),
         alimentacao_marca_racao: dogForm.alimentacao_natural ? null : optional(dogForm.alimentacao_marca_racao),
         alimentacao_sabor: dogForm.alimentacao_natural ? null : optional(dogForm.alimentacao_sabor),
-        alimentacao_tipo: dogForm.alimentacao_natural ? "Alimenta??o natural" : optional(dogForm.alimentacao_tipo),
+        alimentacao_tipo: dogForm.alimentacao_natural ? "Alimentação natural" : optional(dogForm.alimentacao_tipo),
         refeicao_1_qnt: optional(mealPayload.refeicao_1_qnt),
         refeicao_1_horario: optional(mealPayload.refeicao_1_horario),
         refeicao_1_obs: optional(mealPayload.refeicao_1_obs),
@@ -948,8 +948,8 @@ export default function Cadastro() {
         refeicao_4_obs: optional(mealPayload.refeicao_4_obs),
         medicamentos_continuos: normalizeMedications(dogForm.medicamentos_continuos),
       };
-      validateRelationCapacity(responsaveis, selectedResponsavelIds, editingDogId, "O respons?vel");
-      validateRelationCapacity(carteiras, selectedCarteiraIds, editingDogId, "O respons?vel financeiro");
+      validateRelationCapacity(responsaveis, selectedResponsavelIds, editingDogId, "O responsável");
+      validateRelationCapacity(carteiras, selectedCarteiraIds, editingDogId, "O responsável financeiro");
 
       setNotifyOpen(false);
       const savedDog = editingDogId
@@ -961,7 +961,7 @@ export default function Cadastro() {
       await syncDogLinks(Carteira, carteiras, selectedCarteiraIds, effectiveDogId);
 
       setNotifyTitle("Sucesso");
-      setNotifyMessage(editingDogId ? "Cadastro do c?o atualizado com sucesso!" : "C?o cadastrado com sucesso!");
+      setNotifyMessage(editingDogId ? "Cadastro do cão atualizado com sucesso!" : "C?o cadastrado com sucesso!");
       setNotifyOpen(true);
       resetDogEditor();
       clearDogEditQuery();
@@ -972,7 +972,7 @@ export default function Cadastro() {
 
   const handleSaveResponsavel = async () => {
     if (!responsavelForm.nome_completo || !responsavelForm.cpf || !responsavelForm.celular) {
-      setNotifyTitle("Campos obrigat?rios"); setNotifyMessage("Preencha nome, CPF e celular."); setNotifyOpen(true); return;
+      setNotifyTitle("Campos obrigatórios"); setNotifyMessage("Preencha nome, CPF e celular."); setNotifyOpen(true); return;
     }
     setIsSaving(true);
     try {
@@ -991,7 +991,7 @@ export default function Cadastro() {
         fullName: responsavelForm.nome_completo,
       });
       if (cpfValidation.shouldBlock) {
-        setNotifyTitle("CPF n?o validado");
+        setNotifyTitle("CPF não validado");
         setNotifyMessage(cpfValidation.message);
         setNotifyOpen(true);
         setIsSaving(false);
@@ -1014,7 +1014,7 @@ export default function Cadastro() {
         dog_id_7: optional(responsavelForm.dog_id_7),
         dog_id_8: optional(responsavelForm.dog_id_8),
       });
-      setNotifyTitle("Sucesso"); setNotifyMessage("Respons?vel cadastrado!"); setNotifyOpen(true);
+      setNotifyTitle("Sucesso"); setNotifyMessage("Responsável cadastrado!"); setNotifyOpen(true);
       setResponsavelForm(emptyResponsavel);
       await loadData();
     } catch (error) { setNotifyTitle("Erro"); setNotifyMessage(error?.message || "Erro ao cadastrar."); setNotifyOpen(true); }
@@ -1041,8 +1041,8 @@ export default function Cadastro() {
       || !carteiraForm.contato_alinhamentos_celular
       || !carteiraForm.contato_alinhamentos_email
     ) {
-      setNotifyTitle("Campos obrigat?rios");
-      setNotifyMessage("Preencha os dados principais, endere?o, vencimento e os contatos de or?amentos e alinhamentos.");
+      setNotifyTitle("Campos obrigatórios");
+      setNotifyMessage("Preencha os dados principais, endereço, vencimento e os contatos de orçamentos e alinhamentos.");
       setNotifyOpen(true);
       return;
     }
@@ -1064,7 +1064,7 @@ export default function Cadastro() {
           fullName: carteiraForm.nome_razao_social,
         });
         if (cpfValidation.shouldBlock) {
-          setNotifyTitle("CPF n?o validado");
+          setNotifyTitle("CPF não validado");
           setNotifyMessage(cpfValidation.message);
           setNotifyOpen(true);
           setIsSaving(false);
@@ -1128,7 +1128,7 @@ export default function Cadastro() {
       setShowClientLinkFeedback(true);
     } catch (error) {
       setNotifyTitle("Erro");
-      setNotifyMessage(error?.message || "N?o foi poss?vel gerar o link de cadastro.");
+      setNotifyMessage(error?.message || "Não foi possível gerar o link de cadastro.");
       setNotifyOpen(true);
     } finally {
       setIsSaving(false);
@@ -1143,7 +1143,7 @@ export default function Cadastro() {
       window.setTimeout(() => setHasCopiedClientLink(false), 2000);
     } catch {
       setNotifyTitle("Erro");
-      setNotifyMessage("N?o foi poss?vel copiar o link.");
+      setNotifyMessage("Não foi possível copiar o link.");
       setNotifyOpen(true);
     }
   };
@@ -1152,7 +1152,7 @@ export default function Cadastro() {
   const cadastroStats = [
     {
       id: "caes",
-      label: "C?es cadastrados",
+      label: "Cães cadastrados",
       value: dogs.length,
       icon: DogIcon,
       shellClass: "border-blue-200 bg-blue-50",
@@ -1161,7 +1161,7 @@ export default function Cadastro() {
     },
     {
       id: "responsaveis",
-      label: "Respons?veis",
+      label: "Responsáveis",
       value: responsaveis.length,
       icon: Users,
       shellClass: "border-emerald-200 bg-emerald-50",
@@ -1170,7 +1170,7 @@ export default function Cadastro() {
     },
     {
       id: "carteiras",
-      label: "Respons?veis financeiros",
+      label: "Responsáveis financeiros",
       value: carteiras.length,
       icon: Wallet,
       shellClass: "border-orange-200 bg-orange-50",
@@ -1182,8 +1182,8 @@ export default function Cadastro() {
   const tabItems = [
     {
       id: "caes",
-      label: "C?es",
-      description: "Ficha do c?o, sa?de, medica??o e v?nculos.",
+      label: "Cães",
+      description: "Ficha do cão, saúde, medicação e vínculos.",
       icon: DogIcon,
       count: dogs.length,
       activeClass: "data-[state=active]:bg-blue-600 data-[state=active]:text-white",
@@ -1191,8 +1191,8 @@ export default function Cadastro() {
     },
     {
       id: "responsaveis",
-      label: "Respons?veis",
-      description: "Contatos, CPF e associa??o com os c?es.",
+      label: "Responsáveis",
+      description: "Contatos, CPF e associação com os cães.",
       icon: Users,
       count: responsaveis.length,
       activeClass: "data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
@@ -1201,7 +1201,7 @@ export default function Cadastro() {
     {
       id: "carteiras",
       label: "Financeiro",
-      description: "Cobran?a, vencimento e v?nculo financeiro.",
+      description: "Cobrança, vencimento e vínculo financeiro.",
       icon: Wallet,
       count: carteiras.length,
       activeClass: "data-[state=active]:bg-orange-600 data-[state=active]:text-white",
@@ -1238,8 +1238,8 @@ export default function Cadastro() {
   const jornadaCadastro = [
     {
       id: "caes",
-      title: editingDogId ? "Continuar ficha do c?o" : "Iniciar cadastro do c?o",
-      caption: editingDogId ? `Retome a edi??o de ${activeDogRecord?.nome}.` : "Preencha dados b?sicos, sa?de, alimenta??o e v?nculos.",
+      title: editingDogId ? "Continuar ficha do cão" : "Iniciar cadastro do cão",
+      caption: editingDogId ? `Retome a edição de ${activeDogRecord?.nome}.` : "Preencha dados básicos, saúde, alimentação e vínculos.",
       icon: DogIcon,
       progress: Math.round((dogDraftCompleted / 5) * 100),
       counter: `${dogDraftCompleted}/5`,
@@ -1249,8 +1249,8 @@ export default function Cadastro() {
     },
     {
       id: "responsaveis",
-      title: "Cadastrar respons?vel",
-      caption: "Organize contatos principais e conecte os c?es corretos.",
+      title: "Cadastrar responsável",
+      caption: "Organize contatos principais e conecte os cães corretos.",
       icon: Users,
       progress: Math.round((responsavelDraftCompleted / 5) * 100),
       counter: `${responsavelDraftCompleted}/5`,
@@ -1261,7 +1261,7 @@ export default function Cadastro() {
     {
       id: "carteiras",
       title: "Configurar financeiro",
-      caption: "Defina cobran?a, vencimento e v?nculo financeiro do c?o.",
+      caption: "Defina cobrança, vencimento e vínculo financeiro do cão.",
       icon: Wallet,
       progress: Math.round((carteiraDraftCompleted / 5) * 100),
       counter: `${carteiraDraftCompleted}/5`,
@@ -1293,7 +1293,7 @@ export default function Cadastro() {
                   <div>
                     <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Cadastro</h1>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
-                      Organize c?es, respons?veis e financeiro em um ?nico fluxo, com leitura mais clara e a??es r?pidas no mesmo padr?o visual do restante do sistema.
+                      Organize cães, responsáveis e financeiro em um único fluxo, com leitura mais clara e ações rápidas no mesmo padrão visual do restante do sistema.
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
                       {tabItems.map((item) => {
@@ -1346,10 +1346,10 @@ export default function Cadastro() {
                         {activeTab === "caes"
                           ? activeDogRecord
                             ? `Editando agora: ${activeDogRecord.nome}.`
-                            : "Use esta ?rea para criar novas fichas de c?es."
+                            : "Use esta área para criar novas fichas de cães."
                           : activeTab === "responsaveis"
-                            ? "Cadastre contatos, documentos e v?nculos dos respons?veis."
-                            : "Mantenha os respons?veis financeiros vinculados aos c?es corretos."}
+                            ? "Cadastre contatos, documentos e vínculos dos responsáveis."
+                            : "Mantenha os responsáveis financeiros vinculados aos cães corretos."}
                       </p>
                     </div>
                   </div>
@@ -1380,12 +1380,12 @@ export default function Cadastro() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-6 grid h-auto w-full grid-cols-1 gap-2 rounded-3xl bg-white p-2 shadow-sm sm:grid-cols-3">
-            <TabsTrigger value="caes" className="flex items-center gap-2"><DogIcon className="w-4 h-4" /><span className="hidden sm:inline">C?es</span></TabsTrigger>
-            <TabsTrigger value="responsaveis" className="flex items-center gap-2"><Users className="w-4 h-4" /><span className="hidden sm:inline">Respons?veis</span></TabsTrigger>
+            <TabsTrigger value="caes" className="flex items-center gap-2"><DogIcon className="w-4 h-4" /><span className="hidden sm:inline">Cães</span></TabsTrigger>
+            <TabsTrigger value="responsaveis" className="flex items-center gap-2"><Users className="w-4 h-4" /><span className="hidden sm:inline">Responsáveis</span></TabsTrigger>
             <TabsTrigger value="carteiras" className="flex items-center gap-2"><Wallet className="w-4 h-4" /><span className="hidden sm:inline">Carteiras</span></TabsTrigger>
           </TabsList>
 
-          {/* C?es Tab */}
+          {/* Cães Tab */}
           <TabsContent value="caes">
             <div className="mb-4 grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
               <Card className="border-blue-200 bg-blue-50/70">
@@ -1395,9 +1395,9 @@ export default function Cadastro() {
                       <HeartPulse className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-blue-900">Cadastro do c?o</p>
+                      <p className="text-sm font-semibold text-blue-900">Cadastro do cão</p>
                       <p className="mt-1 text-sm text-blue-800">
-                        Separei o preenchimento em blocos para ficar mais f?cil revisar sa?de, alimenta??o, medica??o e v?nculos antes de salvar.
+                        Separei o preenchimento em blocos para ficar mais fácil revisar saúde, alimentação, medicação e vínculos antes de salvar.
                       </p>
                     </div>
                   </div>
@@ -1405,9 +1405,9 @@ export default function Cadastro() {
               </Card>
               <Card className="border-slate-200 bg-white">
                 <CardContent className="p-4">
-                  <p className="text-sm font-semibold text-slate-900">Resumo r?pido</p>
+                  <p className="text-sm font-semibold text-slate-900">Resumo rápido</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} respons?vel(is)</Badge>
+                    <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} responsável(is)</Badge>
                     <Badge className="bg-orange-100 text-orange-700">{selectedCarteiraIds.length} financeiro(s)</Badge>
                     <Badge className="bg-purple-100 text-purple-700">{(dogForm.medicamentos_continuos || []).length} medicamento(s)</Badge>
                     {activeDogRecord ? <Badge className="bg-emerald-100 text-emerald-700">Editando {activeDogRecord.nome}</Badge> : null}
@@ -1417,11 +1417,11 @@ export default function Cadastro() {
             </div>
             <Card className="border-blue-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><DogIcon className="w-5 h-5 text-blue-600" />Cadastrar C?o</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><DogIcon className="w-5 h-5 text-blue-600" />Cadastrar Cão</h3>
                 {editingDogId ? (
                   <div className="mb-4 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-blue-700">
-                      Voc? est? atualizando este c?o e pode revisar v?nculos, vacinas e cadastro completo.
+                      Você está atualizando este cão e pode revisar vínculos, vacinas e cadastro completo.
                     </p>
                     <Button
                       type="button"
@@ -1572,7 +1572,7 @@ export default function Cadastro() {
                     <Switch checked={!!dogForm.castrado} onCheckedChange={(checked) => setDogForm({ ...dogForm, castrado: checked })} />
                   </div>
                   <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <button type="button" onClick={() => openImageViewer(dogForm.foto_url, "Foto do perfil")} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
-                  <div><Label>Carteirinha Vacina??o</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
+                  <div><Label>Carteirinha de vacinação</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
                   {renderDateField({
                     fieldKey: "dog.data_revacinacao_1",
                     label: "1ª revacinação",
@@ -1625,7 +1625,7 @@ export default function Cadastro() {
                     requiredMessage: "Informe a vacina vinculada a esta data.",
                   })}
 
-                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Veterin?rio</h4></div>
+                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Veterinário</h4></div>
                   {renderTextField({
                     fieldKey: "dog.veterinario_responsavel",
                     label: "Veterinário responsável",
@@ -1672,18 +1672,18 @@ export default function Cadastro() {
                     className: "sm:col-span-2",
                   })}
 
-                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Alimenta??o</h4></div>
+                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Alimentação</h4></div>
                   <div className="col-span-full flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">Alimenta??o natural</p>
-                      <p className="text-xs text-gray-500">Ao marcar, os campos de marca e sabor s?o ocultados.</p>
+                      <p className="text-sm font-semibold text-gray-900">Alimentação natural</p>
+                      <p className="text-xs text-gray-500">Ao marcar, os campos de marca e sabor são ocultados.</p>
                     </div>
                     <Switch
                       checked={!!dogForm.alimentacao_natural}
                       onCheckedChange={(checked) => setDogForm({
                         ...dogForm,
                         alimentacao_natural: checked,
-                        alimentacao_tipo: checked ? "Alimenta??o natural" : dogForm.alimentacao_tipo,
+                        alimentacao_tipo: checked ? "Alimentação natural" : dogForm.alimentacao_tipo,
                         alimentacao_marca_racao: checked ? "" : dogForm.alimentacao_marca_racao,
                         alimentacao_sabor: checked ? "" : dogForm.alimentacao_sabor,
                       })}
@@ -1718,7 +1718,7 @@ export default function Cadastro() {
                     </>
                   ) : (
                     <div className="col-span-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                      O c?o est? marcado com alimenta??o natural.
+                      O cão está marcado com alimentação natural.
                     </div>
                   )}
 
@@ -1947,7 +1947,7 @@ export default function Cadastro() {
               <CardContent className="p-4 sm:p-6">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
-                    <h4 className="font-semibold text-gray-900">C?es cadastrados</h4>
+                    <h4 className="font-semibold text-gray-900">Cães cadastrados</h4>
                     <p className="text-sm text-gray-500">Abra a ficha do c?o ou reutilize o cadastro para atualiza??o.</p>
                   </div>
                   <Badge variant="outline">{dogs.length} registro(s)</Badge>
@@ -1957,7 +1957,7 @@ export default function Cadastro() {
                     <div key={dog.id} className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 p-4">
                       <div className="min-w-0">
                         <p className="truncate font-medium text-gray-900">{dog.nome}</p>
-                        <p className="truncate text-sm text-gray-500">{dog.raca || "Ra?a n?o informada"}</p>
+                        <p className="truncate text-sm text-gray-500">{dog.raca || "Raça não informada"}</p>
                       </div>
                       <div className="ml-3 flex gap-2">
                         <Link to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dog))}`}>
@@ -1974,7 +1974,7 @@ export default function Cadastro() {
             </Card>
           </TabsContent>
 
-          {/* Respons?veis Tab */}
+          {/* Responsáveis Tab */}
           <TabsContent value="responsaveis">
             <Card className="mb-4 border-emerald-200 bg-emerald-50/70">
               <CardContent className="p-4">
@@ -1983,7 +1983,7 @@ export default function Cadastro() {
                     <Users className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-emerald-900">Respons?veis do dia a dia</p>
+                    <p className="text-sm font-semibold text-emerald-900">Responsáveis do dia a dia</p>
                     <p className="mt-1 text-sm text-emerald-800">
                       Cadastre os contatos principais, documentos e os c?es vinculados para facilitar opera??o e comunica??o.
                     </p>
@@ -2045,12 +2045,12 @@ export default function Cadastro() {
                     className: "sm:col-span-2",
                   })}
                   <div className="sm:col-span-2">
-                    <Label>Vincular C?es (at? 8)</Label>
+                    <Label>Vincular Cães (at? 8)</Label>
                     <div className="mt-2">
                       <SearchFiltersToolbar
                         searchTerm={searchDogResp}
                         onSearchChange={setSearchDogResp}
-                        searchPlaceholder="Buscar c?o por nome..."
+                        searchPlaceholder="Buscar cão por nome..."
                         hasActiveFilters={Boolean(searchDogResp)}
                         onClear={() => setSearchDogResp("")}
                       />
@@ -2071,7 +2071,7 @@ export default function Cadastro() {
                               }
                             }}>
                             <div className="flex items-center gap-2">
-                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">ðŸ•</div>}
+                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">🐕</div>}
                               <span className="text-sm font-medium">{d.nome}</span>
                               {d.raca && <span className="text-xs text-gray-500">({d.raca})</span>}
                             </div>
@@ -2079,7 +2079,7 @@ export default function Cadastro() {
                           </div>
                         );
                       })}
-                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum c?o cadastrado</p>}
+                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum cão cadastrado</p>}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {[1,2,3,4,5,6,7,8].map(n => {
@@ -2105,9 +2105,9 @@ export default function Cadastro() {
                     <Wallet className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-orange-900">Financeiro vinculado ao c?o</p>
+                    <p className="text-sm font-semibold text-orange-900">Financeiro vinculado ao cão</p>
                     <p className="mt-1 text-sm text-orange-800">
-                      Mantenha quem paga, dados de cobran?a e vencimento dos planos organizados em um bloco separado.
+                      Mantenha quem paga, dados de cobrança e vencimento dos planos organizados em um bloco separado.
                     </p>
                   </div>
                 </div>
@@ -2118,8 +2118,8 @@ export default function Cadastro() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Wallet className="w-5 h-5 text-orange-600" />Cadastrar Carteira</h3>
                 <div className="mb-4 flex items-center justify-between rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
                   <div>
-                    <p className="text-sm font-semibold text-orange-900">Usar os mesmos dados do respons?vel</p>
-                    <p className="text-xs text-orange-700">Preenche nome, documento, contato principal e contatos de or?amento/alinhamento.</p>
+                    <p className="text-sm font-semibold text-orange-900">Usar os mesmos dados do responsável</p>
+                    <p className="text-xs text-orange-700">Preenche nome, documento, contato principal e contatos de orçamento/alinhamento.</p>
                   </div>
                   <Switch checked={carteiraIgualResponsavel} onCheckedChange={setCarteiraIgualResponsavel} />
                 </div>
@@ -2306,12 +2306,12 @@ export default function Cadastro() {
                     </div>
                   </div>
                   <div className="sm:col-span-2">
-                    <Label>Vincular C?es (at? 8)</Label>
+                    <Label>Vincular Cães (at? 8)</Label>
                     <div className="mt-2">
                       <SearchFiltersToolbar
                         searchTerm={searchDogCart}
                         onSearchChange={setSearchDogCart}
-                        searchPlaceholder="Buscar c?o por nome..."
+                        searchPlaceholder="Buscar cão por nome..."
                         hasActiveFilters={Boolean(searchDogCart)}
                         onClear={() => setSearchDogCart("")}
                       />
@@ -2332,7 +2332,7 @@ export default function Cadastro() {
                               }
                             }}>
                             <div className="flex items-center gap-2">
-                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">ðŸ•</div>}
+                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">🐕</div>}
                               <span className="text-sm font-medium">{d.nome}</span>
                               {d.raca && <span className="text-xs text-gray-500">({d.raca})</span>}
                             </div>
@@ -2340,7 +2340,7 @@ export default function Cadastro() {
                           </div>
                         );
                       })}
-                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum c?o cadastrado</p>}
+                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum cão cadastrado</p>}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {[1,2,3,4,5,6,7,8].map(n => {
@@ -2370,7 +2370,7 @@ export default function Cadastro() {
 
           <div className="space-y-3 py-2">
             <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
-              O link abre um fluxo em etapas com respons?vel, c?es e respons?vel financeiro, sem exigir nome ou email pr?vios para gerar.
+              O link abre um fluxo em etapas com responsável, cães e responsável financeiro, sem exigir nome ou email prévios para gerar.
             </div>
             <div>
               <Label>Link do cadastro</Label>

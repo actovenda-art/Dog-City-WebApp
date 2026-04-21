@@ -98,7 +98,7 @@ const DEFAULT_TOSA_DETALHADA = {
 export const ATTENDANCE_SERVICES = [
   { id: "day_care", label: "Day Care" },
   { id: "hospedagem", label: "Hospedagem" },
-  { id: "adaptacao", label: "Adaptacao" },
+  { id: "adaptacao", label: "Adaptação" },
   { id: "banho", label: "Banho" },
   { id: "tosa", label: "Tosa" },
   { id: "transporte", label: "Transporte" },

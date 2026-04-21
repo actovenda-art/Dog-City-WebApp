@@ -465,7 +465,7 @@ const mockFunctions = {
     const row = rowIndex >= 0 ? links[rowIndex] : null;
 
     if (!row) {
-      throw new Error('Link de cadastro nao localizado.');
+      throw new Error('Link de cadastro não localizado.');
     }
 
     if (action === 'get_context') {
@@ -494,7 +494,7 @@ const mockFunctions = {
       };
     }
 
-    throw new Error('Acao de cadastro do cliente invalida.');
+    throw new Error('Ação de cadastro do cliente inválida.');
   },
 };
 

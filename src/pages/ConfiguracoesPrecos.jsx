@@ -36,10 +36,10 @@ const DAY_CARE_PACKAGE_FREQUENCIES = [
 ];
 
 const DAY_CARE_PACKAGE_DOG_COUNTS = [
-  { id: "1_cao", label: "1 cÃ£o", quantity: 1 },
-  { id: "2_caes", label: "2 cÃ£es", quantity: 2 },
-  { id: "3_caes", label: "3 cÃ£es", quantity: 3 },
-  { id: "4_caes", label: "4 cÃ£es", quantity: 4 },
+  { id: "1_cao", label: "1 cão", quantity: 1 },
+  { id: "2_caes", label: "2 cães", quantity: 2 },
+  { id: "3_caes", label: "3 cães", quantity: 3 },
+  { id: "4_caes", label: "4 cães", quantity: 4 },
 ];
 
 const CATEGORY_BY_TYPE = {
@@ -272,8 +272,8 @@ export default function ConfiguracoesPrecos() {
       setShowModal(false);
       resetForm();
     } catch (error) {
-      console.error("Erro ao salvar preco:", error);
-      alert("Erro ao salvar preco.");
+      console.error("Erro ao salvar preço:", error);
+      alert("Erro ao salvar preço.");
     }
     setIsSaving(false);
   }
@@ -281,7 +281,7 @@ export default function ConfiguracoesPrecos() {
   async function handleSaveBreed() {
     const breedName = String(breedFormData.raca || "").trim();
     if (!breedName) {
-      alert("Preencha o nome da raca.");
+      alert("Preencha o nome da raça.");
       return;
     }
 
@@ -297,7 +297,7 @@ export default function ConfiguracoesPrecos() {
     );
 
     if (duplicatedDefault || duplicatedCustom) {
-      alert("Essa raca ja esta disponivel na lista.");
+      alert("Essa raça já está disponível na lista.");
       return;
     }
 
@@ -307,7 +307,7 @@ export default function ConfiguracoesPrecos() {
         tipo: BREED_CATALOG_TYPE,
         raca: breedName,
         valor: 0,
-        descricao: "Raca adicional disponivel para precificacao.",
+        descricao: "Raça adicional disponível para precificação.",
         ativo: true,
         empresa_id: empresaId,
         config_key: buildBreedCatalogKey(breedName),
@@ -323,8 +323,8 @@ export default function ConfiguracoesPrecos() {
       setShowBreedModal(false);
       resetBreedForm();
     } catch (error) {
-      console.error("Erro ao salvar raca:", error);
-      alert("Erro ao salvar raca.");
+      console.error("Erro ao salvar raça:", error);
+      alert("Erro ao salvar raça.");
     }
     setIsSaving(false);
   }
@@ -380,13 +380,13 @@ export default function ConfiguracoesPrecos() {
   }
 
   async function handleDelete(id) {
-    if (!confirm("Excluir este preco?")) return;
+    if (!confirm("Excluir este preço?")) return;
     await TabelaPrecos.delete(id);
     await loadData();
   }
 
   async function handleDeleteBreed(id) {
-    if (!confirm("Excluir esta raca adicional?")) return;
+    if (!confirm("Excluir esta raça adicional?")) return;
     await TabelaPrecos.delete(id);
     await loadData();
   }
@@ -558,14 +558,14 @@ export default function ConfiguracoesPrecos() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Home className="h-5 w-5 text-blue-600" />
-                  Precos de Day Care e adaptacao
+                  Preços de Day Care e adaptação
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-sky-50 p-4">
                   <p className="text-sm font-medium text-blue-900">Valores avulsos e matriz de pacotes</p>
                   <p className="mt-1 text-sm text-blue-700">
-                    Configure aqui os valores avulsos de Day Care, adaptaÃ§Ã£o e tambÃ©m os pacotes semanais de 1 a 5 vezes por semana para atÃ© 4 cÃ£es.
+                    Configure aqui os valores avulsos de Day Care, adaptação e também os pacotes semanais de 1 a 5 vezes por semana para até 4 cães.
                   </p>
                 </div>
 
@@ -573,14 +573,14 @@ export default function ConfiguracoesPrecos() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Valores base</p>
-                      <p className="text-sm text-gray-500">Usados para Day Care avulso, adaptaÃ§Ã£o e demais itens unitÃ¡rios.</p>
+                      <p className="text-sm text-gray-500">Usados para Day Care avulso, adaptação e demais itens unitários.</p>
                     </div>
                     <Badge className="bg-blue-100 text-blue-700">{dayCareFixedRows.length} item(ns)</Badge>
                   </div>
 
                   {dayCareFixedRows.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
-                      Nenhum preco base cadastrado.
+                      Nenhum preço base cadastrado.
                     </div>
                   ) : (
                     dayCareFixedRows.map((item) =>
@@ -594,7 +594,7 @@ export default function ConfiguracoesPrecos() {
                     <div>
                       <p className="text-base font-semibold text-gray-900">Pacotes semanais de Day Care</p>
                       <p className="text-sm text-gray-600">
-                        Preencha os valores mensais por frequÃªncia e quantidade de cÃ£es. Se deixar uma cÃ©lula vazia, ela serÃ¡ removida da tabela.
+                        Preencha os valores mensais por frequência e quantidade de cães. Se deixar uma célula vazia, ela será removida da tabela.
                       </p>
                     </div>
                     <Badge className="bg-white text-blue-700">
@@ -607,7 +607,7 @@ export default function ConfiguracoesPrecos() {
                       <thead>
                         <tr>
                           <th className="rounded-tl-2xl border border-blue-200 bg-blue-100 px-4 py-3 text-left text-sm font-semibold text-blue-950">
-                            FrequÃªncia
+                            Frequência
                           </th>
                           {DAY_CARE_PACKAGE_DOG_COUNTS.map((dogCount, index) => (
                             <th
@@ -686,12 +686,12 @@ export default function ConfiguracoesPrecos() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Home className="h-5 w-5 text-cyan-600" />
-                  Precos de hospedagem e pernoite
+                  Preços de hospedagem e pernoite
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {rowsByCategory.hospedagem.length === 0 ? (
-                  <p className="py-8 text-center text-gray-500">Nenhum preco cadastrado.</p>
+                  <p className="py-8 text-center text-gray-500">Nenhum preço cadastrado.</p>
                 ) : (
                   rowsByCategory.hospedagem.map((item) =>
                     renderRow(item, "border-cyan-200 bg-cyan-50", "text-cyan-600")
@@ -706,12 +706,12 @@ export default function ConfiguracoesPrecos() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Scissors className="h-5 w-5 text-purple-600" />
-                  Precos de banho e tosa
+                  Preços de banho e tosa
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {rowsByCategory.banho_tosa.length === 0 ? (
-                  <p className="py-8 text-center text-gray-500">Nenhum preco cadastrado.</p>
+                  <p className="py-8 text-center text-gray-500">Nenhum preço cadastrado.</p>
                 ) : (
                   rowsByCategory.banho_tosa.map((item) =>
                     renderRow(item, "border-purple-200 bg-purple-50", "text-purple-600")
@@ -731,7 +731,7 @@ export default function ConfiguracoesPrecos() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {rowsByCategory.transporte.length === 0 ? (
-                  <p className="py-8 text-center text-gray-500">Nenhum preco cadastrado.</p>
+                  <p className="py-8 text-center text-gray-500">Nenhum preço cadastrado.</p>
                 ) : (
                   rowsByCategory.transporte.map((item) =>
                     renderRow(item, "border-amber-200 bg-amber-50", "text-amber-600")
@@ -819,7 +819,7 @@ export default function ConfiguracoesPrecos() {
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingItem ? "Editar preco" : "Novo preco"}</DialogTitle>
+            <DialogTitle>{editingItem ? "Editar preço" : "Novo preço"}</DialogTitle>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
@@ -882,7 +882,7 @@ export default function ConfiguracoesPrecos() {
 
             <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-3">
               <div>
-                <p className="font-medium text-gray-900">Preco ativo</p>
+                <p className="font-medium text-gray-900">Preço ativo</p>
                 <p className="text-sm text-gray-500">Se desligado, o valor não entra no cálculo.</p>
               </div>
               <Switch

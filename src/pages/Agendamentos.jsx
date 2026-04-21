@@ -44,7 +44,7 @@ function formatAppointmentPeriod(appointment) {
     return formatDate(startDateKey);
   }
 
-  return `${formatDate(startDateKey)} atÃ© ${formatDate(endDateKey)}`;
+  return `${formatDate(startDateKey)} até ${formatDate(endDateKey)}`;
 }
 
 function addDays(dateKey, days) {

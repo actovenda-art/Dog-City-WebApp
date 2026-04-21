@@ -1188,7 +1188,7 @@ export default function Perfis() {
                               onClick={() => openLinkDialog(responsavel.id, "dog_only")}
                             >
                               <Link2 className="mr-2 h-4 w-4" />
-                              Link: apenas cÃ£o
+                              Link: apenas cão
                             </Button>
                             <Button
                               variant="outline"
@@ -1197,7 +1197,7 @@ export default function Perfis() {
                               onClick={() => openLinkDialog(responsavel.id, "dog_and_financeiro")}
                             >
                               <Wallet className="mr-2 h-4 w-4" />
-                              Link: cÃ£o + financeiro
+                              Link: cão + financeiro
                             </Button>
                             <Button
                               variant="outline"

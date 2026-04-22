@@ -38,7 +38,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -141,7 +141,6 @@ const DEFAULT_FORM_DATA = {
   start_date: "",
   monthly_value: "",
   status: "ativo",
-  observacoes: "",
 };
 
 function getLinkedDogIds(record) {
@@ -451,7 +450,6 @@ function getPlanGroupPayload({
   nextBillingDate,
   metadataGerencial,
   status,
-  observacoes,
 }) {
   return {
     client_id: clientId,
@@ -467,7 +465,6 @@ function getPlanGroupPayload({
     next_billing_date: nextBillingDate || null,
     metadata_gerencial: metadataGerencial || {},
     status,
-    observacoes,
     cliente_fixo: true,
   };
 }
@@ -538,7 +535,6 @@ export default function PlanosConfig() {
       start_date: metadata.start_date || format(item.created_date ?parseISO(item.created_date) : new Date(), "yyyy-MM-dd"),
       monthly_value: getMonthlyValue(item) ?String(getMonthlyValue(item)) : "",
       status: item.status || "ativo",
-      observacoes: item.observacoes || "",
     });
     setShowModal(true);
   }
@@ -631,6 +627,10 @@ export default function PlanosConfig() {
       frequencyLabel: getFrequencyLabel(formData.frequency),
     };
   }, [formData.frequency, formData.service, packageDogCount, pricingRows]);
+
+  const hasDayCareSuggestedValue = Boolean(dayCareSuggestion?.row);
+  const isDayCareUsingTableValue = formData.service === "day_care" && hasDayCareSuggestedValue && useSuggestedValue;
+  const isCustomMonthlyValue = formData.service !== "day_care" || !hasDayCareSuggestedValue || !useSuggestedValue;
 
   const monthlyValuePerDog = Number.parseFloat(String(formData.monthly_value).replace(",", ".")) || 0;
   const totalPackageValue = monthlyValuePerDog * packageDogCount;
@@ -780,6 +780,21 @@ export default function PlanosConfig() {
       ...current,
       monthly_value: value,
     }));
+  }
+
+  function handleCustomValueToggle(enabled) {
+    if (formData.service !== "day_care") return;
+    if (!hasDayCareSuggestedValue) {
+      setUseSuggestedValue(false);
+      return;
+    }
+
+    if (enabled) {
+      setUseSuggestedValue(false);
+      return;
+    }
+
+    applySuggestedValue();
   }
 
   function applySuggestedValue() {
@@ -1049,7 +1064,6 @@ export default function PlanosConfig() {
           first_cycle_charged: existingMetadata.first_cycle_charged || false,
         },
         status: formData.status,
-        observacoes: formData.observacoes || "",
       };
 
       if (editingItem) {
@@ -1618,19 +1632,38 @@ export default function PlanosConfig() {
 
                   <div className="space-y-4">
                     <div>
-                      <Label>{packageDogCount > 1 ?"Valor mensal por cão *" : "Valor mensal *"}</Label>
+                      <div className="flex items-center justify-between gap-3">
+                        <Label>{packageDogCount > 1 ?"Valor mensal por cão *" : "Valor mensal *"}</Label>
+                        {formData.service === "day_care" ?(
+                          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                            <Switch
+                              checked={isCustomMonthlyValue}
+                              onCheckedChange={handleCustomValueToggle}
+                              disabled={!hasDayCareSuggestedValue}
+                            />
+                            Valor personalizado
+                          </label>
+                        ) : null}
+                      </div>
                       <Input
-                        className="mt-2"
+                        className={`mt-2 ${isDayCareUsingTableValue ? "bg-gray-50 text-gray-500" : ""}`}
                         type="number"
                         step="0.01"
                         value={formData.monthly_value}
                         onChange={(event) => handleMonthlyValueChange(event.target.value)}
                         placeholder="0,00"
+                        disabled={isDayCareUsingTableValue}
                       />
                       <p className="mt-2 text-xs text-gray-500">
-                        {packageDogCount > 1
-                          ?"Cada plano salvo recebe este valor por cão. O total do pacote fica no resumo abaixo."
-                          : "Este será o valor mensal do plano."}
+                        {formData.service === "day_care"
+                          ?hasDayCareSuggestedValue
+                            ?isDayCareUsingTableValue
+                              ?"Usando automaticamente o valor da tabela de Day Care."
+                              :"Valor personalizado ativo para este pacote."
+                            :"Cadastre este pacote em Preços e descontos > Day Care para usar o valor automático."
+                          : packageDogCount > 1
+                            ?"Cada plano salvo recebe este valor por cão. O total do pacote fica no resumo abaixo."
+                            : "Este será o valor mensal do plano."}
                       </p>
                     </div>
 
@@ -1715,7 +1748,7 @@ export default function PlanosConfig() {
                               O rateio sugerido para cada cão é {formatCurrency(dayCareSuggestion.perDogValue)}.
                             </p>
                             <div className="mt-3 flex flex-wrap items-center gap-2">
-                              <Button type="button" variant="outline" size="sm" onClick={applySuggestedValue}>
+                              <Button type="button" variant="outline" size="sm" onClick={applySuggestedValue} disabled={isDayCareUsingTableValue}>
                                 <Sparkles className="mr-2 h-4 w-4" />
                                 Usar valor da tabela
                               </Button>
@@ -1810,15 +1843,6 @@ export default function PlanosConfig() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <Label>Observações</Label>
-              <Textarea
-                className="mt-2 min-h-24"
-                value={formData.observacoes}
-                onChange={(event) => setFormData((current) => ({ ...current, observacoes: event.target.value }))}
-                placeholder="Anote combinados, exceções de agenda ou detalhes operacionais deste plano."
-              />
-            </div>
           </div>
 
           <DialogFooter className="gap-2">
@@ -1827,7 +1851,7 @@ export default function PlanosConfig() {
             </Button>
             <Button onClick={handleSave} disabled={isSaving} className="bg-purple-600 text-white hover:bg-purple-700">
               <Save className="mr-2 h-4 w-4" />
-              {isSaving ?"Salvando..." : editingItem ?"Salvar plano" : `Criar ${packageDogCount} plano(s)`}
+              {isSaving ? "Salvando..." : editingItem ? "Salvar plano" : packageDogCount === 1 ? "Criar plano" : `Criar ${packageDogCount} planos`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1835,4 +1859,3 @@ export default function PlanosConfig() {
     </div>
   );
 }
-

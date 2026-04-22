@@ -608,6 +608,7 @@ export default function PlanosConfig() {
   const [deleteDate, setDeleteDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [editingItem, setEditingItem] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
   const [useSuggestedValue, setUseSuggestedValue] = useState(true);
@@ -1396,25 +1397,82 @@ export default function PlanosConfig() {
     setIsSaving(false);
   }
 
-  async function handleDelete(target) {
-    const planIds = Array.isArray(target?.planIds)
-      ? target.planIds
-      : [typeof target === "string" ? target : target?.id].filter(Boolean);
-
+  async function handleDelete() {
+    if (!deleteItem) return;
+    const planIds = Array.isArray(deleteItem.planIds) ? deleteItem.planIds.filter(Boolean) : [];
     if (planIds.length === 0) return;
 
-    const confirmMessage = planIds.length > 1
-      ? "Excluir este pacote recorrente e todos os planos vinculados a ele?"
-      : "Excluir este plano recorrente?";
+    setIsDeleting(true);
+    try {
+      const exclusionDate = parseDateOnly(deleteDate);
+      const preview = deletePreview;
+      const deleteNote = exclusionDate
+        ? `Plano encerrado em ${format(exclusionDate, "dd/MM/yyyy", { locale: ptBR })}.`
+        : "Plano encerrado.";
 
-    if (!confirm(confirmMessage)) return;
+      if (preview?.monthAppointments?.length) {
+        const appointmentsToCancel = preview.monthAppointments.filter((appointment) => {
+          const appointmentDate = parseDateOnly(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
+          return appointmentDate
+            && appointmentDate.getTime() > preview.exclusionDate.getTime()
+            && !["cancelado", "desconsiderado"].includes(appointment.status);
+        });
 
-    for (const planId of planIds) {
-      await PlanConfig.delete(planId);
+        for (const appointment of appointmentsToCancel) {
+          await Appointment.update(appointment.id, {
+            status: "cancelado",
+            observacoes: [appointment.observacoes, deleteNote].filter(Boolean).join("\n"),
+          });
+        }
+      }
+
+      const groupedCharges = groupReceivablesMap.get(deleteItem.id) || [];
+      const futureUnpaidCharges = groupedCharges.filter((charge) =>
+        getMonthKey(charge.vencimento) > (preview?.monthKey || "")
+        && !charge.data_recebimento,
+      );
+
+      for (const charge of futureUnpaidCharges) {
+        await ContaReceber.delete(charge.id);
+      }
+
+      const currentMonthUnpaidCharges = groupedCharges.filter((charge) =>
+        getMonthKey(charge.vencimento) === (preview?.monthKey || "")
+        && !charge.data_recebimento,
+      );
+
+      if (preview && currentMonthUnpaidCharges.length > 0) {
+        const perChargeValue = currentMonthUnpaidCharges.length > 0
+          ? Number((preview.proportionalValue / currentMonthUnpaidCharges.length).toFixed(2))
+          : 0;
+
+        for (const charge of currentMonthUnpaidCharges) {
+          const nextMetadata = {
+            ...parseMetadata(charge.metadata),
+            plan_deleted_at: formatDateOnly(preview.exclusionDate),
+            suggested_refund: preview.suggestedRefund,
+            suggested_charge: preview.suggestedCharge,
+          };
+
+          await ContaReceber.update(charge.id, {
+            valor: perChargeValue,
+            metadata: nextMetadata,
+          });
+        }
+      }
+
+      for (const planId of planIds) {
+        await PlanConfig.delete(planId);
+      }
+
+      setDeleteItem(null);
+      setDetailItem(null);
+      await loadData();
+    } catch (error) {
+      console.error("Erro ao excluir plano recorrente:", error);
+      alert("Não foi possível excluir o plano recorrente.");
     }
-
-    setDetailItem(null);
-    await loadData();
+    setIsDeleting(false);
   }
 
   const planGroups = useMemo(() => {
@@ -1497,7 +1555,6 @@ export default function PlanosConfig() {
     () => ({
       dayCare: planGroups.filter((group) => group.serviceId === "day_care").length,
       clientes: new Set(planGroups.map((group) => group.clientId).filter(Boolean)).size,
-      receitaMensal: planGroups.reduce((total, group) => total + group.totalPackageValue, 0),
     }),
     [planGroups],
   );
@@ -1672,7 +1729,7 @@ export default function PlanosConfig() {
           </div>
         </div>
 
-        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
           <Card className="border-blue-200 bg-white">
             <CardContent className="p-4 text-center">
               <p className="text-2xl font-bold text-blue-600">{stats.dayCare}</p>
@@ -1683,12 +1740,6 @@ export default function PlanosConfig() {
             <CardContent className="p-4 text-center">
               <p className="text-2xl font-bold text-amber-600">{stats.clientes}</p>
               <p className="text-sm text-gray-600">Responsáveis financeiros</p>
-            </CardContent>
-          </Card>
-          <Card className="border-emerald-200 bg-white">
-            <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-emerald-600">{formatCurrency(stats.receitaMensal)}</p>
-              <p className="text-sm text-gray-600">Receita mensal total</p>
             </CardContent>
           </Card>
         </div>
@@ -1850,7 +1901,12 @@ export default function PlanosConfig() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => detailItem && setPaymentsItem(detailItem)}
+              onClick={() => {
+                if (!detailItem) return;
+                const nextItem = detailItem;
+                setDetailItem(null);
+                setPaymentsItem(nextItem);
+              }}
               disabled={!detailItem}
             >
               <Zap className="mr-2 h-4 w-4" />
@@ -1861,8 +1917,10 @@ export default function PlanosConfig() {
               className="text-red-600 hover:text-red-700"
               onClick={() => {
                 if (!detailItem) return;
+                const nextItem = detailItem;
+                setDetailItem(null);
                 setDeleteDate(format(new Date(), "yyyy-MM-dd"));
-                setDeleteItem(detailItem);
+                setDeleteItem(nextItem);
               }}
               disabled={!detailItem}
             >
@@ -2453,6 +2511,166 @@ export default function PlanosConfig() {
             <Button onClick={handleSave} disabled={isSaving} className="bg-purple-600 text-white hover:bg-purple-700">
               <Save className="mr-2 h-4 w-4" />
               {isSaving ? "Salvando..." : editingItem ? "Salvar plano" : packageDogCount === 1 ? "Criar plano" : `Criar ${packageDogCount} planos`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(paymentsItem)} onOpenChange={(open) => !open && setPaymentsItem(null)}>
+        <DialogContent className="w-[95vw] max-w-[760px] max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pagamentos do plano</DialogTitle>
+            <DialogDescription>
+              Acompanhe os meses do pacote e o status financeiro de cada ciclo.
+            </DialogDescription>
+          </DialogHeader>
+
+          {paymentsItem ? (
+            <div className="space-y-4 py-2">
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <p className="font-semibold text-gray-900">{paymentsItem.clientName}</p>
+                <p className="mt-1 text-sm text-gray-600">
+                  {paymentsItem.serviceMeta.label} • {paymentsItem.dogNames.join(", ") || "-"}
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                  <p className="font-semibold">Verde</p>
+                  <p className="mt-1">Pago</p>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-semibold">Amarelo</p>
+                  <p className="mt-1">Vence hoje</p>
+                </div>
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
+                  <p className="font-semibold">Vermelho</p>
+                  <p className="mt-1">Atrasado</p>
+                </div>
+              </div>
+
+              {paymentEntries.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {paymentEntries.map((entry) => (
+                    <div key={`${paymentsItem.id}-${entry.monthKey}`} className={`rounded-2xl border p-4 ${getPaymentTone(entry)}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold">{entry.label}</p>
+                          <p className="mt-1 text-sm">{entry.helper}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm opacity-80">Valor</p>
+                          <p className="font-semibold">{formatCurrency(entry.totalValue)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                  Ainda não há linhas de cobrança geradas para este plano.
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentsItem(null)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteItem)} onOpenChange={(open) => !open && setDeleteItem(null)}>
+        <DialogContent className="w-[95vw] max-w-[760px] max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Excluir plano</DialogTitle>
+            <DialogDescription>
+              Escolha a data de encerramento para revisar o impacto financeiro e os agendamentos restantes.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteItem ? (
+            <div className="space-y-4 py-2">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-700" />
+                  <div>
+                    <p className="font-semibold text-amber-900">{deleteItem.clientName}</p>
+                    <p className="mt-1 text-sm text-amber-800">
+                      {deleteItem.serviceMeta.label} • {deleteItem.dogNames.join(", ") || "-"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <Label>Data de exclusão</Label>
+                <DatePickerInput value={deleteDate} onChange={setDeleteDate} className="mt-2" />
+              </div>
+
+              {deletePreview ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <p className="text-sm text-gray-500">Cobrança proporcional deste mês</p>
+                      <p className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(deletePreview.proportionalValue)}</p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <p className="text-sm text-gray-500">Pago neste mês</p>
+                      <p className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(deletePreview.paidCurrentMonth)}</p>
+                    </div>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <p className="text-sm text-emerald-700">Sugestão de reembolso/crédito</p>
+                      <p className="mt-1 text-lg font-semibold text-emerald-900">{formatCurrency(deletePreview.suggestedRefund)}</p>
+                    </div>
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                      <p className="text-sm text-blue-700">Sugestão de cobrança pendente</p>
+                      <p className="mt-1 text-lg font-semibold text-blue-900">{formatCurrency(deletePreview.suggestedCharge)}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                    <p className="font-semibold text-gray-900">Reposições em aberto</p>
+                    {deletePreview.openReplacementAppointments.length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        {deletePreview.openReplacementAppointments.map((appointment) => {
+                          const appointmentDate = parseDateOnly(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
+                          return (
+                            <div key={appointment.id} className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-sm">
+                              <span className="font-medium text-gray-900">{dogsById[appointment.dog_id]?.nome || "Cão"}</span>
+                              <span className="text-gray-600">
+                                {appointmentDate ? format(appointmentDate, "dd/MM/yyyy", { locale: ptBR }) : "-"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-gray-500">Nenhuma reposição em aberto para este pacote até a data escolhida.</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                  Defina uma data válida para visualizar a prévia da exclusão.
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteItem(null)} disabled={isDeleting}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleDelete}
+              disabled={!deletePreview || isDeleting}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {isDeleting ? "Excluindo..." : "Confirmar exclusão"}
             </Button>
           </DialogFooter>
         </DialogContent>

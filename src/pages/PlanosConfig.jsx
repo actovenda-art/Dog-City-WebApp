@@ -140,7 +140,6 @@ const DEFAULT_FORM_DATA = {
   weekdays: [],
   start_date: "",
   monthly_value: "",
-  data_renovacao: "",
   status: "ativo",
   observacoes: "",
 };
@@ -183,7 +182,7 @@ function parseDateOnly(value) {
 
 function formatDateOnly(date) {
   const parsed = normalizeDate(date);
-  return parsed ? format(parsed, "yyyy-MM-dd") : null;
+  return parsed ?format(parsed, "yyyy-MM-dd") : null;
 }
 
 function parseMetadata(value) {
@@ -196,11 +195,11 @@ function parseMetadata(value) {
     }
   }
 
-  return typeof value === "object" ? value : {};
+  return typeof value === "object" ?value : {};
 }
 
 function getFrequenciesForService(serviceId) {
-  return serviceId === "day_care" ? DAY_CARE_PACKAGE_FREQUENCIES : FREQUENCIES;
+  return serviceId === "day_care" ?DAY_CARE_PACKAGE_FREQUENCIES : FREQUENCIES;
 }
 
 function getMonthlyValue(plan) {
@@ -209,6 +208,11 @@ function getMonthlyValue(plan) {
 
 function getPlanClientId(plan) {
   return plan?.client_id || plan?.carteira_id || "";
+}
+
+function getPlanStartDate(plan) {
+  const metadata = parseMetadata(plan?.metadata_gerencial);
+  return metadata.start_date || null;
 }
 
 function formatCurrency(value) {
@@ -295,7 +299,7 @@ function getDefaultWeekdays(frequencyId, serviceId) {
   }
 
   const expectedCount = getExpectedWeekdayCount(frequencyId);
-  return expectedCount > 0 ? allowedWeekdays.slice(0, expectedCount) : [];
+  return expectedCount > 0 ?allowedWeekdays.slice(0, expectedCount) : [];
 }
 
 function getCoverageSummary(client, selectedDogIds) {
@@ -368,7 +372,7 @@ function buildFirstBillingPreview({
 
   const dueDateThisMonth = buildDueDateForMonth(startDate, parsedDueDay);
   const firstDueDate = dueDateThisMonth && startDate.getTime() <= dueDateThisMonth.getTime()
-    ? dueDateThisMonth
+    ?dueDateThisMonth
     : getNextBusinessDay(startDate);
 
   if (!firstDueDate) return null;
@@ -406,9 +410,9 @@ function buildFirstBillingPreview({
 
   const plannedUses = countScheduledUsesInMonth(startDateValue, weekdays);
   const chargedUses = Math.min(plannedUses, cycleSlots);
-  const factor = cycleSlots > 0 ? chargedUses / cycleSlots : 0;
-  const firstPackageValue = chargedUses > 0 ? basePackageValue * factor : 0;
-  const firstPerDogValue = packageDogCount > 0 ? firstPackageValue / packageDogCount : firstPackageValue;
+  const factor = cycleSlots > 0 ?chargedUses / cycleSlots : 0;
+  const firstPackageValue = chargedUses > 0 ?basePackageValue * factor : 0;
+  const firstPerDogValue = packageDogCount > 0 ?firstPackageValue / packageDogCount : firstPackageValue;
 
   return {
     firstDueDate,
@@ -431,7 +435,7 @@ function getLegacyNextBillingDate(plan) {
   if (!thisMonthDueDate) return null;
 
   return today.getTime() <= thisMonthDueDate.getTime()
-    ? thisMonthDueDate
+    ?thisMonthDueDate
     : buildDueDateForMonth(addMonths(today, 1), parsedDueDay);
 }
 
@@ -444,7 +448,6 @@ function getPlanGroupPayload({
   weekdays,
   monthlyValue,
   dueDay,
-  dataRenovacao,
   nextBillingDate,
   metadataGerencial,
   status,
@@ -461,7 +464,6 @@ function getPlanGroupPayload({
     monthly_value: monthlyValue,
     due_day: dueDay,
     renovacao_dia: dueDay,
-    data_renovacao: dataRenovacao || null,
     next_billing_date: nextBillingDate || null,
     metadata_gerencial: metadataGerencial || {},
     status,
@@ -533,9 +535,8 @@ export default function PlanosConfig() {
       service: item.service || item.tipo_plano || "day_care",
       frequency: item.frequency || "",
       weekdays: normalizeWeekdays(item.weekdays),
-      start_date: metadata.start_date || format(item.created_date ? parseISO(item.created_date) : new Date(), "yyyy-MM-dd"),
-      monthly_value: getMonthlyValue(item) ? String(getMonthlyValue(item)) : "",
-      data_renovacao: item.data_renovacao || "",
+      start_date: metadata.start_date || format(item.created_date ?parseISO(item.created_date) : new Date(), "yyyy-MM-dd"),
+      monthly_value: getMonthlyValue(item) ?String(getMonthlyValue(item)) : "",
       status: item.status || "ativo",
       observacoes: item.observacoes || "",
     });
@@ -552,7 +553,7 @@ export default function PlanosConfig() {
     [carteiras],
   );
 
-  const packageDogCount = formData.service === "day_care" ? Number(formData.package_dog_count || 1) : 1;
+  const packageDogCount = formData.service === "day_care" ?Number(formData.package_dog_count || 1) : 1;
   const currentDogIds = ensureDogArraySize(formData.dog_ids || [], packageDogCount);
   const selectedDogIds = currentDogIds.filter(Boolean);
   const selectedDogs = selectedDogIds.map((dogId) => dogsById[dogId]).filter(Boolean);
@@ -573,7 +574,7 @@ export default function PlanosConfig() {
         const leftCoverage = getCoverageSummary(left, selectedDogIds);
         const rightCoverage = getCoverageSummary(right, selectedDogIds);
         if (leftCoverage.isFullyLinked !== rightCoverage.isFullyLinked) {
-          return leftCoverage.isFullyLinked ? -1 : 1;
+          return leftCoverage.isFullyLinked ?-1 : 1;
         }
         return String(left.nome_razao_social || "").localeCompare(String(right.nome_razao_social || ""), "pt-BR");
       });
@@ -610,7 +611,7 @@ export default function PlanosConfig() {
     if (!formData.frequency) return "";
     if (!expectedWeekdayCount) return "";
     if (normalizedWeekdays.length === expectedWeekdayCount) return "";
-    return `Selecione ${expectedWeekdayCount} ${expectedWeekdayCount === 1 ? "dia preferencial" : "dias preferenciais"} para ${getFrequencyLabel(formData.frequency).toLowerCase()}.`;
+    return `Selecione ${expectedWeekdayCount} ${expectedWeekdayCount === 1 ?"dia preferencial" : "dias preferenciais"} para ${getFrequencyLabel(formData.frequency).toLowerCase()}.`;
   }, [expectedWeekdayCount, formData.frequency, normalizedWeekdays.length]);
 
   const dayCareSuggestion = useMemo(() => {
@@ -620,7 +621,7 @@ export default function PlanosConfig() {
     const packageBucket = DAY_CARE_PACKAGE_DOG_COUNTS.find((item) => item.quantity === packageDogCount) || DAY_CARE_PACKAGE_DOG_COUNTS[0];
     const row = pricingRows.find((item) => item.config_key === buildDayCarePackageKey(formData.frequency, packageBucket.id)) || null;
     const totalValue = Number(row?.valor || 0) || 0;
-    const perDogValue = packageDogCount > 0 ? totalValue / packageDogCount : totalValue;
+    const perDogValue = packageDogCount > 0 ?totalValue / packageDogCount : totalValue;
 
     return {
       row,
@@ -664,7 +665,7 @@ export default function PlanosConfig() {
     const nextValue = dayCareSuggestion.perDogValue.toFixed(2);
     setFormData((current) => (
       current.monthly_value === nextValue
-        ? current
+        ?current
         : { ...current, monthly_value: nextValue }
     ));
   }, [dayCareSuggestion, useSuggestedValue]);
@@ -682,9 +683,9 @@ export default function PlanosConfig() {
     setFormData((current) => ({
       ...current,
       service: serviceId,
-      package_dog_count: serviceId === "day_care" ? current.package_dog_count : 1,
-      dog_ids: ensureDogArraySize(current.dog_ids || [], serviceId === "day_care" ? Number(current.package_dog_count || 1) : 1),
-      frequency: nextFrequencyOptions.some((item) => item.id === current.frequency) ? current.frequency : "",
+      package_dog_count: serviceId === "day_care" ?current.package_dog_count : 1,
+      dog_ids: ensureDogArraySize(current.dog_ids || [], serviceId === "day_care" ?Number(current.package_dog_count || 1) : 1),
+      frequency: nextFrequencyOptions.some((item) => item.id === current.frequency) ?current.frequency : "",
       weekdays: normalizeWeekdays(current.weekdays).filter((item) => getAllowedWeekdays(serviceId).some((weekday) => weekday.id === item)),
     }));
     setUseSuggestedValue(serviceId === "day_care");
@@ -704,12 +705,15 @@ export default function PlanosConfig() {
   function updateDogSelection(index, dogId) {
     setFormData((current) => {
       const nextDogIds = ensureDogArraySize(current.dog_ids || [], packageDogCount);
+      if (dogId && nextDogIds.some((currentDogId, currentIndex) => currentIndex !== index && currentDogId === dogId)) {
+        return current;
+      }
       nextDogIds[index] = dogId;
       return {
         ...current,
         dog_ids: nextDogIds,
         client_id: current.client_id && candidateClients.some((client) => client.id === current.client_id)
-          ? current.client_id
+          ?current.client_id
           : "",
       };
     });
@@ -756,7 +760,7 @@ export default function PlanosConfig() {
       const currentWeekdays = normalizeWeekdays(current.weekdays).filter((item) => allowedWeekdayIds.includes(item));
       const exists = currentWeekdays.includes(weekdayId);
       let nextWeekdays = exists
-        ? currentWeekdays.filter((item) => item !== weekdayId)
+        ?currentWeekdays.filter((item) => item !== weekdayId)
         : [...currentWeekdays, weekdayId].sort((left, right) => left - right);
 
       if (expectedWeekdayCount > 0 && nextWeekdays.length > expectedWeekdayCount) {
@@ -825,7 +829,7 @@ export default function PlanosConfig() {
     const today = normalizeDate(new Date());
     const metadata = parseMetadata(plan.metadata_gerencial);
     const planStartDate = parseDateOnly(metadata.start_date);
-    const generationBaseDate = planStartDate && planStartDate.getTime() > today.getTime() ? planStartDate : today;
+    const generationBaseDate = planStartDate && planStartDate.getTime() > today.getTime() ?planStartDate : today;
     const appointments = [];
 
     for (let week = 0; week < weeksAhead; week += 1) {
@@ -887,7 +891,7 @@ export default function PlanosConfig() {
     const existingCharges = await ContaReceber.filter({ source_key: sourceKey });
     const isPendingFirstCycle = Boolean(firstCycle?.due_date && firstCycle.due_date === dueDateKey && !metadata.first_cycle_charged);
     const billingAmount = isPendingFirstCycle
-      ? Number(firstCycle?.per_dog_value || 0) || getMonthlyValue(plan)
+      ?Number(firstCycle?.per_dog_value || 0) || getMonthlyValue(plan)
       : getMonthlyValue(plan);
 
     if (existingCharges.length === 0 && billingAmount > 0) {
@@ -914,11 +918,11 @@ export default function PlanosConfig() {
     }
 
     const nextRecurringDate = Number.isFinite(dueDayValue)
-      ? buildDueDateForMonth(addMonths(dueDate, 1), dueDayValue)
+      ?buildDueDateForMonth(addMonths(dueDate, 1), dueDayValue)
       : null;
 
     await PlanConfig.update(plan.id, {
-      next_billing_date: nextRecurringDate ? formatDateOnly(nextRecurringDate) : dueDateKey,
+      next_billing_date: nextRecurringDate ?formatDateOnly(nextRecurringDate) : dueDateKey,
       metadata_gerencial: {
         ...metadata,
         first_cycle_charged: metadata.first_cycle_charged || isPendingFirstCycle,
@@ -966,7 +970,7 @@ export default function PlanosConfig() {
     }
 
     if (uniqueDogIds.length !== packageDogCount) {
-      alert(`Selecione ${packageDogCount} ${packageDogCount === 1 ? "cão" : "cães"} para este pacote.`);
+      alert(`Selecione ${packageDogCount} ${packageDogCount === 1 ?"cão" : "cães"} para este pacote.`);
       return;
     }
 
@@ -1013,7 +1017,7 @@ export default function PlanosConfig() {
         return;
       }
 
-      const existingMetadata = editingItem ? parseMetadata(editingItem.metadata_gerencial) : {};
+      const existingMetadata = editingItem ?parseMetadata(editingItem.metadata_gerencial) : {};
       const shouldPreserveNextBilling = Boolean(editingItem && (existingMetadata.first_cycle_charged || editingItem.next_billing_date));
 
       const payloadBase = {
@@ -1024,11 +1028,10 @@ export default function PlanosConfig() {
         weekdays: normalizedWeekdays,
         monthlyValue: monthlyValuePerDog,
         dueDay,
-        dataRenovacao: formData.data_renovacao,
         nextBillingDate: shouldPreserveNextBilling
-          ? (editingItem?.next_billing_date || formatDateOnly(firstBillingPreview.nextRecurringDueDate))
+          ?(editingItem?.next_billing_date || formatDateOnly(firstBillingPreview.nextRecurringDueDate))
           : firstBillingPreview.firstPackageValue > 0
-            ? formatDateOnly(firstBillingPreview.firstDueDate)
+            ?formatDateOnly(firstBillingPreview.firstDueDate)
             : formatDateOnly(firstBillingPreview.nextRecurringDueDate),
         metadataGerencial: {
           ...existingMetadata,
@@ -1085,7 +1088,7 @@ export default function PlanosConfig() {
   }
 
   async function toggleStatus(plan) {
-    const nextStatus = (plan.status || "ativo") === "ativo" ? "inativo" : "ativo";
+    const nextStatus = (plan.status || "ativo") === "ativo" ?"inativo" : "ativo";
     await PlanConfig.update(plan.id, { status: nextStatus });
     await loadData();
   }
@@ -1146,7 +1149,7 @@ export default function PlanosConfig() {
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={runAllAutomations} disabled={isGenerating}>
               <Zap className="mr-2 h-4 w-4" />
-              {isGenerating ? "Gerando..." : "Rodar automações"}
+              {isGenerating ?"Gerando..." : "Rodar automações"}
             </Button>
             <Button
               onClick={() => {
@@ -1230,7 +1233,7 @@ export default function PlanosConfig() {
         </Card>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredPlans.length === 0 ? (
+          {filteredPlans.length === 0 ?(
             <Card className="col-span-full border-gray-200 bg-white">
               <CardContent className="p-12 text-center">
                 <CreditCard className="mx-auto mb-4 h-12 w-12 text-gray-300" />
@@ -1245,7 +1248,7 @@ export default function PlanosConfig() {
             return (
               <Card
                 key={plan.id}
-                className={`border-2 bg-white ${plan.status === "ativo" ? "border-green-200" : plan.status === "suspenso" ? "border-orange-200" : "border-gray-200 opacity-80"}`}
+                className={`border-2 bg-white ${plan.status === "ativo" ?"border-green-200" : plan.status === "suspenso" ?"border-orange-200" : "border-gray-200 opacity-80"}`}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-3">
@@ -1290,16 +1293,16 @@ export default function PlanosConfig() {
                       <p className="mt-1 text-lg font-bold text-emerald-600">{formatCurrency(getMonthlyValue(plan))}</p>
                     </div>
                     <div className="col-span-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                      <p className="text-gray-500">Renovação</p>
+                      <p className="text-gray-500">Início</p>
                       <p className="mt-1 font-medium text-gray-900">
-                        {plan.data_renovacao
-                          ? format(parseISO(plan.data_renovacao), "dd/MM/yyyy", { locale: ptBR })
-                          : `Dia ${plan.renovacao_dia || plan.due_day || "-"}`}
+                        {getPlanStartDate(plan)
+                          ?format(parseDateOnly(getPlanStartDate(plan)), "dd/MM/yyyy", { locale: ptBR })
+                          : "-"}
                       </p>
                     </div>
                   </div>
 
-                  {weekdays.length > 0 ? (
+                  {weekdays.length > 0 ?(
                     <div>
                       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Dias preferenciais</p>
                       <div className="flex flex-wrap gap-2">
@@ -1318,7 +1321,7 @@ export default function PlanosConfig() {
                       Gerar
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => toggleStatus(plan)}>
-                      {(plan.status || "ativo") === "ativo" ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                      {(plan.status || "ativo") === "ativo" ?<Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEditModal(plan)}>
                       <Pencil className="h-4 w-4" />
@@ -1343,7 +1346,7 @@ export default function PlanosConfig() {
       >
         <DialogContent className="w-[95vw] max-w-[980px] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingItem ? "Editar plano recorrente" : "Novo plano recorrente"}</DialogTitle>
+            <DialogTitle>{editingItem ?"Editar plano recorrente" : "Novo plano recorrente"}</DialogTitle>
             <DialogDescription>
               Para Day Care, escolha a quantidade de cães do pacote, selecione os dias preferenciais e use um responsável financeiro que já esteja ligado a pelo menos um dos cães envolvidos.
             </DialogDescription>
@@ -1391,7 +1394,7 @@ export default function PlanosConfig() {
 
                     <div>
                       <Label>Frequência *</Label>
-                      <Select value={formData.frequency || "__empty__"} onValueChange={(value) => handleFrequencyChange(value === "__empty__" ? "" : value)}>
+                      <Select value={formData.frequency || "__empty__"} onValueChange={(value) => handleFrequencyChange(value === "__empty__" ?"" : value)}>
                         <SelectTrigger className="mt-2">
                           <SelectValue placeholder="Selecione a frequência" />
                         </SelectTrigger>
@@ -1418,7 +1421,7 @@ export default function PlanosConfig() {
                       </p>
                     </div>
 
-                    {formData.service === "day_care" ? (
+                    {formData.service === "day_care" ?(
                       <div className="md:col-span-2">
                         <Label>Quantidade de cães no pacote *</Label>
                         <Select value={String(packageDogCount)} onValueChange={handlePackageDogCountChange}>
@@ -1450,16 +1453,20 @@ export default function PlanosConfig() {
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {ensureDogArraySize(formData.dog_ids || [], packageDogCount).map((dogId, index) => (
                       <div key={`dog-slot-${index}`}>
-                        <Label>{packageDogCount > 1 ? `${index + 1}º cão` : "Cão"} *</Label>
-                        <Select value={dogId || "__empty__"} onValueChange={(value) => updateDogSelection(index, value === "__empty__" ? "" : value)}>
+                        <Label>{packageDogCount > 1 ?`${index + 1}º cão` : "Cão"} *</Label>
+                        <Select value={dogId || "__empty__"} onValueChange={(value) => updateDogSelection(index, value === "__empty__" ?"" : value)}>
                           <SelectTrigger className="mt-2">
                             <SelectValue placeholder="Selecione o cão" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="__empty__">Selecionar</SelectItem>
                             {dogs.map((dog) => (
-                              <SelectItem key={dog.id} value={dog.id}>
-                                {dog.nome}{dog.raca ? ` (${dog.raca})` : ""}
+                              <SelectItem
+                                key={dog.id}
+                                value={dog.id}
+                                disabled={currentDogIds.some((currentDogId, currentIndex) => currentIndex !== index && currentDogId === dog.id)}
+                              >
+                                {dog.nome}{dog.raca ?` (${dog.raca})` : ""}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1468,7 +1475,7 @@ export default function PlanosConfig() {
                     ))}
                   </div>
 
-                  {selectedDogs.length > 0 ? (
+                  {selectedDogs.length > 0 ?(
                     <div className="mt-4 flex flex-wrap gap-2">
                       {selectedDogs.map((dog) => (
                         <Badge key={dog.id} variant="outline">
@@ -1488,7 +1495,7 @@ export default function PlanosConfig() {
                   <div className="grid grid-cols-1 gap-4">
                     <div>
                       <Label>Responsável financeiro *</Label>
-                      <Select value={formData.client_id || "__empty__"} onValueChange={(value) => handleClientChange(value === "__empty__" ? "" : value)}>
+                      <Select value={formData.client_id || "__empty__"} onValueChange={(value) => handleClientChange(value === "__empty__" ?"" : value)}>
                         <SelectTrigger className="mt-2">
                           <SelectValue placeholder="Selecione o responsável financeiro" />
                         </SelectTrigger>
@@ -1498,7 +1505,7 @@ export default function PlanosConfig() {
                             const coverage = getCoverageSummary(client, selectedDogIds);
                             return (
                               <SelectItem key={client.id} value={client.id}>
-                                {client.nome_razao_social} {coverage.isFullyLinked ? "• vinculado a todos" : `• vinculado a ${coverage.linkedCount}/${selectedDogIds.length}`}
+                                {client.nome_razao_social} {coverage.isFullyLinked ?"• vinculado a todos" : `• vinculado a ${coverage.linkedCount}/${selectedDogIds.length}`}
                               </SelectItem>
                             );
                           })}
@@ -1506,15 +1513,15 @@ export default function PlanosConfig() {
                       </Select>
                       <p className="mt-2 text-xs text-gray-500">
                         {selectedDogIds.length === 0
-                          ? "Selecione os cães primeiro para liberar os responsáveis financeiros elegíveis."
-                          : `${candidateClients.length} responsável(is) financeiro(s) já vinculado(s) a pelo menos um dos cães escolhidos. ${coverageCandidatesCount > 0 ? `${coverageCandidatesCount} cobre(m) todos os cães.` : "Nenhum cobre todos os cães ainda."}`}
+                          ?"Selecione os cães primeiro para liberar os responsáveis financeiros elegíveis."
+                          : `${candidateClients.length} responsável(is) financeiro(s) já vinculado(s) a pelo menos um dos cães escolhidos. ${coverageCandidatesCount > 0 ?`${coverageCandidatesCount} cobre(m) todos os cães.` : "Nenhum cobre todos os cães ainda."}`}
                       </p>
                     </div>
 
                     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                       <p className="text-sm text-gray-500">Vencimento herdado do cadastro</p>
                       <p className="mt-1 text-base font-semibold text-gray-900">
-                        {selectedClient?.vencimento_planos ? `Aos dias ${selectedClient.vencimento_planos}` : "Selecione um responsável financeiro com vencimento definido"}
+                        {selectedClient?.vencimento_planos ?`Aos dias ${selectedClient.vencimento_planos}` : "Selecione um responsável financeiro com vencimento definido"}
                       </p>
                       <p className="mt-2 text-xs text-gray-500">
                         O plano usa exatamente o vencimento cadastrado no perfil do responsável financeiro.
@@ -1525,19 +1532,19 @@ export default function PlanosConfig() {
                       <p className="text-sm text-blue-700">Primeiro vencimento previsto</p>
                       <p className="mt-1 text-base font-semibold text-gray-900">
                         {firstBillingPreview?.firstDueDate
-                          ? format(firstBillingPreview.firstDueDate, "dd/MM/yyyy", { locale: ptBR })
+                          ?format(firstBillingPreview.firstDueDate, "dd/MM/yyyy", { locale: ptBR })
                           : "Defina data de início e responsável financeiro"}
                       </p>
                       <p className="mt-2 text-xs text-blue-700">
                         {firstBillingPreview?.firstDueDate
-                          ? parseDateOnly(formData.start_date) && buildDueDateForMonth(parseDateOnly(formData.start_date), dueDay)?.getTime() >= parseDateOnly(formData.start_date)?.getTime()
-                            ? "Como o início está antes do vencimento, o primeiro ciclo vence na data cadastrada."
+                          ?parseDateOnly(formData.start_date) && buildDueDateForMonth(parseDateOnly(formData.start_date), dueDay)?.getTime() >= parseDateOnly(formData.start_date)?.getTime()
+                            ?"Como o início está antes do vencimento, o primeiro ciclo vence na data cadastrada."
                             : "Como o início está depois do vencimento, o primeiro ciclo vence no próximo dia útil."
                           : "O cálculo considera a data de início e o vencimento do responsável financeiro."}
                       </p>
                     </div>
 
-                    {selectedClient && !selectedClientCoverage.isFullyLinked && selectedClientCoverage.missingDogIds.length > 0 ? (
+                    {selectedClient && !selectedClientCoverage.isFullyLinked && selectedClientCoverage.missingDogIds.length > 0 ?(
                       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                         {selectedClient.nome_razao_social} ainda não está vinculado a{" "}
                         {selectedClientCoverage.missingDogIds.map((dogId) => dogsById[dogId]?.nome || "Cão").join(", ")}.
@@ -1561,7 +1568,7 @@ export default function PlanosConfig() {
                   </div>
                   <p className="text-sm text-gray-700">
                     {formData.service === "day_care"
-                      ? "Os dias disponíveis para Day Care ficam limitados a segunda, terça, quarta, quinta e sexta."
+                      ?"Os dias disponíveis para Day Care ficam limitados a segunda, terça, quarta, quinta e sexta."
                       : "Selecione os dias preferenciais para alimentar os agendamentos automáticos desse plano."}
                   </p>
                 </div>
@@ -1574,9 +1581,9 @@ export default function PlanosConfig() {
 
                   <p className="mb-3 text-xs text-gray-500">
                     {weekdaysLocked
-                      ? "No modo diário de Day Care, os dias úteis ficam preenchidos automaticamente."
+                      ?"No modo diário de Day Care, os dias úteis ficam preenchidos automaticamente."
                       : expectedWeekdayCount > 0
-                        ? `Selecione ${expectedWeekdayCount} ${expectedWeekdayCount === 1 ? "dia" : "dias"} para esta frequência.`
+                        ?`Selecione ${expectedWeekdayCount} ${expectedWeekdayCount === 1 ?"dia" : "dias"} para esta frequência.`
                         : "Escolha os dias em que esse plano deve gerar agendamentos automáticos."}
                   </p>
 
@@ -1587,10 +1594,10 @@ export default function PlanosConfig() {
                         <Button
                           key={weekday.id}
                           type="button"
-                          variant={isSelected ? "default" : "outline"}
+                          variant={isSelected ?"default" : "outline"}
                           onClick={() => toggleWeekday(weekday.id)}
                           disabled={weekdaysLocked}
-                          className={isSelected ? "bg-purple-600 text-white hover:bg-purple-700" : ""}
+                          className={isSelected ?"bg-purple-600 text-white hover:bg-purple-700" : ""}
                         >
                           {weekday.label}
                         </Button>
@@ -1598,7 +1605,7 @@ export default function PlanosConfig() {
                     })}
                   </div>
 
-                  {weekdayValidationMessage ? (
+                  {weekdayValidationMessage ?(
                     <p className="mt-3 text-sm text-amber-700">{weekdayValidationMessage}</p>
                   ) : null}
                 </div>
@@ -1611,7 +1618,7 @@ export default function PlanosConfig() {
 
                   <div className="space-y-4">
                     <div>
-                      <Label>{packageDogCount > 1 ? "Valor mensal por cão *" : "Valor mensal *"}</Label>
+                      <Label>{packageDogCount > 1 ?"Valor mensal por cão *" : "Valor mensal *"}</Label>
                       <Input
                         className="mt-2"
                         type="number"
@@ -1622,19 +1629,19 @@ export default function PlanosConfig() {
                       />
                       <p className="mt-2 text-xs text-gray-500">
                         {packageDogCount > 1
-                          ? "Cada plano salvo recebe este valor por cão. O total do pacote fica no resumo abaixo."
+                          ?"Cada plano salvo recebe este valor por cão. O total do pacote fica no resumo abaixo."
                           : "Este será o valor mensal do plano."}
                       </p>
                     </div>
 
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <p className="text-sm font-medium text-slate-900">Primeiro ciclo do pacote</p>
-                      {firstBillingPreview?.firstDueDate ? (
+                      {firstBillingPreview?.firstDueDate ?(
                         <div className="mt-3 space-y-2 text-sm text-slate-700">
                           <div className="flex items-start justify-between gap-3">
-                            <span>Data de inÃ­cio</span>
+                            <span>Data de início</span>
                             <span className="text-right font-medium text-slate-900">
-                              {formData.start_date ? format(parseDateOnly(formData.start_date), "dd/MM/yyyy", { locale: ptBR }) : "-"}
+                              {formData.start_date ?format(parseDateOnly(formData.start_date), "dd/MM/yyyy", { locale: ptBR }) : "-"}
                             </span>
                           </div>
                           <div className="flex items-start justify-between gap-3">
@@ -1643,31 +1650,31 @@ export default function PlanosConfig() {
                               {format(firstBillingPreview.firstDueDate, "dd/MM/yyyy", { locale: ptBR })}
                             </span>
                           </div>
-                          {formData.service === "day_care" ? (
+                          {formData.service === "day_care" ?(
                             <>
                               <div className="flex items-start justify-between gap-3">
-                                <span>UtilizaÃ§Ãµes previstas</span>
+                                <span>Utilizações previstas</span>
                                 <span className="text-right font-medium text-slate-900">
-                                  {firstBillingPreview.plannedUses} de {firstBillingPreview.cycleSlots}
+                                  {firstBillingPreview.plannedUses} previstas / {firstBillingPreview.chargedUses} cobradas
                                 </span>
                               </div>
                               <div className="flex items-start justify-between gap-3">
-                                <span>Primeira cobranÃ§a do pacote</span>
+                                <span>Primeira cobrança do pacote</span>
                                 <span className="text-right font-semibold text-emerald-600">
                                   {formatCurrency(firstBillingPreview.firstPackageValue)}
                                 </span>
                               </div>
                               <p className="rounded-xl bg-white px-3 py-2 text-xs text-slate-600">
                                 {firstBillingPreview.plannedUses === 0
-                                  ? "NÃ£o hÃ¡ utilizaÃ§Ãµes previstas para este mÃªs. O sistema deixa a primeira cobranÃ§a para o prÃ³ximo ciclo cheio."
+                                  ?"Não há utilizações previstas para este mês. O sistema deixa a primeira cobrança para o próximo ciclo cheio."
                                   : firstBillingPreview.isFullPackage
-                                    ? "A quantidade prevista alcanÃ§ou o teto mensal do pacote, entÃ£o o primeiro mÃªs cobra o valor integral."
-                                    : `O sistema divide o pacote por ${firstBillingPreview.cycleSlots} utilizaÃ§Ãµes e cobra apenas ${firstBillingPreview.chargedUses} no primeiro mÃªs.`}
+                                    ?"A quantidade prevista alcançou o teto mensal do pacote, então o primeiro mês cobra o valor integral."
+                                    : `O sistema divide o pacote por ${firstBillingPreview.cycleSlots} utilizações e cobra apenas ${firstBillingPreview.chargedUses} no primeiro mês.`}
                               </p>
                             </>
                           ) : (
                             <div className="flex items-start justify-between gap-3">
-                              <span>Primeira cobranÃ§a</span>
+                              <span>Primeira cobrança</span>
                               <span className="text-right font-semibold text-emerald-600">
                                 {formatCurrency(firstBillingPreview.firstPackageValue)}
                               </span>
@@ -1676,7 +1683,7 @@ export default function PlanosConfig() {
                         </div>
                       ) : (
                         <p className="mt-3 text-sm text-slate-600">
-                          Defina a data de inÃ­cio, a frequÃªncia e os dias preferenciais para calcular o primeiro ciclo.
+                          Defina a data de início, a frequência e os dias preferenciais para calcular o primeiro ciclo.
                         </p>
                       )}
                     </div>
@@ -1696,21 +1703,12 @@ export default function PlanosConfig() {
                         </SelectContent>
                       </Select>
                     </div>
-
-                    <div>
-                      <Label>Data de renovação</Label>
-                      <DatePickerInput
-                        value={formData.data_renovacao}
-                        onChange={(value) => setFormData((current) => ({ ...current, data_renovacao: value }))}
-                      />
-                    </div>
-
-                    {formData.service === "day_care" && formData.frequency ? (
-                      <div className={`rounded-xl border p-4 ${dayCareSuggestion?.row ? "border-blue-200 bg-blue-50" : "border-amber-200 bg-amber-50"}`}>
+                    {formData.service === "day_care" && formData.frequency ?(
+                      <div className={`rounded-xl border p-4 ${dayCareSuggestion?.row ?"border-blue-200 bg-blue-50" : "border-amber-200 bg-amber-50"}`}>
                         <p className="font-medium text-gray-900">
-                          {dayCareSuggestion?.row ? "Tabela de Day Care conectada" : "Tabela de Day Care sem valor correspondente"}
+                          {dayCareSuggestion?.row ?"Tabela de Day Care conectada" : "Tabela de Day Care sem valor correspondente"}
                         </p>
-                        {dayCareSuggestion?.row ? (
+                        {dayCareSuggestion?.row ?(
                           <>
                             <p className="mt-1 text-sm text-gray-700">
                               {dayCareSuggestion.frequencyLabel} para {dayCareSuggestion.packageBucket.label}: {formatCurrency(dayCareSuggestion.totalValue)} no total.
@@ -1721,8 +1719,8 @@ export default function PlanosConfig() {
                                 <Sparkles className="mr-2 h-4 w-4" />
                                 Usar valor da tabela
                               </Button>
-                              <Badge className={useSuggestedValue ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700"}>
-                                {useSuggestedValue ? "Valor sincronizado com a tabela" : "Valor editado manualmente"}
+                              <Badge className={useSuggestedValue ?"bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700"}>
+                                {useSuggestedValue ?"Valor sincronizado com a tabela" : "Valor editado manualmente"}
                               </Badge>
                             </div>
                           </>
@@ -1746,7 +1744,7 @@ export default function PlanosConfig() {
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-gray-500">Cães</span>
                       <span className="text-right font-medium text-gray-900">
-                        {selectedDogs.length > 0 ? selectedDogs.map((dog) => dog.nome).join(", ") : "-"}
+                        {selectedDogs.length > 0 ?selectedDogs.map((dog) => dog.nome).join(", ") : "-"}
                       </span>
                     </div>
                     <div className="flex items-start justify-between gap-3">
@@ -1762,14 +1760,14 @@ export default function PlanosConfig() {
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-gray-500">Frequência</span>
                       <span className="text-right font-medium text-gray-900">
-                        {formData.frequency ? getFrequencyLabel(formData.frequency) : "-"}
+                        {formData.frequency ?getFrequencyLabel(formData.frequency) : "-"}
                       </span>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <span className="text-gray-500">InÃ­cio</span>
+                      <span className="text-gray-500">Início</span>
                       <span className="text-right font-medium text-gray-900">
                         {formData.start_date
-                          ? format(parseDateOnly(formData.start_date), "dd/MM/yyyy", { locale: ptBR })
+                          ?format(parseDateOnly(formData.start_date), "dd/MM/yyyy", { locale: ptBR })
                           : "-"}
                       </span>
                     </div>
@@ -1777,33 +1775,33 @@ export default function PlanosConfig() {
                       <span className="text-gray-500">Dias</span>
                       <span className="text-right font-medium text-gray-900">
                         {normalizedWeekdays.length > 0
-                          ? normalizedWeekdays.map((weekday) => WEEKDAYS.find((item) => item.id === weekday)?.label || weekday).join(", ")
+                          ?normalizedWeekdays.map((weekday) => WEEKDAYS.find((item) => item.id === weekday)?.label || weekday).join(", ")
                           : "-"}
                       </span>
                     </div>
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-gray-500">Valor por cão</span>
                       <span className="text-right font-medium text-emerald-600">
-                        {formData.monthly_value ? formatCurrency(Number.parseFloat(String(formData.monthly_value).replace(",", ".")) || 0) : "-"}
+                        {formData.monthly_value ?formatCurrency(Number.parseFloat(String(formData.monthly_value).replace(",", ".")) || 0) : "-"}
                       </span>
                     </div>
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-gray-500">Total do pacote</span>
                       <span className="text-right text-base font-bold text-emerald-600">
-                        {formData.monthly_value ? formatCurrency(totalPackageValue) : "-"}
+                        {formData.monthly_value ?formatCurrency(totalPackageValue) : "-"}
                       </span>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <span className="text-gray-500">Primeira cobranÃ§a</span>
+                      <span className="text-gray-500">Primeira cobrança</span>
                       <span className="text-right text-base font-bold text-blue-700">
-                        {firstBillingPreview ? formatCurrency(firstBillingPreview.firstPackageValue) : "-"}
+                        {firstBillingPreview ?formatCurrency(firstBillingPreview.firstPackageValue) : "-"}
                       </span>
                     </div>
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-gray-500">Primeiro vencimento</span>
                       <span className="text-right font-medium text-gray-900">
                         {firstBillingPreview?.firstDueDate
-                          ? format(firstBillingPreview.firstDueDate, "dd/MM/yyyy", { locale: ptBR })
+                          ?format(firstBillingPreview.firstDueDate, "dd/MM/yyyy", { locale: ptBR })
                           : "-"}
                       </span>
                     </div>
@@ -1829,7 +1827,7 @@ export default function PlanosConfig() {
             </Button>
             <Button onClick={handleSave} disabled={isSaving} className="bg-purple-600 text-white hover:bg-purple-700">
               <Save className="mr-2 h-4 w-4" />
-              {isSaving ? "Salvando..." : editingItem ? "Salvar plano" : `Criar ${packageDogCount} plano(s)`}
+              {isSaving ?"Salvando..." : editingItem ?"Salvar plano" : `Criar ${packageDogCount} plano(s)`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1837,3 +1835,4 @@ export default function PlanosConfig() {
     </div>
   );
 }
+

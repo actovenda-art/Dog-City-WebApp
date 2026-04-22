@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { appClient } from "@/api/appClient";
 import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User, UserInvite, UserProfile, UserUnitAccess } from "@/api/entities";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { createPageUrl, openImageViewer } from "@/utils";
@@ -538,6 +539,17 @@ export default function AdministracaoSistema() {
     [profileForm.permissoesSelecionadas]
   );
 
+  const selectedPermissionDetails = useMemo(
+    () => PERMISSION_GROUPS.flatMap((group) => group.permissions)
+      .filter((permission) => selectedPermissionSet.has(permission.id)),
+    [selectedPermissionSet]
+  );
+
+  const selectedExtraPermissions = useMemo(
+    () => parsePermissions(profileForm.permissoesExtrasText),
+    [profileForm.permissoesExtrasText]
+  );
+
   const isUnitUnionActive = selectedUnitIds.length > 1;
 
   function activateSingleUnit(unitId) {
@@ -926,6 +938,8 @@ export default function AdministracaoSistema() {
     setIsSaving(true);
     try {
       const payload = {
+        action: "save_access_profile",
+        profile_id: editingProfile?.id || null,
         codigo: profileForm.codigo.trim().toLowerCase(),
         nome: profileForm.nome,
         descricao: profileForm.descricao,
@@ -933,12 +947,7 @@ export default function AdministracaoSistema() {
         permissoes: [...new Set(mergedPermissions)],
         ativo: profileForm.ativo,
       };
-
-      if (editingProfile) {
-        await PerfilAcesso.update(editingProfile.id, payload);
-      } else {
-        await PerfilAcesso.create(payload);
-      }
+      await appClient.functions.userAdmin(payload);
 
       setShowProfileModal(false);
       setEditingProfile(null);
@@ -992,7 +1001,10 @@ export default function AdministracaoSistema() {
         return;
       }
 
-      await PerfilAcesso.delete(profile.id);
+      await appClient.functions.userAdmin({
+        action: "delete_access_profile",
+        profile_id: profile.id,
+      });
       const refreshedProfiles = await PerfilAcesso.list("-created_date", 200);
       const profileStillExists = await PerfilAcesso.filter({ id: profile.id }, "-created_date", 1);
       const stillExists = (profileStillExists || []).some((item) => item.id === profile.id)
@@ -1015,16 +1027,20 @@ export default function AdministracaoSistema() {
       const isInUseError = error?.code === "23503"
         || rawMessage.includes("foreign key")
         || rawMessage.includes("violates foreign key")
-        || rawMessage.includes("still referenced");
+        || rawMessage.includes("still referenced")
+        || rawMessage.includes("ainda está vinculado")
+        || rawMessage.includes("ainda esta vinculado");
 
       const isSilentPermissionBlock = error?.code === "NO_ROWS_DELETED"
         || rawMessage.includes("permaneceu salvo no banco")
-        || rawMessage.includes("nenhum registro foi excluído");
+        || rawMessage.includes("nenhum registro foi excluído")
+        || rawMessage.includes("sem permissao")
+        || rawMessage.includes("sem permissão");
 
       if (isInUseError) {
         alert("Não foi possível excluir este tipo de acesso porque ele ainda está vinculado a usuários, convites ou acessos de unidade.");
       } else if (isSilentPermissionBlock) {
-        alert("Não foi possível excluir este tipo de acesso. O Supabase bloqueou a exclusão ou o perfil não pertence ao contexto ativo desta unidade.");
+        alert("Não foi possível excluir este tipo de acesso porque seu usuário não tem permissão para excluir esse perfil ou ele não pertence ao escopo disponível para seu acesso.");
       } else {
         alert(formatApiError(error, "Não foi possível excluir o perfil de acesso."));
       }
@@ -1571,119 +1587,193 @@ export default function AdministracaoSistema() {
               Configure os perfis que serão atribuídos aos usuários das unidades e da administração central.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label>Código</Label>
-                <Input value={profileForm.codigo} onChange={(event) => setProfileForm((current) => ({ ...current, codigo: event.target.value }))} className="mt-2" />
+          <div className="space-y-5 py-4">
+            <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 via-blue-50 to-emerald-50 p-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Resumo do perfil</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="border border-blue-200 bg-white text-blue-700">
+                      {profileForm.escopo === "plataforma" ? "Administração central" : "Unidade"}
+                    </Badge>
+                    <Badge className="border border-emerald-200 bg-white text-emerald-700">
+                      {selectedPermissionSet.size} permissão(ões)
+                    </Badge>
+                    {selectedExtraPermissions.length > 0 ? (
+                      <Badge className="border border-amber-200 bg-white text-amber-700">
+                        {selectedExtraPermissions.length} extra(s)
+                      </Badge>
+                    ) : null}
+                    <Badge className={profileForm.ativo ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}>
+                      {profileForm.ativo ? "Ativo" : "Inativo"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Use esta ficha para montar o perfil com clareza. O ideal é deixar apenas o necessário para cada função.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Seleção atual</p>
+                  <p className="mt-2 text-sm font-medium text-slate-900">
+                    {selectedPermissionDetails.length > 0
+                      ? selectedPermissionDetails.slice(0, 3).map((permission) => permission.label).join(", ")
+                      : "Nenhuma permissão principal selecionada"}
+                  </p>
+                  {selectedPermissionDetails.length > 3 ? (
+                    <p className="mt-1 text-xs text-slate-500">e mais {selectedPermissionDetails.length - 3} permissão(ões)</p>
+                  ) : null}
+                </div>
               </div>
-              <div>
-                <Label>Escopo</Label>
-                <Select value={profileForm.escopo} onValueChange={(value) => setProfileForm((current) => ({ ...current, escopo: value }))}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="empresa">Unidade</SelectItem>
-                    <SelectItem value="plataforma">Administração central</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
 
-            <div>
-              <Label>Nome</Label>
-              <Input value={profileForm.nome} onChange={(event) => setProfileForm((current) => ({ ...current, nome: event.target.value }))} className="mt-2" />
-            </div>
+            <div className="grid gap-5 lg:grid-cols-[0.95fr_1.35fr]">
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="mb-4 flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-blue-600" />
+                    <h3 className="font-semibold text-gray-900">Dados do perfil</h3>
+                  </div>
 
-            <div>
-              <Label>Descrição</Label>
-              <Textarea value={profileForm.descricao} onChange={(event) => setProfileForm((current) => ({ ...current, descricao: event.target.value }))} className="mt-2" rows={2} />
-            </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label>Código</Label>
+                      <Input value={profileForm.codigo} onChange={(event) => setProfileForm((current) => ({ ...current, codigo: event.target.value }))} className="mt-2" />
+                    </div>
+                    <div>
+                      <Label>Escopo</Label>
+                      <Select value={profileForm.escopo} onValueChange={(value) => setProfileForm((current) => ({ ...current, escopo: value }))}>
+                        <SelectTrigger className="mt-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="empresa">Unidade</SelectItem>
+                          <SelectItem value="plataforma">Administração central</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
 
-            <div className="space-y-4">
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <Label className="text-blue-900">Permissões</Label>
-                    <p className="mt-1 text-xs text-blue-700">
-                      Selecione os blocos de acesso abaixo. Perfis sem permissões explícitas podem liberar acesso amplo demais.
+                  <div className="mt-4">
+                    <Label>Nome</Label>
+                    <Input value={profileForm.nome} onChange={(event) => setProfileForm((current) => ({ ...current, nome: event.target.value }))} className="mt-2" />
+                  </div>
+
+                  <div className="mt-4">
+                    <Label>Descrição</Label>
+                    <Textarea value={profileForm.descricao} onChange={(event) => setProfileForm((current) => ({ ...current, descricao: event.target.value }))} className="mt-2" rows={3} />
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                    <Switch checked={profileForm.ativo} onCheckedChange={(checked) => setProfileForm((current) => ({ ...current, ativo: checked }))} />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Perfil ativo</p>
+                      <p className="text-xs text-gray-500">Perfis inativos não devem ser atribuídos a novos usuários.</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <Label>Permissões extras</Label>
+                    <Textarea
+                      value={profileForm.permissoesExtrasText}
+                      onChange={(event) => setProfileForm((current) => ({ ...current, permissoesExtrasText: event.target.value }))}
+                      className="mt-2"
+                      rows={4}
+                      placeholder={"usuarios:read\nusuarios:update\nbranding:*"}
+                    />
+                    <p className="mt-2 text-xs text-gray-500">
+                      Use este campo apenas para permissões personalizadas que não aparecem nos blocos ao lado.
                     </p>
                   </div>
-                  <Badge className="bg-white text-blue-700 border border-blue-200">
-                    {selectedPermissionSet.size} selecionada(s)
-                  </Badge>
                 </div>
               </div>
 
-              <div className="grid gap-3">
-                {PERMISSION_GROUPS.map((group) => {
-                  const isRecommendedForScope = group.id === "plataforma"
-                    ? profileForm.escopo === "plataforma"
-                    : true;
-
-                  return (
-                    <div
-                      key={group.id}
-                      className={`rounded-xl border p-4 ${isRecommendedForScope ? "border-gray-200 bg-white" : "border-dashed border-gray-200 bg-gray-50"}`}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-gray-900">{group.label}</p>
-                          <p className="mt-1 text-xs text-gray-500">{group.description}</p>
-                        </div>
-                        {!isRecommendedForScope ? (
-                          <Badge variant="outline">Mais comum na administração central</Badge>
-                        ) : null}
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {group.permissions.map((permission) => {
-                          const isSelected = selectedPermissionSet.has(permission.id);
-                          return (
-                            <button
-                              key={permission.id}
-                              type="button"
-                              onClick={() => toggleProfilePermission(permission.id)}
-                              className={`rounded-full border px-3 py-2 text-left text-sm transition-colors ${
-                                isSelected
-                                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900"
-                              }`}
-                            >
-                              <span className="block font-medium">{permission.label}</span>
-                              <span className="block text-xs opacity-75">{permission.id}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <Label className="text-blue-900">Permissões</Label>
+                      <p className="mt-1 text-xs text-blue-700">
+                        Selecione os blocos de acesso abaixo. Perfis sem permissões explícitas podem liberar acesso amplo demais.
+                      </p>
                     </div>
-                  );
-                })}
-              </div>
+                    <Badge className="border border-blue-200 bg-white text-blue-700">
+                      {selectedPermissionSet.size} selecionada(s)
+                    </Badge>
+                  </div>
 
-              <div>
-                <Label>Permissões extras</Label>
-                <Textarea
-                  value={profileForm.permissoesExtrasText}
-                  onChange={(event) => setProfileForm((current) => ({ ...current, permissoesExtrasText: event.target.value }))}
-                  className="mt-2"
-                  rows={4}
-                  placeholder={"usuarios:read\nusuarios:update\nbranding:*"}
-                />
-                <p className="text-xs text-gray-500 mt-2">Use este campo apenas para permissões personalizadas que não aparecem nos blocos acima.</p>
-              </div>
-            </div>
+                  {selectedPermissionDetails.length > 0 ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {selectedPermissionDetails.map((permission) => (
+                        <Badge key={permission.id} className="bg-white text-emerald-700 border border-emerald-200">
+                          {permission.label}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-blue-800">Nenhuma permissão principal selecionada ainda.</p>
+                  )}
+                </div>
 
-            <div className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
-              <Switch checked={profileForm.ativo} onCheckedChange={(checked) => setProfileForm((current) => ({ ...current, ativo: checked }))} />
-              <div>
-                <p className="text-sm font-medium text-gray-900">Perfil ativo</p>
-                <p className="text-xs text-gray-500">Perfis inativos não devem ser atribuídos a novos usuários.</p>
+                <div className="grid gap-3">
+                  {PERMISSION_GROUPS.map((group) => {
+                    const isRecommendedForScope = group.id === "plataforma"
+                      ? profileForm.escopo === "plataforma"
+                      : true;
+                    const groupSelectedCount = group.permissions.filter((permission) => selectedPermissionSet.has(permission.id)).length;
+
+                    return (
+                      <div
+                        key={group.id}
+                        className={`rounded-2xl border p-4 shadow-sm ${isRecommendedForScope ? "border-gray-200 bg-white" : "border-dashed border-gray-200 bg-gray-50"}`}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-gray-900">{group.label}</p>
+                            <p className="mt-1 text-xs text-gray-500">{group.description}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {groupSelectedCount > 0 ? (
+                              <Badge className="bg-emerald-100 text-emerald-700">
+                                {groupSelectedCount} ativa(s)
+                              </Badge>
+                            ) : null}
+                            {!isRecommendedForScope ? (
+                              <Badge variant="outline">Mais comum na administração central</Badge>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                          {group.permissions.map((permission) => {
+                            const isSelected = selectedPermissionSet.has(permission.id);
+                            return (
+                              <button
+                                key={permission.id}
+                                type="button"
+                                onClick={() => toggleProfilePermission(permission.id)}
+                                className={`rounded-2xl border px-3 py-3 text-left text-sm transition-colors ${
+                                  isSelected
+                                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900"
+                                }`}
+                              >
+                                <span className="block font-medium">{permission.label}</span>
+                                <span className="mt-1 block text-xs opacity-75">{permission.id}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="border-t pt-4">
             <Button variant="outline" onClick={() => setShowProfileModal(false)}>Cancelar</Button>
             <Button onClick={handleSaveProfile} disabled={isSaving}>Salvar perfil</Button>
           </DialogFooter>

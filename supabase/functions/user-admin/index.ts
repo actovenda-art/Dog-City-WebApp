@@ -250,6 +250,12 @@ function canManageUsers(ctx: RequestContext, unitIds: string[], wantsPlatformAdm
   return unitIds.every((unitId) => ctx.allowedUnitIds.includes(unitId));
 }
 
+function canManageAccessProfiles(ctx: RequestContext) {
+  if (!ctx.authUser?.id || !ctx.profile || ctx.profile.active === false) return false;
+  if (ctx.profile.is_platform_admin) return true;
+  return hasPermission(ctx.permissions, "usuarios:update");
+}
+
 async function loadTargetUser(userId: string) {
   const { data: user, error } = await admin.from("users").select("*").eq("id", userId).maybeSingle();
   if (error) {
@@ -275,6 +281,23 @@ async function loadAppUserByEmail(email: string) {
   }
 
   return (data as AppUserRow | null) || null;
+}
+
+async function loadAccessProfile(profileId: string) {
+  const normalizedProfileId = sanitizeText(profileId);
+  if (!normalizedProfileId) return null;
+
+  const { data, error } = await admin
+    .from("perfil_acesso")
+    .select("*")
+    .eq("id", normalizedProfileId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Nao foi possivel localizar o perfil de acesso.");
+  }
+
+  return (data as Record<string, unknown> | null) || null;
 }
 
 async function findAuthUserByEmail(email: string) {
@@ -761,6 +784,161 @@ async function handleSaveUserAccess(request: Request, payload: Record<string, un
     user: updatedUser,
     unit_access: refreshedAccessRows,
   });
+}
+
+async function handleSaveAccessProfile(request: Request, payload: Record<string, unknown>) {
+  const ctx = await getRequestContext(request);
+  if (!canManageAccessProfiles(ctx)) {
+    return jsonResponse({ error: "Sem permissao para salvar perfis de acesso." }, 403);
+  }
+
+  const profileId = sanitizeText(payload.profile_id);
+  const codigo = sanitizeText(payload.codigo).toLowerCase();
+  const nome = sanitizeText(payload.nome);
+  const descricao = sanitizeText(payload.descricao) || null;
+  const escopo = sanitizeText(payload.escopo) || "empresa";
+  const permissoes = uniqueTextList(payload.permissoes);
+  const ativo = payload.ativo !== false;
+
+  if (!codigo || !nome) {
+    return jsonResponse({ error: "Codigo e nome do perfil sao obrigatorios." }, 400);
+  }
+
+  if (permissoes.length === 0) {
+    return jsonResponse({ error: "Selecione pelo menos uma permissao para o perfil." }, 400);
+  }
+
+  if (!ctx.profile?.is_platform_admin && escopo === "plataforma") {
+    return jsonResponse({ error: "Somente administradores da plataforma podem salvar perfis de escopo central." }, 403);
+  }
+
+  const now = new Date().toISOString();
+  const normalizedPayload = {
+    codigo,
+    nome,
+    descricao,
+    escopo,
+    permissoes,
+    ativo,
+    updated_date: now,
+  };
+
+  try {
+    if (profileId) {
+      const existingProfile = await loadAccessProfile(profileId);
+      if (!existingProfile) {
+        return jsonResponse({ error: "Perfil de acesso nao encontrado." }, 404);
+      }
+
+      if (!ctx.profile?.is_platform_admin && sanitizeText(existingProfile.escopo) === "plataforma") {
+        return jsonResponse({ error: "Somente administradores da plataforma podem editar este perfil." }, 403);
+      }
+
+      const { data, error } = await admin
+        .from("perfil_acesso")
+        .update(normalizedPayload)
+        .eq("id", profileId)
+        .select("*")
+        .maybeSingle();
+
+      if (error) {
+        return jsonResponse({ error: error.message || "Nao foi possivel atualizar o perfil de acesso." }, 500);
+      }
+
+      return jsonResponse({ ok: true, profile: data || null });
+    }
+
+    const { data, error } = await admin
+      .from("perfil_acesso")
+      .insert([{
+        ...normalizedPayload,
+        created_date: now,
+      }])
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      return jsonResponse({ error: error.message || "Nao foi possivel criar o perfil de acesso." }, 500);
+    }
+
+    return jsonResponse({ ok: true, profile: data || null });
+  } catch (error) {
+    return jsonResponse({
+      error: error instanceof Error ? error.message : "Nao foi possivel salvar o perfil de acesso.",
+    }, 500);
+  }
+}
+
+async function handleDeleteAccessProfile(request: Request, payload: Record<string, unknown>) {
+  const ctx = await getRequestContext(request);
+  if (!canManageAccessProfiles(ctx)) {
+    return jsonResponse({ error: "Sem permissao para excluir perfis de acesso." }, 403);
+  }
+
+  const profileId = sanitizeText(payload.profile_id);
+  if (!profileId) {
+    return jsonResponse({ error: "Perfil de acesso obrigatorio." }, 400);
+  }
+
+  try {
+    const existingProfile = await loadAccessProfile(profileId);
+    if (!existingProfile) {
+      return jsonResponse({ ok: true, deleted: false, already_missing: true });
+    }
+
+    const profileScope = sanitizeText(existingProfile.escopo) || "empresa";
+    if (!ctx.profile?.is_platform_admin && profileScope === "plataforma") {
+      return jsonResponse({ error: "Somente administradores da plataforma podem excluir este perfil." }, 403);
+    }
+
+    const [{ data: linkedUsers, error: usersError }, { data: linkedInvites, error: invitesError }, { data: linkedAccess, error: accessError }] = await Promise.all([
+      admin.from("users").select("id, full_name, email, empresa_id, access_profile_id").eq("access_profile_id", profileId),
+      admin.from("user_invite").select("id, full_name, email, empresa_id, status, access_profile_id").eq("access_profile_id", profileId).neq("status", "cancelado"),
+      admin.from("user_unit_access").select("id, user_id, empresa_id, ativo, access_profile_id").eq("access_profile_id", profileId).neq("ativo", false),
+    ]);
+
+    if (usersError || invitesError || accessError) {
+      return jsonResponse({
+        error: usersError?.message || invitesError?.message || accessError?.message || "Nao foi possivel validar os vinculos do perfil.",
+      }, 500);
+    }
+
+    const outOfScopeUser = (linkedUsers || []).some((row) => row.empresa_id && !ctx.allowedUnitIds.includes(row.empresa_id));
+    const outOfScopeInvite = (linkedInvites || []).some((row) => row.empresa_id && !ctx.allowedUnitIds.includes(row.empresa_id));
+    const outOfScopeAccess = (linkedAccess || []).some((row) => row.empresa_id && !ctx.allowedUnitIds.includes(row.empresa_id));
+
+    if (!ctx.profile?.is_platform_admin && (outOfScopeUser || outOfScopeInvite || outOfScopeAccess)) {
+      return jsonResponse({
+        error: "Este perfil esta vinculado a usuarios ou unidades fora do seu escopo de acesso.",
+      }, 403);
+    }
+
+    if ((linkedUsers || []).length > 0 || (linkedInvites || []).length > 0 || (linkedAccess || []).length > 0) {
+      return jsonResponse({
+        error: "Este perfil ainda esta vinculado a usuarios, convites ou acessos por unidade.",
+        usage: {
+          users: (linkedUsers || []).length,
+          invites: (linkedInvites || []).length,
+          unit_access: (linkedAccess || []).length,
+        },
+      }, 409);
+    }
+
+    const { error: deleteError } = await admin
+      .from("perfil_acesso")
+      .delete()
+      .eq("id", profileId);
+
+    if (deleteError) {
+      return jsonResponse({ error: deleteError.message || "Nao foi possivel excluir o perfil de acesso." }, 500);
+    }
+
+    return jsonResponse({ ok: true, deleted: true });
+  } catch (error) {
+    return jsonResponse({
+      error: error instanceof Error ? error.message : "Nao foi possivel excluir o perfil de acesso.",
+    }, 500);
+  }
 }
 
 async function handleBootstrapDefaultPins(request: Request, payload: Record<string, unknown>) {
@@ -1321,6 +1499,14 @@ Deno.serve(async (request) => {
 
     if (action === "save_user_access") {
       return await handleSaveUserAccess(request, payload || {});
+    }
+
+    if (action === "save_access_profile") {
+      return await handleSaveAccessProfile(request, payload || {});
+    }
+
+    if (action === "delete_access_profile") {
+      return await handleDeleteAccessProfile(request, payload || {});
     }
 
     if (action === "bootstrap_default_pins") {

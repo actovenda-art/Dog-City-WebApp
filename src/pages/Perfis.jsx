@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
+import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   Check,
   Copy,
@@ -1029,17 +1030,13 @@ export default function Perfis() {
             />
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-              <TabsList className="grid w-full grid-cols-3 rounded-2xl bg-gray-100 p-1">
-                <TabsTrigger value="caes" className="rounded-xl">
-                  Cães
-                </TabsTrigger>
-                <TabsTrigger value="responsaveis" className="rounded-xl">
-                  Responsáveis
-                </TabsTrigger>
-                <TabsTrigger value="carteiras" className="rounded-xl">
-                  Carteiras
-                </TabsTrigger>
-              </TabsList>
+              <PageSubTabs
+                items={[
+                  { value: "caes", label: "Cães" },
+                  { value: "responsaveis", label: "Responsáveis" },
+                  { value: "carteiras", label: "Carteiras" },
+                ]}
+              />
 
               <TabsContent value="caes" className="space-y-4">
                 {filteredDogs.length === 0 ? (

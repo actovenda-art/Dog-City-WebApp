@@ -5,12 +5,13 @@ import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integr
 import { createPageUrl, openImageViewer } from "@/utils";
 import { MISSING_BRANDING_IMAGE_URL, notifyBrandingChanged } from "@/hooks/use-branding";
 import { ACTIVE_UNIT_EVENT, getStoredUnitSelection, setStoredUnitSelection } from "@/lib/unit-context";
+import PageSubTabs from "@/components/common/PageSubTabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -1080,11 +1081,13 @@ export default function AdministracaoSistema() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="unidades">Unidades</TabsTrigger>
-            <TabsTrigger value="acessos">Perfis de Acesso</TabsTrigger>
-            <TabsTrigger value="branding">Branding</TabsTrigger>
-          </TabsList>
+          <PageSubTabs
+            items={[
+              { value: "unidades", label: "Unidades" },
+              { value: "acessos", label: "Perfis de Acesso" },
+              { value: "branding", label: "Branding" },
+            ]}
+          />
 
           <TabsContent value="unidades">
             <Card className="bg-white border-gray-200">

@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PageSubTabs from "@/components/common/PageSubTabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Bath, Home, Pencil, Percent, Plus, Save, Scissors, Settings, Tags, Trash2, Truck } from "lucide-react";
 
 const SERVICE_TYPES = [
@@ -544,14 +545,17 @@ export default function ConfiguracoesPrecos() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-6 grid w-full grid-cols-6">
-            <TabsTrigger value="day_care">Day Care</TabsTrigger>
-            <TabsTrigger value="hospedagem">Hospedagem</TabsTrigger>
-            <TabsTrigger value="banho_tosa">Banho & Tosa</TabsTrigger>
-            <TabsTrigger value="transporte">Transporte</TabsTrigger>
-            <TabsTrigger value="descontos">Descontos</TabsTrigger>
-            <TabsTrigger value="racas">Raças</TabsTrigger>
-          </TabsList>
+          <PageSubTabs
+            className="mb-6"
+            items={[
+              { value: "day_care", label: "Day Care" },
+              { value: "hospedagem", label: "Hospedagem" },
+              { value: "banho_tosa", label: "Banho & Tosa" },
+              { value: "transporte", label: "Transporte" },
+              { value: "descontos", label: "Descontos" },
+              { value: "racas", label: "Raças" },
+            ]}
+          />
 
           <TabsContent value="day_care">
             <Card className="border-gray-200 bg-white">

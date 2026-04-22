@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
+import PageSubTabs from "@/components/common/PageSubTabs";
 import {
   Calendar as CalendarIcon,
   Home,
@@ -26,7 +27,7 @@ import {
   ArrowUpDown,
   Filter
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -356,42 +357,19 @@ export default function Agenda_Comercial() {
 
         {/* Tabs */}
         <Tabs value={currentView} onValueChange={setCurrentView} className="w-full">
-          <div className="mb-6 overflow-x-auto pb-2">
-            <TabsList className="inline-flex w-auto min-w-full lg:grid lg:w-full lg:grid-cols-8">
-              <TabsTrigger value="day_care" className="flex items-center gap-1 whitespace-nowrap px-3">
-                <CalendarIcon className="w-4 h-4" />
-                <span>Day Care</span>
-              </TabsTrigger>
-              <TabsTrigger value="hospedagem" className="flex items-center gap-1 whitespace-nowrap px-3">
-                <Home className="w-4 h-4" />
-                <span>Hospedagem</span>
-              </TabsTrigger>
-              <TabsTrigger value="banho_tosa" className="flex items-center gap-1 whitespace-nowrap px-3">
-                <Scissors className="w-4 h-4" />
-                <span>Banho & Tosa</span>
-              </TabsTrigger>
-              <TabsTrigger value="transporte" className="flex items-center gap-1 whitespace-nowrap px-3">
-                <Car className="w-4 h-4" />
-                <span>Transporte</span>
-              </TabsTrigger>
-              <TabsTrigger value="adaptacao" className="flex items-center gap-1 whitespace-nowrap px-3">
-                <RefreshCw className="w-4 h-4" />
-                <span>Adaptação</span>
-              </TabsTrigger>
-              <TabsTrigger value="visita" className="flex items-center gap-1 whitespace-nowrap px-3">
-                <Eye className="w-4 h-4" />
-                <span>Visita</span>
-              </TabsTrigger>
-              <TabsTrigger value="adestramento" className="flex items-center gap-1 whitespace-nowrap px-3">
-                <GraduationCap className="w-4 h-4" />
-                <span>Adestramento</span>
-              </TabsTrigger>
-              <TabsTrigger value="geral" className="flex items-center gap-1 whitespace-nowrap px-3">
-                <FileText className="w-4 h-4" />
-                <span>Geral</span>
-              </TabsTrigger>
-            </TabsList>
-          </div>
+          <PageSubTabs
+            className="mb-6 pb-2"
+            items={[
+              { value: "day_care", label: "Day Care", icon: CalendarIcon },
+              { value: "hospedagem", label: "Hospedagem", icon: Home },
+              { value: "banho_tosa", label: "Banho & Tosa", icon: Scissors },
+              { value: "transporte", label: "Transporte", icon: Car },
+              { value: "adaptacao", label: "Adaptação", icon: RefreshCw },
+              { value: "visita", label: "Visita", icon: Eye },
+              { value: "adestramento", label: "Adestramento", icon: GraduationCap },
+              { value: "geral", label: "Geral", icon: FileText },
+            ]}
+          />
 
           {/* Individual Service Views */}
           {["day_care", "hospedagem", "banho_tosa", "transporte", "adaptacao", "visita", "adestramento"].map(service => (

@@ -3,7 +3,8 @@ import { Appointment, Carteira, Dog, Orcamento, Responsavel, ServiceProvided } f
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PageSubTabs from "@/components/common/PageSubTabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -272,13 +273,16 @@ export default function PerfilCao() {
         </div>
 
         <Tabs defaultValue="resumo">
-          <TabsList className="mb-6 grid w-full grid-cols-2 sm:grid-cols-5">
-            <TabsTrigger value="resumo" className="flex items-center gap-1"><DogIcon className="h-4 w-4" />Resumo</TabsTrigger>
-            <TabsTrigger value="utilizacoes" className="flex items-center gap-1"><ClipboardList className="h-4 w-4" />Utilizações</TabsTrigger>
-            <TabsTrigger value="vacinas" className="flex items-center gap-1"><Syringe className="h-4 w-4" />Vacinas</TabsTrigger>
-            <TabsTrigger value="contatos" className="flex items-center gap-1"><Phone className="h-4 w-4" />Contatos</TabsTrigger>
-            <TabsTrigger value="alimentacao" className="flex items-center gap-1"><Utensils className="h-4 w-4" />Alimentação</TabsTrigger>
-          </TabsList>
+          <PageSubTabs
+            className="mb-6"
+            items={[
+              { value: "resumo", label: "Resumo", icon: DogIcon },
+              { value: "utilizacoes", label: "Utilizações", icon: ClipboardList },
+              { value: "vacinas", label: "Vacinas", icon: Syringe },
+              { value: "contatos", label: "Contatos", icon: Phone },
+              { value: "alimentacao", label: "Alimentação", icon: Utensils },
+            ]}
+          />
 
           <TabsContent value="resumo">
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

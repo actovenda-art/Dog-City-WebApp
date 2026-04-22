@@ -28,7 +28,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PageSubTabs from "@/components/common/PageSubTabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, DateTimePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
@@ -1170,10 +1171,13 @@ export default function Registrador() {
         </div>
 
         <Tabs value={petMode} onValueChange={setPetMode}>
-          <TabsList className="mb-6 grid w-full grid-cols-2">
-            <TabsTrigger value="pets">Pets</TabsTrigger>
-            <TabsTrigger value="providers">Prestadores</TabsTrigger>
-          </TabsList>
+          <PageSubTabs
+            className="mb-6"
+            items={[
+              { value: "pets", label: "Pets" },
+              { value: "providers", label: "Prestadores" },
+            ]}
+          />
 
           <TabsContent value="pets" className="space-y-6">
             <Card className="border-gray-200 bg-white">
@@ -1442,10 +1446,13 @@ export default function Registrador() {
             </DialogDescription>
           </DialogHeader>
           <Tabs value={checkinDialogTab} onValueChange={setCheckinDialogTab} className="py-2">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="geral">Dados do check-in</TabsTrigger>
-              <TabsTrigger value="checkup">Check-list corporal</TabsTrigger>
-            </TabsList>
+            <PageSubTabs
+              className="mb-4"
+              items={[
+                { value: "geral", label: "Dados do check-in" },
+                { value: "checkup", label: "Check-list corporal" },
+              ]}
+            />
 
             <TabsContent value="geral" className="mt-4 space-y-4">
               {checkinSharedSource && (

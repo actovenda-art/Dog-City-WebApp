@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { Dog } from "@/api/entities";
 import { Responsavel } from "@/api/entities";
+import PageSubTabs from "@/components/common/PageSubTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dog as DogIcon, Users, Cake, Syringe, Eye } from "lucide-react";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
@@ -119,12 +120,15 @@ export default function RelatoriosCaes() {
         </div>
 
         <Tabs defaultValue="raca">
-          <TabsList className="mb-6 w-full grid grid-cols-2 sm:grid-cols-4">
-            <TabsTrigger value="raca" className="flex items-center gap-1"><DogIcon className="w-4 h-4" />Por Raça</TabsTrigger>
-            <TabsTrigger value="responsavel" className="flex items-center gap-1"><Users className="w-4 h-4" />Por Responsável</TabsTrigger>
-            <TabsTrigger value="aniversario" className="flex items-center gap-1"><Cake className="w-4 h-4" />Aniversariantes</TabsTrigger>
-            <TabsTrigger value="vacinas" className="flex items-center gap-1"><Syringe className="w-4 h-4" />Revacinações</TabsTrigger>
-          </TabsList>
+          <PageSubTabs
+            className="mb-6"
+            items={[
+              { value: "raca", label: "Por Raça", icon: DogIcon },
+              { value: "responsavel", label: "Por Responsável", icon: Users },
+              { value: "aniversario", label: "Aniversariantes", icon: Cake },
+              { value: "vacinas", label: "Revacinações", icon: Syringe },
+            ]}
+          />
 
           {/* Por Raça */}
           <TabsContent value="raca">

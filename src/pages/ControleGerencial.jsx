@@ -18,10 +18,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   ArrowDownCircle,
   BarChart3,
@@ -543,14 +544,17 @@ export default function ControleGerencial() {
         </Card>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 md:grid-cols-3 xl:grid-cols-6">
-            <TabsTrigger value="clientes">Clientes fixos</TabsTrigger>
-            <TabsTrigger value="recebimentos">Recebimentos fixos</TabsTrigger>
-            <TabsTrigger value="despesas">Despesas</TabsTrigger>
-            <TabsTrigger value="orcamentos">A receber</TabsTrigger>
-            <TabsTrigger value="pagar">Contas a pagar</TabsTrigger>
-            <TabsTrigger value="ausentes">Cães ausentes</TabsTrigger>
-          </TabsList>
+          <PageSubTabs
+            className="mb-6"
+            items={[
+              { value: "clientes", label: "Clientes fixos" },
+              { value: "recebimentos", label: "Recebimentos fixos" },
+              { value: "despesas", label: "Despesas" },
+              { value: "orcamentos", label: "A receber" },
+              { value: "pagar", label: "Contas a pagar" },
+              { value: "ausentes", label: "Cães ausentes" },
+            ]}
+          />
 
           <TabsContent value="clientes">
             <Card className="border-gray-200 bg-white">

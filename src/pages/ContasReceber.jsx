@@ -18,7 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PageSubTabs from "@/components/common/PageSubTabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
@@ -440,7 +441,13 @@ export default function ContasReceber() {
         </CardContent></Card>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="cobrancas">Cobranças</TabsTrigger><TabsTrigger value="pacotes">Utilizações de pacote</TabsTrigger></TabsList>
+          <PageSubTabs
+            className="mb-6"
+            items={[
+              { value: "cobrancas", label: "Cobranças" },
+              { value: "pacotes", label: "Utilizações de pacote" },
+            ]}
+          />
           <TabsContent value="cobrancas"><Card className="overflow-hidden border-gray-200 bg-white"><div className="overflow-x-auto"><Table><TableHeader><TableRow className="bg-gray-50"><TableHead>Cliente</TableHead><TableHead>Cão</TableHead><TableHead>Serviço</TableHead><TableHead>Prestação</TableHead><TableHead>Vencimento</TableHead><TableHead>Tipo</TableHead><TableHead>Origem</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Ficha</TableHead></TableRow></TableHeader><TableBody>{filteredContas.length === 0 ? <TableRow><TableCell colSpan={10} className="py-12 text-center text-gray-500">Nenhuma cobrança encontrada para os filtros atuais.</TableCell></TableRow> : filteredContas.map((conta) => <TableRow key={conta.id} className="hover:bg-gray-50"><TableCell className="font-medium">{maps.clientsById[conta.cliente_id]?.nome_razao_social || maps.clientsById[conta.cliente_id]?.nome_completo || "-"}</TableCell><TableCell>{maps.dogsById[conta.dog_id]?.nome || "-"}</TableCell><TableCell>{getServiceLabel(conta.servico)}</TableCell><TableCell>{fmtDate(conta.data_prestacao)}</TableCell><TableCell>{fmtDate(conta.vencimento)}</TableCell><TableCell><Badge variant="outline">{getChargeTypeLabel(conta.tipo_cobranca)}</Badge></TableCell><TableCell>{getOriginLabel(conta.origem)}</TableCell><TableCell className="text-right font-medium">{fmtMoney(conta.valor)}</TableCell><TableCell>{getStatusBadge(conta)}</TableCell><TableCell className="text-center"><Button variant="ghost" size="icon" onClick={() => { setSelectedConta(conta); setDetailOpen(true); }}><Eye className="h-4 w-4" /></Button></TableCell></TableRow>)}</TableBody></Table></div></Card></TabsContent>
           <TabsContent value="pacotes"><Card className="overflow-hidden border-gray-200 bg-white"><CardHeader><CardTitle>Utilizações em pacote</CardTitle></CardHeader><CardContent className="pt-0"><div className="mb-4 rounded-xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-800">Essas utilizações mostram as datas efetivas de uso para cobranças recorrentes e conferência de pacote.</div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="bg-gray-50"><TableHead>Cliente</TableHead><TableHead>Cão</TableHead><TableHead>Serviço</TableHead><TableHead>Data de uso</TableHead><TableHead>Código do pacote</TableHead><TableHead>Responsável</TableHead><TableHead className="text-right">Valor base</TableHead></TableRow></TableHeader><TableBody>{filteredUsages.length === 0 ? <TableRow><TableCell colSpan={7} className="py-12 text-center text-gray-500">Nenhuma utilização em pacote encontrada.</TableCell></TableRow> : filteredUsages.map((usage) => <TableRow key={usage.id} className="hover:bg-gray-50"><TableCell className="font-medium">{maps.clientsById[usage.cliente_id]?.nome_razao_social || maps.clientsById[usage.cliente_id]?.nome_completo || "-"}</TableCell><TableCell>{maps.dogsById[usage.dog_id]?.nome || "-"}</TableCell><TableCell>{getServiceLabel(usage.service_type)}</TableCell><TableCell>{fmtDate(usage.data_utilizacao || getAppointmentDateKey(maps.appointmentsById[usage.appointment_id]))}</TableCell><TableCell>{getPackageCode(usage, maps.appointmentsById[usage.appointment_id]) || "-"}</TableCell><TableCell>{usage.responsavel_nome || parseMeta(usage.metadata).owner_nome || "-"}</TableCell><TableCell className="text-right">{fmtMoney(usage.valor_cobrado || usage.preco || 0)}</TableCell></TableRow>)}</TableBody></Table></div></CardContent></Card></TabsContent>
         </Tabs>

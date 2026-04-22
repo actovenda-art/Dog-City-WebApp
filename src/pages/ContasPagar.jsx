@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
+import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -520,10 +521,13 @@ export default function ContasPagar() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid grid-cols-2 w-full max-w-lg mb-6">
-            <TabsTrigger value="pendentes">Pendentes ({pendentes.length})</TabsTrigger>
-            <TabsTrigger value="realizados">Realizados Hoje ({realizadosHoje.length})</TabsTrigger>
-          </TabsList>
+          <PageSubTabs
+            className="mb-6 max-w-lg"
+            items={[
+              { value: "pendentes", label: `Pendentes (${pendentes.length})` },
+              { value: "realizados", label: `Realizados Hoje (${realizadosHoje.length})` },
+            ]}
+          />
 
           <TabsContent value="pendentes">
             {/* Botão Expandir/Minimizar Todas */}

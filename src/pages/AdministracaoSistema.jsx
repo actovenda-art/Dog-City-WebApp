@@ -24,7 +24,8 @@ const EMPTY_PROFILE = {
   nome: "",
   descricao: "",
   escopo: "empresa",
-  permissoesText: "",
+  permissoesSelecionadas: [],
+  permissoesExtrasText: "",
   ativo: true,
 };
 
@@ -41,6 +42,86 @@ const DEFAULT_FRANCHISE_BRANDING = {
 const FRANCHISE_LOGO_KEY = "branding.franchise.logo";
 const ADMIN_TABS = ["unidades", "acessos", "branding"];
 const ADMIN_ACTIVE_TAB_STORAGE_KEY = "dogcity.admin-central.active-tab";
+
+const PERMISSION_GROUPS = [
+  {
+    id: "usuarios",
+    label: "Usuários e acessos",
+    description: "Convites, perfis e manutenção de acessos por unidade.",
+    permissions: [
+      { id: "usuarios:*", label: "Controle total de usuários" },
+      { id: "usuarios:read", label: "Consultar usuários" },
+      { id: "usuarios:update", label: "Editar usuários" },
+    ],
+  },
+  {
+    id: "unidade",
+    label: "Unidade e branding",
+    description: "Dados institucionais da unidade, branding e administração local.",
+    permissions: [
+      { id: "empresa:*", label: "Controle total da unidade" },
+      { id: "empresa:read", label: "Consultar dados da unidade" },
+      { id: "empresa:update", label: "Editar dados da unidade" },
+      { id: "branding:*", label: "Gerenciar branding" },
+    ],
+  },
+  {
+    id: "agenda",
+    label: "Agenda e operação",
+    description: "Agendamentos, registrador, check-in e fluxo operacional.",
+    permissions: [
+      { id: "agenda:*", label: "Controle total da agenda" },
+      { id: "agenda:read", label: "Consultar agenda" },
+      { id: "agenda:update", label: "Editar agenda" },
+      { id: "checkin:*", label: "Check-in e check-out" },
+    ],
+  },
+  {
+    id: "cadastros",
+    label: "Comercial e cadastros",
+    description: "Perfis de cães, cadastros e orçamentos.",
+    permissions: [
+      { id: "dogs:*", label: "Controle total de cadastros" },
+      { id: "dogs:read", label: "Consultar cadastros" },
+      { id: "dogs:update", label: "Editar cadastros" },
+      { id: "orcamentos:*", label: "Controle total de orçamentos" },
+      { id: "orcamentos:read", label: "Consultar orçamentos" },
+      { id: "orcamentos:update", label: "Editar orçamentos" },
+    ],
+  },
+  {
+    id: "financeiro",
+    label: "Financeiro e preços",
+    description: "Extrato, cobranças, contas e tabelas de preços.",
+    permissions: [
+      { id: "financeiro:*", label: "Controle total do financeiro" },
+      { id: "financeiro:read", label: "Consultar financeiro" },
+      { id: "financeiro:update", label: "Editar financeiro" },
+      { id: "precos:*", label: "Gerenciar preços e descontos" },
+    ],
+  },
+  {
+    id: "tarefas",
+    label: "Tarefas internas",
+    description: "Pedidos internos e fluxos operacionais internos.",
+    permissions: [
+      { id: "tarefas:*", label: "Controle total das tarefas" },
+      { id: "tarefas:read", label: "Consultar tarefas" },
+      { id: "tarefas:update", label: "Editar tarefas" },
+    ],
+  },
+  {
+    id: "plataforma",
+    label: "Administração central",
+    description: "Controles globais do sistema, multiunidade e armazenamento.",
+    permissions: [
+      { id: "platform:*", label: "Controle total da plataforma" },
+      { id: "storage:*", label: "Storage e backup" },
+    ],
+  },
+];
+
+const KNOWN_PERMISSION_IDS = PERMISSION_GROUPS.flatMap((group) => group.permissions.map((permission) => permission.id));
 
 const SERVICE_OPTIONS = [
   "Day Care",
@@ -94,10 +175,19 @@ const EMPTY_UNIT_FORM = {
 };
 
 function parsePermissions(value) {
-  return (value || "")
+  const rawValues = Array.isArray(value) ? value.join("\n") : (value || "");
+  return [...new Set(rawValues
     .split(/\r?\n|,/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean))];
+}
+
+function splitProfilePermissions(values) {
+  const normalizedPermissions = parsePermissions(values);
+  return {
+    selected: normalizedPermissions.filter((permission) => KNOWN_PERMISSION_IDS.includes(permission)),
+    extras: normalizedPermissions.filter((permission) => !KNOWN_PERMISSION_IDS.includes(permission)),
+  };
 }
 
 function slugify(value) {
@@ -443,6 +533,11 @@ export default function AdministracaoSistema() {
     [pricingRows, selectedUnitIds]
   );
 
+  const selectedPermissionSet = useMemo(
+    () => new Set(profileForm.permissoesSelecionadas || []),
+    [profileForm.permissoesSelecionadas]
+  );
+
   const isUnitUnionActive = selectedUnitIds.length > 1;
 
   function activateSingleUnit(unitId) {
@@ -514,16 +609,34 @@ export default function AdministracaoSistema() {
   }
 
   function openProfileModal(profile = null) {
+    const permissionSplit = splitProfilePermissions(profile?.permissoes || []);
     setEditingProfile(profile);
     setProfileForm(profile ? {
       codigo: profile.codigo || "",
       nome: profile.nome || "",
       descricao: profile.descricao || "",
       escopo: profile.escopo || "empresa",
-      permissoesText: Array.isArray(profile.permissoes) ? profile.permissoes.join("\n") : "",
+      permissoesSelecionadas: permissionSplit.selected,
+      permissoesExtrasText: permissionSplit.extras.join("\n"),
       ativo: profile.ativo !== false,
     } : EMPTY_PROFILE);
     setShowProfileModal(true);
+  }
+
+  function toggleProfilePermission(permissionId) {
+    setProfileForm((current) => {
+      const currentPermissions = new Set(current.permissoesSelecionadas || []);
+      if (currentPermissions.has(permissionId)) {
+        currentPermissions.delete(permissionId);
+      } else {
+        currentPermissions.add(permissionId);
+      }
+
+      return {
+        ...current,
+        permissoesSelecionadas: Array.from(currentPermissions).sort(),
+      };
+    });
   }
 
   function toggleUnitService(serviceName) {
@@ -800,6 +913,16 @@ export default function AdministracaoSistema() {
       return;
     }
 
+    const mergedPermissions = [
+      ...(profileForm.permissoesSelecionadas || []),
+      ...parsePermissions(profileForm.permissoesExtrasText),
+    ];
+
+    if (mergedPermissions.length === 0) {
+      alert("Selecione pelo menos uma permissão para esse perfil.");
+      return;
+    }
+
     setIsSaving(true);
     try {
       const payload = {
@@ -807,7 +930,7 @@ export default function AdministracaoSistema() {
         nome: profileForm.nome,
         descricao: profileForm.descricao,
         escopo: profileForm.escopo,
-        permissoes: parsePermissions(profileForm.permissoesText),
+        permissoes: [...new Set(mergedPermissions)],
         ativo: profileForm.ativo,
       };
 
@@ -1229,6 +1352,7 @@ export default function AdministracaoSistema() {
                       </div>
                       <p className="text-sm text-gray-600 mt-1">{profile.descricao || "Sem descrição cadastrada."}</p>
                       <p className="text-xs text-gray-500 mt-2">Escopo: {profile.escopo === "plataforma" ? "Administração central" : "Unidade"}</p>
+                      <p className="text-xs text-gray-500 mt-1">Permissões: {Array.isArray(profile.permissoes) ? profile.permissoes.length : 0}</p>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <Button variant="outline" onClick={() => openProfileModal(profile)}>
@@ -1440,7 +1564,7 @@ export default function AdministracaoSistema() {
       </Dialog>
 
       <Dialog open={showProfileModal} onOpenChange={setShowProfileModal}>
-        <DialogContent className="max-w-[640px]">
+        <DialogContent className="max-w-[880px] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingProfile ? "Editar perfil de acesso" : "Novo perfil de acesso"}</DialogTitle>
             <DialogDescription>
@@ -1477,16 +1601,78 @@ export default function AdministracaoSistema() {
               <Textarea value={profileForm.descricao} onChange={(event) => setProfileForm((current) => ({ ...current, descricao: event.target.value }))} className="mt-2" rows={2} />
             </div>
 
-            <div>
-              <Label>Permissoes</Label>
-              <Textarea
-                value={profileForm.permissoesText}
-                onChange={(event) => setProfileForm((current) => ({ ...current, permissoesText: event.target.value }))}
-                className="mt-2"
-                rows={6}
-                placeholder={"usuarios:read\nusuarios:update\nbranding:*"}
-              />
-              <p className="text-xs text-gray-500 mt-2">Use uma permissao por linha ou separadas por virgula.</p>
+            <div className="space-y-4">
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <Label className="text-blue-900">Permissões</Label>
+                    <p className="mt-1 text-xs text-blue-700">
+                      Selecione os blocos de acesso abaixo. Perfis sem permissões explícitas podem liberar acesso amplo demais.
+                    </p>
+                  </div>
+                  <Badge className="bg-white text-blue-700 border border-blue-200">
+                    {selectedPermissionSet.size} selecionada(s)
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                {PERMISSION_GROUPS.map((group) => {
+                  const isRecommendedForScope = group.id === "plataforma"
+                    ? profileForm.escopo === "plataforma"
+                    : true;
+
+                  return (
+                    <div
+                      key={group.id}
+                      className={`rounded-xl border p-4 ${isRecommendedForScope ? "border-gray-200 bg-white" : "border-dashed border-gray-200 bg-gray-50"}`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-gray-900">{group.label}</p>
+                          <p className="mt-1 text-xs text-gray-500">{group.description}</p>
+                        </div>
+                        {!isRecommendedForScope ? (
+                          <Badge variant="outline">Mais comum na administração central</Badge>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {group.permissions.map((permission) => {
+                          const isSelected = selectedPermissionSet.has(permission.id);
+                          return (
+                            <button
+                              key={permission.id}
+                              type="button"
+                              onClick={() => toggleProfilePermission(permission.id)}
+                              className={`rounded-full border px-3 py-2 text-left text-sm transition-colors ${
+                                isSelected
+                                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900"
+                              }`}
+                            >
+                              <span className="block font-medium">{permission.label}</span>
+                              <span className="block text-xs opacity-75">{permission.id}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div>
+                <Label>Permissões extras</Label>
+                <Textarea
+                  value={profileForm.permissoesExtrasText}
+                  onChange={(event) => setProfileForm((current) => ({ ...current, permissoesExtrasText: event.target.value }))}
+                  className="mt-2"
+                  rows={4}
+                  placeholder={"usuarios:read\nusuarios:update\nbranding:*"}
+                />
+                <p className="text-xs text-gray-500 mt-2">Use este campo apenas para permissões personalizadas que não aparecem nos blocos acima.</p>
+              </div>
             </div>
 
             <div className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">

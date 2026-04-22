@@ -8,13 +8,10 @@ import {
   CreditCard,
   Dog as DogIcon,
   Home,
-  Pause,
   Pencil,
-  Play,
   Plus,
   Save,
   Scissors,
-  Search,
   Sparkles,
   Trash2,
   Truck,
@@ -125,12 +122,6 @@ const WEEKDAYS = [
   { id: 6, label: "Sáb" },
 ];
 
-const STATUS_OPTIONS = [
-  { id: "ativo", label: "Ativo" },
-  { id: "suspenso", label: "Suspenso" },
-  { id: "inativo", label: "Inativo" },
-];
-
 const DEFAULT_FORM_DATA = {
   client_id: "",
   dog_ids: [""],
@@ -140,7 +131,7 @@ const DEFAULT_FORM_DATA = {
   weekdays: [],
   start_date: "",
   monthly_value: "",
-  status: "ativo",
+  first_month_dates: [],
 };
 
 function getLinkedDogIds(record) {
@@ -224,17 +215,6 @@ function getServiceMeta(serviceId) {
 
 function getFrequencyLabel(frequencyId) {
   return FREQUENCIES.find((item) => item.id === frequencyId)?.label || frequencyId || "-";
-}
-
-function getStatusBadgeClass(status) {
-  switch (status) {
-    case "ativo":
-      return "bg-green-100 text-green-700";
-    case "suspenso":
-      return "bg-orange-100 text-orange-700";
-    default:
-      return "bg-gray-100 text-gray-700";
-  }
 }
 
 function buildDayCarePackageKey(frequencyId, dogCountId) {
@@ -339,19 +319,70 @@ function getNextBusinessDay(referenceDate) {
   return nextDate;
 }
 
-function countScheduledUsesInMonth(startDateValue, weekdays) {
+function normalizeDateKeyList(values) {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((item) => formatDateOnly(parseDateOnly(item)))
+    .filter(Boolean))]
+    .sort();
+}
+
+function normalizeFirstMonthDateList(startDateValue, values) {
   const startDate = parseDateOnly(startDateValue);
-  if (!startDate || weekdays.length === 0) return 0;
+  if (!startDate) return [];
+
+  const month = startDate.getMonth();
+  const year = startDate.getFullYear();
+
+  return normalizeDateKeyList(values).filter((value) => {
+    const parsed = parseDateOnly(value);
+    return parsed && parsed.getMonth() === month && parsed.getFullYear() === year;
+  });
+}
+
+function buildProjectedFirstMonthDates(startDateValue, weekdays) {
+  const startDate = parseDateOnly(startDateValue);
+  if (!startDate || weekdays.length === 0) return [];
 
   const lastDay = endOfMonth(startDate);
-  let total = 0;
-  for (let cursor = startDate; cursor <= lastDay; cursor = addDays(cursor, 1)) {
+  const projectedDates = [];
+  for (let cursor = addDays(startDate, 1); cursor <= lastDay; cursor = addDays(cursor, 1)) {
     if (weekdays.includes(getDay(cursor))) {
-      total += 1;
+      projectedDates.push(formatDateOnly(cursor));
     }
   }
 
-  return total;
+  return normalizeDateKeyList(projectedDates);
+}
+
+function buildFirstMonthRealDates(startDateValue, weekdays) {
+  const startDate = parseDateOnly(startDateValue);
+  if (!startDate) return [];
+
+  return normalizeFirstMonthDateList(startDateValue, [
+    formatDateOnly(startDate),
+    ...buildProjectedFirstMonthDates(startDateValue, weekdays),
+  ]);
+}
+
+function buildNextFirstMonthDate(startDateValue, values) {
+  const startDate = parseDateOnly(startDateValue);
+  if (!startDate) return "";
+
+  const currentDates = normalizeFirstMonthDateList(startDateValue, values);
+  const lastDay = endOfMonth(startDate);
+  let cursor = currentDates.length > 0
+    ? parseDateOnly(currentDates[currentDates.length - 1])
+    : startDate;
+
+  while (cursor && cursor < lastDay) {
+    cursor = addDays(cursor, 1);
+    const dateKey = formatDateOnly(cursor);
+    if (!currentDates.includes(dateKey)) {
+      return dateKey;
+    }
+  }
+
+  return formatDateOnly(lastDay);
 }
 
 function buildFirstBillingPreview({
@@ -360,6 +391,7 @@ function buildFirstBillingPreview({
   service,
   frequency,
   weekdays,
+  firstMonthDates,
   packageDogCount,
   monthlyValuePerDog,
   packageMonthlyValue,
@@ -407,7 +439,11 @@ function buildFirstBillingPreview({
     };
   }
 
-  const plannedUses = countScheduledUsesInMonth(startDateValue, weekdays);
+  const projectedDates = buildProjectedFirstMonthDates(startDateValue, weekdays);
+  const realDates = normalizeFirstMonthDateList(startDateValue, firstMonthDates).length > 0
+    ? normalizeFirstMonthDateList(startDateValue, firstMonthDates)
+    : buildFirstMonthRealDates(startDateValue, weekdays);
+  const plannedUses = realDates.length;
   const chargedUses = Math.min(plannedUses, cycleSlots);
   const factor = cycleSlots > 0 ?chargedUses / cycleSlots : 0;
   const firstPackageValue = chargedUses > 0 ?basePackageValue * factor : 0;
@@ -420,6 +456,8 @@ function buildFirstBillingPreview({
     chargedUses,
     cycleSlots,
     isFullPackage: plannedUses >= cycleSlots,
+    projectedDates,
+    realDates,
     firstPackageValue,
     firstPerDogValue,
   };
@@ -449,7 +487,6 @@ function getPlanGroupPayload({
   dueDay,
   nextBillingDate,
   metadataGerencial,
-  status,
 }) {
   return {
     client_id: clientId,
@@ -464,7 +501,6 @@ function getPlanGroupPayload({
     renovacao_dia: dueDay,
     next_billing_date: nextBillingDate || null,
     metadata_gerencial: metadataGerencial || {},
-    status,
     cliente_fixo: true,
   };
 }
@@ -480,7 +516,6 @@ export default function PlanosConfig() {
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
   const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
   const [useSuggestedValue, setUseSuggestedValue] = useState(true);
 
@@ -523,6 +558,8 @@ export default function PlanosConfig() {
 
   function openEditModal(item) {
     const metadata = parseMetadata(item.metadata_gerencial);
+    const existingStartDate = metadata.start_date || format(item.created_date ?parseISO(item.created_date) : new Date(), "yyyy-MM-dd");
+    const existingWeekdays = normalizeWeekdays(item.weekdays);
     setEditingItem(item);
     setUseSuggestedValue(false);
     setFormData({
@@ -531,10 +568,12 @@ export default function PlanosConfig() {
       package_dog_count: 1,
       service: item.service || item.tipo_plano || "day_care",
       frequency: item.frequency || "",
-      weekdays: normalizeWeekdays(item.weekdays),
-      start_date: metadata.start_date || format(item.created_date ?parseISO(item.created_date) : new Date(), "yyyy-MM-dd"),
+      weekdays: existingWeekdays,
+      start_date: existingStartDate,
       monthly_value: getMonthlyValue(item) ?String(getMonthlyValue(item)) : "",
-      status: item.status || "ativo",
+      first_month_dates: normalizeFirstMonthDateList(existingStartDate, metadata.first_month_real_dates).length > 0
+        ? normalizeFirstMonthDateList(existingStartDate, metadata.first_month_real_dates)
+        : buildFirstMonthRealDates(existingStartDate, existingWeekdays),
     });
     setShowModal(true);
   }
@@ -560,6 +599,16 @@ export default function PlanosConfig() {
   const normalizedWeekdays = normalizeWeekdays(formData.weekdays).filter((item) => allowedWeekdayIds.includes(item));
   const expectedWeekdayCount = getExpectedWeekdayCount(formData.frequency);
   const weekdaysLocked = formData.service === "day_care" && formData.frequency === "diario";
+  const projectedFirstMonthDates = useMemo(
+    () => formData.service === "day_care" ? buildProjectedFirstMonthDates(formData.start_date, normalizedWeekdays) : [],
+    [formData.service, formData.start_date, normalizedWeekdays],
+  );
+  const realFirstMonthDates = useMemo(
+    () => formData.service === "day_care"
+      ? normalizeFirstMonthDateList(formData.start_date, formData.first_month_dates)
+      : [],
+    [formData.first_month_dates, formData.service, formData.start_date],
+  );
 
   const candidateClients = useMemo(() => {
     if (selectedDogIds.length === 0) return [];
@@ -600,6 +649,9 @@ export default function PlanosConfig() {
       ...current,
       frequency: "",
       weekdays: [],
+      first_month_dates: current.service === "day_care"
+        ? buildFirstMonthRealDates(current.start_date, [])
+        : [],
     }));
   }, [availableFrequencies, formData.frequency]);
 
@@ -643,6 +695,7 @@ export default function PlanosConfig() {
       service: formData.service,
       frequency: formData.frequency,
       weekdays: normalizedWeekdays,
+      firstMonthDates: realFirstMonthDates,
       packageDogCount,
       monthlyValuePerDog,
       packageMonthlyValue: totalPackageValue,
@@ -650,6 +703,7 @@ export default function PlanosConfig() {
     [
       dueDay,
       formData.frequency,
+      realFirstMonthDates,
       formData.service,
       formData.start_date,
       monthlyValuePerDog,
@@ -680,14 +734,23 @@ export default function PlanosConfig() {
 
   function handleServiceChange(serviceId) {
     const nextFrequencyOptions = getFrequenciesForService(serviceId);
-    setFormData((current) => ({
-      ...current,
-      service: serviceId,
-      package_dog_count: serviceId === "day_care" ?current.package_dog_count : 1,
-      dog_ids: ensureDogArraySize(current.dog_ids || [], serviceId === "day_care" ?Number(current.package_dog_count || 1) : 1),
-      frequency: nextFrequencyOptions.some((item) => item.id === current.frequency) ?current.frequency : "",
-      weekdays: normalizeWeekdays(current.weekdays).filter((item) => getAllowedWeekdays(serviceId).some((weekday) => weekday.id === item)),
-    }));
+    setFormData((current) => {
+      const nextWeekdays = normalizeWeekdays(current.weekdays).filter((item) =>
+        getAllowedWeekdays(serviceId).some((weekday) => weekday.id === item),
+      );
+
+      return {
+        ...current,
+        service: serviceId,
+        package_dog_count: serviceId === "day_care" ?current.package_dog_count : 1,
+        dog_ids: ensureDogArraySize(current.dog_ids || [], serviceId === "day_care" ?Number(current.package_dog_count || 1) : 1),
+        frequency: nextFrequencyOptions.some((item) => item.id === current.frequency) ?current.frequency : "",
+        weekdays: nextWeekdays,
+        first_month_dates: serviceId === "day_care"
+          ? buildFirstMonthRealDates(current.start_date, nextWeekdays)
+          : [],
+      };
+    });
     setUseSuggestedValue(serviceId === "day_care");
   }
 
@@ -747,6 +810,9 @@ export default function PlanosConfig() {
         ...current,
         frequency: frequencyId,
         weekdays: nextWeekdays,
+        first_month_dates: current.service === "day_care"
+          ? buildFirstMonthRealDates(current.start_date, nextWeekdays)
+          : [],
       };
     });
     setUseSuggestedValue(formData.service === "day_care");
@@ -770,6 +836,9 @@ export default function PlanosConfig() {
       return {
         ...current,
         weekdays: nextWeekdays,
+        first_month_dates: current.service === "day_care"
+          ? buildFirstMonthRealDates(current.start_date, nextWeekdays)
+          : [],
       };
     });
   }
@@ -806,6 +875,47 @@ export default function PlanosConfig() {
     }));
   }
 
+  function handleStartDateChange(value) {
+    setFormData((current) => ({
+      ...current,
+      start_date: value,
+      first_month_dates: current.service === "day_care"
+        ? buildFirstMonthRealDates(value, normalizeWeekdays(current.weekdays).filter((item) => getAllowedWeekdays(current.service).some((weekday) => weekday.id === item)))
+        : [],
+    }));
+  }
+
+  function updateFirstMonthDate(index, value) {
+    setFormData((current) => {
+      const nextDates = [...normalizeFirstMonthDateList(current.start_date, current.first_month_dates)];
+      nextDates[index] = value;
+      return {
+        ...current,
+        first_month_dates: normalizeFirstMonthDateList(current.start_date, nextDates),
+      };
+    });
+  }
+
+  function addFirstMonthDate() {
+    setFormData((current) => ({
+      ...current,
+      first_month_dates: normalizeFirstMonthDateList(current.start_date, [
+        ...current.first_month_dates,
+        buildNextFirstMonthDate(current.start_date, current.first_month_dates),
+      ]),
+    }));
+  }
+
+  function removeFirstMonthDate(index) {
+    setFormData((current) => ({
+      ...current,
+      first_month_dates: normalizeFirstMonthDateList(
+        current.start_date,
+        current.first_month_dates.filter((_, itemIndex) => itemIndex !== index),
+      ),
+    }));
+  }
+
   async function ensureFinancialLink(selectedClientRecord, dogsToCheck) {
     const coverage = getCoverageSummary(selectedClientRecord, dogsToCheck);
     if (coverage.missingDogIds.length === 0) return true;
@@ -839,13 +949,27 @@ export default function PlanosConfig() {
 
   async function generateAppointments(plan, weeksAhead = 4) {
     const weekdays = normalizeWeekdays(plan.weekdays);
-    if (!weekdays.length || (plan.status || "ativo") !== "ativo") return 0;
+    if (!weekdays.length) return 0;
 
     const today = normalizeDate(new Date());
     const metadata = parseMetadata(plan.metadata_gerencial);
     const planStartDate = parseDateOnly(metadata.start_date);
     const generationBaseDate = planStartDate && planStartDate.getTime() > today.getTime() ?planStartDate : today;
-    const appointments = [];
+    const firstMonthRealDates = normalizeFirstMonthDateList(
+      metadata.start_date,
+      metadata.first_month_real_dates,
+    ).length > 0
+      ? normalizeFirstMonthDateList(metadata.start_date, metadata.first_month_real_dates)
+      : buildFirstMonthRealDates(metadata.start_date, weekdays);
+    const firstMonthEnd = planStartDate ? endOfMonth(planStartDate) : null;
+    const appointmentDates = new Set();
+
+    for (const dateKey of firstMonthRealDates) {
+      const parsed = parseDateOnly(dateKey);
+      if (parsed && parsed >= generationBaseDate) {
+        appointmentDates.add(dateKey);
+      }
+    }
 
     for (let week = 0; week < weeksAhead; week += 1) {
       for (const weekday of weekdays) {
@@ -857,44 +981,53 @@ export default function PlanosConfig() {
         }
 
         if (targetDate >= generationBaseDate) {
-          const dateKey = format(targetDate, "yyyy-MM-dd");
-          const valuePerUse = getMonthlyValue(plan) / Math.max(weekdays.length * 4, 1);
+          if (
+            planStartDate
+            && firstMonthEnd
+            && targetDate >= planStartDate
+            && targetDate <= firstMonthEnd
+          ) {
+            continue;
+          }
 
-          appointments.push({
-            dog_id: plan.dog_id,
-            cliente_id: plan.client_id || plan.carteira_id || null,
-            client_name: plan.client_name,
-            service: plan.service,
-            service_type: plan.service,
-            date: dateKey,
-            data_referencia: dateKey,
-            data_hora_entrada: `${dateKey}T08:00:00`,
-            data_hora_saida: `${dateKey}T18:00:00`,
-            value: valuePerUse,
-            payment_status: "pendente",
-            valor_previsto: valuePerUse,
-            charge_type: "pacote",
-            source_type: "plano_recorrente",
-            plan_id: plan.id,
-            source_key: `plano_recorrente|${plan.id}|${plan.service}|${dateKey}`,
-          });
+          const dateKey = format(targetDate, "yyyy-MM-dd");
+          appointmentDates.add(dateKey);
         }
       }
     }
 
-    for (const appointment of appointments) {
+    const allAppointmentDates = [...appointmentDates].sort();
+    const valuePerUse = getMonthlyValue(plan) / Math.max(weekdays.length * 4, 1);
+
+    for (const dateKey of allAppointmentDates) {
+      const appointment = {
+        dog_id: plan.dog_id,
+        cliente_id: plan.client_id || plan.carteira_id || null,
+        client_name: plan.client_name,
+        service: plan.service,
+        service_type: plan.service,
+        date: dateKey,
+        data_referencia: dateKey,
+        data_hora_entrada: `${dateKey}T08:00:00`,
+        data_hora_saida: `${dateKey}T18:00:00`,
+        value: valuePerUse,
+        payment_status: "pendente",
+        valor_previsto: valuePerUse,
+        charge_type: "pacote",
+        source_type: "plano_recorrente",
+        plan_id: plan.id,
+        source_key: `plano_recorrente|${plan.id}|${plan.service}|${dateKey}`,
+      };
       const existingAppointments = await Appointment.filter({ source_key: appointment.source_key });
       if (existingAppointments.length === 0) {
         await Appointment.create(appointment);
       }
     }
 
-    return appointments.length;
+    return allAppointmentDates.length;
   }
 
   async function generateMonthlyBilling(plan) {
-    if ((plan.status || "ativo") !== "ativo") return;
-
     const metadata = parseMetadata(plan.metadata_gerencial);
     const firstCycle = metadata.first_cycle || null;
     const dueDayValue = Number.parseInt(String(plan.due_day || plan.renovacao_dia || ""), 10);
@@ -962,12 +1095,11 @@ export default function PlanosConfig() {
   async function runAllAutomations() {
     setIsGenerating(true);
     try {
-      const activePlans = plans.filter((plan) => (plan.status || "ativo") === "ativo");
-      for (const plan of activePlans) {
+      for (const plan of plans) {
         await generateAppointments(plan);
         await generateMonthlyBilling(plan);
       }
-      alert(`Automações executadas para ${activePlans.length} plano(s) ativo(s).`);
+      alert(`Automações executadas para ${plans.length} plano(s).`);
       await loadData();
     } catch (error) {
       console.error("Erro ao executar automações em lote:", error);
@@ -1024,6 +1156,11 @@ export default function PlanosConfig() {
       return;
     }
 
+    if (formData.service === "day_care" && realFirstMonthDates.length === 0) {
+      alert("Defina pelo menos uma data real para o primeiro mês do pacote.");
+      return;
+    }
+
     setIsSaving(true);
     try {
       const linkWasEnsured = await ensureFinancialLink(selectedClient, uniqueDogIds);
@@ -1052,6 +1189,8 @@ export default function PlanosConfig() {
           ...existingMetadata,
           start_date: formData.start_date,
           package_dog_count: packageDogCount,
+          first_month_projection_dates: projectedFirstMonthDates,
+          first_month_real_dates: realFirstMonthDates,
           first_cycle: {
             due_date: formatDateOnly(firstBillingPreview.firstDueDate),
             total_value: Number(firstBillingPreview.firstPackageValue.toFixed(2)),
@@ -1063,7 +1202,6 @@ export default function PlanosConfig() {
           },
           first_cycle_charged: existingMetadata.first_cycle_charged || false,
         },
-        status: formData.status,
       };
 
       if (editingItem) {
@@ -1101,12 +1239,6 @@ export default function PlanosConfig() {
     await loadData();
   }
 
-  async function toggleStatus(plan) {
-    const nextStatus = (plan.status || "ativo") === "ativo" ?"inativo" : "ativo";
-    await PlanConfig.update(plan.id, { status: nextStatus });
-    await loadData();
-  }
-
   const filteredPlans = useMemo(
     () => plans.filter((plan) => {
       const clientName = clientsById[getPlanClientId(plan)]?.nome_razao_social || plan.client_name || "-";
@@ -1114,20 +1246,17 @@ export default function PlanosConfig() {
       const matchesSearch = !searchTerm
         || clientName.toLowerCase().includes(searchTerm.toLowerCase())
         || dogName.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = filterStatus === "all" || (plan.status || "ativo") === filterStatus;
-      return matchesSearch && matchesStatus;
+      return matchesSearch;
     }),
-    [clientsById, dogsById, filterStatus, plans, searchTerm],
+    [clientsById, dogsById, plans, searchTerm],
   );
 
   const stats = useMemo(
     () => ({
       total: plans.length,
-      ativos: plans.filter((plan) => (plan.status || "ativo") === "ativo").length,
-      suspensos: plans.filter((plan) => (plan.status || "") === "suspenso").length,
-      receitaMensal: plans
-        .filter((plan) => (plan.status || "ativo") === "ativo")
-        .reduce((total, plan) => total + getMonthlyValue(plan), 0),
+      dayCare: plans.filter((plan) => (plan.service || plan.tipo_plano) === "day_care").length,
+      clientes: new Set(plans.map((plan) => getPlanClientId(plan)).filter(Boolean)).size,
+      receitaMensal: plans.reduce((total, plan) => total + getMonthlyValue(plan), 0),
     }),
     [plans],
   );
@@ -1185,22 +1314,22 @@ export default function PlanosConfig() {
               <p className="text-sm text-gray-600">Total de planos</p>
             </CardContent>
           </Card>
-          <Card className="border-green-200 bg-white">
+          <Card className="border-blue-200 bg-white">
             <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-green-600">{stats.ativos}</p>
-              <p className="text-sm text-gray-600">Ativos</p>
+              <p className="text-2xl font-bold text-blue-600">{stats.dayCare}</p>
+              <p className="text-sm text-gray-600">Pacotes Day Care</p>
             </CardContent>
           </Card>
-          <Card className="border-orange-200 bg-white">
+          <Card className="border-amber-200 bg-white">
             <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-orange-600">{stats.suspensos}</p>
-              <p className="text-sm text-gray-600">Suspensos</p>
+              <p className="text-2xl font-bold text-amber-600">{stats.clientes}</p>
+              <p className="text-sm text-gray-600">Responsáveis financeiros</p>
             </CardContent>
           </Card>
           <Card className="border-emerald-200 bg-white">
             <CardContent className="p-4 text-center">
               <p className="text-2xl font-bold text-emerald-600">{formatCurrency(stats.receitaMensal)}</p>
-              <p className="text-sm text-gray-600">Receita mensal ativa</p>
+              <p className="text-sm text-gray-600">Receita mensal total</p>
             </CardContent>
           </Card>
         </div>
@@ -1211,37 +1340,11 @@ export default function PlanosConfig() {
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
               searchPlaceholder="Buscar responsável financeiro ou cão..."
-              hasActiveFilters={Boolean(searchTerm || filterStatus !== "all")}
+              hasActiveFilters={Boolean(searchTerm)}
               onClear={() => {
                 setSearchTerm("");
-                setFilterStatus("all");
               }}
-              filters={[
-                {
-                  id: "status",
-                  label: "Status",
-                  icon: Search,
-                  active: filterStatus !== "all",
-                  content: (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status do plano</p>
-                      <Select value={filterStatus} onValueChange={setFilterStatus}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          {STATUS_OPTIONS.map((option) => (
-                            <SelectItem key={option.id} value={option.id}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ),
-                },
-              ]}
+              filters={[]}
             />
           </CardContent>
         </Card>
@@ -1262,7 +1365,7 @@ export default function PlanosConfig() {
             return (
               <Card
                 key={plan.id}
-                className={`border-2 bg-white ${plan.status === "ativo" ?"border-green-200" : plan.status === "suspenso" ?"border-orange-200" : "border-gray-200 opacity-80"}`}
+                className="border-2 border-gray-200 bg-white"
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-3">
@@ -1274,8 +1377,8 @@ export default function PlanosConfig() {
                         {dogsById[plan.dog_id]?.nome || "Cão não encontrado"}
                       </p>
                     </div>
-                    <Badge className={getStatusBadgeClass(plan.status || "ativo")}>
-                      {(STATUS_OPTIONS.find((item) => item.id === (plan.status || "ativo")) || { label: plan.status || "Ativo" }).label}
+                    <Badge variant="outline" className="border-gray-200 text-gray-700">
+                      {getFrequencyLabel(plan.frequency)}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -1333,9 +1436,6 @@ export default function PlanosConfig() {
                     <Button variant="outline" size="sm" className="flex-1" onClick={() => runAutomations(plan)} disabled={isGenerating}>
                       <Zap className="mr-2 h-3 w-3" />
                       Gerar
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => toggleStatus(plan)}>
-                      {(plan.status || "ativo") === "ativo" ?<Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEditModal(plan)}>
                       <Pencil className="h-4 w-4" />
@@ -1427,7 +1527,7 @@ export default function PlanosConfig() {
                       <Label>Data de início *</Label>
                       <DatePickerInput
                         value={formData.start_date}
-                        onChange={(value) => setFormData((current) => ({ ...current, start_date: value }))}
+                        onChange={handleStartDateChange}
                         className="mt-2"
                       />
                       <p className="mt-2 text-xs text-gray-500">
@@ -1624,6 +1724,71 @@ export default function PlanosConfig() {
                   ) : null}
                 </div>
 
+                {formData.service === "day_care" ?(
+                  <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-purple-600" />
+                      <h3 className="font-semibold text-gray-900">4A. Agenda do primeiro mês</h3>
+                    </div>
+
+                    <div className="grid gap-4">
+                      <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50 p-4">
+                        <p className="text-sm font-medium text-blue-900">Projeção automática</p>
+                        <p className="mt-1 text-xs text-blue-700">
+                          O sistema sugere essas datas com base na data de início e nos dias preferenciais do pacote.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {projectedFirstMonthDates.length > 0 ? projectedFirstMonthDates.map((dateKey) => (
+                            <Badge key={`projection-${dateKey}`} className="border border-blue-200 bg-white text-blue-700">
+                              {format(parseDateOnly(dateKey), "dd/MM/yyyy", { locale: ptBR })}
+                            </Badge>
+                          )) : (
+                            <span className="text-sm text-blue-700">Sem projeções adicionais para este mês.</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-emerald-900">Agenda real do primeiro mês</p>
+                            <p className="mt-1 text-xs text-emerald-700">
+                              Ajuste as datas pontuais que realmente devem virar agendamento. Elas entram no cálculo da primeira cobrança.
+                            </p>
+                          </div>
+                          <Button type="button" variant="outline" size="sm" onClick={addFirstMonthDate} disabled={!formData.start_date}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Adicionar data
+                          </Button>
+                        </div>
+
+                        <div className="mt-4 space-y-3">
+                          {realFirstMonthDates.length > 0 ? realFirstMonthDates.map((dateKey, index) => (
+                            <div key={`real-date-${index}`} className="flex items-center gap-3">
+                              <div className="min-w-0 flex-1">
+                                <DatePickerInput value={dateKey} onChange={(value) => updateFirstMonthDate(index, value)} />
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeFirstMonthDate(index)}
+                                disabled={realFirstMonthDates.length <= 1}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
+                          )) : (
+                            <div className="rounded-xl border border-dashed border-emerald-200 bg-white px-4 py-3 text-sm text-emerald-800">
+                              Defina a data de início e os dias preferenciais para montar a agenda real do primeiro mês.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                   <div className="mb-4 flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-purple-600" />
@@ -1721,21 +1886,6 @@ export default function PlanosConfig() {
                       )}
                     </div>
 
-                    <div>
-                      <Label>Status</Label>
-                      <Select value={formData.status} onValueChange={(value) => setFormData((current) => ({ ...current, status: value }))}>
-                        <SelectTrigger className="mt-2">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STATUS_OPTIONS.map((option) => (
-                            <SelectItem key={option.id} value={option.id}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                     {formData.service === "day_care" && formData.frequency ?(
                       <div className={`rounded-xl border p-4 ${dayCareSuggestion?.row ?"border-blue-200 bg-blue-50" : "border-amber-200 bg-amber-50"}`}>
                         <p className="font-medium text-gray-900">
@@ -1838,6 +1988,16 @@ export default function PlanosConfig() {
                           : "-"}
                       </span>
                     </div>
+                    {formData.service === "day_care" ?(
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-gray-500">Datas reais do 1º mês</span>
+                        <span className="text-right font-medium text-gray-900">
+                          {realFirstMonthDates.length > 0
+                            ?realFirstMonthDates.map((dateKey) => format(parseDateOnly(dateKey), "dd/MM", { locale: ptBR })).join(" • ")
+                            : "-"}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>

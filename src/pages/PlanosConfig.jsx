@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { addDays, addMonths, addWeeks, endOfMonth, format, getDay, isWeekend, nextDay, parseISO } from "date-fns";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { addDays, addMonths, addWeeks, differenceInCalendarDays, endOfMonth, format, getDay, isSameDay, isSameMonth, isWeekend, nextDay, parseISO, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Bath,
+  AlertTriangle,
   Calendar,
   CalendarClock,
   CreditCard,
@@ -23,7 +24,7 @@ import { Appointment, Carteira, ContaReceber, Dog, PlanConfig, TabelaPrecos, Use
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -47,7 +48,7 @@ const SERVICE_OPTIONS = [
     label: "Day Care",
     icon: DogIcon,
     theme: "border-blue-200 bg-blue-50 text-blue-700",
-    description: "Pacote recorrente com valor sugerido automaticamente pela tabela de Day Care.",
+    description: "Pacote recorrente com cobrança mensal e agendamentos automáticos.",
   },
   {
     id: "hospedagem",
@@ -203,6 +204,93 @@ function getPlanClientId(plan) {
 function getPlanStartDate(plan) {
   const metadata = parseMetadata(plan?.metadata_gerencial);
   return metadata.start_date || null;
+}
+
+function normalizeDogIdList(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.filter(Boolean))];
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    try {
+      return normalizeDogIdList(JSON.parse(value));
+    } catch (error) {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function getPlanPackageMeta(plan) {
+  const metadata = parseMetadata(plan?.metadata_gerencial);
+  const dogIds = normalizeDogIdList(metadata.package_dog_ids).length > 0
+    ? normalizeDogIdList(metadata.package_dog_ids)
+    : [plan?.dog_id].filter(Boolean);
+
+  return {
+    metadata,
+    dogIds,
+    packageDogCount: Number(metadata.package_dog_count || dogIds.length || 1) || 1,
+    packageGroupKey: metadata.package_group_key || plan?.id,
+    firstMonthDates: normalizeFirstMonthDateList(metadata.start_date, metadata.first_month_real_dates),
+  };
+}
+
+function createPackageGroupKey() {
+  return `package_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getMonthKey(value) {
+  const date = normalizeDate(value instanceof Date ? value : parseDateOnly(value));
+  return date ? format(date, "yyyy-MM") : "";
+}
+
+function formatMonthLabel(value) {
+  const date = normalizeDate(value instanceof Date ? value : parseDateOnly(value));
+  if (!date) return "-";
+  const label = format(date, "MMMM yyyy", { locale: ptBR });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function buildRecurringBillingSchedule(plan, monthsForward = 8) {
+  const metadata = parseMetadata(plan?.metadata_gerencial);
+  const startDate = parseDateOnly(metadata.start_date) || parseDateOnly(plan?.created_date?.slice?.(0, 10));
+  const dueDay = Number.parseInt(String(plan?.due_day || plan?.renovacao_dia || ""), 10);
+  if (!startDate || !Number.isFinite(dueDay)) return [];
+
+  const monthlyValue = getMonthlyValue(plan);
+  const firstCycle = metadata.first_cycle || {};
+  const firstDueDate = parseDateOnly(firstCycle.due_date) || buildDueDateForMonth(startDate, dueDay);
+  const entries = [];
+  let cursor = startOfMonth(startDate);
+  const endCursor = startOfMonth(addMonths(new Date(), monthsForward));
+
+  while (cursor.getTime() <= endCursor.getTime()) {
+    const monthKey = format(cursor, "yyyy-MM");
+    const isFirstMonth = firstDueDate ? getMonthKey(firstDueDate) === monthKey : false;
+    const dueDate = isFirstMonth ? firstDueDate : buildDueDateForMonth(cursor, dueDay);
+    if (dueDate) {
+      entries.push({
+        monthKey,
+        dueDate,
+        dueDateKey: formatDateOnly(dueDate),
+        amount: isFirstMonth ? Number(firstCycle.per_dog_value || 0) || monthlyValue : monthlyValue,
+        isFirstMonth,
+      });
+    }
+    cursor = startOfMonth(addMonths(cursor, 1));
+  }
+
+  return entries;
+}
+
+function getPaymentTone(entry) {
+  if (!entry) return "border-gray-200 bg-gray-50 text-gray-700";
+  if (entry.status === "paid") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (entry.status === "due_today") return "border-amber-200 bg-amber-50 text-amber-900";
+  if (entry.status === "overdue") return "border-rose-200 bg-rose-50 text-rose-900";
+  return "border-gray-200 bg-gray-50 text-gray-700";
 }
 
 function formatCurrency(value) {
@@ -510,35 +598,61 @@ export default function PlanosConfig() {
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
   const [pricingRows, setPricingRows] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [receivables, setReceivables] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [detailItem, setDetailItem] = useState(null);
+  const [paymentsItem, setPaymentsItem] = useState(null);
+  const [deleteItem, setDeleteItem] = useState(null);
+  const [deleteDate, setDeleteDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [editingItem, setEditingItem] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
   const [useSuggestedValue, setUseSuggestedValue] = useState(true);
+  const isSilentSyncRunningRef = useRef(false);
 
   useEffect(() => {
     loadData();
   }, []);
 
-  async function loadData() {
+  async function loadData({ skipSilentSync = false } = {}) {
     setIsLoading(true);
     try {
-      const [plansData, dogsData, carteirasData, tabelaPrecosData, me] = await Promise.all([
+      const [plansData, dogsData, carteirasData, tabelaPrecosData, appointmentsData, receivablesData, me] = await Promise.all([
         PlanConfig.list("-created_date", 500),
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
         TabelaPrecos.list("-created_date", 1000),
+        Appointment.listAll ? Appointment.listAll("-created_date", 1000, 10000) : Appointment.list("-created_date", 5000),
+        ContaReceber.listAll ? ContaReceber.listAll("-created_date", 1000, 10000) : ContaReceber.list("-created_date", 5000),
         User.me().catch(() => null),
       ]);
 
       const empresaId = me?.empresa_id || null;
+      const activePlans = plansData || [];
+      const activeAppointments = appointmentsData || [];
+      const activeReceivables = receivablesData || [];
 
-      setPlans(plansData || []);
+      if (!skipSilentSync && activePlans.length > 0 && !isSilentSyncRunningRef.current) {
+        isSilentSyncRunningRef.current = true;
+        try {
+          const changed = await syncPlansSilently(activePlans, activeAppointments, activeReceivables);
+          if (changed) {
+            await loadData({ skipSilentSync: true });
+            return;
+          }
+        } finally {
+          isSilentSyncRunningRef.current = false;
+        }
+      }
+
+      setPlans(activePlans);
       setDogs((dogsData || []).filter((item) => item.ativo !== false));
       setCarteiras((carteirasData || []).filter((item) => item.ativo !== false));
+      setAppointments(activeAppointments);
+      setReceivables(activeReceivables);
       setPricingRows(
         (tabelaPrecosData || []).filter(
           (item) => item.ativo !== false && item.tipo === DAY_CARE_PACKAGE_TYPE && (!item.empresa_id || item.empresa_id === empresaId),
@@ -557,22 +671,33 @@ export default function PlanosConfig() {
   }
 
   function openEditModal(item) {
-    const metadata = parseMetadata(item.metadata_gerencial);
-    const existingStartDate = metadata.start_date || format(item.created_date ?parseISO(item.created_date) : new Date(), "yyyy-MM-dd");
-    const existingWeekdays = normalizeWeekdays(item.weekdays);
-    setEditingItem(item);
+    const representativePlan = item?.representativePlan || item;
+    const packageMeta = getPlanPackageMeta(representativePlan);
+    const existingStartDate = packageMeta.metadata.start_date || format(representativePlan.created_date ?parseISO(representativePlan.created_date) : new Date(), "yyyy-MM-dd");
+    const existingWeekdays = normalizeWeekdays(representativePlan.weekdays);
+    const dogIds = item?.dogIds?.length > 0 ? item.dogIds : packageMeta.dogIds;
+    const packageDogCount = item?.packageDogCount || packageMeta.packageDogCount || dogIds.length || 1;
+
+    setEditingItem({
+      ...representativePlan,
+      planIds: item?.planIds || [representativePlan.id],
+      dogIds,
+      packageDogCount,
+      packageGroupKey: item?.packageGroupKey || packageMeta.packageGroupKey,
+      memberPlans: item?.memberPlans || [representativePlan],
+    });
     setUseSuggestedValue(false);
     setFormData({
-      client_id: getPlanClientId(item),
-      dog_ids: [item.dog_id || ""],
-      package_dog_count: 1,
-      service: item.service || item.tipo_plano || "day_care",
-      frequency: item.frequency || "",
+      client_id: getPlanClientId(representativePlan),
+      dog_ids: ensureDogArraySize(dogIds, packageDogCount),
+      package_dog_count: packageDogCount,
+      service: representativePlan.service || representativePlan.tipo_plano || "day_care",
+      frequency: representativePlan.frequency || "",
       weekdays: existingWeekdays,
       start_date: existingStartDate,
-      monthly_value: getMonthlyValue(item) ?String(getMonthlyValue(item)) : "",
-      first_month_dates: normalizeFirstMonthDateList(existingStartDate, metadata.first_month_real_dates).length > 0
-        ? normalizeFirstMonthDateList(existingStartDate, metadata.first_month_real_dates)
+      monthly_value: getMonthlyValue(representativePlan) ?String(getMonthlyValue(representativePlan)) : "",
+      first_month_dates: normalizeFirstMonthDateList(existingStartDate, packageMeta.metadata.first_month_real_dates).length > 0
+        ? normalizeFirstMonthDateList(existingStartDate, packageMeta.metadata.first_month_real_dates)
         : buildFirstMonthRealDates(existingStartDate, existingWeekdays),
     });
     setShowModal(true);
@@ -947,7 +1072,7 @@ export default function PlanosConfig() {
     return true;
   }
 
-  async function generateAppointments(plan, weeksAhead = 4) {
+  async function generateAppointments(plan, existingAppointmentKeys = null, weeksAhead = 4) {
     const weekdays = normalizeWeekdays(plan.weekdays);
     if (!weekdays.length) return 0;
 
@@ -1016,96 +1141,102 @@ export default function PlanosConfig() {
         charge_type: "pacote",
         source_type: "plano_recorrente",
         plan_id: plan.id,
+        metadata: {
+          package_group_key: parseMetadata(plan.metadata_gerencial).package_group_key || plan.id,
+        },
         source_key: `plano_recorrente|${plan.id}|${plan.service}|${dateKey}`,
       };
-      const existingAppointments = await Appointment.filter({ source_key: appointment.source_key });
+      if (existingAppointmentKeys?.has(appointment.source_key)) {
+        continue;
+      }
+
+      const existingAppointments = existingAppointmentKeys ? [] : await Appointment.filter({ source_key: appointment.source_key });
       if (existingAppointments.length === 0) {
         await Appointment.create(appointment);
+        existingAppointmentKeys?.add(appointment.source_key);
       }
     }
 
     return allAppointmentDates.length;
   }
 
-  async function generateMonthlyBilling(plan) {
+  async function ensureBillingForPlan(plan, existingReceivables = []) {
     const metadata = parseMetadata(plan.metadata_gerencial);
-    const firstCycle = metadata.first_cycle || null;
-    const dueDayValue = Number.parseInt(String(plan.due_day || plan.renovacao_dia || ""), 10);
-    const dueDate = parseDateOnly(plan.next_billing_date) || getLegacyNextBillingDate(plan);
-    if (!dueDate) return;
+    const schedule = buildRecurringBillingSchedule(plan);
+    if (schedule.length === 0) return false;
 
-    const dueDateKey = formatDateOnly(dueDate);
-    const sourceKey = `plano_recorrente|${plan.id}|${dueDateKey}`;
-    const existingCharges = await ContaReceber.filter({ source_key: sourceKey });
-    const isPendingFirstCycle = Boolean(firstCycle?.due_date && firstCycle.due_date === dueDateKey && !metadata.first_cycle_charged);
-    const billingAmount = isPendingFirstCycle
-      ?Number(firstCycle?.per_dog_value || 0) || getMonthlyValue(plan)
-      : getMonthlyValue(plan);
+    let changed = false;
+    const packageGroupKey = metadata.package_group_key || plan.id;
 
-    if (existingCharges.length === 0 && billingAmount > 0) {
-      await ContaReceber.create({
+    for (const entry of schedule) {
+      if (entry.amount <= 0) continue;
+
+      const sourceKey = `plano_recorrente|${plan.id}|${entry.dueDateKey}`;
+      const existingCharge = existingReceivables.find((item) => item.source_key === sourceKey);
+      const payload = {
         cliente_id: plan.client_id || plan.carteira_id || null,
         dog_id: plan.dog_id || null,
         descricao: `Mensalidade ${getServiceMeta(plan.service).label} - ${plan.client_name}`,
         servico: plan.service,
-        valor: billingAmount,
-        vencimento: dueDateKey,
-        status: "pendente",
+        valor: Number(entry.amount.toFixed(2)),
+        vencimento: entry.dueDateKey,
+        status: existingCharge?.status || "pendente",
         origem: "plano_recorrente",
         tipo_agendamento: "recorrente",
         tipo_cobranca: "pacote",
-        data_prestacao: dueDateKey,
+        data_prestacao: entry.dueDateKey,
         source_key: sourceKey,
         metadata: {
+          ...parseMetadata(existingCharge?.metadata),
           plan_id: plan.id,
           client_name: plan.client_name,
           due_day: plan.due_day,
-          first_cycle: isPendingFirstCycle,
+          first_cycle: entry.isFirstMonth,
+          month_key: entry.monthKey,
+          package_group_key: packageGroupKey,
         },
-      });
-    }
+      };
 
-    const nextRecurringDate = Number.isFinite(dueDayValue)
-      ?buildDueDateForMonth(addMonths(dueDate, 1), dueDayValue)
-      : null;
-
-    await PlanConfig.update(plan.id, {
-      next_billing_date: nextRecurringDate ?formatDateOnly(nextRecurringDate) : dueDateKey,
-      metadata_gerencial: {
-        ...metadata,
-        first_cycle_charged: metadata.first_cycle_charged || isPendingFirstCycle,
-      },
-    });
-  }
-
-  async function runAutomations(plan) {
-    setIsGenerating(true);
-    try {
-      const generatedAppointments = await generateAppointments(plan);
-      await generateMonthlyBilling(plan);
-      alert(`Automação concluída.\n${generatedAppointments} agendamento(s) gerado(s) e cobrança mensal conferida.`);
-      await loadData();
-    } catch (error) {
-      console.error("Erro ao executar automações do plano:", error);
-      alert("Não foi possível executar as automações deste plano.");
-    }
-    setIsGenerating(false);
-  }
-
-  async function runAllAutomations() {
-    setIsGenerating(true);
-    try {
-      for (const plan of plans) {
-        await generateAppointments(plan);
-        await generateMonthlyBilling(plan);
+      if (!existingCharge) {
+        await ContaReceber.create(payload);
+        existingReceivables.push({ ...payload });
+        changed = true;
+        continue;
       }
-      alert(`Automações executadas para ${plans.length} plano(s).`);
-      await loadData();
-    } catch (error) {
-      console.error("Erro ao executar automações em lote:", error);
-      alert("Não foi possível executar as automações em lote.");
+
+      const hasBeenPaid = Boolean(existingCharge.data_recebimento);
+      const shouldUpdateValue = !hasBeenPaid && Math.abs((Number(existingCharge.valor) || 0) - payload.valor) >= 0.01;
+      const shouldUpdateMetadata = parseMetadata(existingCharge.metadata).package_group_key !== packageGroupKey;
+
+      if (shouldUpdateValue || shouldUpdateMetadata) {
+        await ContaReceber.update(existingCharge.id, {
+          valor: shouldUpdateValue ? payload.valor : existingCharge.valor,
+          metadata: payload.metadata,
+        });
+        Object.assign(existingCharge, {
+          valor: shouldUpdateValue ? payload.valor : existingCharge.valor,
+          metadata: payload.metadata,
+        });
+        changed = true;
+      }
     }
-    setIsGenerating(false);
+
+    return changed;
+  }
+
+  async function syncPlansSilently(plansToSync, existingAppointments = [], existingReceivables = []) {
+    let changed = false;
+    const appointmentKeys = new Set(existingAppointments.map((item) => item.source_key).filter(Boolean));
+
+    for (const plan of plansToSync) {
+      if (await generateAppointments(plan, appointmentKeys)) {
+        changed = true;
+      }
+      if (await ensureBillingForPlan(plan, existingReceivables)) {
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   async function handleSave() {
@@ -1172,6 +1303,27 @@ export default function PlanosConfig() {
       const existingMetadata = editingItem ?parseMetadata(editingItem.metadata_gerencial) : {};
       const shouldPreserveNextBilling = Boolean(editingItem && (existingMetadata.first_cycle_charged || editingItem.next_billing_date));
 
+      const packageGroupKey = editingItem?.packageGroupKey || existingMetadata.package_group_key || createPackageGroupKey();
+      const metadataGerencial = {
+        ...existingMetadata,
+        package_group_key: packageGroupKey,
+        package_dog_count: packageDogCount,
+        package_dog_ids: uniqueDogIds,
+        start_date: formData.start_date,
+        first_month_projection_dates: projectedFirstMonthDates,
+        first_month_real_dates: realFirstMonthDates,
+        first_cycle: {
+          due_date: formatDateOnly(firstBillingPreview.firstDueDate),
+          total_value: Number(firstBillingPreview.firstPackageValue.toFixed(2)),
+          per_dog_value: Number(firstBillingPreview.firstPerDogValue.toFixed(2)),
+          planned_uses: firstBillingPreview.plannedUses,
+          billed_uses: firstBillingPreview.chargedUses,
+          cycle_slots: firstBillingPreview.cycleSlots,
+          is_full_package: firstBillingPreview.isFullPackage,
+        },
+        first_cycle_charged: existingMetadata.first_cycle_charged || false,
+      };
+
       const payloadBase = {
         clientId: selectedClient.id,
         clientName: selectedClient.nome_razao_social || "",
@@ -1185,33 +1337,32 @@ export default function PlanosConfig() {
           : firstBillingPreview.firstPackageValue > 0
             ?formatDateOnly(firstBillingPreview.firstDueDate)
             : formatDateOnly(firstBillingPreview.nextRecurringDueDate),
-        metadataGerencial: {
-          ...existingMetadata,
-          start_date: formData.start_date,
-          package_dog_count: packageDogCount,
-          first_month_projection_dates: projectedFirstMonthDates,
-          first_month_real_dates: realFirstMonthDates,
-          first_cycle: {
-            due_date: formatDateOnly(firstBillingPreview.firstDueDate),
-            total_value: Number(firstBillingPreview.firstPackageValue.toFixed(2)),
-            per_dog_value: Number(firstBillingPreview.firstPerDogValue.toFixed(2)),
-            planned_uses: firstBillingPreview.plannedUses,
-            billed_uses: firstBillingPreview.chargedUses,
-            cycle_slots: firstBillingPreview.cycleSlots,
-            is_full_package: firstBillingPreview.isFullPackage,
-          },
-          first_cycle_charged: existingMetadata.first_cycle_charged || false,
-        },
+        metadataGerencial,
       };
 
       if (editingItem) {
-        await PlanConfig.update(
-          editingItem.id,
-          getPlanGroupPayload({
+        const existingPlans = editingItem.memberPlans || [editingItem];
+        const existingPlansByDogId = new Map(existingPlans.filter((plan) => plan.dog_id).map((plan) => [plan.dog_id, plan]));
+
+        for (const dogId of uniqueDogIds) {
+          const matchingPlan = existingPlansByDogId.get(dogId);
+          const payload = getPlanGroupPayload({
             ...payloadBase,
-            dogId: uniqueDogIds[0],
-          }),
-        );
+            dogId,
+          });
+
+          if (matchingPlan) {
+            await PlanConfig.update(matchingPlan.id, payload);
+          } else {
+            await PlanConfig.create(payload);
+          }
+        }
+
+        for (const existingPlan of existingPlans) {
+          if (!uniqueDogIds.includes(existingPlan.dog_id)) {
+            await PlanConfig.delete(existingPlan.id);
+          }
+        }
       } else {
         for (const dogId of uniqueDogIds) {
           await PlanConfig.create(
@@ -1233,37 +1384,240 @@ export default function PlanosConfig() {
     setIsSaving(false);
   }
 
-  async function handleDelete(id) {
-    if (!confirm("Excluir este plano recorrente?")) return;
-    await PlanConfig.delete(id);
+  async function handleDelete(target) {
+    const planIds = Array.isArray(target?.planIds)
+      ? target.planIds
+      : [typeof target === "string" ? target : target?.id].filter(Boolean);
+
+    if (planIds.length === 0) return;
+
+    const confirmMessage = planIds.length > 1
+      ? "Excluir este pacote recorrente e todos os planos vinculados a ele?"
+      : "Excluir este plano recorrente?";
+
+    if (!confirm(confirmMessage)) return;
+
+    for (const planId of planIds) {
+      await PlanConfig.delete(planId);
+    }
+
+    setDetailItem(null);
     await loadData();
   }
 
-  const filteredPlans = useMemo(
-    () => plans.filter((plan) => {
-      const clientName = clientsById[getPlanClientId(plan)]?.nome_razao_social || plan.client_name || "-";
-      const dogName = dogsById[plan.dog_id]?.nome || "Cão não encontrado";
-      const matchesSearch = !searchTerm
-        || clientName.toLowerCase().includes(searchTerm.toLowerCase())
-        || dogName.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesSearch;
+  const planGroups = useMemo(() => {
+    const groups = new Map();
+
+    plans.forEach((plan) => {
+      const packageMeta = getPlanPackageMeta(plan);
+      const groupKey = packageMeta.packageGroupKey || plan.id;
+      const existingGroup = groups.get(groupKey);
+
+      if (existingGroup) {
+        existingGroup.memberPlans.push(plan);
+        existingGroup.planIds.push(plan.id);
+        existingGroup.dogIds = [...new Set([...existingGroup.dogIds, ...packageMeta.dogIds])];
+        return;
+      }
+
+      groups.set(groupKey, {
+        id: groupKey,
+        packageGroupKey: groupKey,
+        representativePlan: plan,
+        memberPlans: [plan],
+        planIds: [plan.id],
+        dogIds: packageMeta.dogIds,
+        packageDogCount: packageMeta.packageDogCount,
+      });
+    });
+
+    return Array.from(groups.values())
+      .map((group) => {
+        const representativePlan = group.representativePlan;
+        const serviceId = representativePlan.service || representativePlan.tipo_plano || "day_care";
+        const clientId = getPlanClientId(representativePlan);
+        const clientName = clientsById[clientId]?.nome_razao_social || representativePlan.client_name || "-";
+        const packageDogCount = Math.max(group.packageDogCount || 1, group.dogIds.length || 1);
+        const dogNames = group.dogIds.map((dogId) => dogsById[dogId]?.nome || "Cão não encontrado");
+        const metadata = parseMetadata(representativePlan.metadata_gerencial);
+        const firstCycle = metadata.first_cycle || null;
+        const monthlyValuePerDog = getMonthlyValue(representativePlan);
+
+        return {
+          ...group,
+          representativePlan,
+          clientId,
+          clientName,
+          serviceId,
+          serviceMeta: getServiceMeta(serviceId),
+          frequencyLabel: getFrequencyLabel(representativePlan.frequency),
+          weekdays: normalizeWeekdays(representativePlan.weekdays),
+          startDate: metadata.start_date || null,
+          dueDay: representativePlan.due_day || representativePlan.renovacao_dia || null,
+          dogNames,
+          packageDogCount,
+          totalPackageValue: monthlyValuePerDog * packageDogCount,
+          monthlyValuePerDog,
+          firstCycleValue: Number(firstCycle?.total_value || 0) || 0,
+          firstMonthDates: normalizeFirstMonthDateList(metadata.start_date, metadata.first_month_real_dates),
+        };
+      })
+      .sort((left, right) => {
+        const leftDate = left.representativePlan?.created_date ? new Date(left.representativePlan.created_date).getTime() : 0;
+        const rightDate = right.representativePlan?.created_date ? new Date(right.representativePlan.created_date).getTime() : 0;
+        return rightDate - leftDate;
+      });
+  }, [clientsById, dogsById, plans]);
+
+  const filteredPlanGroups = useMemo(
+    () => planGroups.filter((group) => {
+      const search = searchTerm.trim().toLowerCase();
+      if (!search) return true;
+
+      return group.clientName.toLowerCase().includes(search)
+        || group.dogNames.some((dogName) => dogName.toLowerCase().includes(search))
+        || group.serviceMeta.label.toLowerCase().includes(search);
     }),
-    [clientsById, dogsById, plans, searchTerm],
+    [planGroups, searchTerm],
   );
 
   const stats = useMemo(
     () => ({
-      total: plans.length,
-      dayCare: plans.filter((plan) => (plan.service || plan.tipo_plano) === "day_care").length,
-      clientes: new Set(plans.map((plan) => getPlanClientId(plan)).filter(Boolean)).size,
-      receitaMensal: plans.reduce((total, plan) => total + getMonthlyValue(plan), 0),
+      dayCare: planGroups.filter((group) => group.serviceId === "day_care").length,
+      clientes: new Set(planGroups.map((group) => group.clientId).filter(Boolean)).size,
+      receitaMensal: planGroups.reduce((total, group) => total + group.totalPackageValue, 0),
     }),
-    [plans],
+    [planGroups],
   );
+
+  const groupReceivablesMap = useMemo(() => {
+    const entries = new Map();
+
+    planGroups.forEach((group) => {
+      const groupCharges = receivables
+        .filter((item) => {
+          const metadata = parseMetadata(item.metadata);
+          return group.planIds.includes(metadata.plan_id) || metadata.package_group_key === group.packageGroupKey;
+        })
+        .sort((left, right) => `${left.vencimento || ""}`.localeCompare(`${right.vencimento || ""}`));
+
+      entries.set(group.id, groupCharges);
+    });
+
+    return entries;
+  }, [planGroups, receivables]);
+
+  const paymentEntries = useMemo(() => {
+    if (!paymentsItem) return [];
+
+    const monthMap = new Map();
+    const groupedCharges = groupReceivablesMap.get(paymentsItem.id) || [];
+
+    groupedCharges.forEach((charge) => {
+      const dueDate = parseDateOnly(charge.vencimento);
+      if (!dueDate) return;
+      const monthKey = getMonthKey(dueDate);
+      const current = monthMap.get(monthKey) || {
+        monthKey,
+        monthDate: startOfMonth(dueDate),
+        charges: [],
+      };
+      current.charges.push(charge);
+      monthMap.set(monthKey, current);
+    });
+
+    return Array.from(monthMap.values())
+      .sort((left, right) => left.monthKey.localeCompare(right.monthKey))
+      .map((entry) => {
+        const today = normalizeDate(new Date());
+        const paidCharges = entry.charges.filter((charge) => Boolean(charge.data_recebimento));
+        const overdueCharges = entry.charges.filter((charge) => !charge.data_recebimento && parseDateOnly(charge.vencimento)?.getTime() < today.getTime());
+        const dueTodayCharges = entry.charges.filter((charge) => !charge.data_recebimento && parseDateOnly(charge.vencimento) && isSameDay(parseDateOnly(charge.vencimento), today));
+        const futureCharges = entry.charges.filter((charge) => !charge.data_recebimento && parseDateOnly(charge.vencimento)?.getTime() > today.getTime());
+
+        let status = "upcoming";
+        let helper = entry.charges[0]?.vencimento ? `Vence em ${format(parseDateOnly(entry.charges[0].vencimento), "dd/MM/yyyy", { locale: ptBR })}` : "Sem vencimento";
+
+        if (paidCharges.length === entry.charges.length) {
+          status = "paid";
+          const paymentDates = paidCharges.map((charge) => parseDateOnly(charge.data_recebimento)).filter(Boolean).sort((a, b) => a - b);
+          helper = paymentDates.length > 0 ? `Pago ${format(paymentDates[paymentDates.length - 1], "dd/MM/yyyy", { locale: ptBR })}` : "Pago";
+        } else if (overdueCharges.length > 0) {
+          status = "overdue";
+          const reference = overdueCharges
+            .map((charge) => parseDateOnly(charge.vencimento))
+            .filter(Boolean)
+            .sort((a, b) => a - b)[0];
+          helper = reference ? `Atrasado há ${differenceInCalendarDays(today, reference)} dia(s)` : "Atrasado";
+        } else if (dueTodayCharges.length > 0) {
+          status = "due_today";
+          helper = "Vence hoje";
+        } else if (futureCharges.length > 0 && paidCharges.length > 0) {
+          helper = `Pago parcial ${paidCharges.length}/${entry.charges.length}`;
+        }
+
+        return {
+          ...entry,
+          label: formatMonthLabel(entry.monthDate),
+          totalValue: entry.charges.reduce((sum, charge) => sum + (Number(charge.valor) || 0), 0),
+          status,
+          helper,
+        };
+      });
+  }, [groupReceivablesMap, paymentsItem]);
+
+  const deletePreview = useMemo(() => {
+    if (!deleteItem || !deleteDate) return null;
+
+    const exclusionDate = parseDateOnly(deleteDate);
+    if (!exclusionDate) return null;
+
+    const monthKey = getMonthKey(exclusionDate);
+    const groupCharges = groupReceivablesMap.get(deleteItem.id) || [];
+    const monthCharges = groupCharges.filter((charge) => getMonthKey(charge.vencimento) === monthKey);
+    const futureCharges = groupCharges.filter((charge) => getMonthKey(charge.vencimento) > monthKey);
+    const groupAppointments = appointments.filter((appointment) => deleteItem.planIds.includes(appointment.plan_id));
+    const monthAppointments = groupAppointments.filter((appointment) => getMonthKey(appointment.date || appointment.data_referencia || appointment.data_hora_entrada) === monthKey);
+    const keptAppointments = monthAppointments.filter((appointment) => {
+      const appointmentDate = parseDateOnly(appointment.date || appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
+      return appointmentDate && appointmentDate.getTime() <= exclusionDate.getTime() && !["cancelado", "desconsiderado"].includes(appointment.status);
+    });
+    const openReplacementAppointments = groupAppointments.filter((appointment) => {
+      const appointmentDate = parseDateOnly(appointment.date || appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
+      return appointment.status === "faltou"
+        && appointment.charge_type === "pacote"
+        && appointmentDate
+        && appointmentDate.getTime() <= exclusionDate.getTime();
+    });
+
+    const currentMonthTotal = monthCharges.reduce((sum, charge) => sum + (Number(charge.valor) || 0), 0);
+    const proportionalFactor = monthAppointments.length > 0 ? keptAppointments.length / monthAppointments.length : 0;
+    const proportionalValue = Number((currentMonthTotal * proportionalFactor).toFixed(2));
+    const paidCurrentMonth = monthCharges.filter((charge) => charge.data_recebimento).reduce((sum, charge) => sum + (Number(charge.valor) || 0), 0);
+    const paidFuture = futureCharges.filter((charge) => charge.data_recebimento).reduce((sum, charge) => sum + (Number(charge.valor) || 0), 0);
+    const suggestedRefund = Number(Math.max(0, paidCurrentMonth - proportionalValue + paidFuture).toFixed(2));
+    const suggestedCharge = Number(Math.max(0, proportionalValue - paidCurrentMonth).toFixed(2));
+
+    return {
+      exclusionDate,
+      monthKey,
+      monthAppointments,
+      keptAppointments,
+      openReplacementAppointments,
+      currentMonthTotal,
+      proportionalValue,
+      paidCurrentMonth,
+      paidFuture,
+      suggestedRefund,
+      suggestedCharge,
+    };
+  }, [appointments, deleteDate, deleteItem, groupReceivablesMap]);
 
   const activeService = getServiceMeta(formData.service);
   const ActiveServiceIcon = activeService.icon;
   const coverageCandidatesCount = candidateClients.filter((client) => getCoverageSummary(client, selectedDogIds).isFullyLinked).length;
+  const detailServiceMeta = detailItem?.serviceMeta || (detailItem ? getServiceMeta(detailItem.serviceId) : null);
+  const DetailServiceIcon = detailServiceMeta?.icon || CreditCard;
 
   if (isLoading) {
     return (
@@ -1290,10 +1644,6 @@ export default function PlanosConfig() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={runAllAutomations} disabled={isGenerating}>
-              <Zap className="mr-2 h-4 w-4" />
-              {isGenerating ?"Gerando..." : "Rodar automações"}
-            </Button>
             <Button
               onClick={() => {
                 resetForm();
@@ -1307,13 +1657,7 @@ export default function PlanosConfig() {
           </div>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Card className="border-purple-200 bg-white">
-            <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-purple-600">{stats.total}</p>
-              <p className="text-sm text-gray-600">Total de planos</p>
-            </CardContent>
-          </Card>
+        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <Card className="border-blue-200 bg-white">
             <CardContent className="p-4 text-center">
               <p className="text-2xl font-bold text-blue-600">{stats.dayCare}</p>
@@ -1349,107 +1693,183 @@ export default function PlanosConfig() {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredPlans.length === 0 ?(
-            <Card className="col-span-full border-gray-200 bg-white">
-              <CardContent className="p-12 text-center">
+        <Card className="border-gray-200 bg-white">
+          <CardContent className="p-0">
+            <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto] gap-4 border-b border-gray-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 md:grid">
+              <span>Responsável financeiro</span>
+              <span>Cães inclusos</span>
+              <span>Serviço</span>
+              <span className="text-right">Abrir</span>
+            </div>
+
+            {filteredPlanGroups.length === 0 ?(
+              <div className="p-12 text-center">
                 <CreditCard className="mx-auto mb-4 h-12 w-12 text-gray-300" />
                 <p className="text-gray-500">Nenhum plano encontrado para os filtros atuais.</p>
-              </CardContent>
-            </Card>
-          ) : filteredPlans.map((plan) => {
-            const serviceMeta = getServiceMeta(plan.service || plan.tipo_plano);
-            const ServiceIcon = serviceMeta.icon;
-            const weekdays = normalizeWeekdays(plan.weekdays);
+              </div>
+            ) : filteredPlanGroups.map((group) => {
+              const ServiceIcon = group.serviceMeta.icon;
 
-            return (
-              <Card
-                key={plan.id}
-                className="border-2 border-gray-200 bg-white"
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <CardTitle className="truncate text-lg text-gray-900">
-                        {clientsById[getPlanClientId(plan)]?.nome_razao_social || plan.client_name || "-"}
-                      </CardTitle>
-                      <p className="mt-1 text-sm text-gray-500">
-                        {dogsById[plan.dog_id]?.nome || "Cão não encontrado"}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="border-gray-200 text-gray-700">
-                      {getFrequencyLabel(plan.frequency)}
-                    </Badge>
+              return (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => setDetailItem(group)}
+                  className="grid w-full gap-3 border-t border-gray-100 px-5 py-4 text-left transition hover:bg-gray-50 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto] md:items-center"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Responsável financeiro</p>
+                    <p className="truncate font-semibold text-gray-900">{group.clientName}</p>
+                    <p className="mt-1 text-sm text-gray-500">{group.frequencyLabel}</p>
                   </div>
-                </CardHeader>
 
-                <CardContent className="space-y-4">
-                  <div className={`rounded-2xl border px-4 py-3 ${serviceMeta.theme}`}>
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-xl bg-white/80 p-2">
-                        <ServiceIcon className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <p className="font-medium">{serviceMeta.label}</p>
-                        <p className="text-xs opacity-80">{serviceMeta.description}</p>
-                      </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Cães inclusos</p>
+                    <p className="truncate text-sm font-medium text-gray-900">{group.dogNames.join(", ") || "-"}</p>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Serviço</p>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700">
+                      <ServiceIcon className="h-4 w-4" />
+                      <span>{group.serviceMeta.label}</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                      <p className="text-gray-500">Frequência</p>
-                      <p className="mt-1 font-medium text-gray-900">{getFrequencyLabel(plan.frequency)}</p>
-                    </div>
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                      <p className="text-gray-500">Vencimento</p>
-                      <p className="mt-1 font-medium text-gray-900">Dia {plan.due_day || plan.renovacao_dia || "-"}</p>
-                    </div>
-                    <div className="col-span-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                      <p className="text-gray-500">Valor mensal por cão</p>
-                      <p className="mt-1 text-lg font-bold text-emerald-600">{formatCurrency(getMonthlyValue(plan))}</p>
-                    </div>
-                    <div className="col-span-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                      <p className="text-gray-500">Início</p>
-                      <p className="mt-1 font-medium text-gray-900">
-                        {getPlanStartDate(plan)
-                          ?format(parseDateOnly(getPlanStartDate(plan)), "dd/MM/yyyy", { locale: ptBR })
-                          : "-"}
-                      </p>
-                    </div>
+                  <div className="flex justify-end">
+                    <span className="inline-flex items-center rounded-full bg-purple-50 px-3 py-1.5 text-sm font-medium text-purple-700">
+                      Ver plano
+                    </span>
                   </div>
-
-                  {weekdays.length > 0 ?(
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Dias preferenciais</p>
-                      <div className="flex flex-wrap gap-2">
-                        {weekdays.map((weekday) => (
-                          <Badge key={`${plan.id}-${weekday}`} variant="outline">
-                            {WEEKDAYS.find((item) => item.id === weekday)?.label || weekday}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="flex gap-2 border-t pt-3">
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => runAutomations(plan)} disabled={isGenerating}>
-                      <Zap className="mr-2 h-3 w-3" />
-                      Gerar
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => openEditModal(plan)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(plan.id)}>
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                </button>
+              );
+            })}
+          </CardContent>
+        </Card>
       </div>
+
+      <Dialog open={Boolean(detailItem)} onOpenChange={(open) => !open && setDetailItem(null)}>
+        <DialogContent className="w-[95vw] max-w-[720px] max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Plano recorrente</DialogTitle>
+            <DialogDescription>
+              Confira os dados principais do pacote antes de editar ou gerar os próximos movimentos.
+            </DialogDescription>
+          </DialogHeader>
+
+          {detailItem ?(
+            <div className="space-y-5 py-2">
+              <div className={`rounded-2xl border p-4 ${detailServiceMeta?.theme || "border-gray-200 bg-gray-50 text-gray-700"}`}>
+                <div className="flex items-center gap-3">
+                  <div className="rounded-2xl bg-white/80 p-3">
+                    <DetailServiceIcon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">{detailItem.serviceMeta.label}</p>
+                    <p className="text-sm text-gray-600">{detailItem.frequencyLabel}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 rounded-2xl border border-gray-200 bg-white p-4 sm:grid-cols-2">
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Responsável financeiro</p>
+                  <p className="mt-2 font-medium text-gray-900">{detailItem.clientName}</p>
+                </div>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Cães inclusos</p>
+                  <p className="mt-2 font-medium text-gray-900">{detailItem.dogNames.join(", ") || "-"}</p>
+                </div>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Serviço</p>
+                  <p className="mt-2 font-medium text-gray-900">{detailItem.serviceMeta.label}</p>
+                </div>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Vencimento</p>
+                  <p className="mt-2 font-medium text-gray-900">{detailItem.dueDay ? `Dia ${detailItem.dueDay}` : "-"}</p>
+                </div>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Dias de preferência</p>
+                  <p className="mt-2 font-medium text-gray-900">
+                    {detailItem.weekdays.length > 0
+                      ? detailItem.weekdays.map((weekday) => WEEKDAYS.find((item) => item.id === weekday)?.label || weekday).join(", ")
+                      : "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Início do pacote</p>
+                  <p className="mt-2 font-medium text-gray-900">
+                    {detailItem.startDate ? format(parseDateOnly(detailItem.startDate), "dd/MM/yyyy", { locale: ptBR }) : "-"}
+                  </p>
+                </div>
+                {detailItem.packageDogCount > 1 ?(
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Valor por cão</p>
+                    <p className="mt-2 font-medium text-emerald-600">{formatCurrency(detailItem.monthlyValuePerDog)}</p>
+                  </div>
+                ) : null}
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Valor do pacote</p>
+                  <p className="mt-2 text-lg font-semibold text-emerald-600">{formatCurrency(detailItem.totalPackageValue)}</p>
+                </div>
+              </div>
+
+              {detailItem.firstMonthDates.length > 0 ?(
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="text-sm font-semibold text-emerald-900">Agendamentos 1º mês</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {detailItem.firstMonthDates.map((dateKey) => (
+                      <Badge key={`${detailItem.id}-${dateKey}`} className="border border-emerald-200 bg-white text-emerald-700">
+                        {format(parseDateOnly(dateKey), "dd/MM/yyyy", { locale: ptBR })}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDetailItem(null)}>
+              Fechar
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => detailItem && setPaymentsItem(detailItem)}
+              disabled={!detailItem}
+            >
+              <Zap className="mr-2 h-4 w-4" />
+              Pagamentos
+            </Button>
+            <Button
+              variant="outline"
+              className="text-red-600 hover:text-red-700"
+              onClick={() => {
+                if (!detailItem) return;
+                setDeleteDate(format(new Date(), "yyyy-MM-dd"));
+                setDeleteItem(detailItem);
+              }}
+              disabled={!detailItem}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Excluir plano
+            </Button>
+            <Button
+              onClick={() => {
+                if (!detailItem) return;
+                const nextItem = detailItem;
+                setDetailItem(null);
+                openEditModal(nextItem);
+              }}
+              disabled={!detailItem}
+              className="bg-purple-600 text-white hover:bg-purple-700"
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Editar plano
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={showModal}
@@ -1751,7 +2171,7 @@ export default function PlanosConfig() {
                       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-medium text-emerald-900">Agenda real do primeiro mês</p>
+                            <p className="text-sm font-medium text-emerald-900">Agendamentos 1º mês</p>
                             <p className="mt-1 text-xs text-emerald-700">
                               Ajuste as datas pontuais que realmente devem virar agendamento. Elas entram no cálculo da primeira cobrança.
                             </p>
@@ -1780,7 +2200,7 @@ export default function PlanosConfig() {
                             </div>
                           )) : (
                             <div className="rounded-xl border border-dashed border-emerald-200 bg-white px-4 py-3 text-sm text-emerald-800">
-                              Defina a data de início e os dias preferenciais para montar a agenda real do primeiro mês.
+                              Defina a data de início e os dias preferenciais para montar os agendamentos do 1º mês.
                             </div>
                           )}
                         </div>
@@ -1962,42 +2382,48 @@ export default function PlanosConfig() {
                           : "-"}
                       </span>
                     </div>
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="text-gray-500">Valor por cão</span>
-                      <span className="text-right font-medium text-emerald-600">
-                        {formData.monthly_value ?formatCurrency(Number.parseFloat(String(formData.monthly_value).replace(",", ".")) || 0) : "-"}
-                      </span>
-                    </div>
+                    {packageDogCount > 1 ?(
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-gray-500">Valor por cão</span>
+                        <span className="text-right font-medium text-emerald-600">
+                          {formData.monthly_value ?formatCurrency(Number.parseFloat(String(formData.monthly_value).replace(",", ".")) || 0) : "-"}
+                        </span>
+                      </div>
+                    ) : null}
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-gray-500">Total do pacote</span>
                       <span className="text-right text-base font-bold text-emerald-600">
                         {formData.monthly_value ?formatCurrency(totalPackageValue) : "-"}
                       </span>
                     </div>
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="text-gray-500">Primeira cobrança</span>
-                      <span className="text-right text-base font-bold text-blue-700">
-                        {firstBillingPreview ?formatCurrency(firstBillingPreview.firstPackageValue) : "-"}
-                      </span>
-                    </div>
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="text-gray-500">Primeiro vencimento</span>
-                      <span className="text-right font-medium text-gray-900">
-                        {firstBillingPreview?.firstDueDate
-                          ?format(firstBillingPreview.firstDueDate, "dd/MM/yyyy", { locale: ptBR })
-                          : "-"}
-                      </span>
-                    </div>
-                    {formData.service === "day_care" ?(
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="text-gray-500">Datas reais do 1º mês</span>
-                        <span className="text-right font-medium text-gray-900">
-                          {realFirstMonthDates.length > 0
-                            ?realFirstMonthDates.map((dateKey) => format(parseDateOnly(dateKey), "dd/MM", { locale: ptBR })).join(" • ")
-                            : "-"}
-                        </span>
+                    <div className="border-t border-dashed border-gray-200 pt-3">
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-gray-500">Primeira cobrança</span>
+                          <span className="text-right text-base font-bold text-blue-700">
+                            {firstBillingPreview ?formatCurrency(firstBillingPreview.firstPackageValue) : "-"}
+                          </span>
+                        </div>
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-gray-500">Primeiro vencimento</span>
+                          <span className="text-right font-medium text-gray-900">
+                            {firstBillingPreview?.firstDueDate
+                              ?format(firstBillingPreview.firstDueDate, "dd/MM/yyyy", { locale: ptBR })
+                              : "-"}
+                          </span>
+                        </div>
+                        {formData.service === "day_care" ?(
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="text-gray-500">Agendamentos 1º mês</span>
+                            <span className="text-right font-medium text-gray-900">
+                              {realFirstMonthDates.length > 0
+                                ?realFirstMonthDates.map((dateKey) => format(parseDateOnly(dateKey), "dd/MM", { locale: ptBR })).join(" • ")
+                                : "-"}
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
+                    </div>
                   </div>
                 </div>
               </div>

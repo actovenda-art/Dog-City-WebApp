@@ -26,7 +26,6 @@ const EMPTY_PROFILE = {
   descricao: "",
   escopo: "empresa",
   permissoesSelecionadas: [],
-  permissoesExtrasText: "",
   ativo: true,
 };
 
@@ -187,7 +186,6 @@ function splitProfilePermissions(values) {
   const normalizedPermissions = parsePermissions(values);
   return {
     selected: normalizedPermissions.filter((permission) => KNOWN_PERMISSION_IDS.includes(permission)),
-    extras: normalizedPermissions.filter((permission) => !KNOWN_PERMISSION_IDS.includes(permission)),
   };
 }
 
@@ -545,11 +543,6 @@ export default function AdministracaoSistema() {
     [selectedPermissionSet]
   );
 
-  const selectedExtraPermissions = useMemo(
-    () => parsePermissions(profileForm.permissoesExtrasText),
-    [profileForm.permissoesExtrasText]
-  );
-
   const isUnitUnionActive = selectedUnitIds.length > 1;
 
   function activateSingleUnit(unitId) {
@@ -629,7 +622,6 @@ export default function AdministracaoSistema() {
       descricao: profile.descricao || "",
       escopo: profile.escopo || "empresa",
       permissoesSelecionadas: permissionSplit.selected,
-      permissoesExtrasText: permissionSplit.extras.join("\n"),
       ativo: profile.ativo !== false,
     } : EMPTY_PROFILE);
     setShowProfileModal(true);
@@ -925,10 +917,7 @@ export default function AdministracaoSistema() {
       return;
     }
 
-    const mergedPermissions = [
-      ...(profileForm.permissoesSelecionadas || []),
-      ...parsePermissions(profileForm.permissoesExtrasText),
-    ];
+    const mergedPermissions = [...(profileForm.permissoesSelecionadas || [])];
 
     if (mergedPermissions.length === 0) {
       alert("Selecione pelo menos uma permissão para esse perfil.");
@@ -1599,11 +1588,6 @@ export default function AdministracaoSistema() {
                     <Badge className="border border-emerald-200 bg-white text-emerald-700">
                       {selectedPermissionSet.size} permissão(ões)
                     </Badge>
-                    {selectedExtraPermissions.length > 0 ? (
-                      <Badge className="border border-amber-200 bg-white text-amber-700">
-                        {selectedExtraPermissions.length} extra(s)
-                      </Badge>
-                    ) : null}
                     <Badge className={profileForm.ativo ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}>
                       {profileForm.ativo ? "Ativo" : "Inativo"}
                     </Badge>
@@ -1673,20 +1657,6 @@ export default function AdministracaoSistema() {
                       <p className="text-xs text-gray-500">Perfis inativos não devem ser atribuídos a novos usuários.</p>
                     </div>
                   </div>
-
-                  <div className="mt-4">
-                    <Label>Permissões extras</Label>
-                    <Textarea
-                      value={profileForm.permissoesExtrasText}
-                      onChange={(event) => setProfileForm((current) => ({ ...current, permissoesExtrasText: event.target.value }))}
-                      className="mt-2"
-                      rows={4}
-                      placeholder={"usuarios:read\nusuarios:update\nbranding:*"}
-                    />
-                    <p className="mt-2 text-xs text-gray-500">
-                      Use este campo apenas para permissões personalizadas que não aparecem nos blocos ao lado.
-                    </p>
-                  </div>
                 </div>
               </div>
 
@@ -1754,17 +1724,16 @@ export default function AdministracaoSistema() {
                                 key={permission.id}
                                 type="button"
                                 onClick={() => toggleProfilePermission(permission.id)}
-                                className={`rounded-2xl border px-3 py-3 text-left text-sm transition-colors ${
-                                  isSelected
-                                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900"
-                                }`}
-                              >
-                                <span className="block font-medium">{permission.label}</span>
-                                <span className="mt-1 block text-xs opacity-75">{permission.id}</span>
-                              </button>
-                            );
-                          })}
+                              className={`rounded-2xl border px-3 py-3 text-left text-sm transition-colors ${
+                                isSelected
+                                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900"
+                              }`}
+                            >
+                              <span className="block font-medium">{permission.label}</span>
+                            </button>
+                          );
+                        })}
                         </div>
                       </div>
                     );

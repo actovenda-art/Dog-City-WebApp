@@ -961,7 +961,7 @@ export default function Cadastro() {
       await syncDogLinks(Carteira, carteiras, selectedCarteiraIds, effectiveDogId);
 
       setNotifyTitle("Sucesso");
-      setNotifyMessage(editingDogId ? "Cadastro do cão atualizado com sucesso!" : "C?o cadastrado com sucesso!");
+      setNotifyMessage(editingDogId ? "Cadastro do cão atualizado com sucesso!" : "Cão cadastrado com sucesso!");
       setNotifyOpen(true);
       resetDogEditor();
       clearDogEditQuery();
@@ -1567,7 +1567,7 @@ export default function Cadastro() {
                   <div className="flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Castrado</p>
-                      <p className="text-xs text-gray-500">Informe se o c?o j? ? castrado.</p>
+                      <p className="text-xs text-gray-500">Informe se o cão já é castrado.</p>
                     </div>
                     <Switch checked={!!dogForm.castrado} onCheckedChange={(checked) => setDogForm({ ...dogForm, castrado: checked })} />
                   </div>
@@ -1948,7 +1948,7 @@ export default function Cadastro() {
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
                     <h4 className="font-semibold text-gray-900">Cães cadastrados</h4>
-                    <p className="text-sm text-gray-500">Abra a ficha do c?o ou reutilize o cadastro para atualiza??o.</p>
+                    <p className="text-sm text-gray-500">Abra a ficha do cão ou reutilize o cadastro para atualização.</p>
                   </div>
                   <Badge variant="outline">{dogs.length} registro(s)</Badge>
                 </div>

@@ -620,13 +620,22 @@ export default function PlanosConfig() {
   async function loadData({ skipSilentSync = false } = {}) {
     setIsLoading(true);
     try {
+      const safeLoad = async (label, loader, fallback) => {
+        try {
+          return await loader();
+        } catch (error) {
+          console.error(`Erro ao carregar ${label}:`, error);
+          return fallback;
+        }
+      };
+
       const [plansData, dogsData, carteirasData, tabelaPrecosData, appointmentsData, receivablesData, me] = await Promise.all([
-        PlanConfig.list("-created_date", 500),
-        Dog.list("-created_date", 500),
-        Carteira.list("-created_date", 500),
-        TabelaPrecos.list("-created_date", 1000),
-        Appointment.listAll ? Appointment.listAll("-created_date", 1000, 10000) : Appointment.list("-created_date", 5000),
-        ContaReceber.listAll ? ContaReceber.listAll("-created_date", 1000, 10000) : ContaReceber.list("-created_date", 5000),
+        safeLoad("planos recorrentes", () => PlanConfig.list("-created_date", 500), []),
+        safeLoad("cães", () => Dog.list("-created_date", 500), []),
+        safeLoad("responsáveis financeiros", () => Carteira.list("-created_date", 500), []),
+        safeLoad("tabela de preços", () => TabelaPrecos.list("-created_date", 1000), []),
+        safeLoad("agendamentos automáticos", () => (Appointment.listAll ? Appointment.listAll("-created_date", 1000, 10000) : Appointment.list("-created_date", 5000)), []),
+        safeLoad("cobranças recorrentes", () => (ContaReceber.listAll ? ContaReceber.listAll("-created_date", 1000, 10000) : ContaReceber.list("-created_date", 5000)), []),
         User.me().catch(() => null),
       ]);
 
@@ -643,6 +652,8 @@ export default function PlanosConfig() {
             await loadData({ skipSilentSync: true });
             return;
           }
+        } catch (error) {
+          console.error("Erro ao sincronizar planos automaticamente:", error);
         } finally {
           isSilentSyncRunningRef.current = false;
         }
@@ -1126,22 +1137,23 @@ export default function PlanosConfig() {
 
     for (const dateKey of allAppointmentDates) {
       const appointment = {
+        empresa_id: plan.empresa_id || null,
         dog_id: plan.dog_id,
         cliente_id: plan.client_id || plan.carteira_id || null,
-        client_name: plan.client_name,
-        service: plan.service,
         service_type: plan.service,
-        date: dateKey,
+        status: "agendado",
         data_referencia: dateKey,
         data_hora_entrada: `${dateKey}T08:00:00`,
         data_hora_saida: `${dateKey}T18:00:00`,
-        value: valuePerUse,
-        payment_status: "pendente",
+        hora_entrada: "08:00",
+        hora_saida: "18:00",
+        observacoes: "",
         valor_previsto: valuePerUse,
         charge_type: "pacote",
         source_type: "plano_recorrente",
-        plan_id: plan.id,
         metadata: {
+          plan_id: plan.id,
+          client_name: plan.client_name || "",
           package_group_key: parseMetadata(plan.metadata_gerencial).package_group_key || plan.id,
         },
         source_key: `plano_recorrente|${plan.id}|${plan.service}|${dateKey}`,
@@ -1576,14 +1588,17 @@ export default function PlanosConfig() {
     const groupCharges = groupReceivablesMap.get(deleteItem.id) || [];
     const monthCharges = groupCharges.filter((charge) => getMonthKey(charge.vencimento) === monthKey);
     const futureCharges = groupCharges.filter((charge) => getMonthKey(charge.vencimento) > monthKey);
-    const groupAppointments = appointments.filter((appointment) => deleteItem.planIds.includes(appointment.plan_id));
-    const monthAppointments = groupAppointments.filter((appointment) => getMonthKey(appointment.date || appointment.data_referencia || appointment.data_hora_entrada) === monthKey);
+    const groupAppointments = appointments.filter((appointment) => {
+      const appointmentMeta = parseMetadata(appointment.metadata);
+      return deleteItem.planIds.includes(appointmentMeta.plan_id);
+    });
+    const monthAppointments = groupAppointments.filter((appointment) => getMonthKey(appointment.data_referencia || appointment.data_hora_entrada) === monthKey);
     const keptAppointments = monthAppointments.filter((appointment) => {
-      const appointmentDate = parseDateOnly(appointment.date || appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
+      const appointmentDate = parseDateOnly(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
       return appointmentDate && appointmentDate.getTime() <= exclusionDate.getTime() && !["cancelado", "desconsiderado"].includes(appointment.status);
     });
     const openReplacementAppointments = groupAppointments.filter((appointment) => {
-      const appointmentDate = parseDateOnly(appointment.date || appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
+      const appointmentDate = parseDateOnly(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
       return appointment.status === "faltou"
         && appointment.charge_type === "pacote"
         && appointmentDate

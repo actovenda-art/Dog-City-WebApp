@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { getAppointmentMeta, getManualAppointmentMonitorName } from "@/lib/attendance";
+import { getAppointmentMeta, getManualAppointmentNotice } from "@/lib/attendance";
 import { AlertTriangle, Calculator, Dog as DogIcon, FileText, Plus, Save, Send } from "lucide-react";
 import { differenceInDays } from "date-fns";
 
@@ -380,6 +380,7 @@ function calcularOrcamento(caes, dogs, precos) {
 
 export default function Orcamentos() {
   const location = useLocation();
+  const openOrcamentoId = new URLSearchParams(location.search).get("orcamentoId") || "";
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
@@ -465,12 +466,9 @@ export default function Orcamentos() {
 
       let nextPrefillNotice = null;
       const buildManualPrefillNotice = (appointment) => {
-        const monitorName = getManualAppointmentMonitorName(appointment);
         return {
           title: "Agendamento manual",
-          message: monitorName
-            ? `Agendamento realizado manualmente por "${monitorName}".`
-            : "Agendamento realizado manualmente.",
+          message: getManualAppointmentNotice(appointment),
         };
       };
 
@@ -744,6 +742,7 @@ export default function Orcamentos() {
         <OrcamentosHistoricoPanel
           embedded
           refreshKey={historyRefreshKey}
+          openOrcamentoId={openOrcamentoId}
           onChange={loadData}
         />
       </div>

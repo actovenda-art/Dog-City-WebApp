@@ -84,6 +84,7 @@ export default function Agendamentos() {
   const [filterService, setFilterService] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [packageDialogOpen, setPackageDialogOpen] = useState(false);
+  const [avulsoActionsDialogOpen, setAvulsoActionsDialogOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [packageCode, setPackageCode] = useState("");
   const [packageNotes, setPackageNotes] = useState("");
@@ -174,6 +175,11 @@ export default function Agendamentos() {
     setPackageDialogOpen(true);
   }
 
+  function openAvulsoActionsDialog(appointment) {
+    setSelectedAppointment(appointment);
+    setAvulsoActionsDialogOpen(true);
+  }
+
   async function resolveReceivableIfNeeded(appointment) {
     if (appointment.charge_type !== "avulso" || !appointment.linked_checkin_id) return;
     const checkin = checkins.find((item) => item.id === appointment.linked_checkin_id);
@@ -244,6 +250,11 @@ export default function Agendamentos() {
     navigate(
       `${createPageUrl("Registrador")}?date=${encodeURIComponent(getAppointmentDateKey(appointment) || "")}&appointmentId=${encodeURIComponent(appointment.id)}`
     );
+  }
+
+  function openLinkedOrcamento(appointment) {
+    if (!appointment?.orcamento_id) return;
+    navigate(`${createPageUrl("Orcamentos")}?orcamentoId=${encodeURIComponent(appointment.orcamento_id)}`);
   }
 
   async function handleMarkAbsence(appointment) {
@@ -484,7 +495,13 @@ export default function Agendamentos() {
             const dog = dogsById[appointment.dog_id];
             const owner = ownerByDogId[appointment.dog_id] || {};
             return (
-              <Card key={appointment.id} className="border-gray-200 bg-white">
+              <Card
+                key={appointment.id}
+                className={appointment.charge_type === "avulso"
+                  ? "cursor-pointer border-gray-200 bg-white transition hover:border-blue-200 hover:shadow-sm"
+                  : "border-gray-200 bg-white"}
+                onClick={appointment.charge_type === "avulso" ? () => openAvulsoActionsDialog(appointment) : undefined}
+              >
                 <CardContent className="p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
@@ -505,8 +522,8 @@ export default function Agendamentos() {
                     </div>
                     {!shouldHideOperationalAlerts && appointment.source_type === "manual_registrador" && appointment.charge_type === "pendente_comercial" && (
                       <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" onClick={() => openPackageDialog(appointment)}>Pacote</Button>
-                        <Button onClick={() => handleCreateOrcamento(appointment)} className="bg-blue-600 text-white hover:bg-blue-700">
+                        <Button variant="outline" onClick={(event) => { event.stopPropagation(); openPackageDialog(appointment); }}>Pacote</Button>
+                        <Button onClick={(event) => { event.stopPropagation(); handleCreateOrcamento(appointment); }} className="bg-blue-600 text-white hover:bg-blue-700">
                           Criar orçamento
                         </Button>
                       </div>
@@ -550,6 +567,62 @@ export default function Agendamentos() {
             <Button onClick={confirmPackageClassification} disabled={isSaving}>
               {isSaving ? "Salvando..." : "Confirmar pacote"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={avulsoActionsDialogOpen} onOpenChange={setAvulsoActionsDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Agendamento avulso</DialogTitle>
+            <DialogDescription>
+              Escolha a ação desejada para este atendimento.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedAppointment ? (
+            <div className="space-y-4 py-2">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-semibold text-gray-900">{dogsById[selectedAppointment.dog_id]?.nome || "Cão"}</p>
+                  <Badge variant="outline">{getServiceLabel(selectedAppointment.service_type)}</Badge>
+                  <Badge className="bg-blue-100 text-blue-700">Avulso</Badge>
+                </div>
+                <p className="mt-2 text-sm text-gray-600">
+                  {(ownerByDogId[selectedAppointment.dog_id] || {}).nome || "Responsável não identificado"} • {formatAppointmentPeriod(selectedAppointment)}
+                </p>
+              </div>
+
+              <div className="grid gap-3">
+                <Button
+                  variant="outline"
+                  className="justify-start"
+                  onClick={() => {
+                    openRegistradorForAppointment(selectedAppointment);
+                    setAvulsoActionsDialogOpen(false);
+                  }}
+                >
+                  Ver Registros
+                </Button>
+                <Button
+                  className="justify-start bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-200"
+                  disabled={!selectedAppointment.orcamento_id}
+                  onClick={() => {
+                    openLinkedOrcamento(selectedAppointment);
+                    setAvulsoActionsDialogOpen(false);
+                  }}
+                >
+                  Abrir Orçamento
+                </Button>
+                {!selectedAppointment.orcamento_id ? (
+                  <p className="text-xs text-amber-700">
+                    Este agendamento não possui orçamento vinculado.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAvulsoActionsDialogOpen(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

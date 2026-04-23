@@ -540,7 +540,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
             <p className="mt-1 truncate text-xs uppercase tracking-[0.2em] text-gray-400">Dog City Brasil</p>
           </div>
           <div className="flex items-center gap-2">
-            {currentUser ? <NotificationBell userId={currentUser.id} /> : null}
+            {currentUser ? <NotificationBell userId={currentUser.id} user={currentUser} /> : null}
             {activeUnitLogo ? (
               <img
                 src={activeUnitLogo}
@@ -559,7 +559,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
 
       {currentUser ? (
         <div className="fixed right-6 top-4 z-50 hidden md:block">
-          <NotificationBell userId={currentUser.id} />
+          <NotificationBell userId={currentUser.id} user={currentUser} />
         </div>
       ) : null}
 

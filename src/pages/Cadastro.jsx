@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+﻿import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Dog } from "@/api/entities";
 import { Responsavel } from "@/api/entities";
 import { Carteira } from "@/api/entities";
@@ -21,14 +21,14 @@ import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { createEmptyDogMeal, extractDogMeals, isNaturalFoodType, serializeDogMeals } from "@/lib/dog-form-utils";
-import { findEntityByReference, getInternalEntityReference } from "@/lib/entity-identifiers";
+import { findEntityByReference } from "@/lib/entity-identifiers";
 import { cn } from "@/lib/utils";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 
-const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "Médio", "Grande", "Gigante"];
-const DOG_COAT_OPTIONS = ["Curto", "Médio", "Longo"];
+const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "MÃ©dio", "Grande", "Gigante"];
+const DOG_COAT_OPTIONS = ["Curto", "MÃ©dio", "Longo"];
 const DOG_BREED_OPTIONS = [
   "SRD",
   "Akita",
@@ -39,38 +39,38 @@ const DOG_BREED_OPTIONS = [
   "Border Collie",
   "Boston Terrier",
   "Boxer",
-  "Bulldog Francês",
-  "Bulldog Inglês",
+  "Bulldog FrancÃªs",
+  "Bulldog InglÃªs",
   "Cane Corso",
   "Cavalier King Charles Spaniel",
   "Chihuahua",
   "Chow Chow",
   "Cocker Spaniel",
   "Dachshund",
-  "Dálmata",
+  "DÃ¡lmata",
   "Dobermann",
-  "Dogue Alemão",
+  "Dogue AlemÃ£o",
   "Fila Brasileiro",
   "Golden Retriever",
   "Husky Siberiano",
   "Jack Russell Terrier",
   "Labrador",
   "Lhasa Apso",
-  "Lulu da Pomerânia",
-  "Maltês",
-  "Pastor Alemão",
+  "Lulu da PomerÃ¢nia",
+  "MaltÃªs",
+  "Pastor AlemÃ£o",
   "Pastor Australiano",
   "Pastor Belga",
-  "Pequinês",
+  "PequinÃªs",
   "Pinscher Miniatura",
   "Poodle",
   "Pug",
   "Rottweiler",
   "Samoieda",
-  "São Bernardo",
+  "SÃ£o Bernardo",
   "Schnauzer",
   "Shih Tzu",
-  "Spitz Alemão",
+  "Spitz AlemÃ£o",
   "Terrier Brasileiro",
   "Weimaraner",
   "Welsh Corgi Pembroke",
@@ -161,6 +161,27 @@ function normalizeDocumentDigits(value, maxLength = 14) {
   return String(value || "").replace(/\D/g, "").slice(0, maxLength);
 }
 
+function sanitizeDisplayNameInput(value) {
+  return String(value || "")
+    .replace(/[^\p{L}' -]/gu, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^\s+/g, "");
+}
+
+function formatDisplayName(value) {
+  return sanitizeDisplayNameInput(value)
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((word) =>
+      word
+        .split(/([-'])/)
+        .map((part) => (/^[-']$/.test(part) ? part : `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`))
+        .join("")
+    )
+    .join(" ");
+}
+
 function hasValue(value) {
   return String(value ?? "").trim().length > 0;
 }
@@ -181,19 +202,19 @@ function getTextFieldError({
 
   switch (kind) {
     case "email":
-      return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email válido.";
+      return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email vÃ¡lido.";
     case "cpf":
-      return digits.length === 11 ? "" : "Digite um CPF com 11 números.";
+      return digits.length === 11 ? "" : "Digite um CPF com 11 nÃºmeros.";
     case "cpf_cnpj":
-      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ válido.";
+      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ vÃ¡lido.";
     case "phone":
-      return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular válido.";
+      return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular vÃ¡lido.";
     case "cep":
-      return digits.length === 8 ? "" : "Digite um CEP válido.";
+      return digits.length === 8 ? "" : "Digite um CEP vÃ¡lido.";
     case "state":
       return trimmedValue.length === 2 ? "" : "Use a sigla do estado com 2 letras.";
     case "weight":
-      return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas números, vírgula ou ponto.";
+      return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas nÃºmeros, vÃ­rgula ou ponto.";
     default:
       return "";
   }
@@ -358,6 +379,7 @@ export default function Cadastro() {
     className = "",
     inputClassName = "",
     disabled = false,
+    onBlur,
     ...inputProps
   }) {
     const { error, showError, showValid } = getFieldFeedback(fieldKey, {
@@ -382,7 +404,10 @@ export default function Cadastro() {
           <Input
             value={value}
             onChange={onChange}
-            onBlur={() => touchField(fieldKey)}
+            onBlur={(event) => {
+              touchField(fieldKey);
+              onBlur?.(event);
+            }}
             placeholder={placeholder}
             disabled={disabled}
             className={getFieldClassNames(showError, showValid, cn(StatusIcon && "pr-11", inputClassName))}
@@ -608,9 +633,6 @@ export default function Cadastro() {
       contato_orcamentos_nome: responsavelForm.nome_completo || current.contato_orcamentos_nome,
       contato_orcamentos_celular: responsavelForm.celular || current.contato_orcamentos_celular,
       contato_orcamentos_email: responsavelForm.email || current.contato_orcamentos_email,
-      contato_alinhamentos_nome: responsavelForm.nome_completo || current.contato_alinhamentos_nome,
-      contato_alinhamentos_celular: responsavelForm.celular || current.contato_alinhamentos_celular,
-      contato_alinhamentos_email: responsavelForm.email || current.contato_alinhamentos_email,
     }));
   }, [carteiraIgualResponsavel, responsavelForm]);
 
@@ -635,7 +657,7 @@ export default function Cadastro() {
           state: data.uf || current.state,
         }));
       } catch (error) {
-        console.warn("Erro ao buscar CEP do responsável financeiro:", error);
+        console.warn("Erro ao buscar CEP do responsÃ¡vel financeiro:", error);
       } finally {
         if (!cancelled) setAddressLoading(false);
       }
@@ -682,7 +704,7 @@ export default function Cadastro() {
       setCurrentUser(me || null);
     } catch (error) {
       setNotifyTitle("Erro");
-      setNotifyMessage(error?.message || "Não foi possível carregar os cadastros.");
+      setNotifyMessage(error?.message || "NÃ£o foi possÃ­vel carregar os cadastros.");
       setNotifyOpen(true);
     }
   };
@@ -774,7 +796,7 @@ export default function Cadastro() {
       const willBeSelected = selectedIds.includes(record.id);
       const alreadyLinked = currentIds.includes(dogId);
       if (willBeSelected && !alreadyLinked && currentIds.length >= RELATION_SLOTS.length) {
-        throw new Error(`${label} ${record.nome_completo || record.nome_razao_social || ""} já atingiu o limite de 8 cães vinculados.`);
+        throw new Error(`${label} ${record.nome_completo || record.nome_razao_social || ""} jÃ¡ atingiu o limite de 8 cÃ£es vinculados.`);
       }
     }
   };
@@ -887,20 +909,20 @@ export default function Cadastro() {
       if (!url) return;
 
       if (isImagePreviewable(path) || isImagePreviewable(url)) {
-        openImageViewer(url, "Carteirinha de vacinação");
+        openImageViewer(url, "Carteirinha de vacinaÃ§Ã£o");
         return;
       }
 
       window.open(url, "_blank", "noopener,noreferrer");
     } catch {
       setNotifyTitle("Erro");
-      setNotifyMessage("Não foi possível abrir o documento.");
+      setNotifyMessage("NÃ£o foi possÃ­vel abrir o documento.");
       setNotifyOpen(true);
     }
   };
 
   const handleSaveDog = async () => {
-    if (!dogForm.nome) { setNotifyTitle("Campo obrigatório"); setNotifyMessage("Informe o nome do cão."); setNotifyOpen(true); return; }
+    if (!dogForm.nome) { setNotifyTitle("Campo obrigatÃ³rio"); setNotifyMessage("Informe o nome do cÃ£o."); setNotifyOpen(true); return; }
     setIsSaving(true);
     try {
       const mealPayload = serializeDogMeals(dogForm.refeicoes);
@@ -934,7 +956,7 @@ export default function Cadastro() {
         veterinario_endereco: optional(dogForm.veterinario_endereco),
         alimentacao_marca_racao: dogForm.alimentacao_natural ? null : optional(dogForm.alimentacao_marca_racao),
         alimentacao_sabor: dogForm.alimentacao_natural ? null : optional(dogForm.alimentacao_sabor),
-        alimentacao_tipo: dogForm.alimentacao_natural ? "Alimentação natural" : optional(dogForm.alimentacao_tipo),
+        alimentacao_tipo: dogForm.alimentacao_natural ? "AlimentaÃ§Ã£o natural" : optional(dogForm.alimentacao_tipo),
         refeicao_1_qnt: optional(mealPayload.refeicao_1_qnt),
         refeicao_1_horario: optional(mealPayload.refeicao_1_horario),
         refeicao_1_obs: optional(mealPayload.refeicao_1_obs),
@@ -949,8 +971,8 @@ export default function Cadastro() {
         refeicao_4_obs: optional(mealPayload.refeicao_4_obs),
         medicamentos_continuos: normalizeMedications(dogForm.medicamentos_continuos),
       };
-      validateRelationCapacity(responsaveis, selectedResponsavelIds, editingDogId, "O responsável");
-      validateRelationCapacity(carteiras, selectedCarteiraIds, editingDogId, "O responsável financeiro");
+      validateRelationCapacity(responsaveis, selectedResponsavelIds, editingDogId, "O responsÃ¡vel");
+      validateRelationCapacity(carteiras, selectedCarteiraIds, editingDogId, "O responsÃ¡vel financeiro");
 
       setNotifyOpen(false);
       const savedDog = editingDogId
@@ -962,7 +984,7 @@ export default function Cadastro() {
       await syncDogLinks(Carteira, carteiras, selectedCarteiraIds, effectiveDogId);
 
       setNotifyTitle("Sucesso");
-      setNotifyMessage(editingDogId ? "Cadastro do cão atualizado com sucesso!" : "Cão cadastrado com sucesso!");
+      setNotifyMessage(editingDogId ? "Cadastro do cÃ£o atualizado com sucesso!" : "CÃ£o cadastrado com sucesso!");
       setNotifyOpen(true);
       resetDogEditor();
       clearDogEditQuery();
@@ -973,7 +995,7 @@ export default function Cadastro() {
 
   const handleSaveResponsavel = async () => {
     if (!responsavelForm.nome_completo || !responsavelForm.cpf || !responsavelForm.celular) {
-      setNotifyTitle("Campos obrigatórios"); setNotifyMessage("Preencha nome, CPF e celular."); setNotifyOpen(true); return;
+      setNotifyTitle("Campos obrigatÃ³rios"); setNotifyMessage("Preencha nome, CPF e celular."); setNotifyOpen(true); return;
     }
     setIsSaving(true);
     try {
@@ -992,7 +1014,7 @@ export default function Cadastro() {
         fullName: responsavelForm.nome_completo,
       });
       if (cpfValidation.shouldBlock) {
-        setNotifyTitle("CPF não validado");
+        setNotifyTitle("CPF nÃ£o validado");
         setNotifyMessage(cpfValidation.message);
         setNotifyOpen(true);
         setIsSaving(false);
@@ -1015,7 +1037,7 @@ export default function Cadastro() {
         dog_id_7: optional(responsavelForm.dog_id_7),
         dog_id_8: optional(responsavelForm.dog_id_8),
       });
-      setNotifyTitle("Sucesso"); setNotifyMessage("Responsável cadastrado!"); setNotifyOpen(true);
+      setNotifyTitle("Sucesso"); setNotifyMessage("ResponsÃ¡vel cadastrado!"); setNotifyOpen(true);
       setResponsavelForm(emptyResponsavel);
       await loadData();
     } catch (error) { setNotifyTitle("Erro"); setNotifyMessage(error?.message || "Erro ao cadastrar."); setNotifyOpen(true); }
@@ -1042,8 +1064,8 @@ export default function Cadastro() {
       || !carteiraForm.contato_alinhamentos_celular
       || !carteiraForm.contato_alinhamentos_email
     ) {
-      setNotifyTitle("Campos obrigatórios");
-      setNotifyMessage("Preencha os dados principais, endereço, vencimento e os contatos de orçamentos e alinhamentos.");
+      setNotifyTitle("Campos obrigatÃ³rios");
+      setNotifyMessage("Preencha os dados principais, endereÃ§o, vencimento e os contatos de orÃ§amentos e alinhamentos.");
       setNotifyOpen(true);
       return;
     }
@@ -1065,7 +1087,7 @@ export default function Cadastro() {
           fullName: carteiraForm.nome_razao_social,
         });
         if (cpfValidation.shouldBlock) {
-          setNotifyTitle("CPF não validado");
+          setNotifyTitle("CPF nÃ£o validado");
           setNotifyMessage(cpfValidation.message);
           setNotifyOpen(true);
           setIsSaving(false);
@@ -1129,7 +1151,7 @@ export default function Cadastro() {
       setShowClientLinkFeedback(true);
     } catch (error) {
       setNotifyTitle("Erro");
-      setNotifyMessage(error?.message || "Não foi possível gerar o link de cadastro.");
+      setNotifyMessage(error?.message || "NÃ£o foi possÃ­vel gerar o link de cadastro.");
       setNotifyOpen(true);
     } finally {
       setIsSaving(false);
@@ -1144,7 +1166,7 @@ export default function Cadastro() {
       window.setTimeout(() => setHasCopiedClientLink(false), 2000);
     } catch {
       setNotifyTitle("Erro");
-      setNotifyMessage("Não foi possível copiar o link.");
+      setNotifyMessage("NÃ£o foi possÃ­vel copiar o link.");
       setNotifyOpen(true);
     }
   };
@@ -1153,7 +1175,7 @@ export default function Cadastro() {
   const cadastroStats = [
     {
       id: "caes",
-      label: "Cães cadastrados",
+      label: "CÃ£es cadastrados",
       value: dogs.length,
       icon: DogIcon,
       shellClass: "border-blue-200 bg-blue-50",
@@ -1162,7 +1184,7 @@ export default function Cadastro() {
     },
     {
       id: "responsaveis",
-      label: "Responsáveis",
+      label: "ResponsÃ¡veis",
       value: responsaveis.length,
       icon: Users,
       shellClass: "border-emerald-200 bg-emerald-50",
@@ -1171,7 +1193,7 @@ export default function Cadastro() {
     },
     {
       id: "carteiras",
-      label: "Responsáveis financeiros",
+      label: "ResponsÃ¡veis financeiros",
       value: carteiras.length,
       icon: Wallet,
       shellClass: "border-orange-200 bg-orange-50",
@@ -1183,8 +1205,8 @@ export default function Cadastro() {
   const tabItems = [
     {
       id: "caes",
-      label: "Cães",
-      description: "Ficha do cão, saúde, medicação e vínculos.",
+      label: "CÃ£es",
+      description: "Ficha do cÃ£o, saÃºde, medicaÃ§Ã£o e vÃ­nculos.",
       icon: DogIcon,
       count: dogs.length,
       activeClass: "data-[state=active]:bg-blue-600 data-[state=active]:text-white",
@@ -1192,8 +1214,8 @@ export default function Cadastro() {
     },
     {
       id: "responsaveis",
-      label: "Responsáveis",
-      description: "Contatos, CPF e associação com os cães.",
+      label: "ResponsÃ¡veis",
+      description: "Contatos, CPF e associaÃ§Ã£o com os cÃ£es.",
       icon: Users,
       count: responsaveis.length,
       activeClass: "data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
@@ -1202,7 +1224,7 @@ export default function Cadastro() {
     {
       id: "carteiras",
       label: "Financeiro",
-      description: "Cobrança, vencimento e vínculo financeiro.",
+      description: "CobranÃ§a, vencimento e vÃ­nculo financeiro.",
       icon: Wallet,
       count: carteiras.length,
       activeClass: "data-[state=active]:bg-orange-600 data-[state=active]:text-white",
@@ -1239,8 +1261,8 @@ export default function Cadastro() {
   const jornadaCadastro = [
     {
       id: "caes",
-      title: editingDogId ? "Continuar ficha do cão" : "Iniciar cadastro do cão",
-      caption: editingDogId ? `Retome a edição de ${activeDogRecord?.nome}.` : "Preencha dados básicos, saúde, alimentação e vínculos.",
+      title: editingDogId ? "Continuar ficha do cÃ£o" : "Iniciar cadastro do cÃ£o",
+      caption: editingDogId ? `Retome a ediÃ§Ã£o de ${activeDogRecord?.nome}.` : "Preencha dados bÃ¡sicos, saÃºde, alimentaÃ§Ã£o e vÃ­nculos.",
       icon: DogIcon,
       progress: Math.round((dogDraftCompleted / 5) * 100),
       counter: `${dogDraftCompleted}/5`,
@@ -1250,8 +1272,8 @@ export default function Cadastro() {
     },
     {
       id: "responsaveis",
-      title: "Cadastrar responsável",
-      caption: "Organize contatos principais e conecte os cães corretos.",
+      title: "Cadastrar responsÃ¡vel",
+      caption: "Organize contatos principais e conecte os cÃ£es corretos.",
       icon: Users,
       progress: Math.round((responsavelDraftCompleted / 5) * 100),
       counter: `${responsavelDraftCompleted}/5`,
@@ -1262,7 +1284,7 @@ export default function Cadastro() {
     {
       id: "carteiras",
       title: "Configurar financeiro",
-      caption: "Defina cobrança, vencimento e vínculo financeiro do cão.",
+      caption: "Defina cobranÃ§a, vencimento e vÃ­nculo financeiro do cÃ£o.",
       icon: Wallet,
       progress: Math.round((carteiraDraftCompleted / 5) * 100),
       counter: `${carteiraDraftCompleted}/5`,
@@ -1294,10 +1316,10 @@ export default function Cadastro() {
                   <div>
                     <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Cadastro</h1>
                     <p className="hidden mt-2 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
-                      Organize cães, responsáveis e financeiro em um único fluxo, com leitura mais clara e ações rápidas no mesmo padrão visual do restante do sistema.
+                      Organize cÃ£es, responsÃ¡veis e financeiro em um Ãºnico fluxo, com leitura mais clara e aÃ§Ãµes rÃ¡pidas no mesmo padrÃ£o visual do restante do sistema.
                     </p>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
-                      Organize cães, responsáveis e financeiro em um único fluxo.
+                      Organize cÃ£es, responsÃ¡veis e financeiro em um Ãºnico fluxo.
                     </p>
                     <div className="mt-4 hidden flex-wrap gap-2">
                       {tabItems.map((item) => {
@@ -1349,10 +1371,10 @@ export default function Cadastro() {
                         {activeTab === "caes"
                           ? activeDogRecord
                             ? `Editando agora: ${activeDogRecord.nome}.`
-                            : "Use esta área para criar novas fichas de cães."
+                            : "Use esta Ã¡rea para criar novas fichas de cÃ£es."
                           : activeTab === "responsaveis"
-                            ? "Cadastre contatos, documentos e vínculos dos responsáveis."
-                            : "Mantenha os responsáveis financeiros vinculados aos cães corretos."}
+                            ? "Cadastre contatos, documentos e vÃ­nculos dos responsÃ¡veis."
+                            : "Mantenha os responsÃ¡veis financeiros vinculados aos cÃ£es corretos."}
                       </p>
                     </div>
                   </div>
@@ -1385,13 +1407,13 @@ export default function Cadastro() {
           <PageSubTabs
             className="mb-6"
             items={[
-              { value: "caes", content: <><DogIcon className="w-4 h-4" /><span>Cães</span></> },
-              { value: "responsaveis", content: <><Users className="w-4 h-4" /><span>Responsáveis</span></> },
+              { value: "caes", content: <><DogIcon className="w-4 h-4" /><span>CÃ£es</span></> },
+              { value: "responsaveis", content: <><Users className="w-4 h-4" /><span>ResponsÃ¡veis</span></> },
               { value: "carteiras", content: <><Wallet className="w-4 h-4" /><span>Carteiras</span></> },
             ]}
           />
 
-          {/* Cães Tab */}
+          {/* CÃ£es Tab */}
           <TabsContent value="caes">
             <div className="mb-4 grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
               <Card className="border-blue-200 bg-blue-50/70">
@@ -1401,9 +1423,9 @@ export default function Cadastro() {
                       <HeartPulse className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-blue-900">Cadastro do cão</p>
+                      <p className="text-sm font-semibold text-blue-900">Cadastro do cÃ£o</p>
                       <p className="mt-1 text-sm text-blue-800">
-                        Separei o preenchimento em blocos para ficar mais fácil revisar saúde, alimentação, medicação e vínculos antes de salvar.
+                        Separei o preenchimento em blocos para ficar mais fÃ¡cil revisar saÃºde, alimentaÃ§Ã£o, medicaÃ§Ã£o e vÃ­nculos antes de salvar.
                       </p>
                     </div>
                   </div>
@@ -1411,9 +1433,9 @@ export default function Cadastro() {
               </Card>
               <Card className="border-slate-200 bg-white">
                 <CardContent className="p-4">
-                  <p className="text-sm font-semibold text-slate-900">Resumo rápido</p>
+                  <p className="text-sm font-semibold text-slate-900">Resumo rÃ¡pido</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} responsável(is)</Badge>
+                    <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} responsÃ¡vel(is)</Badge>
                     <Badge className="bg-orange-100 text-orange-700">{selectedCarteiraIds.length} financeiro(s)</Badge>
                     <Badge className="bg-purple-100 text-purple-700">{(dogForm.medicamentos_continuos || []).length} medicamento(s)</Badge>
                     {activeDogRecord ? <Badge className="bg-emerald-100 text-emerald-700">Editando {activeDogRecord.nome}</Badge> : null}
@@ -1423,11 +1445,11 @@ export default function Cadastro() {
             </div>
             <Card className="border-blue-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><DogIcon className="w-5 h-5 text-blue-600" />Cadastrar Cão</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><DogIcon className="w-5 h-5 text-blue-600" />Cadastrar CÃ£o</h3>
                 {editingDogId ? (
                   <div className="mb-4 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-blue-700">
-                      Você está atualizando este cão e pode revisar vínculos, vacinas e cadastro completo.
+                      VocÃª estÃ¡ atualizando este cÃ£o e pode revisar vÃ­nculos, vacinas e cadastro completo.
                     </p>
                     <Button
                       type="button"
@@ -1446,24 +1468,26 @@ export default function Cadastro() {
                     fieldKey: "dog.nome",
                     label: "Nome",
                     value: dogForm.nome,
-                    onChange: (e) => setDogForm({ ...dogForm, nome: e.target.value }),
-                    placeholder: "Nome do cão",
-                    requiredMessage: "Informe o nome do cão.",
+                    onChange: (e) => setDogForm({ ...dogForm, nome: sanitizeDisplayNameInput(e.target.value) }),
+                    onBlur: () => setDogForm({ ...dogForm, nome: formatDisplayName(dogForm.nome) }),
+                    placeholder: "Nome do cÃ£o",
+                    requiredMessage: "Informe o nome do cÃ£o.",
                   })}
                   {renderTextField({
                     fieldKey: "dog.apelido",
                     label: "Apelido",
                     value: dogForm.apelido,
-                    onChange: (e) => setDogForm({ ...dogForm, apelido: e.target.value }),
-                    placeholder: "Como ele é chamado no dia a dia",
+                    onChange: (e) => setDogForm({ ...dogForm, apelido: sanitizeDisplayNameInput(e.target.value) }),
+                    onBlur: () => setDogForm({ ...dogForm, apelido: formatDisplayName(dogForm.apelido) }),
+                    placeholder: "Como ele Ã© chamado no dia a dia",
                     optional: true,
                   })}
                   {renderSelectField({
                     fieldKey: "dog.raca",
-                    label: "Raça",
+                    label: "RaÃ§a",
                     value: dogForm.raca || "",
-                    placeholder: "Selecione a raça",
-                    requiredMessage: "Selecione a raça.",
+                    placeholder: "Selecione a raÃ§a",
+                    requiredMessage: "Selecione a raÃ§a.",
                     children: ({ triggerClassName, placeholder }) => (
                       <Select value={dogForm.raca || ""} onValueChange={(value) => {
                         setDogForm({ ...dogForm, raca: value });
@@ -1565,7 +1589,7 @@ export default function Cadastro() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="macho">Macho</SelectItem>
-                          <SelectItem value="femea">Fêmea</SelectItem>
+                          <SelectItem value="femea">FÃªmea</SelectItem>
                         </SelectContent>
                       </Select>
                     ),
@@ -1573,15 +1597,15 @@ export default function Cadastro() {
                   <div className="flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Castrado</p>
-                      <p className="text-xs text-gray-500">Informe se o cão já é castrado.</p>
+                      <p className="text-xs text-gray-500">Informe se o cÃ£o jÃ¡ Ã© castrado.</p>
                     </div>
                     <Switch checked={!!dogForm.castrado} onCheckedChange={(checked) => setDogForm({ ...dogForm, castrado: checked })} />
                   </div>
                   <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <button type="button" onClick={() => openImageViewer(dogForm.foto_url, "Foto do perfil")} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
-                  <div><Label>Carteirinha de vacinação</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
+                  <div><Label>Carteirinha de vacinaÃ§Ã£o</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
                   {renderDateField({
                     fieldKey: "dog.data_revacinacao_1",
-                    label: "1ª revacinação",
+                    label: "1Âª revacinaÃ§Ã£o",
                     value: dogForm.data_revacinacao_1,
                     onChange: (value) => setDogForm({ ...dogForm, data_revacinacao_1: value }),
                     placeholder: "Selecione a data",
@@ -1589,7 +1613,7 @@ export default function Cadastro() {
                   })}
                   {renderDateField({
                     fieldKey: "dog.data_revacinacao_2",
-                    label: "2ª revacinação",
+                    label: "2Âª revacinaÃ§Ã£o",
                     value: dogForm.data_revacinacao_2,
                     onChange: (value) => setDogForm({ ...dogForm, data_revacinacao_2: value }),
                     placeholder: "Selecione a data",
@@ -1597,7 +1621,7 @@ export default function Cadastro() {
                   })}
                   {renderDateField({
                     fieldKey: "dog.data_revacinacao_3",
-                    label: "3ª revacinação",
+                    label: "3Âª revacinaÃ§Ã£o",
                     value: dogForm.data_revacinacao_3,
                     onChange: (value) => setDogForm({ ...dogForm, data_revacinacao_3: value }),
                     placeholder: "Selecione a data",
@@ -1605,52 +1629,52 @@ export default function Cadastro() {
                   })}
                   {renderTextField({
                     fieldKey: "dog.nome_vacina_revacinacao_1",
-                    label: "Vacina da 1ª revacinação",
+                    label: "Vacina da 1Âª revacinaÃ§Ã£o",
                     value: dogForm.nome_vacina_revacinacao_1,
                     onChange: (e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_1: e.target.value }),
-                    placeholder: "Ex: V10, Antirrábica",
+                    placeholder: "Ex: V10, AntirrÃ¡bica",
                     optional: !dogForm.data_revacinacao_1,
                     requiredMessage: "Informe a vacina vinculada a esta data.",
                   })}
                   {renderTextField({
                     fieldKey: "dog.nome_vacina_revacinacao_2",
-                    label: "Vacina da 2ª revacinação",
+                    label: "Vacina da 2Âª revacinaÃ§Ã£o",
                     value: dogForm.nome_vacina_revacinacao_2,
                     onChange: (e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_2: e.target.value }),
-                    placeholder: "Ex: V10, Antirrábica",
+                    placeholder: "Ex: V10, AntirrÃ¡bica",
                     optional: !dogForm.data_revacinacao_2,
                     requiredMessage: "Informe a vacina vinculada a esta data.",
                   })}
                   {renderTextField({
                     fieldKey: "dog.nome_vacina_revacinacao_3",
-                    label: "Vacina da 3ª revacinação",
+                    label: "Vacina da 3Âª revacinaÃ§Ã£o",
                     value: dogForm.nome_vacina_revacinacao_3,
                     onChange: (e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_3: e.target.value }),
-                    placeholder: "Ex: V10, Antirrábica",
+                    placeholder: "Ex: V10, AntirrÃ¡bica",
                     optional: !dogForm.data_revacinacao_3,
                     requiredMessage: "Informe a vacina vinculada a esta data.",
                   })}
 
-                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Veterinário</h4></div>
+                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">VeterinÃ¡rio</h4></div>
                   {renderTextField({
                     fieldKey: "dog.veterinario_responsavel",
-                    label: "Veterinário responsável",
+                    label: "VeterinÃ¡rio responsÃ¡vel",
                     value: dogForm.veterinario_responsavel,
                     onChange: (e) => setDogForm({ ...dogForm, veterinario_responsavel: e.target.value }),
-                    placeholder: "Nome do veterinário",
+                    placeholder: "Nome do veterinÃ¡rio",
                     optional: true,
                   })}
                   {renderTextField({
                     fieldKey: "dog.veterinario_horario_atendimento",
-                    label: "Horário de atendimento",
+                    label: "HorÃ¡rio de atendimento",
                     value: dogForm.veterinario_horario_atendimento,
                     onChange: (e) => setDogForm({ ...dogForm, veterinario_horario_atendimento: e.target.value }),
-                    placeholder: "Ex: seg a sex, 9h às 18h",
+                    placeholder: "Ex: seg a sex, 9h Ã s 18h",
                     optional: true,
                   })}
                   {renderTextField({
                     fieldKey: "dog.veterinario_telefone",
-                    label: "Telefone do veterinário",
+                    label: "Telefone do veterinÃ¡rio",
                     value: dogForm.veterinario_telefone,
                     onChange: (e) => setDogForm({ ...dogForm, veterinario_telefone: formatPhone(e.target.value) }),
                     maxLength: 15,
@@ -1660,7 +1684,7 @@ export default function Cadastro() {
                   })}
                   {renderTextField({
                     fieldKey: "dog.veterinario_clinica_telefone",
-                    label: "Telefone da clínica",
+                    label: "Telefone da clÃ­nica",
                     value: dogForm.veterinario_clinica_telefone,
                     onChange: (e) => setDogForm({ ...dogForm, veterinario_clinica_telefone: formatPhone(e.target.value) }),
                     maxLength: 15,
@@ -1670,26 +1694,26 @@ export default function Cadastro() {
                   })}
                   {renderTextField({
                     fieldKey: "dog.veterinario_endereco",
-                    label: "Endereço vet/clínica",
+                    label: "EndereÃ§o vet/clÃ­nica",
                     value: dogForm.veterinario_endereco,
                     onChange: (e) => setDogForm({ ...dogForm, veterinario_endereco: e.target.value }),
-                    placeholder: "Endereço completo",
+                    placeholder: "EndereÃ§o completo",
                     optional: true,
                     className: "sm:col-span-2",
                   })}
 
-                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Alimentação</h4></div>
+                  <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">AlimentaÃ§Ã£o</h4></div>
                   <div className="col-span-full flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">Alimentação natural</p>
-                      <p className="text-xs text-gray-500">Ao marcar, os campos de marca e sabor são ocultados.</p>
+                      <p className="text-sm font-semibold text-gray-900">AlimentaÃ§Ã£o natural</p>
+                      <p className="text-xs text-gray-500">Ao marcar, os campos de marca e sabor sÃ£o ocultados.</p>
                     </div>
                     <Switch
                       checked={!!dogForm.alimentacao_natural}
                       onCheckedChange={(checked) => setDogForm({
                         ...dogForm,
                         alimentacao_natural: checked,
-                        alimentacao_tipo: checked ? "Alimentação natural" : dogForm.alimentacao_tipo,
+                        alimentacao_tipo: checked ? "AlimentaÃ§Ã£o natural" : dogForm.alimentacao_tipo,
                         alimentacao_marca_racao: checked ? "" : dogForm.alimentacao_marca_racao,
                         alimentacao_sabor: checked ? "" : dogForm.alimentacao_sabor,
                       })}
@@ -1699,7 +1723,7 @@ export default function Cadastro() {
                     <>
                       {renderTextField({
                         fieldKey: "dog.alimentacao_marca_racao",
-                        label: "Marca da ração",
+                        label: "Marca da raÃ§Ã£o",
                         value: dogForm.alimentacao_marca_racao,
                         onChange: (e) => setDogForm({ ...dogForm, alimentacao_marca_racao: e.target.value }),
                         placeholder: "Ex: Premier",
@@ -1718,32 +1742,32 @@ export default function Cadastro() {
                         label: "Tipo",
                         value: dogForm.alimentacao_tipo,
                         onChange: (e) => setDogForm({ ...dogForm, alimentacao_tipo: e.target.value }),
-                        placeholder: "Ex: sênior, light, filhote",
+                        placeholder: "Ex: sÃªnior, light, filhote",
                         optional: true,
                       })}
                     </>
                   ) : (
                     <div className="col-span-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                      O cão está marcado com alimentação natural.
+                      O cÃ£o estÃ¡ marcado com alimentaÃ§Ã£o natural.
                     </div>
                   )}
 
                   <div className="col-span-full rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
-                        <h5 className="text-sm font-semibold text-gray-900">Refeições</h5>
-                        <p className="text-xs text-gray-500">Comece com uma linha e adicione outras conforme necessário.</p>
+                        <h5 className="text-sm font-semibold text-gray-900">RefeiÃ§Ãµes</h5>
+                        <p className="text-xs text-gray-500">Comece com uma linha e adicione outras conforme necessÃ¡rio.</p>
                       </div>
                       <Button type="button" variant="outline" onClick={addDogMeal} disabled={(dogForm.refeicoes || []).length >= 4}>
                         <Plus className="mr-2 h-4 w-4" />
-                        Adicionar refeição
+                        Adicionar refeiÃ§Ã£o
                       </Button>
                     </div>
                     <div className="space-y-3">
                       {(dogForm.refeicoes || [createEmptyDogMeal()]).map((meal, index) => (
                         <div key={`meal-${index}`} className="rounded-xl border border-gray-200 bg-white p-4">
                           <div className="mb-3 flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-gray-900">{index + 1}ª refeição</p>
+                            <p className="text-sm font-semibold text-gray-900">{index + 1}Âª refeiÃ§Ã£o</p>
                             <Button type="button" variant="outline" size="sm" onClick={() => removeDogMeal(index)}>
                               <X className="mr-2 h-4 w-4" />
                               Remover
@@ -1760,18 +1784,18 @@ export default function Cadastro() {
                             })}
                             {renderTimeField({
                               fieldKey: `dog.refeicao.${index}.horario`,
-                              label: "Horário",
+                              label: "HorÃ¡rio",
                               value: meal.horario || "",
                               onChange: (value) => updateDogMeal(index, "horario", value),
-                              placeholder: "Selecione o horário",
-                              requiredMessage: "Informe o horário.",
+                              placeholder: "Selecione o horÃ¡rio",
+                              requiredMessage: "Informe o horÃ¡rio.",
                             })}
                             {renderTextField({
                               fieldKey: `dog.refeicao.${index}.obs`,
-                              label: "Observação",
+                              label: "ObservaÃ§Ã£o",
                               value: meal.obs || "",
                               onChange: (e) => updateDogMeal(index, "obs", e.target.value),
-                              placeholder: "Ex: refeição úmida separada",
+                              placeholder: "Ex: refeiÃ§Ã£o Ãºmida separada",
                               optional: true,
                             })}
                           </div>
@@ -1780,12 +1804,7 @@ export default function Cadastro() {
                     </div>
                   </div>
                 </div>
-                <Button onClick={handleSaveDog} disabled={isSaving} className="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Cão"}</Button>
-              </CardContent>
-            </Card>
-            <Card className="mt-4 border-blue-100 bg-white">
-              <CardContent className="p-4 sm:p-6">
-                <h4 className="font-semibold text-gray-900 mb-3">Medicamentos de longo período / vitalício</h4>
+                <h4 className="font-semibold text-gray-900 mb-3">Medicamentos de longo perÃ­odo / vitalÃ­cio</h4>
                 <div className="space-y-3">
                   {(dogForm.medicamentos_continuos || []).map((medicacao, index) => (
                     <div key={`medicacao-${index}`} className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
@@ -1799,27 +1818,27 @@ export default function Cadastro() {
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         {renderTextField({
                           fieldKey: `dog.medicacao.${index}.especificacoes`,
-                          label: "Especificações",
+                          label: "EspecificaÃ§Ãµes",
                           value: medicacao.especificacoes || "",
                           onChange: (e) => updateDogMedication(index, "especificacoes", e.target.value),
-                          placeholder: "Nome e orientação",
-                          requiredMessage: "Informe as especificações.",
+                          placeholder: "Nome e orientaÃ§Ã£o",
+                          requiredMessage: "Informe as especificaÃ§Ãµes.",
                         })}
                         {renderTextField({
                           fieldKey: `dog.medicacao.${index}.cuidados`,
                           label: "Cuidados",
                           value: medicacao.cuidados || "",
                           onChange: (e) => updateDogMedication(index, "cuidados", e.target.value),
-                          placeholder: "Ex: após refeição",
+                          placeholder: "Ex: apÃ³s refeiÃ§Ã£o",
                           requiredMessage: "Informe os cuidados.",
                         })}
                         {renderTimeField({
                           fieldKey: `dog.medicacao.${index}.horario`,
-                          label: "Horário",
+                          label: "HorÃ¡rio",
                           value: medicacao.horario || "",
                           onChange: (value) => updateDogMedication(index, "horario", value),
-                          placeholder: "Selecione o horário",
-                          requiredMessage: "Informe o horário.",
+                          placeholder: "Selecione o horÃ¡rio",
+                          requiredMessage: "Informe o horÃ¡rio.",
                         })}
                         {renderTextField({
                           fieldKey: `dog.medicacao.${index}.dose`,
@@ -1837,7 +1856,7 @@ export default function Cadastro() {
                     Adicionar medicamento
                   </Button>
                   <div className="rounded-xl border border-blue-100 bg-white p-4">
-                    <h5 className="mb-3 text-sm font-semibold text-gray-900">Saúde e observações</h5>
+                    <h5 className="mb-3 text-sm font-semibold text-gray-900">SaÃºde e observaÃ§Ãµes</h5>
                     <div className="grid grid-cols-1 gap-4">
                       {renderTextAreaField({
                         fieldKey: "dog.alergias",
@@ -1845,145 +1864,120 @@ export default function Cadastro() {
                         value: dogForm.alergias,
                         onChange: (e) => setDogForm({ ...dogForm, alergias: e.target.value }),
                         rows: 2,
-                        placeholder: "Alergias, intolerâncias ou sensibilidades do cão",
+                        placeholder: "Alergias, intolerÃ¢ncias ou sensibilidades do cÃ£o",
                         optional: true,
                       })}
                       {renderTextAreaField({
                         fieldKey: "dog.restricoes_cuidados",
-                        label: "Restrições e cuidados",
+                        label: "RestriÃ§Ãµes e cuidados",
                         value: dogForm.restricoes_cuidados,
                         onChange: (e) => setDogForm({ ...dogForm, restricoes_cuidados: e.target.value }),
                         rows: 3,
-                        placeholder: "Cuidados especiais, restrições de manejo e observações clínicas",
+                        placeholder: "Cuidados especiais, restriÃ§Ãµes de manejo e observaÃ§Ãµes clÃ­nicas",
                         optional: true,
                       })}
                       {renderTextAreaField({
                         fieldKey: "dog.observacoes_gerais",
-                        label: "Observações gerais",
+                        label: "ObservaÃ§Ãµes gerais",
                         value: dogForm.observacoes_gerais,
                         onChange: (e) => setDogForm({ ...dogForm, observacoes_gerais: e.target.value }),
                         rows: 3,
-                        placeholder: "Comportamento, preferências e demais observações importantes",
+                        placeholder: "Comportamento, preferÃªncias e demais observaÃ§Ãµes importantes",
                         optional: true,
                       })}
                     </div>
                   </div>
-                  <div className="rounded-xl border border-blue-100 bg-white p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <h5 className="text-sm font-semibold text-gray-900">Vincular responsáveis existentes</h5>
-                        <p className="text-xs text-gray-500">Selecione quem já existe no sistema e deve ficar associado a este cão.</p>
-                      </div>
-                      <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} selecionado(s)</Badge>
-                    </div>
-                    <SearchFiltersToolbar
-                      searchTerm={searchLinkedResponsavel}
-                      onSearchChange={setSearchLinkedResponsavel}
-                      searchPlaceholder="Buscar responsável por nome, CPF, celular ou email..."
-                      hasActiveFilters={Boolean(searchLinkedResponsavel)}
-                      onClear={() => setSearchLinkedResponsavel("")}
-                    />
-                    <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
-                      {filteredResponsaveis.length > 0 ? filteredResponsaveis.map((responsavel) => {
-                        const isSelected = selectedResponsavelIds.includes(responsavel.id);
-                        return (
-                          <button
-                            key={responsavel.id}
-                            type="button"
-                            onClick={() => toggleLinkedRecord(responsavel.id, setSelectedResponsavelIds)}
-                            className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors ${isSelected ? "border-blue-300 bg-blue-50" : "border-transparent bg-white hover:border-gray-200"}`}
-                          >
-                            <div>
-                              <p className="font-medium text-gray-900">{responsavel.nome_completo}</p>
-                              <p className="text-xs text-gray-500">{responsavel.celular || responsavel.email || responsavel.cpf || "Sem contato cadastrado"}</p>
-                            </div>
-                            {isSelected ? <Check className="h-4 w-4 text-blue-600" /> : null}
-                          </button>
-                        );
-                      }) : (
-                        <p className="p-3 text-sm text-gray-500">Nenhum responsável encontrado.</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-blue-100 bg-white p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <h5 className="text-sm font-semibold text-gray-900">Vincular responsável financeiro existente</h5>
-                        <p className="text-xs text-gray-500">Use esta lista quando o responsável financeiro já tiver sido cadastrado antes do cão.</p>
-                      </div>
-                      <Badge className="bg-orange-100 text-orange-700">{selectedCarteiraIds.length} selecionado(s)</Badge>
-                    </div>
-                    <SearchFiltersToolbar
-                      searchTerm={searchLinkedCarteira}
-                      onSearchChange={setSearchLinkedCarteira}
-                      searchPlaceholder="Buscar responsável financeiro por nome, CPF/CNPJ, celular ou email..."
-                      hasActiveFilters={Boolean(searchLinkedCarteira)}
-                      onClear={() => setSearchLinkedCarteira("")}
-                    />
-                    <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
-                      {filteredCarteiras.length > 0 ? filteredCarteiras.map((carteira) => {
-                        const isSelected = selectedCarteiraIds.includes(carteira.id);
-                        return (
-                          <button
-                            key={carteira.id}
-                            type="button"
-                            onClick={() => toggleLinkedRecord(carteira.id, setSelectedCarteiraIds)}
-                            className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors ${isSelected ? "border-orange-300 bg-orange-50" : "border-transparent bg-white hover:border-gray-200"}`}
-                          >
-                            <div>
-                              <p className="font-medium text-gray-900">{carteira.nome_razao_social}</p>
-                              <p className="text-xs text-gray-500">{carteira.celular || carteira.email || carteira.cpf_cnpj || "Sem contato cadastrado"}</p>
-                            </div>
-                            {isSelected ? <Check className="h-4 w-4 text-orange-600" /> : null}
-                          </button>
-                        );
-                      }) : (
-                        <p className="p-3 text-sm text-gray-500">Nenhum responsável financeiro encontrado.</p>
-                      )}
-                    </div>
-                  </div>
-                  <Button onClick={handleSaveDog} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
-                    <Save className="w-4 h-4 mr-2" />
-                    {isSaving ? "Salvando..." : "Cadastrar Cão"}
-                  </Button>
                 </div>
               </CardContent>
             </Card>
             <Card className="mt-4 border-blue-100 bg-white">
               <CardContent className="p-4 sm:p-6">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div>
-                    <h4 className="font-semibold text-gray-900">Cães cadastrados</h4>
-                    <p className="text-sm text-gray-500">Abra a ficha do cão ou reutilize o cadastro para atualização.</p>
-                  </div>
-                  <Badge variant="outline">{dogs.length} registro(s)</Badge>
-                </div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {dogs.map((dog) => (
-                    <div key={dog.id} className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 p-4">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-gray-900">{dog.nome}</p>
-                        <p className="truncate text-sm text-gray-500">{dog.raca || "Raça não informada"}</p>
-                      </div>
-                      <div className="ml-3 flex gap-2">
-                        <Link
-                          to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dog))}`}
-                          state={{ backTo: `${location.pathname}${location.search}`, backLabel: "Cadastro" }}
-                        >
-                          <Button type="button" variant="outline">Ficha</Button>
-                        </Link>
-                        <Button type="button" onClick={() => openDogForEditing(dog.id)}>
-                          Editar
-                        </Button>
-                      </div>
+                <div className="rounded-xl border border-blue-100 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-900">Vincular responsáveis existentes</h5>
+                      <p className="text-xs text-gray-500">Selecione quem já existe no sistema e deve ficar associado a este cão.</p>
                     </div>
-                  ))}
+                    <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} selecionado(s)</Badge>
+                  </div>
+                  <SearchFiltersToolbar
+                    searchTerm={searchLinkedResponsavel}
+                    onSearchChange={setSearchLinkedResponsavel}
+                    searchPlaceholder="Buscar responsável por nome, CPF, celular ou email..."
+                    hasActiveFilters={Boolean(searchLinkedResponsavel)}
+                    onClear={() => setSearchLinkedResponsavel("")}
+                  />
+                  <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+                    {filteredResponsaveis.length > 0 ? filteredResponsaveis.map((responsavel) => {
+                      const isSelected = selectedResponsavelIds.includes(responsavel.id);
+                      return (
+                        <button
+                          key={responsavel.id}
+                          type="button"
+                          onClick={() => toggleLinkedRecord(responsavel.id, setSelectedResponsavelIds)}
+                          className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors ${isSelected ? "border-blue-300 bg-blue-50" : "border-transparent bg-white hover:border-gray-200"}`}
+                        >
+                          <div>
+                            <p className="font-medium text-gray-900">{responsavel.nome_completo}</p>
+                            <p className="text-xs text-gray-500">{responsavel.celular || responsavel.email || responsavel.cpf || "Sem contato cadastrado"}</p>
+                          </div>
+                          {isSelected ? <Check className="h-4 w-4 text-blue-600" /> : null}
+                        </button>
+                      );
+                    }) : (
+                      <p className="p-3 text-sm text-gray-500">Nenhum responsável encontrado.</p>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="mt-4 border-orange-100 bg-white">
+              <CardContent className="p-4 sm:p-6">
+                <div className="rounded-xl border border-orange-100 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-900">Vincular responsável financeiro existente</h5>
+                      <p className="text-xs text-gray-500">Use esta lista quando o responsável financeiro já tiver sido cadastrado antes do cão.</p>
+                    </div>
+                    <Badge className="bg-orange-100 text-orange-700">{selectedCarteiraIds.length} selecionado(s)</Badge>
+                  </div>
+                  <SearchFiltersToolbar
+                    searchTerm={searchLinkedCarteira}
+                    onSearchChange={setSearchLinkedCarteira}
+                    searchPlaceholder="Buscar responsável financeiro por nome, CPF/CNPJ, celular ou email..."
+                    hasActiveFilters={Boolean(searchLinkedCarteira)}
+                    onClear={() => setSearchLinkedCarteira("")}
+                  />
+                  <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+                    {filteredCarteiras.length > 0 ? filteredCarteiras.map((carteira) => {
+                      const isSelected = selectedCarteiraIds.includes(carteira.id);
+                      return (
+                        <button
+                          key={carteira.id}
+                          type="button"
+                          onClick={() => toggleLinkedRecord(carteira.id, setSelectedCarteiraIds)}
+                          className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors ${isSelected ? "border-orange-300 bg-orange-50" : "border-transparent bg-white hover:border-gray-200"}`}
+                        >
+                          <div>
+                            <p className="font-medium text-gray-900">{carteira.nome_razao_social}</p>
+                            <p className="text-xs text-gray-500">{carteira.celular || carteira.email || carteira.cpf_cnpj || "Sem contato cadastrado"}</p>
+                          </div>
+                          {isSelected ? <Check className="h-4 w-4 text-orange-600" /> : null}
+                        </button>
+                      );
+                    }) : (
+                      <p className="p-3 text-sm text-gray-500">Nenhum responsável financeiro encontrado.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-6">
+                  <Button onClick={handleSaveDog} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Cão"}</Button>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Responsáveis Tab */}
+          {/* ResponsÃ¡veis Tab */}
           <TabsContent value="responsaveis">
             <Card className="mb-4 border-emerald-200 bg-emerald-50/70">
               <CardContent className="p-4">
@@ -1992,9 +1986,9 @@ export default function Cadastro() {
                     <Users className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-emerald-900">Responsáveis do dia a dia</p>
+                    <p className="text-sm font-semibold text-emerald-900">ResponsÃ¡veis do dia a dia</p>
                     <p className="mt-1 text-sm text-emerald-800">
-                      Cadastre os contatos principais, documentos e os c?es vinculados para facilitar opera??o e comunica??o.
+                      Cadastre os contatos principais, documentos e os cães vinculados para facilitar operação e comunicação.
                     </p>
                   </div>
                 </div>
@@ -2002,14 +1996,15 @@ export default function Cadastro() {
             </Card>
             <Card className="border-green-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-green-600" />Cadastrar Respons?vel</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-green-600" />Cadastrar Responsável</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {renderTextField({
                     fieldKey: "responsavel.nome_completo",
                     label: "Nome completo",
                     value: responsavelForm.nome_completo,
-                    onChange: (e) => setResponsavelForm({ ...responsavelForm, nome_completo: e.target.value }),
-                    placeholder: "Nome completo do responsável",
+                    onChange: (e) => setResponsavelForm({ ...responsavelForm, nome_completo: sanitizeDisplayNameInput(e.target.value) }),
+                    onBlur: () => setResponsavelForm({ ...responsavelForm, nome_completo: formatDisplayName(responsavelForm.nome_completo) }),
+                    placeholder: "Nome completo do responsÃ¡vel",
                     requiredMessage: "Informe o nome completo.",
                   })}
                   {renderTextField({
@@ -2054,12 +2049,12 @@ export default function Cadastro() {
                     className: "sm:col-span-2",
                   })}
                   <div className="sm:col-span-2">
-                    <Label>Vincular Cães (at? 8)</Label>
+                    <Label>Vincular Cães (até 8)</Label>
                     <div className="mt-2">
                       <SearchFiltersToolbar
                         searchTerm={searchDogResp}
                         onSearchChange={setSearchDogResp}
-                        searchPlaceholder="Buscar cão por nome..."
+                        searchPlaceholder="Buscar cÃ£o por nome..."
                         hasActiveFilters={Boolean(searchDogResp)}
                         onClear={() => setSearchDogResp("")}
                       />
@@ -2080,7 +2075,7 @@ export default function Cadastro() {
                               }
                             }}>
                             <div className="flex items-center gap-2">
-                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">🐕</div>}
+                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">ðŸ•</div>}
                               <span className="text-sm font-medium">{d.nome}</span>
                               {d.raca && <span className="text-xs text-gray-500">({d.raca})</span>}
                             </div>
@@ -2088,7 +2083,7 @@ export default function Cadastro() {
                           </div>
                         );
                       })}
-                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum cão cadastrado</p>}
+                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum cÃ£o cadastrado</p>}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {[1,2,3,4,5,6,7,8].map(n => {
@@ -2114,9 +2109,9 @@ export default function Cadastro() {
                     <Wallet className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-orange-900">Financeiro vinculado ao cão</p>
+                    <p className="text-sm font-semibold text-orange-900">Financeiro vinculado ao cÃ£o</p>
                     <p className="mt-1 text-sm text-orange-800">
-                      Mantenha quem paga, dados de cobrança e vencimento dos planos organizados em um bloco separado.
+                      Mantenha quem paga, dados de cobranÃ§a e vencimento dos planos organizados em um bloco separado.
                     </p>
                   </div>
                 </div>
@@ -2127,19 +2122,19 @@ export default function Cadastro() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Wallet className="w-5 h-5 text-orange-600" />Cadastrar Carteira</h3>
                 <div className="mb-4 flex items-center justify-between rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
                   <div>
-                    <p className="text-sm font-semibold text-orange-900">Usar os mesmos dados do responsável</p>
-                    <p className="text-xs text-orange-700">Preenche nome, documento, contato principal e contatos de orçamento/alinhamento.</p>
+                    <p className="text-sm font-semibold text-orange-900">Usar os mesmos dados do responsÃ¡vel</p>
+                    <p className="text-xs text-orange-700">Preenche nome, documento, contato principal e contatos de orÃ§amento/alinhamento.</p>
                   </div>
                   <Switch checked={carteiraIgualResponsavel} onCheckedChange={setCarteiraIgualResponsavel} />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {renderTextField({
                     fieldKey: "carteira.nome_razao_social",
-                    label: "Nome / Razão social",
+                    label: "Nome / RazÃ£o social",
                     value: carteiraForm.nome_razao_social,
                     onChange: (e) => setCarteiraForm({ ...carteiraForm, nome_razao_social: e.target.value }),
-                    placeholder: "Nome completo do responsável financeiro",
-                    requiredMessage: "Informe o nome ou razão social.",
+                    placeholder: "Nome completo do responsÃ¡vel financeiro",
+                    requiredMessage: "Informe o nome ou razÃ£o social.",
                   })}
                   {renderTextField({
                     fieldKey: "carteira.cpf_cnpj",
@@ -2183,11 +2178,11 @@ export default function Cadastro() {
                   })}
                   {renderTextField({
                     fieldKey: "carteira.numero_residencia",
-                    label: "Número",
+                    label: "NÃºmero",
                     value: carteiraForm.numero_residencia,
                     onChange: (e) => setCarteiraForm({ ...carteiraForm, numero_residencia: e.target.value }),
                     placeholder: "Ex: 120",
-                    requiredMessage: "Informe o número.",
+                    requiredMessage: "Informe o nÃºmero.",
                   })}
                   {renderTextField({
                     fieldKey: "carteira.street",
@@ -2249,13 +2244,14 @@ export default function Cadastro() {
                   })}
                   <div></div>
                   <div className="sm:col-span-2 rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
-                    <h4 className="mb-3 text-sm font-semibold text-orange-900">Contato para envio de orçamentos</h4>
+                    <h4 className="mb-3 text-sm font-semibold text-orange-900">Contato para envio de orÃ§amentos</h4>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                       {renderTextField({
                         fieldKey: "carteira.contato_orcamentos_nome",
                         label: "Nome",
                         value: carteiraForm.contato_orcamentos_nome,
-                        onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_nome: e.target.value }),
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_nome: sanitizeDisplayNameInput(e.target.value) }),
+                    onBlur: () => setCarteiraForm({ ...carteiraForm, contato_orcamentos_nome: formatDisplayName(carteiraForm.contato_orcamentos_nome) }),
                         placeholder: "Nome do contato",
                         requiredMessage: "Informe o nome do contato.",
                       })}
@@ -2282,13 +2278,14 @@ export default function Cadastro() {
                     </div>
                   </div>
                   <div className="sm:col-span-2 rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
-                    <h4 className="mb-3 text-sm font-semibold text-orange-900">Contato para avisos e tratativas de alinhamento</h4>
+                    <h4 className="mb-3 text-sm font-semibold text-orange-900">Contato para o dia a dia</h4>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                       {renderTextField({
                         fieldKey: "carteira.contato_alinhamentos_nome",
                         label: "Nome",
                         value: carteiraForm.contato_alinhamentos_nome,
-                        onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_nome: e.target.value }),
+                    onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_nome: sanitizeDisplayNameInput(e.target.value) }),
+                    onBlur: () => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_nome: formatDisplayName(carteiraForm.contato_alinhamentos_nome) }),
                         placeholder: "Nome do contato",
                         requiredMessage: "Informe o nome do contato.",
                       })}
@@ -2315,12 +2312,12 @@ export default function Cadastro() {
                     </div>
                   </div>
                   <div className="sm:col-span-2">
-                    <Label>Vincular Cães (at? 8)</Label>
+                    <Label>Vincular CÃ£es (at? 8)</Label>
                     <div className="mt-2">
                       <SearchFiltersToolbar
                         searchTerm={searchDogCart}
                         onSearchChange={setSearchDogCart}
-                        searchPlaceholder="Buscar cão por nome..."
+                        searchPlaceholder="Buscar cÃ£o por nome..."
                         hasActiveFilters={Boolean(searchDogCart)}
                         onClear={() => setSearchDogCart("")}
                       />
@@ -2341,7 +2338,7 @@ export default function Cadastro() {
                               }
                             }}>
                             <div className="flex items-center gap-2">
-                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">🐕</div>}
+                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">ðŸ•</div>}
                               <span className="text-sm font-medium">{d.nome}</span>
                               {d.raca && <span className="text-xs text-gray-500">({d.raca})</span>}
                             </div>
@@ -2349,7 +2346,7 @@ export default function Cadastro() {
                           </div>
                         );
                       })}
-                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum cão cadastrado</p>}
+                      {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum cÃ£o cadastrado</p>}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {[1,2,3,4,5,6,7,8].map(n => {
@@ -2379,7 +2376,7 @@ export default function Cadastro() {
 
           <div className="space-y-3 py-2">
             <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
-              O link abre um fluxo em etapas com responsável, cães e responsável financeiro, sem exigir nome ou email prévios para gerar.
+              O link abre um fluxo em etapas com responsÃ¡vel, cÃ£es e responsÃ¡vel financeiro, sem exigir nome ou email prÃ©vios para gerar.
             </div>
             <div>
               <Label>Link do cadastro</Label>
@@ -2423,6 +2420,9 @@ export default function Cadastro() {
     </div>
   );
 }
+
+
+
 
 
 

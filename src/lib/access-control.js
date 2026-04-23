@@ -57,6 +57,28 @@ function buildAccessHaystack(user) {
     .join(" ");
 }
 
+const COMMERCIAL_PERMISSION_REQUIREMENTS = [
+  "orcamentos:*",
+  "orcamentos:read",
+  "orcamentos:update",
+];
+
+const MANAGERIAL_PERMISSION_REQUIREMENTS = [
+  "financeiro:*",
+  "financeiro:read",
+  "financeiro:update",
+  "usuarios:*",
+  "usuarios:read",
+  "usuarios:update",
+  "empresa:*",
+  "empresa:read",
+  "empresa:update",
+  "precos:*",
+  "branding:*",
+  "storage:*",
+  "platform:*",
+];
+
 export function isOperationalProfile(user) {
   if (!user || user.is_platform_admin || user.company_role === "platform_admin") {
     return false;
@@ -97,6 +119,81 @@ export function isOperationalProfile(user) {
     "daycare",
     "adestramento",
   ].some((token) => haystack.includes(token));
+}
+
+export function isCommercialProfile(user) {
+  if (!user) return false;
+  if (user.is_platform_admin || user.company_role === "platform_admin") {
+    return false;
+  }
+
+  const grantedPermissions = normalizePermissions(
+    user.access_profile_permissions || user.accessProfilePermissions || []
+  );
+  const haystack = buildAccessHaystack(user);
+
+  const hasCommercialPermission = grantedPermissions.some((permission) =>
+    COMMERCIAL_PERMISSION_REQUIREMENTS.some((required) => permissionMatches(permission, required))
+  );
+
+  if (hasCommercialPermission) {
+    return true;
+  }
+
+  return [
+    "comercial",
+    "venda",
+    "vendas",
+    "orcamento",
+    "orcamentos",
+    "cadastro",
+  ].some((token) => haystack.includes(token));
+}
+
+export function isManagerialProfile(user) {
+  if (!user) return false;
+  if (user.is_platform_admin || user.company_role === "platform_admin") {
+    return true;
+  }
+
+  const grantedPermissions = normalizePermissions(
+    user.access_profile_permissions || user.accessProfilePermissions || []
+  );
+  const haystack = buildAccessHaystack(user);
+
+  const hasManagerialPermission = grantedPermissions.some((permission) =>
+    MANAGERIAL_PERMISSION_REQUIREMENTS.some((required) => permissionMatches(permission, required))
+  );
+
+  if (hasManagerialPermission) {
+    return true;
+  }
+
+  return [
+    "gerencia",
+    "gerencial",
+    "administracao",
+    "administração",
+    "administrativo",
+    "financeiro",
+    "financas",
+    "finanças",
+    "contabilidade",
+    "backoffice",
+    "diretoria",
+    "gestao",
+    "gestão",
+    "gerente",
+    "adm",
+  ].some((token) => haystack.includes(token));
+}
+
+export function getNotificationDepartment(user) {
+  if (!user) return "gerencial";
+  if (isManagerialProfile(user)) return "gerencial";
+  if (isCommercialProfile(user)) return "comercial";
+  if (isOperationalProfile(user)) return "operacional";
+  return "gerencial";
 }
 
 function permissionMatches(granted, required) {

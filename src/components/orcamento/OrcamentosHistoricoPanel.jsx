@@ -176,6 +176,7 @@ function getStatusBadge(status) {
 export default function OrcamentosHistoricoPanel({
   embedded = false,
   refreshKey = 0,
+  openOrcamentoId = "",
   onChange,
 }) {
   const [orcamentos, setOrcamentos] = useState([]);
@@ -192,6 +193,14 @@ export default function OrcamentosHistoricoPanel({
   useEffect(() => {
     loadData();
   }, [refreshKey]);
+
+  useEffect(() => {
+    if (!openOrcamentoId || !orcamentos.length) return;
+    const matchedOrcamento = orcamentos.find((item) => item.id === openOrcamentoId);
+    if (!matchedOrcamento) return;
+    setSelectedOrcamento(matchedOrcamento);
+    setShowDetailModal(true);
+  }, [openOrcamentoId, orcamentos]);
 
   async function loadData() {
     setIsLoading(true);

@@ -199,13 +199,29 @@ export function getManualAppointmentMonitorName(appointment) {
   return metadata.manual_monitor_nome || metadata.monitor_nome || "";
 }
 
+export function getManualAppointmentNotice(appointment) {
+  const monitorName = getManualAppointmentMonitorName(appointment);
+  return monitorName ? `Agendamento realizado manualmente por "${monitorName}".` : "Agendamento realizado manualmente.";
+}
+
+export function getManualAppointmentClassificationMessage(appointment) {
+  return `${getManualAppointmentNotice(appointment)} Classifique a cobrança como pacote ou avulsa.`;
+}
+
 export function getAppointmentSourceLabel(appointment) {
-  if (!appointment) return "manual";
+  if (!appointment) return "Agendamento";
   if (appointment.source_type === "manual_registrador") {
     const monitorName = getManualAppointmentMonitorName(appointment);
     return monitorName ? `Agendamento manual por "${monitorName}"` : "Agendamento manual";
   }
-  return appointment.source_type || "manual";
+
+  const sourceLabels = {
+    orcamento_aprovado: "Agendamento do orçamento",
+    plano_recorrente: "Plano recorrente",
+    reposicao_pacote: "Reposição do pacote",
+  };
+
+  return sourceLabels[appointment.source_type] || "Agendamento";
 }
 
 export function getCheckinMealRecords(checkin) {

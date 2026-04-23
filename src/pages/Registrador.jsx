@@ -9,10 +9,12 @@ import {
   filterAppointmentsByApprovedOrcamentos,
   getAppointmentDateKey,
   getAppointmentMeta,
+  getAppointmentSourceLabel,
   getAppointmentStatus,
   getAppointmentTimeValue,
   getChargeTypeLabel,
   getCheckinMealRecords,
+  getManualAppointmentClassificationMessage,
   getServiceLabel,
   MANUAL_REGISTRADOR_SERVICES,
   MEAL_CONSUMPTION_OPTIONS,
@@ -35,6 +37,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, DateTimePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { BellRing, CalendarClock, Camera, Dog as DogIcon, LogIn, LogOut, Plus, Search, UserRound, UtensilsCrossed } from "lucide-react";
+import { isCommercialProfile, isManagerialProfile, isOperationalProfile } from "@/lib/access-control";
 
 const TODAY_KEY = new Date().toISOString().slice(0, 10);
 
@@ -169,41 +172,16 @@ function getAppointmentDisplayTime(appointment) {
   return startTime || endTime || "Horário a confirmar";
 }
 
-function isCommercialSalesUser(user, profilesById) {
+function hydrateUserAccessProfile(user, profilesById) {
   const profile = profilesById[user?.access_profile_id] || {};
-  const haystack = normalizeSearch(
-    [
-      user?.profile,
-      user?.company_role,
-      profile?.codigo,
-      profile?.nome,
-      profile?.descricao,
-    ].join(" ")
-  );
-  return haystack.includes("comercial") || haystack.includes("venda");
-}
-
-function getUserAccessHaystack(user, profilesById) {
-  const profile = profilesById[user?.access_profile_id] || {};
-  return normalizeSearch(
-    [
-      user?.profile,
-      user?.company_role,
-      profile?.codigo,
-      profile?.nome,
-      profile?.descricao,
-    ].join(" ")
-  );
-}
-
-function isAdministrationUser(user, profilesById) {
-  const haystack = getUserAccessHaystack(user, profilesById);
-  return ["administracao", "administrativo", "financeiro", "financas", "contabilidade", "backoffice", "adm"].some((token) => haystack.includes(token));
-}
-
-function isOperationsUser(user, profilesById) {
-  const haystack = getUserAccessHaystack(user, profilesById);
-  return ["operacao", "operacional", "monitor", "banho", "tosa", "hospedagem", "day care", "daycare", "adestramento"].some((token) => haystack.includes(token));
+  return {
+    ...user,
+    access_profile_code: user?.access_profile_code || profile?.codigo || null,
+    access_profile_name: user?.access_profile_name || profile?.nome || null,
+    access_profile_permissions: Array.isArray(user?.access_profile_permissions) && user.access_profile_permissions.length > 0
+      ? user.access_profile_permissions
+      : (Array.isArray(profile?.permissoes) ? profile.permissoes : []),
+  };
 }
 
 function getReminderSectorLabel(value) {
@@ -972,7 +950,11 @@ export default function Registrador() {
 
   async function notifyCommercialUsers({ appointment, dog, tipo, titulo, mensagem, link, payload = {} }) {
     const owner = ownerByDogId[appointment?.dog_id] || {};
-    const commercialUsers = users.filter((user) => user.active !== false && isCommercialSalesUser(user, profilesById));
+    const commercialUsers = users.filter((user) => {
+      if (user.active === false) return false;
+      const hydratedUser = hydrateUserAccessProfile(user, profilesById);
+      return isCommercialProfile(hydratedUser) || isManagerialProfile(hydratedUser);
+    });
     if (!commercialUsers.length) return;
 
     for (const user of commercialUsers) {
@@ -998,8 +980,14 @@ export default function Registrador() {
     const owner = ownerByDogId[appointment?.dog_id] || {};
     const recipients = users.filter((user) => {
       if (user.active === false) return false;
-      if (sector === "administracao") return isAdministrationUser(user, profilesById);
-      if (sector === "operacao") return isOperationsUser(user, profilesById);
+      const hydratedUser = hydrateUserAccessProfile(user, profilesById);
+
+      if (tipo === "lembrete_checkin") {
+        return isCommercialProfile(hydratedUser) || isManagerialProfile(hydratedUser);
+      }
+
+      if (sector === "administracao") return isManagerialProfile(hydratedUser);
+      if (sector === "operacao") return isOperationalProfile(hydratedUser);
       return false;
     });
 
@@ -1031,7 +1019,7 @@ export default function Registrador() {
       dog,
       tipo: "agendamento_manual_pendente",
       titulo: "Agendamento manual aguardando classificação",
-      mensagem: `${getDogDisplayName(dog)} (${getServiceLabel(appointment.service_type)}) precisa ser classificado como pacote ou avulso.`,
+      mensagem: `${getManualAppointmentClassificationMessage(appointment)} ${getDogDisplayName(dog)} (${getServiceLabel(appointment.service_type)}) aguarda definição de cobrança.`,
       link: `${createPageUrl("Agendamentos")}?review=${appointment.id}`,
     });
   }
@@ -1390,7 +1378,7 @@ export default function Registrador() {
                               <span className="rounded-full bg-gray-100 px-2 py-1">{getAppointmentDisplayTime(appointment)}</span>
                               <span className="rounded-full bg-gray-100 px-2 py-1">{getChargeTypeLabel(appointment.charge_type)}</span>
                               {appointment.source_type && (
-                                <span className="rounded-full bg-gray-100 px-2 py-1">{appointment.source_type}</span>
+                                <span className="rounded-full bg-gray-100 px-2 py-1">{getAppointmentSourceLabel(appointment)}</span>
                               )}
                             </div>
                             {appointment.observacoes && (

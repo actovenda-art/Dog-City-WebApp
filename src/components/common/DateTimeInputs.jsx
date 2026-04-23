@@ -17,13 +17,13 @@ const pickerTriggerClassName = cn(
   "hover:bg-slate-50 hover:text-slate-900",
 );
 
-const calendarPopoverClassName = "w-[284px] max-w-[calc(100vw-1rem)] rounded-[24px] border border-slate-200 bg-white p-6 shadow-2xl";
+const calendarPopoverClassName = "w-[calc(100vw-1rem)] max-w-[284px] rounded-[24px] border border-slate-200 bg-white p-4 shadow-2xl sm:p-5";
 
 const calendarClassNames = {
   months: "flex flex-col",
-  month: "w-[236px] space-y-2.5",
+  month: "w-full min-w-0 space-y-2.5",
   caption: "grid min-h-[74px] grid-cols-[36px_1fr_36px] items-start gap-2 px-0 pt-0",
-  caption_dropdowns: "col-start-2 grid min-w-0 grid-cols-[132px_96px] items-start gap-2 justify-self-center",
+  caption_dropdowns: "col-start-2 grid w-full min-w-0 grid-cols-[minmax(0,1fr)_88px] items-start gap-2 justify-self-center",
   caption_label: "inline-flex min-h-11 items-center justify-between gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 text-[15px] font-semibold leading-none text-slate-900 capitalize shadow-sm",
   nav: "contents",
   nav_button: "mt-7 h-9 w-9 rounded-full border border-slate-200 bg-white p-0 text-slate-700 opacity-100 shadow-sm hover:bg-slate-100",
@@ -33,7 +33,7 @@ const calendarClassNames = {
   dropdown_month: "relative w-full",
   dropdown_year: "relative w-full",
   dropdown_icon: "h-3.5 w-3.5 text-slate-400",
-  table: "mt-1.5 w-full table-fixed border-collapse",
+  table: "mt-1.5 w-full min-w-0 table-fixed border-collapse",
   head_row: "grid w-full grid-cols-7",
   head_cell: "flex h-8 w-full items-center justify-center text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400",
   row: "mt-1 grid w-full grid-cols-7",
@@ -197,11 +197,12 @@ function PickerPopover({ children, content, className, open, onOpenChange }) {
       </PopoverAnchor>
       <PopoverContent
         align="start"
+        side="bottom"
         sideOffset={8}
         collisionPadding={8}
         onOpenAutoFocus={(event) => event.preventDefault()}
         className={cn(
-          `${calendarPopoverClassName} max-h-[calc(100vh-1rem)] overflow-auto`,
+          `${calendarPopoverClassName} max-h-[calc(100vh-1rem)] overflow-x-hidden overflow-y-auto`,
           className
         )}
       >
@@ -297,7 +298,7 @@ export function DatePickerInput({
               setInputValue(date ? formatInputDate(date) : "");
               setOpen(false);
             }}
-            className="mx-auto w-[236px] rounded-[20px] bg-white p-0"
+            className="mx-auto w-full rounded-[20px] bg-white p-0"
             classNames={calendarClassNames}
           />
           <div className="flex items-center justify-between gap-2 pt-1">
@@ -398,7 +399,7 @@ export function DateRangePickerInput({
                 setOpen(false);
               }
             }}
-            className="mx-auto w-[236px] rounded-[20px] bg-white p-0"
+            className="mx-auto w-full rounded-[20px] bg-white p-0"
             classNames={calendarClassNames}
           />
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">

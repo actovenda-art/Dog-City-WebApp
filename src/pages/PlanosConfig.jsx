@@ -635,9 +635,12 @@ export default function PlanosConfig() {
   const [paymentsItem, setPaymentsItem] = useState(null);
   const [deleteItem, setDeleteItem] = useState(null);
   const [deleteDate, setDeleteDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [replacementItem, setReplacementItem] = useState(null);
+  const [replacementDate, setReplacementDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [editingItem, setEditingItem] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSchedulingReplacement, setIsSchedulingReplacement] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
   const [useSuggestedValue, setUseSuggestedValue] = useState(true);
@@ -1579,6 +1582,110 @@ export default function PlanosConfig() {
     setIsDeleting(false);
   }
 
+  function openReplacementDialog(appointment) {
+    const originalDate = parseDateOnly(appointment?.data_referencia || appointment?.data_hora_entrada?.slice?.(0, 10));
+    const today = normalizeDate(new Date());
+    const suggestedDate = originalDate && today && originalDate.getTime() >= today.getTime()
+      ? originalDate
+      : today || originalDate || new Date();
+
+    setReplacementItem(appointment);
+    setReplacementDate(format(suggestedDate, "yyyy-MM-dd"));
+  }
+
+  async function handleScheduleReplacement() {
+    if (!replacementItem || !replacementDate) return;
+
+    const replacementDateValue = parseDateOnly(replacementDate);
+    const originalDateKey = replacementItem.data_referencia || replacementItem.data_hora_entrada?.slice?.(0, 10) || "";
+    const originalDateValue = parseDateOnly(originalDateKey);
+    const originalMeta = parseMetadata(replacementItem.metadata);
+    const replacementDeadline = parseDateOnly(originalMeta.replacement_deadline || originalMeta.suggested_replacement_deadline);
+
+    if (!replacementDateValue) {
+      alert("Escolha uma data válida para a reposição.");
+      return;
+    }
+
+    if (originalDateValue && replacementDateValue.getTime() <= originalDateValue.getTime()) {
+      alert("A reposição precisa ser agendada para uma data posterior à falta.");
+      return;
+    }
+
+    if (replacementDeadline && replacementDateValue.getTime() > replacementDeadline.getTime()) {
+      alert(`A reposição deste atendimento pode ser usada até ${format(replacementDeadline, "dd/MM/yyyy", { locale: ptBR })}.`);
+      return;
+    }
+
+    const existingReplacement = appointments.find((appointment) => {
+      const metadata = parseMetadata(appointment.metadata);
+      return metadata.replacement_of_appointment_id === replacementItem.id
+        && !["cancelado", "desconsiderado"].includes(appointment.status);
+    });
+
+    if (existingReplacement) {
+      const existingDate = parseDateOnly(existingReplacement.data_referencia || existingReplacement.data_hora_entrada?.slice?.(0, 10));
+      alert(`Esta reposição já foi agendada${existingDate ? ` para ${format(existingDate, "dd/MM/yyyy", { locale: ptBR })}` : ""}.`);
+      return;
+    }
+
+    const startTime = replacementItem.hora_entrada || replacementItem.data_hora_entrada?.slice?.(11, 16) || "08:00";
+    const endTime = replacementItem.hora_saida || replacementItem.data_hora_saida?.slice?.(11, 16) || "18:00";
+    const replacementSourceKey = `reposicao_pacote|${replacementItem.id}|${replacementDate}`;
+    const duplicateSourceKey = appointments.some((appointment) => appointment.source_key === replacementSourceKey);
+    if (duplicateSourceKey) {
+      alert("Já existe um agendamento de reposição com esta data.");
+      return;
+    }
+
+    setIsSchedulingReplacement(true);
+    try {
+      const createdAppointment = await Appointment.create({
+        empresa_id: replacementItem.empresa_id || null,
+        dog_id: replacementItem.dog_id,
+        cliente_id: replacementItem.cliente_id || null,
+        service_type: replacementItem.service_type,
+        status: "agendado",
+        data_referencia: replacementDate,
+        data_hora_entrada: `${replacementDate}T${startTime}:00`,
+        data_hora_saida: `${replacementDate}T${endTime}:00`,
+        hora_entrada: startTime,
+        hora_saida: endTime,
+        observacoes: [`Reposição da falta de ${originalDateValue ? format(originalDateValue, "dd/MM/yyyy", { locale: ptBR }) : originalDateKey}.`, replacementItem.observacoes].filter(Boolean).join("\n"),
+        valor_previsto: Number(replacementItem.valor_previsto || 0),
+        charge_type: "pacote",
+        source_type: "reposicao_pacote",
+        metadata: {
+          ...originalMeta,
+          replacement_of_appointment_id: replacementItem.id,
+          replacement_origin_date: originalDateKey,
+          replacement_deadline: originalMeta.replacement_deadline || originalMeta.suggested_replacement_deadline || null,
+          replacement_scheduled_from_absence: true,
+          cycle_type: "reposicao",
+        },
+        source_key: replacementSourceKey,
+      });
+
+      await Appointment.update(replacementItem.id, {
+        metadata: {
+          ...originalMeta,
+          replacement_scheduled_appointment_id: createdAppointment?.id || null,
+          replacement_scheduled_source_key: replacementSourceKey,
+          replacement_scheduled_date: replacementDate,
+          replacement_scheduled_at: new Date().toISOString(),
+        },
+      });
+
+      await loadData();
+      setReplacementItem(null);
+      alert("Reposição agendada com sucesso.");
+    } catch (error) {
+      console.error("Erro ao agendar reposição:", error);
+      alert("Não foi possível agendar a reposição.");
+    }
+    setIsSchedulingReplacement(false);
+  }
+
   const planGroups = useMemo(() => {
     const groups = new Map();
 
@@ -1760,8 +1867,11 @@ export default function PlanosConfig() {
     });
     const openReplacementAppointments = groupAppointments.filter((appointment) => {
       const appointmentDate = parseDateOnly(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
+      const appointmentMeta = parseMetadata(appointment.metadata);
       return appointment.status === "faltou"
         && appointment.charge_type === "pacote"
+        && !appointmentMeta.replacement_scheduled_appointment_id
+        && !appointmentMeta.replacement_scheduled_source_key
         && appointmentDate
         && appointmentDate.getTime() <= exclusionDate.getTime();
     });
@@ -2756,8 +2866,10 @@ export default function PlanosConfig() {
                       <div className="mt-3 space-y-2">
                         {deletePreview.openReplacementAppointments.map((appointment) => {
                           const appointmentDate = parseDateOnly(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
+                          const appointmentMeta = parseMetadata(appointment.metadata);
+                          const replacementDeadline = parseDateOnly(appointmentMeta.replacement_deadline || appointmentMeta.suggested_replacement_deadline);
                           return (
-                            <div key={appointment.id} className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-sm">
+                            <div key={appointment.id} className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                               <span className="font-medium text-gray-900">{dogsById[appointment.dog_id]?.nome || "Cão"}</span>
                               <span className="text-gray-600">
                                 {appointmentDate ? format(appointmentDate, "dd/MM/yyyy", { locale: ptBR }) : "-"}
@@ -2790,6 +2902,60 @@ export default function PlanosConfig() {
             >
               <Trash2 className="mr-2 h-4 w-4" />
               {isDeleting ? "Excluindo..." : "Confirmar exclusão"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(replacementItem)} onOpenChange={(open) => !open && setReplacementItem(null)}>
+        <DialogContent className="w-[95vw] max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Agendar reposição</DialogTitle>
+            <DialogDescription>
+              Escolha a nova data para usar a reposição deste atendimento.
+            </DialogDescription>
+          </DialogHeader>
+
+          {replacementItem ? (
+            <div className="space-y-4 py-2">
+              {(() => {
+                const replacementMeta = parseMetadata(replacementItem.metadata);
+                const replacementOriginalDate = parseDateOnly(replacementItem.data_referencia || replacementItem.data_hora_entrada?.slice?.(0, 10));
+                const replacementDeadline = parseDateOnly(replacementMeta.replacement_deadline || replacementMeta.suggested_replacement_deadline);
+
+                return (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                    <p className="font-semibold text-blue-900">{dogsById[replacementItem.dog_id]?.nome || "Cão"}</p>
+                    <p className="mt-1 text-sm text-blue-800">
+                      {getServiceMeta(replacementItem.service_type).label} • falta em {replacementOriginalDate ? format(replacementOriginalDate, "dd/MM/yyyy", { locale: ptBR }) : "-"}
+                    </p>
+                    {replacementDeadline ? (
+                      <p className="mt-2 text-xs text-blue-700">
+                        Prazo para usar: {format(replacementDeadline, "dd/MM/yyyy", { locale: ptBR })}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })()}
+
+              <div>
+                <Label>Data da reposição</Label>
+                <DatePickerInput value={replacementDate} onChange={setReplacementDate} className="mt-2" />
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setReplacementItem(null)} disabled={isSchedulingReplacement}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleScheduleReplacement}
+              disabled={!replacementDate || isSchedulingReplacement}
+              className="bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <Calendar className="mr-2 h-4 w-4" />
+              {isSchedulingReplacement ? "Agendando..." : "Confirmar reposição"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -43,18 +43,35 @@ function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
 }
 
+function normalizeVisibleText(value) {
+  if (!value) return value;
+
+  return String(value)
+    .replace(/\bBulldogue\b/gi, "Bulldog")
+    .replace(/\bBeje\b/gi, "Bege")
+    .replace(/\bpaciente_comercial\b/gi, "Pendente comercial")
+    .replace(/\bpendente_comercial\b/gi, "Pendente comercial")
+    .replace(/\bpacote\b/gi, "Pacote")
+    .replace(/\bavulso\b/gi, "Avulso");
+}
+
+function formatChargeType(value) {
+  if (!value) return "Sem tipo de cobrança";
+  return normalizeVisibleText(value);
+}
+
 function getAgeLabel(dateValue) {
-  if (!dateValue) return "NÃ£o informada";
+  if (!dateValue) return "Não informada";
   const today = new Date();
   const birthDate = new Date(dateValue);
   const years = differenceInYears(today, birthDate);
   const months = differenceInMonths(today, birthDate) % 12;
 
   if (years > 0) {
-    return `${years} ano${years > 1 ? "s" : ""}${months > 0 ? ` e ${months} mÃªs${months > 1 ? "es" : ""}` : ""}`;
+    return `${years} ano${years > 1 ? "s" : ""}${months > 0 ? ` e ${months} mês${months > 1 ? "es" : ""}` : ""}`;
   }
 
-  return `${months} mÃªs${months !== 1 ? "es" : ""}`;
+  return `${months} mês${months !== 1 ? "es" : ""}`;
 }
 
 function buildVaccineRows(dog) {
@@ -162,7 +179,7 @@ export default function PerfilCao() {
       setServicos(visibleServices);
       setFaltas(absentAppointments);
     } catch (error) {
-      console.error("Erro ao carregar ficha do cÃ£o:", error);
+      console.error("Erro ao carregar ficha do cão:", error);
     } finally {
       setIsLoading(false);
     }
@@ -228,7 +245,7 @@ export default function PerfilCao() {
   if (!dog) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-gray-500">CÃ£o nÃ£o encontrado.</p>
+        <p className="text-gray-500">Cão não encontrado.</p>
       </div>
     );
   }
@@ -254,7 +271,9 @@ export default function PerfilCao() {
                     <img src={dogPhotoUrl} alt={dog.nome} className="h-32 w-32 rounded-full object-cover border-4 border-blue-100" />
                   </button>
                 ) : (
-                  <div className="flex h-32 w-32 items-center justify-center rounded-full bg-blue-100 text-5xl">ðŸ•</div>
+                  <div className="flex h-32 w-32 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                    <DogIcon className="h-14 w-14" />
+                  </div>
                 )}
 
                 <div className="flex-1 text-center sm:text-left">
@@ -263,7 +282,7 @@ export default function PerfilCao() {
                       <h1 className="text-3xl font-bold text-gray-900">{dog.nome}</h1>
                       {dog.apelido ? <p className="text-lg text-gray-600">&quot;{dog.apelido}&quot;</p> : null}
                       <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
-                        {dog.raca ? <Badge className="bg-blue-100 text-blue-700">{dog.raca}</Badge> : null}
+                        {dog.raca ? <Badge className="bg-blue-100 text-blue-700">{normalizeVisibleText(dog.raca)}</Badge> : null}
                         <Badge className="bg-purple-100 text-purple-700">{getAgeLabel(dog.data_nascimento)}</Badge>
                         <Badge className="bg-amber-100 text-amber-700">{faltas.length} falta(s)</Badge>
                         <Badge className={vacinasVencidas > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}>
@@ -290,10 +309,10 @@ export default function PerfilCao() {
             className="mb-6"
             items={[
               { value: "resumo", label: "Resumo", icon: DogIcon },
-              { value: "utilizacoes", label: "UtilizaÃ§Ãµes", icon: ClipboardList },
+              { value: "utilizacoes", label: "Utilizações", icon: ClipboardList },
               { value: "vacinas", label: "Vacinas", icon: Syringe },
               { value: "contatos", label: "Contatos", icon: Phone },
-              { value: "alimentacao", label: "AlimentaÃ§Ã£o", icon: Utensils },
+              { value: "alimentacao", label: "Alimentação", icon: Utensils },
             ]}
           />
 
@@ -306,22 +325,22 @@ export default function PerfilCao() {
                 <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Nascimento</span><span className="font-medium">{formatDateValue(dog.data_nascimento)}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Idade</span><span className="font-medium">{getAgeLabel(dog.data_nascimento)}</span></div>
-                  <div className="flex justify-between gap-3"><span className="text-gray-600">RaÃ§a</span><span className="font-medium">{dog.raca || "-"}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-gray-600">Raça</span><span className="font-medium">{normalizeVisibleText(dog.raca) || "-"}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Porte</span><span className="font-medium">{dog.porte || "-"}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Peso</span><span className="font-medium">{dog.peso ? `${dog.peso} kg` : "-"}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Pelagem</span><span className="font-medium">{dog.pelagem || "-"}</span></div>
-                  <div className="flex justify-between gap-3"><span className="text-gray-600">Cores</span><span className="font-medium">{dog.cores_pelagem || "-"}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-gray-600">Cores</span><span className="font-medium">{normalizeVisibleText(dog.cores_pelagem) || "-"}</span></div>
                   <div className="sm:col-span-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Alergias</p>
                     <p className="mt-2 text-sm text-gray-700">{dog.alergias || "Nenhuma alergia cadastrada."}</p>
                   </div>
                   <div className="sm:col-span-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">RestriÃ§Ãµes e cuidados</p>
-                    <p className="mt-2 text-sm text-gray-700">{dog.restricoes_cuidados || "Nenhuma restriÃ§Ã£o cadastrada."}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Restrições e cuidados</p>
+                    <p className="mt-2 text-sm text-gray-700">{dog.restricoes_cuidados || "Nenhuma restrição cadastrada."}</p>
                   </div>
                   <div className="sm:col-span-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">ObservaÃ§Ãµes gerais</p>
-                    <p className="mt-2 text-sm text-gray-700">{dog.observacoes_gerais || "Nenhuma observaÃ§Ã£o cadastrada."}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Observações gerais</p>
+                    <p className="mt-2 text-sm text-gray-700">{dog.observacoes_gerais || "Nenhuma observação cadastrada."}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -332,7 +351,7 @@ export default function PerfilCao() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                    <p className="text-xs uppercase tracking-wide text-blue-700">UtilizaÃ§Ãµes registradas</p>
+                    <p className="text-xs uppercase tracking-wide text-blue-700">Utilizações registradas</p>
                     <p className="mt-2 text-2xl font-bold text-blue-900">{totalUsages}</p>
                   </div>
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -342,7 +361,7 @@ export default function PerfilCao() {
                   <div className={`rounded-xl border p-4 ${vacinasVencidas > 0 ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
                     <p className={`text-xs uppercase tracking-wide ${vacinasVencidas > 0 ? "text-red-700" : "text-emerald-700"}`}>Status vacinal</p>
                     <p className={`mt-2 text-lg font-bold ${vacinasVencidas > 0 ? "text-red-900" : "text-emerald-900"}`}>
-                      {vacinasVencidas > 0 ? "HÃ¡ vacinas vencidas" : "Vacinas em dia"}
+                      {vacinasVencidas > 0 ? "Há vacinas vencidas" : "Vacinas em dia"}
                     </p>
                   </div>
                 </CardContent>
@@ -352,7 +371,7 @@ export default function PerfilCao() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <AlertTriangle className="h-5 w-5 text-amber-600" />
-                    Faltas do cÃ£o
+                    Faltas do cão
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -382,11 +401,11 @@ export default function PerfilCao() {
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <Card className="border-gray-200 bg-white">
                 <CardHeader>
-                  <CardTitle>Resumo por serviÃ§o</CardTitle>
+                  <CardTitle>Resumo por serviço</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {servicesByType.length === 0 ? (
-                    <p className="py-8 text-center text-gray-500">Nenhuma utilizaÃ§Ã£o registrada.</p>
+                    <p className="py-8 text-center text-gray-500">Nenhuma utilização registrada.</p>
                   ) : (
                     <div className="space-y-3">
                       {servicesByType.map((item) => (
@@ -394,7 +413,7 @@ export default function PerfilCao() {
                           <div className="flex items-center justify-between gap-3">
                             <div>
                               <p className="font-medium text-gray-900">{item.label}</p>
-                              <p className="text-sm text-gray-500">{item.total} utilizaÃ§Ã£o(Ãµes)</p>
+                              <p className="text-sm text-gray-500">{item.total} utilização(ões)</p>
                             </div>
                             <Badge variant="outline">{item.total}</Badge>
                           </div>
@@ -432,7 +451,7 @@ export default function PerfilCao() {
                             </div>
                             <div className="text-right">
                               <p className="font-semibold text-emerald-700">{formatCurrency(item.valor_cobrado || item.preco || item.valor)}</p>
-                              <p className="text-xs text-gray-500">{item.charge_type || "Sem tipo de cobranÃ§a"}</p>
+                              <p className="text-xs text-gray-500">{formatChargeType(item.charge_type)}</p>
                             </div>
                           </div>
                           {item.observacoes ? <p className="mt-3 text-sm text-gray-600">{item.observacoes}</p> : null}
@@ -449,15 +468,15 @@ export default function PerfilCao() {
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <Card className="border-gray-200 bg-white">
                 <CardHeader>
-                  <CardTitle>Carteirinha de vacinaÃ§Ã£o</CardTitle>
+                  <CardTitle>Carteirinha de vacinação</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {vaccineCardUrl ? (
-                    <button type="button" onClick={() => handleOpenImage(dog?.foto_carteirinha_vacina_url, vaccineCardUrl, "Carteirinha de vacinaÃ§Ã£o")} className="block w-full text-left">
-                      <img src={vaccineCardUrl} alt="Carteirinha de vacinaÃ§Ã£o" className="w-full rounded-lg border" />
+                    <button type="button" onClick={() => handleOpenImage(dog?.foto_carteirinha_vacina_url, vaccineCardUrl, "Carteirinha de vacinação")} className="block w-full text-left">
+                      <img src={vaccineCardUrl} alt="Carteirinha de vacinação" className="w-full rounded-lg border" />
                     </button>
                   ) : (
-                    <p className="py-8 text-center text-gray-500">Carteirinha nÃ£o cadastrada.</p>
+                    <p className="py-8 text-center text-gray-500">Carteirinha não cadastrada.</p>
                   )}
                 </CardContent>
               </Card>
@@ -498,11 +517,11 @@ export default function PerfilCao() {
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <Card className="border-gray-200 bg-white">
                 <CardHeader>
-                  <CardTitle>ResponsÃ¡veis</CardTitle>
+                  <CardTitle>Responsáveis</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {responsaveis.length === 0 ? (
-                    <p className="py-8 text-center text-gray-500">Nenhum responsÃ¡vel vinculado.</p>
+                    <p className="py-8 text-center text-gray-500">Nenhum responsável vinculado.</p>
                   ) : (
                     <div className="space-y-3">
                       {responsaveis.map((item) => (
@@ -521,12 +540,12 @@ export default function PerfilCao() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Wallet className="h-5 w-5 text-orange-600" />
-                    ResponsÃ¡vel financeiro
+                    Responsável financeiro
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   {carteiras.length === 0 ? (
-                    <p className="py-8 text-center text-gray-500">Nenhum responsÃ¡vel financeiro vinculado.</p>
+                    <p className="py-8 text-center text-gray-500">Nenhum responsável financeiro vinculado.</p>
                   ) : (
                     <div className="space-y-3">
                       {carteiras.map((item) => (
@@ -544,16 +563,16 @@ export default function PerfilCao() {
 
               <Card className="border-gray-200 bg-white">
                 <CardHeader>
-                  <CardTitle>VeterinÃ¡rio</CardTitle>
+                  <CardTitle>Veterinário</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex justify-between gap-3"><span className="text-gray-600">ResponsÃ¡vel</span><span className="font-medium">{dog.veterinario_responsavel || "-"}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-gray-600">Responsável</span><span className="font-medium">{dog.veterinario_responsavel || "-"}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-gray-600">Telefone</span><span className="font-medium">{dog.veterinario_telefone || "-"}</span></div>
-                  <div className="flex justify-between gap-3"><span className="text-gray-600">ClÃ­nica</span><span className="font-medium">{dog.veterinario_clinica_telefone || "-"}</span></div>
-                  <div className="flex justify-between gap-3"><span className="text-gray-600">HorÃ¡rio</span><span className="font-medium">{dog.veterinario_horario_atendimento || "-"}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-gray-600">Clínica</span><span className="font-medium">{dog.veterinario_clinica_telefone || "-"}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-gray-600">Horário</span><span className="font-medium">{dog.veterinario_horario_atendimento || "-"}</span></div>
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">EndereÃ§o</p>
-                    <p className="mt-2 text-sm text-gray-700">{dog.veterinario_endereco || "NÃ£o informado."}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Endereço</p>
+                    <p className="mt-2 text-sm text-gray-700">{dog.veterinario_endereco || "Não informado."}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -579,9 +598,9 @@ export default function PerfilCao() {
 
                       return (
                         <div key={`refeicao-${index}`} className="rounded-lg border border-orange-200 bg-orange-50 p-4">
-                          <p className="font-medium text-gray-900">{index}Âª refeiÃ§Ã£o</p>
+                          <p className="font-medium text-gray-900">{index}ª refeição</p>
                           <p className="mt-1 text-sm text-gray-600">Quantidade: {quantidade || "-"} g</p>
-                          <p className="text-sm text-gray-600">HorÃ¡rio: {horario || "-"}</p>
+                          <p className="text-sm text-gray-600">Horário: {horario || "-"}</p>
                           {observacao ? <p className="mt-2 text-sm text-gray-600">{observacao}</p> : null}
                         </div>
                       );
@@ -592,7 +611,7 @@ export default function PerfilCao() {
 
               <Card className="border-gray-200 bg-white">
                 <CardHeader>
-                  <CardTitle>Medicamentos contÃ­nuos</CardTitle>
+                  <CardTitle>Medicamentos contínuos</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {Array.isArray(dog.medicamentos_continuos) && dog.medicamentos_continuos.length > 0 ? (
@@ -601,13 +620,13 @@ export default function PerfilCao() {
                         <div key={`med-${index}`} className="rounded-lg border border-blue-200 bg-blue-50 p-4">
                           <p className="font-medium text-gray-900">{item?.especificacoes || `Medicamento ${index + 1}`}</p>
                           <p className="mt-1 text-sm text-gray-600">Cuidados: {item?.cuidados || "-"}</p>
-                          <p className="text-sm text-gray-600">HorÃ¡rio: {item?.horario || "-"}</p>
+                          <p className="text-sm text-gray-600">Horário: {item?.horario || "-"}</p>
                           <p className="text-sm text-gray-600">Dose: {item?.dose || "-"}</p>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="py-8 text-center text-gray-500">Nenhum medicamento contÃ­nuo cadastrado.</p>
+                    <p className="py-8 text-center text-gray-500">Nenhum medicamento contínuo cadastrado.</p>
                   )}
                 </CardContent>
               </Card>

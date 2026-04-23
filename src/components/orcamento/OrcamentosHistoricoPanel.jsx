@@ -40,6 +40,121 @@ function formatDate(value) {
   return value ? format(new Date(value), "dd/MM/yyyy", { locale: ptBR }) : "-";
 }
 
+function formatTime(value) {
+  return value || "-";
+}
+
+function formatTimeRange(startTime, endTime) {
+  if (startTime && endTime) return `${startTime} às ${endTime}`;
+  if (startTime) return startTime;
+  if (endTime) return endTime;
+  return "-";
+}
+
+function inferOrcamentoServiceDate(cao, orcamento) {
+  return (
+    cao?.day_care_data ||
+    cao?.adaptacao_data ||
+    cao?.banho_data ||
+    cao?.tosa_data ||
+    cao?.hosp_data_entrada ||
+    (cao?.transporte_viagens || []).find((viagem) => viagem?.data)?.data ||
+    orcamento?.data_criacao ||
+    ""
+  );
+}
+
+function buildIncludedAppointments(orcamento, dogs = []) {
+  const dogsById = Object.fromEntries((dogs || []).map((dog) => [dog.id, dog]));
+
+  return (orcamento?.caes || [])
+    .map((cao, index) => {
+      const dog = dogsById[cao?.dog_id];
+      const dogName = dog?.nome || `Cão ${index + 1}`;
+      const items = [];
+
+      if (cao?.servicos?.day_care && cao?.day_care_data) {
+        items.push({
+          key: `${cao.dog_id || index}-daycare`,
+          title: "Day Care",
+          lines: [`Dia agendado: ${formatDate(cao.day_care_data)}`],
+        });
+      }
+
+      if (cao?.servicos?.hospedagem && cao?.hosp_data_entrada && cao?.hosp_data_saida) {
+        items.push({
+          key: `${cao.dog_id || index}-hospedagem`,
+          title: "Hospedagem",
+          lines: [
+            `Entrada: ${formatDate(cao.hosp_data_entrada)} às ${formatTime(cao.hosp_horario_entrada)}`,
+            `Saída: ${formatDate(cao.hosp_data_saida)} às ${formatTime(cao.hosp_horario_saida)}`,
+            ...(cao.hosp_datas_daycare || []).filter(Boolean).length > 0
+              ? [`Day Care/Pernoite: ${(cao.hosp_datas_daycare || []).filter(Boolean).map((date) => formatDate(date)).join(", ")}`]
+              : [],
+          ],
+        });
+      }
+
+      if (cao?.servicos?.adaptacao && cao?.adaptacao_data) {
+        items.push({
+          key: `${cao.dog_id || index}-adaptacao`,
+          title: "Adaptação",
+          lines: [
+            `Dia: ${formatDate(cao.adaptacao_data)}`,
+            `Horário: ${formatTimeRange(cao.adaptacao_horario_entrada, cao.adaptacao_horario_saida)}`,
+          ],
+        });
+      }
+
+      if (cao?.servicos?.banho) {
+        const banhoDate = cao?.banho_data || inferOrcamentoServiceDate(cao, orcamento);
+        items.push({
+          key: `${cao.dog_id || index}-banho`,
+          title: "Banho",
+          lines: [
+            `Dia: ${formatDate(banhoDate)}`,
+            `Horário: ${formatTimeRange(cao.banho_horario_inicio || cao.banho_horario, cao.banho_horario_saida)}`,
+          ],
+        });
+      }
+
+      if (cao?.servicos?.tosa && cao?.tosa_tipo) {
+        const tosaDate = cao?.tosa_data || inferOrcamentoServiceDate(cao, orcamento);
+        items.push({
+          key: `${cao.dog_id || index}-tosa`,
+          title: "Tosa",
+          lines: [
+            `Dia: ${formatDate(tosaDate)}`,
+            `Horário: ${formatTimeRange(cao.tosa_horario_entrada, cao.tosa_horario_saida)}`,
+          ],
+        });
+      }
+
+      if (cao?.servicos?.transporte) {
+        (cao?.transporte_viagens || []).forEach((viagem, viagemIndex) => {
+          if (!viagem?.data && !viagem?.partida && !viagem?.destino) return;
+          items.push({
+            key: `${cao.dog_id || index}-transporte-${viagemIndex}`,
+            title: `Transporte ${viagemIndex + 1}`,
+            lines: [
+              `Partida: ${viagem.partida || "-"}`,
+              `Destino: ${viagem.destino || "-"}`,
+              `Dia: ${formatDate(viagem.data)}`,
+              `Horário: ${formatTimeRange(viagem.horario, viagem.horario_fim)}`,
+            ],
+          });
+        });
+      }
+
+      return {
+        dogId: cao?.dog_id || `${index}`,
+        dogName,
+        items,
+      };
+    })
+    .filter((group) => group.items.length > 0);
+}
+
 function getStatusBadge(status) {
   const config = {
     rascunho: { color: "bg-gray-100 text-gray-700", icon: Clock, label: "Rascunho" },
@@ -261,6 +376,10 @@ export default function OrcamentosHistoricoPanel({
       .filter((item) => item.status === "aprovado")
       .reduce((accumulator, item) => accumulator + (item.valor_total || 0), 0),
   };
+
+  const selectedOrcamentoIncludedAppointments = selectedOrcamento
+    ? buildIncludedAppointments(selectedOrcamento, dogs)
+    : [];
 
   if (isLoading) {
     return (
@@ -506,6 +625,31 @@ export default function OrcamentosHistoricoPanel({
                   <p className="font-medium">{getDogName(cao.dog_id)}</p>
                 </div>
               ))}
+
+              {selectedOrcamentoIncludedAppointments.length > 0 && (
+                <div>
+                  <h4 className="mb-3 font-semibold">Agendamentos incluídos</h4>
+                  <div className="space-y-3">
+                    {selectedOrcamentoIncludedAppointments.map((group) => (
+                      <div key={group.dogId} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                        <p className="font-medium text-gray-900">{group.dogName}</p>
+                        <div className="mt-3 space-y-2">
+                          {group.items.map((item) => (
+                            <div key={item.key} className="rounded-lg border border-white bg-white p-3">
+                              <p className="text-sm font-semibold text-gray-900">{item.title}</p>
+                              <div className="mt-2 space-y-1">
+                                {item.lines.map((line) => (
+                                  <p key={line} className="text-sm text-gray-600">{line}</p>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <hr />
 

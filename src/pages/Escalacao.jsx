@@ -246,6 +246,11 @@ export default function Escalacao() {
     [schedules],
   );
 
+  const coverageRoleValues = useMemo(
+    () => COVERAGE_FILTERS.find((item) => item.value === coverageFilter)?.roles || [],
+    [coverageFilter],
+  );
+
   const coverageScheduleCount = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
@@ -453,11 +458,6 @@ export default function Escalacao() {
     }
     setIsSaving(false);
   }
-
-  const coverageRoleValues = useMemo(
-    () => COVERAGE_FILTERS.find((item) => item.value === coverageFilter)?.roles || [],
-    [coverageFilter],
-  );
 
   const coverageByWeekday = useMemo(() => {
     const entries = new Map(WEEKDAY_OPTIONS.map((weekday) => [weekday.value, []]));

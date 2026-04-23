@@ -78,8 +78,9 @@ function getProviderName(provider) {
 }
 
 function formatCpf(value) {
+  if (!value) return "";
   const digits = normalizeCpfDigits(value);
-  if (digits.length !== 11) return value || "-";
+  if (digits.length !== 11) return value || "";
   return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 }
 

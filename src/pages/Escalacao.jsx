@@ -8,6 +8,7 @@ import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +25,27 @@ const ROLE_OPTIONS = [
   { value: "banhista", label: "Banhista" },
   { value: "tosador", label: "Tosador" },
   { value: "banhista_tosador", label: "Banhista & Tosador" },
-  { value: "comercial", label: "Comercial" },
+  { value: "motorista", label: "Motorista" },
+  { value: "representante_comercial", label: "Representante comercial" },
+];
+
+const WEEKDAY_OPTIONS = [
+  { value: 1, label: "Segunda", shortLabel: "Seg" },
+  { value: 2, label: "Terça", shortLabel: "Ter" },
+  { value: 3, label: "Quarta", shortLabel: "Qua" },
+  { value: 4, label: "Quinta", shortLabel: "Qui" },
+  { value: 5, label: "Sexta", shortLabel: "Sex" },
+  { value: 6, label: "Sábado", shortLabel: "Sáb" },
+  { value: 0, label: "Domingo", shortLabel: "Dom" },
+];
+
+const DEFAULT_WEEKDAYS = [1, 2, 3, 4, 5];
+
+const COVERAGE_FILTERS = [
+  { value: "monitor", label: "Monitores", roles: ["monitor"] },
+  { value: "banho_tosa", label: "Banhistas e tosadores", roles: ["banhista", "tosador", "banhista_tosador"] },
+  { value: "motorista", label: "Motorista", roles: ["motorista"] },
+  { value: "comercial", label: "Representante comercial", roles: ["comercial", "representante_comercial"] },
 ];
 
 const EMPTY_PROVIDER_FORM = {
@@ -36,6 +57,7 @@ const EMPTY_PROVIDER_FORM = {
 const EMPTY_SCHEDULE_FORM = {
   serviceprovider_id: "",
   funcao: "monitor",
+  weekdays: DEFAULT_WEEKDAYS,
   horario_entrada: "",
   horario_saida: "",
   tem_almoco: false,
@@ -74,11 +96,51 @@ function getLunchLabel(item) {
 }
 
 function getRoleLabel(value) {
+  if (value === "comercial") return "Representante comercial";
   return ROLE_OPTIONS.find((option) => option.value === value)?.label || value || "-";
+}
+
+function normalizeWeekdays(value) {
+  const source = Array.isArray(value)
+    ? value
+    : (typeof value === "string" && value.trim()
+      ? (() => {
+          try {
+            return JSON.parse(value);
+          } catch {
+            return [];
+          }
+        })()
+      : []);
+
+  const parsed = [...new Set(source.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item >= 0 && item <= 6))];
+  return parsed.sort((left, right) => {
+    const normalizedLeft = left === 0 ? 7 : left;
+    const normalizedRight = right === 0 ? 7 : right;
+    return normalizedLeft - normalizedRight;
+  });
+}
+
+function getWeekdayLabel(value, short = false) {
+  const option = WEEKDAY_OPTIONS.find((item) => item.value === value);
+  return short ? (option?.shortLabel || "-") : (option?.label || "-");
+}
+
+function formatWeekdayList(values) {
+  const weekdays = normalizeWeekdays(values);
+  return weekdays.length > 0 ? weekdays.map((item) => getWeekdayLabel(item, true)).join(" • ") : "Seg • Ter • Qua • Qui • Sex";
+}
+
+function toggleWeekdaySelection(currentValues, weekday) {
+  const normalized = normalizeWeekdays(currentValues);
+  return normalized.includes(weekday)
+    ? normalized.filter((item) => item !== weekday)
+    : normalizeWeekdays([...normalized, weekday]);
 }
 
 export default function Escalacao() {
   const [activeTab, setActiveTab] = useState("funcionarios");
+  const [coverageFilter, setCoverageFilter] = useState("monitor");
   const [providers, setProviders] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -184,6 +246,23 @@ export default function Escalacao() {
     [schedules],
   );
 
+  const coverageScheduleCount = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    return schedules.filter((schedule) => {
+      const normalizedRole = schedule?.funcao === "comercial" ? "representante_comercial" : schedule?.funcao;
+      if (!coverageRoleValues.includes(normalizedRole)) return false;
+
+      const provider = providerById[schedule?.serviceprovider_id];
+      if (!provider) return false;
+
+      if (!normalizedSearch) return true;
+
+      const providerName = getProviderName(provider).toLowerCase();
+      return providerName.includes(normalizedSearch) || getRoleLabel(schedule?.funcao).toLowerCase().includes(normalizedSearch);
+    }).length;
+  }, [coverageRoleValues, providerById, schedules, searchTerm]);
+
   function openProviderDialog(provider = null) {
     setEditingProvider(provider);
     setProviderForm({
@@ -236,6 +315,7 @@ export default function Escalacao() {
     setScheduleForm({
       serviceprovider_id: schedule?.serviceprovider_id || "",
       funcao: schedule?.funcao || "monitor",
+      weekdays: normalizeWeekdays(schedule?.weekdays).length > 0 ? normalizeWeekdays(schedule?.weekdays) : DEFAULT_WEEKDAYS,
       horario_entrada: schedule?.horario_entrada || "",
       horario_saida: schedule?.horario_saida || "",
       tem_almoco: Boolean(schedule?.almoco_saida || schedule?.almoco_volta),
@@ -330,6 +410,11 @@ export default function Escalacao() {
       return;
     }
 
+    if (normalizeWeekdays(scheduleForm.weekdays).length === 0) {
+      alert("Selecione pelo menos um dia da semana.");
+      return;
+    }
+
     if (!scheduleForm.automatico && (!scheduleForm.horario_entrada || !scheduleForm.horario_saida)) {
       alert("Informe o horário de entrada e saída.");
       return;
@@ -345,6 +430,7 @@ export default function Escalacao() {
       const payload = {
         serviceprovider_id: scheduleForm.serviceprovider_id,
         funcao: scheduleForm.funcao,
+        weekdays: normalizeWeekdays(scheduleForm.weekdays),
         horario_entrada: scheduleForm.horario_entrada || null,
         horario_saida: scheduleForm.horario_saida || null,
         almoco_saida: scheduleForm.tem_almoco ? (scheduleForm.almoco_saida || null) : null,
@@ -367,6 +453,47 @@ export default function Escalacao() {
     }
     setIsSaving(false);
   }
+
+  const coverageRoleValues = useMemo(
+    () => COVERAGE_FILTERS.find((item) => item.value === coverageFilter)?.roles || [],
+    [coverageFilter],
+  );
+
+  const coverageByWeekday = useMemo(() => {
+    const entries = new Map(WEEKDAY_OPTIONS.map((weekday) => [weekday.value, []]));
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    schedules.forEach((schedule) => {
+      const normalizedRole = schedule?.funcao === "comercial" ? "representante_comercial" : schedule?.funcao;
+      if (!coverageRoleValues.includes(normalizedRole)) return;
+
+      const provider = providerById[schedule?.serviceprovider_id];
+      if (!provider) return;
+
+      const providerName = getProviderName(provider).toLowerCase();
+      if (normalizedSearch && !providerName.includes(normalizedSearch) && !getRoleLabel(schedule?.funcao).toLowerCase().includes(normalizedSearch)) {
+        return;
+      }
+
+      const weekdays = normalizeWeekdays(schedule?.weekdays).length > 0 ? normalizeWeekdays(schedule?.weekdays) : DEFAULT_WEEKDAYS;
+      weekdays.forEach((weekday) => {
+        const current = entries.get(weekday) || [];
+        current.push({
+          ...schedule,
+          provider,
+        });
+        current.sort((left, right) => {
+          const leftTime = left.horario_entrada || "99:99";
+          const rightTime = right.horario_entrada || "99:99";
+          if (leftTime !== rightTime) return leftTime.localeCompare(rightTime);
+          return getProviderName(left.provider).localeCompare(getProviderName(right.provider));
+        });
+        entries.set(weekday, current);
+      });
+    });
+
+    return entries;
+  }, [coverageRoleValues, providerById, schedules, searchTerm]);
 
   async function handleDeleteSchedule(schedule) {
     const confirmed = window.confirm("Excluir este horário?");
@@ -460,18 +587,23 @@ export default function Escalacao() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <PageSubTabs
-            className="max-w-xl"
+            className="max-w-2xl"
             items={[
               { value: "funcionarios", label: `Funcionários (${providers.length})` },
               { value: "horarios", label: `Horários (${schedules.length})` },
+              { value: "cobertura", label: `Calendário (${coverageScheduleCount})` },
             ]}
           />
 
           <SearchFiltersToolbar
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
-            searchPlaceholder={activeTab === "funcionarios" ? "Buscar por nome ou CPF..." : "Buscar por funcionário ou função..."}
-            rightContent={(
+            searchPlaceholder={activeTab === "funcionarios"
+              ? "Buscar por nome ou CPF..."
+              : activeTab === "horarios"
+                ? "Buscar por funcionário ou função..."
+                : "Buscar por funcionário ou função na cobertura..."}
+            rightContent={activeTab === "cobertura" ? null : (
               <Button
                 onClick={() => {
                   if (activeTab === "funcionarios") openProviderDialog();
@@ -539,6 +671,7 @@ export default function Escalacao() {
                       <TableRow>
                         <TableHead>Funcionário</TableHead>
                         <TableHead>Função</TableHead>
+                        <TableHead>Dias</TableHead>
                         <TableHead>Jornada</TableHead>
                         <TableHead>Almoço</TableHead>
                         <TableHead>Modo</TableHead>
@@ -550,6 +683,7 @@ export default function Escalacao() {
                         <TableRow key={item.id}>
                           <TableCell className="font-medium text-gray-900">{getProviderName(providerById[item.serviceprovider_id])}</TableCell>
                           <TableCell>{getRoleLabel(item.funcao)}</TableCell>
+                          <TableCell>{formatWeekdayList(item.weekdays)}</TableCell>
                           <TableCell>{formatTimeRange(item.horario_entrada, item.horario_saida)}</TableCell>
                           <TableCell>{getLunchLabel(item)}</TableCell>
                           <TableCell>
@@ -580,6 +714,61 @@ export default function Escalacao() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="cobertura" className="mt-0 space-y-4">
+            <Tabs value={coverageFilter} onValueChange={setCoverageFilter} className="space-y-4">
+              <PageSubTabs
+                className="max-w-4xl"
+                items={COVERAGE_FILTERS.map((item) => ({ value: item.value, label: item.label }))}
+              />
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
+                {WEEKDAY_OPTIONS.map((weekday) => {
+                  const entries = coverageByWeekday.get(weekday.value) || [];
+
+                  return (
+                    <Card key={weekday.value} className="border-0 shadow-sm">
+                      <CardContent className="flex h-full flex-col p-0">
+                        <div className="border-b border-gray-100 px-4 py-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900">{weekday.label}</p>
+                              <p className="mt-1 text-xs text-gray-500">{entries.length} cobertura(s)</p>
+                            </div>
+                            <Badge variant="outline">{weekday.shortLabel}</Badge>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 space-y-3 p-4">
+                          {entries.length > 0 ? entries.map((item) => (
+                            <div key={`${weekday.value}-${item.id}`} className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="font-medium text-gray-900">{getProviderName(item.provider)}</p>
+                                  <p className="mt-1 text-xs text-gray-500">{getRoleLabel(item.funcao)}</p>
+                                </div>
+                                <Badge className={item.automatico ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}>
+                                  {item.automatico ? "Automático" : "Fiscaliza"}
+                                </Badge>
+                              </div>
+                              <div className="mt-3 space-y-1 text-sm text-gray-600">
+                                <p>{formatTimeRange(item.horario_entrada, item.horario_saida)}</p>
+                                <p>{getLunchLabel(item)}</p>
+                              </div>
+                            </div>
+                          )) : (
+                            <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
+                              Nenhuma cobertura cadastrada.
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </Tabs>
           </TabsContent>
         </Tabs>
       </div>
@@ -692,6 +881,39 @@ export default function Escalacao() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
+              <div>
+                <p className="font-medium text-gray-900">Dias cobertos</p>
+                <p className="mt-1 text-sm text-gray-600">
+                  Selecione em quais dias da semana este horário deve aparecer no calendário da escala.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {WEEKDAY_OPTIONS.map((weekday) => {
+                  const isChecked = normalizeWeekdays(scheduleForm.weekdays).includes(weekday.value);
+
+                  return (
+                    <label
+                      key={weekday.value}
+                      className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3 transition-colors ${isChecked ? "border-blue-300 bg-blue-50" : "border-gray-200 bg-gray-50 hover:border-gray-300"}`}
+                    >
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={() => setScheduleForm((current) => ({
+                          ...current,
+                          weekdays: toggleWeekdaySelection(current.weekdays, weekday.value),
+                        }))}
+                      />
+                      <div>
+                        <p className="font-medium text-gray-900">{weekday.label}</p>
+                        <p className={`text-xs ${isChecked ? "text-blue-700" : "text-gray-500"}`}>{weekday.shortLabel}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">

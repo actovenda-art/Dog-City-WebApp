@@ -19,6 +19,7 @@ create table if not exists public.serviceprovider_schedule (
   empresa_id text not null,
   serviceprovider_id text not null references public.serviceproviders(id) on delete cascade,
   funcao text not null,
+  weekdays jsonb not null default '[1,2,3,4,5]'::jsonb,
   horario_entrada text,
   horario_saida text,
   almoco_saida text,
@@ -34,6 +35,13 @@ create index if not exists idx_serviceprovider_schedule_empresa_id
 
 create index if not exists idx_serviceprovider_schedule_provider_id
   on public.serviceprovider_schedule (serviceprovider_id);
+
+alter table if exists public.serviceprovider_schedule
+  add column if not exists weekdays jsonb not null default '[1,2,3,4,5]'::jsonb;
+
+update public.serviceprovider_schedule
+set weekdays = '[1,2,3,4,5]'::jsonb
+where weekdays is null;
 
 alter table if exists public.serviceprovider_schedule enable row level security;
 

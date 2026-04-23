@@ -10,6 +10,7 @@ import {
   getAppointmentEndDateKey,
   getAppointmentMeta,
   getAppointmentSourceLabel,
+  getCheckinMealRecords,
   getChargeTypeLabel,
   getServiceLabel,
 } from "@/lib/attendance";
@@ -30,6 +31,14 @@ import { AlertTriangle, Calendar, ClipboardList, RefreshCw, Tag } from "lucide-r
 function formatDate(value) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(value));
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function formatAppointmentPeriod(appointment) {
@@ -85,6 +94,7 @@ export default function Agendamentos() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [packageDialogOpen, setPackageDialogOpen] = useState(false);
   const [avulsoActionsDialogOpen, setAvulsoActionsDialogOpen] = useState(false);
+  const [recordsDialogOpen, setRecordsDialogOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [packageCode, setPackageCode] = useState("");
   const [packageNotes, setPackageNotes] = useState("");
@@ -127,6 +137,23 @@ export default function Agendamentos() {
   }
 
   const shouldHideOperationalAlerts = useMemo(() => isOperationalProfile(currentUser), [currentUser]);
+  const selectedAppointmentRecord = useMemo(() => {
+    if (!selectedAppointment) return null;
+
+    const matchingRecords = checkins
+      .filter((item) => item.tipo === "pet")
+      .filter((item) =>
+        item.id === selectedAppointment.linked_checkin_id
+        || item.appointment_id === selectedAppointment.id
+      )
+      .sort((left, right) => {
+        const leftValue = left.checkout_datetime || left.data_checkout || left.checkin_datetime || left.data_checkin || left.created_date || "";
+        const rightValue = right.checkout_datetime || right.data_checkout || right.checkin_datetime || right.data_checkin || right.created_date || "";
+        return String(rightValue).localeCompare(String(leftValue));
+      });
+
+    return matchingRecords[0] || null;
+  }, [checkins, selectedAppointment]);
 
   const pendingCommercialAppointments = useMemo(() => {
     return visibleAppointments.filter((appointment) => {
@@ -178,6 +205,11 @@ export default function Agendamentos() {
   function openAvulsoActionsDialog(appointment) {
     setSelectedAppointment(appointment);
     setAvulsoActionsDialogOpen(true);
+  }
+
+  function openRecordsDialog(appointment) {
+    setSelectedAppointment(appointment);
+    setRecordsDialogOpen(true);
   }
 
   async function resolveReceivableIfNeeded(appointment) {
@@ -597,7 +629,7 @@ export default function Agendamentos() {
                   variant="outline"
                   className="justify-start"
                   onClick={() => {
-                    openRegistradorForAppointment(selectedAppointment);
+                    openRecordsDialog(selectedAppointment);
                     setAvulsoActionsDialogOpen(false);
                   }}
                 >
@@ -623,6 +655,75 @@ export default function Agendamentos() {
           ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setAvulsoActionsDialogOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={recordsDialogOpen} onOpenChange={setRecordsDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Registros do atendimento</DialogTitle>
+            <DialogDescription>
+              Confira os dados de check-in e check-out vinculados a este serviço.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedAppointment ? (
+            <div className="space-y-4 py-2">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-semibold text-gray-900">{dogsById[selectedAppointment.dog_id]?.nome || "Cão"}</p>
+                  <Badge variant="outline">{getServiceLabel(selectedAppointment.service_type)}</Badge>
+                  <Badge className="bg-blue-100 text-blue-700">{getChargeTypeLabel(selectedAppointment.charge_type)}</Badge>
+                </div>
+                <p className="mt-2 text-sm text-gray-600">
+                  {(ownerByDogId[selectedAppointment.dog_id] || {}).nome || "Responsável não identificado"} • {formatAppointmentPeriod(selectedAppointment)}
+                </p>
+              </div>
+
+              {selectedAppointmentRecord ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Check-in</p>
+                    <div className="mt-3 space-y-2 text-sm text-gray-700">
+                      <p><span className="font-medium text-gray-900">Entrada:</span> {formatDateTime(selectedAppointmentRecord.checkin_datetime || selectedAppointmentRecord.data_checkin)}</p>
+                      <p><span className="font-medium text-gray-900">Quem trouxe:</span> {selectedAppointmentRecord.entregador_nome || "-"}</p>
+                      <p><span className="font-medium text-gray-900">Monitor:</span> {selectedAppointmentRecord.checkin_monitor_nome || "-"}</p>
+                      <p><span className="font-medium text-gray-900">Tem refeição:</span> {selectedAppointmentRecord.tem_refeicao ? "Sim" : "Não"}</p>
+                      {selectedAppointmentRecord.refeicao_observacao ? (
+                        <p><span className="font-medium text-gray-900">Observação da refeição:</span> {selectedAppointmentRecord.refeicao_observacao}</p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Check-out</p>
+                    <div className="mt-3 space-y-2 text-sm text-gray-700">
+                      <p><span className="font-medium text-gray-900">Saída:</span> {formatDateTime(selectedAppointmentRecord.checkout_datetime || selectedAppointmentRecord.data_checkout)}</p>
+                      <p><span className="font-medium text-gray-900">Quem buscou:</span> {selectedAppointmentRecord.retirador_nome || "-"}</p>
+                      <p><span className="font-medium text-gray-900">Monitor:</span> {selectedAppointmentRecord.checkout_monitor_nome || "-"}</p>
+                      <p><span className="font-medium text-gray-900">Status:</span> {selectedAppointmentRecord.status || "-"}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-white p-4 md:col-span-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Resumo</p>
+                    <div className="mt-3 grid gap-2 text-sm text-gray-700 md:grid-cols-2">
+                      <p><span className="font-medium text-gray-900">Registros de refeição:</span> {getCheckinMealRecords(selectedAppointmentRecord).length}</p>
+                      <p><span className="font-medium text-gray-900">Observações:</span> {selectedAppointmentRecord.observacoes || "-"}</p>
+                      <p><span className="font-medium text-gray-900">Foto dos pertences na entrada:</span> {selectedAppointmentRecord.pertences_entrada_foto_url ? "Anexada" : "Não anexada"}</p>
+                      <p><span className="font-medium text-gray-900">Foto dos pertences na saída:</span> {selectedAppointmentRecord.pertences_saida_foto_url ? "Anexada" : "Não anexada"}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-600">
+                  Nenhum registro de check-in ou check-out foi encontrado para este atendimento.
+                </div>
+              )}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRecordsDialogOpen(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

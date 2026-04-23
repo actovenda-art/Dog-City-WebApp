@@ -31,6 +31,7 @@ import Perfis from "./Perfis";
 import Planos from "./Planos";
 import Cockpit from "./Cockpit";
 import ControleGerencial from "./ControleGerencial";
+import Escalacao from "./Escalacao";
 import ContasReceber from "./ContasReceber";
 import PedidosInternos from "./PedidosInternos";
 import Movimentacoes from "./Movimentacoes";
@@ -64,6 +65,7 @@ const PAGES = {
   Planos,
   Cockpit,
   ControleGerencial,
+  Escalacao,
   ContasReceber,
   PedidosInternos,
   Movimentacoes,

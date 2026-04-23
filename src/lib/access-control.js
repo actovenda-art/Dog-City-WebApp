@@ -26,6 +26,7 @@ const PAGE_ACCESS_REQUIREMENTS = {
   ContasReceber: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
   Cockpit: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
   ControleGerencial: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
+  Escalacao: ["platform:*", "empresa:*", "empresa:read", "empresa:update"],
 
   Orcamentos: ["platform:*", "empresa:*", "empresa:update", "orcamentos:*"],
   HistoricoOrcamentos: ["platform:*", "empresa:*", "empresa:update", "orcamentos:*", "orcamentos:read"],

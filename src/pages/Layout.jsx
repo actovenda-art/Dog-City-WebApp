@@ -248,6 +248,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
       items: [
         { title: "Cockpit", url: createPageUrl("Cockpit"), icon: PieChart },
         { title: "Controle Gerencial", url: createPageUrl("ControleGerencial"), icon: BarChart3 },
+        { title: "Escalação", url: createPageUrl("Escalacao"), icon: CalendarClock },
         { title: "Relatórios Cães", url: createPageUrl("RelatoriosCaes"), icon: BarChart3 },
       ],
     },

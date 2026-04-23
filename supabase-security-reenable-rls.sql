@@ -40,6 +40,7 @@ alter table if exists public.plan_config enable row level security;
 alter table if exists public.checkins enable row level security;
 alter table if exists public.serviceprovided enable row level security;
 alter table if exists public.serviceproviders enable row level security;
+alter table if exists public.serviceprovider_schedule enable row level security;
 alter table if exists public.pedidointerno enable row level security;
 alter table if exists public."transaction" enable row level security;
 alter table if exists public.scheduledtransaction enable row level security;
@@ -79,6 +80,7 @@ where schemaname = 'public'
     'checkins',
     'serviceprovided',
     'serviceproviders',
+    'serviceprovider_schedule',
     'pedidointerno',
     'transaction',
     'scheduledtransaction',

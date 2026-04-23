@@ -378,7 +378,7 @@ begin
   foreach tbl in array array[
     'dogs','carteira','responsavel','orcamento','appointment','conta_receber','despesa',
     'lancamento','extratobancario','plan_config','checkins','serviceprovided',
-    'serviceproviders','receita','pedidointerno','integracao_config',
+    'serviceproviders','serviceprovider_schedule','receita','pedidointerno','integracao_config',
     'integracao_sync_log','extrato_duplicidade',
     'transaction','scheduledtransaction','replacement'
   ]

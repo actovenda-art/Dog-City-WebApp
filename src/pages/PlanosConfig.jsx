@@ -253,33 +253,44 @@ function formatMonthLabel(value) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-function buildRecurringBillingSchedule(plan, monthsForward = 8) {
+function getPlanNextBillingDate(plan) {
+  const explicitDate = parseDateOnly(plan?.next_billing_date);
+  if (explicitDate) return explicitDate;
+
   const metadata = parseMetadata(plan?.metadata_gerencial);
-  const startDate = parseDateOnly(metadata.start_date) || parseDateOnly(plan?.created_date?.slice?.(0, 10));
+  if (!metadata.first_cycle_charged) {
+    const firstCycleDueDate = parseDateOnly(metadata.first_cycle?.due_date);
+    if (firstCycleDueDate) return firstCycleDueDate;
+  }
+
+  return getLegacyNextBillingDate(plan);
+}
+
+function buildRecurringBillingSchedule(plan, referenceDate = new Date()) {
+  const today = normalizeDate(referenceDate);
   const dueDay = Number.parseInt(String(plan?.due_day || plan?.renovacao_dia || ""), 10);
-  if (!startDate || !Number.isFinite(dueDay)) return [];
+  if (!today || !Number.isFinite(dueDay)) return [];
 
   const monthlyValue = getMonthlyValue(plan);
-  const firstCycle = metadata.first_cycle || {};
-  const firstDueDate = parseDateOnly(firstCycle.due_date) || buildDueDateForMonth(startDate, dueDay);
   const entries = [];
-  let cursor = startOfMonth(startDate);
-  const endCursor = startOfMonth(addMonths(new Date(), monthsForward));
+  let releaseDate = getPlanNextBillingDate(plan);
 
-  while (cursor.getTime() <= endCursor.getTime()) {
-    const monthKey = format(cursor, "yyyy-MM");
-    const isFirstMonth = firstDueDate ? getMonthKey(firstDueDate) === monthKey : false;
-    const dueDate = isFirstMonth ? firstDueDate : buildDueDateForMonth(cursor, dueDay);
-    if (dueDate) {
-      entries.push({
-        monthKey,
-        dueDate,
-        dueDateKey: formatDateOnly(dueDate),
-        amount: isFirstMonth ? Number(firstCycle.per_dog_value || 0) || monthlyValue : monthlyValue,
-        isFirstMonth,
-      });
-    }
-    cursor = startOfMonth(addMonths(cursor, 1));
+  while (releaseDate && releaseDate.getTime() <= today.getTime()) {
+    const dueDate = buildDueDateForMonth(addMonths(releaseDate, 1), dueDay);
+    if (!dueDate) break;
+
+    entries.push({
+      monthKey: getMonthKey(dueDate),
+      monthDate: startOfMonth(dueDate),
+      releaseDate,
+      releaseDateKey: formatDateOnly(releaseDate),
+      dueDate,
+      dueDateKey: formatDateOnly(dueDate),
+      amount: monthlyValue,
+      isFirstMonth: false,
+    });
+
+    releaseDate = dueDate;
   }
 
   return entries;
@@ -471,6 +482,24 @@ function buildNextFirstMonthDate(startDateValue, values) {
   }
 
   return formatDateOnly(lastDay);
+}
+
+function buildCycleMonthDates(monthDateValue, weekdays) {
+  const monthDate = normalizeDate(monthDateValue instanceof Date ? monthDateValue : parseDateOnly(monthDateValue));
+  const normalizedWeekdays = normalizeWeekdays(weekdays);
+  if (!monthDate || normalizedWeekdays.length === 0) return [];
+
+  const monthStart = startOfMonth(monthDate);
+  const monthEnd = endOfMonth(monthStart);
+  const dates = [];
+
+  for (let cursor = monthStart; cursor <= monthEnd; cursor = addDays(cursor, 1)) {
+    if (normalizedWeekdays.includes(getDay(cursor))) {
+      dates.push(formatDateOnly(cursor));
+    }
+  }
+
+  return normalizeDateKeyList(dates);
 }
 
 function buildFirstBillingPreview({
@@ -1098,8 +1127,14 @@ export default function PlanosConfig() {
     ).length > 0
       ? normalizeFirstMonthDateList(metadata.start_date, metadata.first_month_real_dates)
       : buildFirstMonthRealDates(metadata.start_date, weekdays);
-    const firstMonthEnd = planStartDate ? endOfMonth(planStartDate) : null;
     const appointmentDates = new Set();
+    const recurringSchedule = buildRecurringBillingSchedule(plan, today);
+    const packageGroupKey = metadata.package_group_key || plan.id;
+    const serviceId = plan.service || plan.tipo_plano || "day_care";
+    const cycleSlots = getDayCareCycleSlots(plan.frequency);
+    const valuePerUse = serviceId === "day_care" && cycleSlots > 0
+      ? getMonthlyValue(plan) / cycleSlots
+      : getMonthlyValue(plan) / Math.max(weekdays.length || 1, 1);
 
     for (const dateKey of firstMonthRealDates) {
       const parsed = parseDateOnly(dateKey);
@@ -1108,40 +1143,26 @@ export default function PlanosConfig() {
       }
     }
 
-    for (let week = 0; week < weeksAhead; week += 1) {
-      for (const weekday of weekdays) {
-        let targetDate = addWeeks(generationBaseDate, week);
-        const currentWeekday = getDay(targetDate);
-
-        if (currentWeekday !== weekday) {
-          targetDate = nextDay(targetDate, weekday);
-        }
-
-        if (targetDate >= generationBaseDate) {
-          if (
-            planStartDate
-            && firstMonthEnd
-            && targetDate >= planStartDate
-            && targetDate <= firstMonthEnd
-          ) {
-            continue;
-          }
-
-          const dateKey = format(targetDate, "yyyy-MM-dd");
+    for (const entry of recurringSchedule) {
+      const cycleDates = buildCycleMonthDates(entry.monthDate, weekdays);
+      for (const dateKey of cycleDates) {
+        const parsed = parseDateOnly(dateKey);
+        if (parsed && parsed >= generationBaseDate) {
           appointmentDates.add(dateKey);
         }
       }
     }
 
     const allAppointmentDates = [...appointmentDates].sort();
-    const valuePerUse = getMonthlyValue(plan) / Math.max(weekdays.length * 4, 1);
 
     for (const dateKey of allAppointmentDates) {
+      const cycleMonthKey = getMonthKey(dateKey);
+      const isFirstCycleDate = firstMonthRealDates.includes(dateKey);
       const appointment = {
         empresa_id: plan.empresa_id || null,
         dog_id: plan.dog_id,
         cliente_id: plan.client_id || plan.carteira_id || null,
-        service_type: plan.service,
+        service_type: serviceId,
         status: "agendado",
         data_referencia: dateKey,
         data_hora_entrada: `${dateKey}T08:00:00`,
@@ -1155,9 +1176,11 @@ export default function PlanosConfig() {
         metadata: {
           plan_id: plan.id,
           client_name: plan.client_name || "",
-          package_group_key: parseMetadata(plan.metadata_gerencial).package_group_key || plan.id,
+          package_group_key: packageGroupKey,
+          cycle_month_key: cycleMonthKey,
+          cycle_type: isFirstCycleDate ? "primeiro_mes" : "recorrente",
         },
-        source_key: `plano_recorrente|${plan.id}|${plan.service}|${dateKey}`,
+        source_key: `plano_recorrente|${plan.id}|${serviceId}|${dateKey}`,
       };
       if (existingAppointmentKeys?.has(appointment.source_key)) {
         continue;
@@ -1175,11 +1198,75 @@ export default function PlanosConfig() {
 
   async function ensureBillingForPlan(plan, existingReceivables = []) {
     const metadata = parseMetadata(plan.metadata_gerencial);
-    const schedule = buildRecurringBillingSchedule(plan);
-    if (schedule.length === 0) return false;
-
     let changed = false;
     const packageGroupKey = metadata.package_group_key || plan.id;
+    let nextMetadataGerencial = metadata;
+    const firstCycle = metadata.first_cycle || {};
+    const firstDueDate = parseDateOnly(firstCycle.due_date);
+    const firstCycleAmount = Number(firstCycle.per_dog_value || 0) || 0;
+    const currentNextBillingDate = getPlanNextBillingDate(plan);
+    let nextBillingDateKey = formatDateOnly(currentNextBillingDate);
+
+    if (firstDueDate && !metadata.first_cycle_charged) {
+      const firstMonthKey = getMonthKey(firstDueDate);
+      const firstSourceKey = `plano_recorrente|${plan.id}|${formatDateOnly(firstDueDate)}`;
+      const existingFirstCharge = existingReceivables.find((item) => item.source_key === firstSourceKey);
+
+      if (firstCycleAmount > 0) {
+        const firstPayload = {
+          cliente_id: plan.client_id || plan.carteira_id || null,
+          dog_id: plan.dog_id || null,
+          descricao: `Mensalidade ${getServiceMeta(plan.service).label} - ${plan.client_name}`,
+          servico: plan.service,
+          valor: Number(firstCycleAmount.toFixed(2)),
+          vencimento: formatDateOnly(firstDueDate),
+          status: existingFirstCharge?.status || "pendente",
+          origem: "plano_recorrente",
+          tipo_agendamento: "recorrente",
+          tipo_cobranca: "pacote",
+          data_prestacao: formatDateOnly(firstDueDate),
+          source_key: firstSourceKey,
+          metadata: {
+            ...parseMetadata(existingFirstCharge?.metadata),
+            plan_id: plan.id,
+            client_name: plan.client_name,
+            due_day: plan.due_day,
+            first_cycle: true,
+            month_key: firstMonthKey,
+            package_group_key: packageGroupKey,
+          },
+        };
+
+        if (!existingFirstCharge) {
+          await ContaReceber.create(firstPayload);
+          existingReceivables.push({ ...firstPayload });
+          changed = true;
+        } else {
+          const hasBeenPaid = Boolean(existingFirstCharge.data_recebimento);
+          const shouldUpdateValue = !hasBeenPaid && Math.abs((Number(existingFirstCharge.valor) || 0) - firstPayload.valor) >= 0.01;
+          const shouldUpdateMetadata = parseMetadata(existingFirstCharge.metadata).package_group_key !== packageGroupKey;
+
+          if (shouldUpdateValue || shouldUpdateMetadata) {
+            await ContaReceber.update(existingFirstCharge.id, {
+              valor: shouldUpdateValue ? firstPayload.valor : existingFirstCharge.valor,
+              metadata: firstPayload.metadata,
+            });
+            Object.assign(existingFirstCharge, {
+              valor: shouldUpdateValue ? firstPayload.valor : existingFirstCharge.valor,
+              metadata: firstPayload.metadata,
+            });
+            changed = true;
+          }
+        }
+      }
+
+      nextMetadataGerencial = {
+        ...nextMetadataGerencial,
+        first_cycle_charged: true,
+      };
+    }
+
+    const schedule = buildRecurringBillingSchedule(plan);
 
     for (const entry of schedule) {
       if (entry.amount <= 0) continue;
@@ -1232,6 +1319,23 @@ export default function PlanosConfig() {
         });
         changed = true;
       }
+    }
+
+    if (schedule.length > 0) {
+      nextBillingDateKey = schedule[schedule.length - 1].dueDateKey;
+    }
+
+    const metadataChanged = JSON.stringify(nextMetadataGerencial) !== JSON.stringify(metadata);
+    const nextBillingChanged = nextBillingDateKey !== (plan.next_billing_date || null);
+
+    if (metadataChanged || nextBillingChanged) {
+      await PlanConfig.update(plan.id, {
+        ...(nextBillingChanged ? { next_billing_date: nextBillingDateKey } : {}),
+        ...(metadataChanged ? { metadata_gerencial: nextMetadataGerencial } : {}),
+      });
+      plan.next_billing_date = nextBillingDateKey;
+      plan.metadata_gerencial = nextMetadataGerencial;
+      changed = true;
     }
 
     return changed;

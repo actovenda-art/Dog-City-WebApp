@@ -7,6 +7,8 @@ export const Checkin = appClient.entities.Checkin;
 
 export const ServiceProvider = appClient.entities.ServiceProvider;
 
+export const ServiceProviderSchedule = appClient.entities.ServiceProviderSchedule;
+
 export const Lancamento = appClient.entities.Lancamento;
 
 export const ExtratoBancario = appClient.entities.ExtratoBancario;

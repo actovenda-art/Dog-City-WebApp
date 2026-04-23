@@ -38,6 +38,7 @@ const UNIT_SCOPED_ENTITIES = new Set([
   'Schedule',
   'Appointment',
   'ServiceProvider',
+  'ServiceProviderSchedule',
   'Lancamento',
   'ExtratoBancario',
   'Despesa',
@@ -388,7 +389,7 @@ function createMockEntity(name, options = {}) {
 
 const defaultEntities = {};
 [
-  'Dog', 'Checkin', 'Schedule', 'ServiceProvider', 'Lancamento', 'ExtratoBancario', 'Despesa',
+  'Dog', 'Checkin', 'Schedule', 'ServiceProvider', 'ServiceProviderSchedule', 'Lancamento', 'ExtratoBancario', 'Despesa',
   'Responsavel', 'Carteira', 'Notificacao', 'Orcamento', 'TabelaPrecos', 'Appointment',
   'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
@@ -973,6 +974,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     TabelaPrecos: 'tabelaprecos',
     ServiceProvided: 'serviceprovided',
     ServiceProvider: 'serviceproviders',
+    ServiceProviderSchedule: 'serviceprovider_schedule',
     Transaction: 'transaction',
     ScheduledTransaction: 'scheduledtransaction',
     Replacement: 'replacement',

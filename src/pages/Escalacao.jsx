@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Clock3, Coffee, Plus, ShieldCheck, Users } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CalendarClock, Camera, Clock3, Coffee, Plus, ShieldCheck, Users } from "lucide-react";
 
-import { ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
+import { ServiceProvider, ServiceProviderSchedule, User } from "@/api/entities";
+import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { TimePickerInput } from "@/components/common/DateTimeInputs";
 import { isValidCpfChecksum, normalizeCpfDigits } from "@/lib/cpf-validation";
+import { isImagePreviewable, openImageViewer } from "@/utils";
 
 const ROLE_OPTIONS = [
   { value: "monitor", label: "Monitor" },
@@ -28,6 +30,7 @@ const ROLE_OPTIONS = [
 const EMPTY_PROVIDER_FORM = {
   nome: "",
   cpf: "",
+  selfie_url: "",
 };
 
 const EMPTY_SCHEDULE_FORM = {
@@ -88,6 +91,8 @@ export default function Escalacao() {
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [loadWarnings, setLoadWarnings] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const providerSelfieInputRef = useRef(null);
 
   useEffect(() => {
     loadData();
@@ -97,7 +102,7 @@ export default function Escalacao() {
     setIsLoading(true);
     const warnings = [];
 
-    const [providersData, schedulesData] = await Promise.all([
+    const [providersData, schedulesData, me] = await Promise.all([
       safeLoad(async () => {
         try {
           return ServiceProvider.listAll ? await ServiceProvider.listAll("nome", 1000, 5000) : await ServiceProvider.list("nome", 1000);
@@ -116,10 +121,12 @@ export default function Escalacao() {
           throw error;
         }
       }),
+      User.me().catch(() => null),
     ]);
 
     setProviders((providersData || []).filter((item) => item?.ativo !== false));
     setSchedules((schedulesData || []).filter((item) => item?.ativo !== false));
+    setCurrentUser(me || null);
     setLoadWarnings(warnings);
     setIsLoading(false);
   }
@@ -182,8 +189,46 @@ export default function Escalacao() {
     setProviderForm({
       nome: provider?.nome || "",
       cpf: formatCpf(provider?.cpf || ""),
+      selfie_url: provider?.selfie_url || "",
     });
     setShowProviderDialog(true);
+  }
+
+  async function uploadProviderSelfie(file) {
+    if (!file) return;
+    try {
+      setIsSaving(true);
+      const empresaId = currentUser?.empresa_id || currentUser?.active_unit_id || "empresa-default";
+      const safeName = `${Date.now()}_${(file.name || "selfie").replace(/\s+/g, "_")}`;
+      const path = `${empresaId}/escalacao/funcionarios/${safeName}`;
+      const result = await UploadPrivateFile({ file, path });
+      const storedPath = result?.file_key || result?.path || "";
+      if (!storedPath) {
+        alert("Não foi possível enviar a selfie.");
+        return;
+      }
+      setProviderForm((current) => ({ ...current, selfie_url: storedPath }));
+    } catch (error) {
+      console.error("Erro ao enviar selfie do funcionário:", error);
+      alert("Não foi possível enviar a selfie do funcionário.");
+    }
+    setIsSaving(false);
+  }
+
+  async function openSelfiePreview(path, title = "Selfie do funcionário") {
+    if (!path) return;
+    try {
+      const signed = await CreateFileSignedUrl({ path, expires: 3600 });
+      const url = signed?.signedUrl || signed?.url;
+      if (!url) return;
+      if (isImagePreviewable(path) || isImagePreviewable(url)) {
+        openImageViewer(url, title);
+        return;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      alert("Não foi possível abrir a selfie.");
+    }
   }
 
   function openScheduleDialog(schedule = null) {
@@ -215,6 +260,11 @@ export default function Escalacao() {
       return;
     }
 
+    if (!providerForm.selfie_url) {
+      alert("Envie a selfie do funcionário.");
+      return;
+    }
+
     const duplicatedProvider = providers.find((item) =>
       item.id !== editingProvider?.id
       && normalizeCpfDigits(item?.cpf) === cpf
@@ -229,6 +279,7 @@ export default function Escalacao() {
       const payload = {
         nome,
         cpf,
+        selfie_url: providerForm.selfie_url || "",
         ativo: true,
       };
 
@@ -558,6 +609,31 @@ export default function Escalacao() {
                 onChange={(event) => setProviderForm((current) => ({ ...current, cpf: event.target.value }))}
                 placeholder="000.000.000-00"
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Selfie do funcionário</Label>
+              <input
+                ref={providerSelfieInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => uploadProviderSelfie(event.target.files?.[0])}
+              />
+              <Button type="button" variant="outline" onClick={() => providerSelfieInputRef.current?.click()}>
+                <Camera className="mr-2 h-4 w-4" />
+                {providerForm.selfie_url ? "Trocar selfie" : "Enviar selfie"}
+              </Button>
+              {providerForm.selfie_url ? (
+                <button
+                  type="button"
+                  onClick={() => openSelfiePreview(providerForm.selfie_url)}
+                  className="block text-sm text-blue-600"
+                >
+                  Ver selfie enviada
+                </button>
+              ) : (
+                <p className="text-sm text-gray-500">A selfie é obrigatória para cadastrar o funcionário.</p>
+              )}
             </div>
           </div>
 

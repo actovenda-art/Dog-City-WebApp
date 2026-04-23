@@ -4,6 +4,9 @@
 alter table if exists public.serviceproviders
   add column if not exists cpf text;
 
+alter table if exists public.serviceproviders
+  add column if not exists selfie_url text;
+
 create unique index if not exists idx_serviceproviders_empresa_cpf_unique
   on public.serviceproviders (
     empresa_id,

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, Notificacao, Orcamento, PerfilAcesso, Responsavel, ServiceProvided, User } from "@/api/entities";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, Notificacao, Orcamento, PerfilAcesso, Responsavel, ServiceProvided, ServiceProvider, User } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import {
   buildDogOwnerIndex,
@@ -18,6 +18,7 @@ import {
   MEAL_CONSUMPTION_OPTIONS,
   safeJsonParse,
 } from "@/lib/attendance";
+import { normalizeCpfDigits } from "@/lib/cpf-validation";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -133,6 +134,16 @@ function formatDateTime(value) {
 
 function sanitizeDateKey(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : "";
+}
+
+function getProviderDisplayName(provider) {
+  return provider?.nome || provider?.full_name || provider?.nome_completo || "Funcionário";
+}
+
+function formatCpf(value) {
+  const digits = normalizeCpfDigits(value || "");
+  if (digits.length !== 11) return value || "-";
+  return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 }
 
 function normalizeSearch(value) {
@@ -251,6 +262,7 @@ export default function Registrador() {
   const [appointments, setAppointments] = useState([]);
   const [orcamentos, setOrcamentos] = useState([]);
   const [checkins, setCheckins] = useState([]);
+  const [serviceProviders, setServiceProviders] = useState([]);
   const [users, setUsers] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
@@ -306,6 +318,10 @@ export default function Registrador() {
     [appointments, orcamentosById]
   );
   const profilesById = useMemo(() => Object.fromEntries(profiles.map((profile) => [profile.id, profile])), [profiles]);
+  const serviceProvidersById = useMemo(
+    () => Object.fromEntries(serviceProviders.map((provider) => [provider.id, provider])),
+    [serviceProviders]
+  );
   const monitors = useMemo(() => users.filter((user) => user.active !== false), [users]);
   const selectedDateTitle = selectedDate === TODAY_KEY ? "Hoje" : formatDateLabel(selectedDate);
   const canAddManualAppointment = selectedDate === TODAY_KEY;
@@ -355,9 +371,9 @@ export default function Registrador() {
   }, [checkins]);
   const presentProviders = useMemo(() => {
     return activeProviderCheckins
-      .map((checkin) => ({ checkin, user: users.find((user) => user.id === checkin.user_id) }))
-      .filter((item) => item.user);
-  }, [activeProviderCheckins, users]);
+      .map((checkin) => ({ checkin, provider: serviceProvidersById[checkin.user_id] }))
+      .filter((item) => item.provider);
+  }, [activeProviderCheckins, serviceProvidersById]);
 
   const dayAppointments = useMemo(() => {
     return visibleAppointments
@@ -426,12 +442,13 @@ export default function Registrador() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [dogRows, carteiraRows, responsávelRows, appointmentRows, checkinRows, userRows, profileRows, me] = await Promise.all([
+      const [dogRows, carteiraRows, responsávelRows, appointmentRows, checkinRows, providerRows, userRows, profileRows, me] = await Promise.all([
         Dog.list("-created_date", 1000),
         Carteira.list("-created_date", 500),
         Responsavel.list("-created_date", 500),
         Appointment.listAll("-created_date", 1000, 5000),
         Checkin.listAll("-created_date", 1000, 5000),
+        ServiceProvider.listAll ? ServiceProvider.listAll("nome", 1000, 5000) : ServiceProvider.list("nome", 1000),
         User.list("-created_date", 500),
         PerfilAcesso.list("-created_date", 200),
         User.me(),
@@ -444,6 +461,7 @@ export default function Registrador() {
       setAppointments(appointmentRows || []);
       setOrcamentos(orcamentoRows || []);
       setCheckins(checkinRows || []);
+      setServiceProviders((providerRows || []).filter((item) => item.ativo !== false));
       setUsers(userRows || []);
       setProfiles(profileRows || []);
       setCurrentUser(me || null);
@@ -1084,16 +1102,16 @@ export default function Registrador() {
 
     setIsSaving(true);
     try {
-      const provider = users.find((user) => (user.cpf || "").replace(/\D/g, "") === digits);
+      const provider = serviceProviders.find((item) => normalizeCpfDigits(item?.cpf) === digits);
       if (!provider) {
-        openNotify("Funcionário não encontrado", "Não localizamos um usuário com esse CPF.");
+        openNotify("Funcionário não encontrado", "Não localizamos um funcionário da Escalação com esse CPF.");
         setIsSaving(false);
         return;
       }
 
       const alreadyPresent = activeProviderCheckins.some((checkin) => checkin.user_id === provider.id);
       if (alreadyPresent) {
-        openNotify("Funcionário já presente", `${provider.full_name || provider.nome_completo} já está registrado.`);
+        openNotify("Funcionário já presente", `${getProviderDisplayName(provider)} já está registrado.`);
         setIsSaving(false);
         return;
       }
@@ -1172,6 +1190,8 @@ export default function Registrador() {
         data_checkin: now,
         status: "presente",
         metadata: {
+          provider_nome: getProviderDisplayName(providerCheckinDraft.provider),
+          provider_cpf: normalizeCpfDigits(providerCheckinDraft.provider?.cpf || ""),
           selfie_url: providerCheckinForm.selfie_url,
           contestacao_horario: contestacaoHorario,
         },
@@ -1270,7 +1290,7 @@ export default function Registrador() {
             className="mb-6"
             items={[
               { value: "pets", label: "Pets" },
-              { value: "providers", label: "Prestadores" },
+              { value: "providers", label: "Funcionários" },
             ]}
           />
 
@@ -1507,10 +1527,11 @@ export default function Registrador() {
                   {presentProviders.length === 0 ? (
                     <p className="text-sm text-gray-500">Nenhum funcionário presente agora.</p>
                   ) : (
-                    presentProviders.map(({ checkin, user }) => (
+                    presentProviders.map(({ checkin, provider }) => (
                       <div key={checkin.id} className="flex flex-col gap-3 rounded-xl border border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="font-medium text-gray-900">{user.full_name || user.nome_completo}</p>
+                          <p className="font-medium text-gray-900">{getProviderDisplayName(provider)}</p>
+                          <p className="text-sm text-gray-500">CPF: {formatCpf(provider?.cpf || "")}</p>
                           <p className="text-sm text-gray-500">Entrada: {formatDateTime(checkin.checkin_datetime || checkin.data_checkin)}</p>
                         </div>
                         <Button variant="outline" onClick={() => handleProviderCheckout(checkin)}>
@@ -1544,7 +1565,7 @@ export default function Registrador() {
           {providerCheckinDraft?.provider ? (
             <div className="space-y-4 py-2">
               <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
-                <p className="font-semibold text-orange-950">{providerCheckinDraft.provider.full_name || providerCheckinDraft.provider.nome_completo}</p>
+                <p className="font-semibold text-orange-950">{getProviderDisplayName(providerCheckinDraft.provider)}</p>
                 <p className="mt-1 text-sm text-orange-800">
                   Horário previsto: {formatDateTime(providerCheckinDraft.expectedCheckinAt)}
                 </p>

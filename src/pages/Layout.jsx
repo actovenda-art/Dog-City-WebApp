@@ -9,6 +9,7 @@ import {
   Database,
   ClipboardCheck,
   Calendar,
+  CalendarClock,
   UserPlus,
   CreditCard,
   BarChart3,

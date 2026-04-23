@@ -194,6 +194,20 @@ export function getAppointmentMeta(appointment) {
   return safeJsonParse(appointment.metadata, {}) || {};
 }
 
+export function getManualAppointmentMonitorName(appointment) {
+  const metadata = getAppointmentMeta(appointment);
+  return metadata.manual_monitor_nome || metadata.monitor_nome || "";
+}
+
+export function getAppointmentSourceLabel(appointment) {
+  if (!appointment) return "manual";
+  if (appointment.source_type === "manual_registrador") {
+    const monitorName = getManualAppointmentMonitorName(appointment);
+    return monitorName ? `Agendamento manual por "${monitorName}"` : "Agendamento manual";
+  }
+  return appointment.source_type || "manual";
+}
+
 export function getCheckinMealRecords(checkin) {
   if (!checkin) return [];
   const value = safeJsonParse(checkin.refeicao_registros, []);

@@ -127,9 +127,6 @@ export default function Receitas() {
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Receitas</h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Todos os recebimentos com detalhamento de carteira, banco, tipo e rateio por finalidade.
-            </p>
           </div>
         </div>
 

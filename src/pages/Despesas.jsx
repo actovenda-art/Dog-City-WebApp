@@ -126,9 +126,6 @@ export default function Despesas() {
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Despesas</h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Todas as saídas com banco de destino, tipo da transação, referencia e observações detalhadas.
-            </p>
           </div>
         </div>
 

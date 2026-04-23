@@ -95,6 +95,13 @@ const EMPTY_ADAPTACAO_REGISTRO_FORM = {
   observacoes: "",
 };
 
+const EMPTY_PROVIDER_CHECKIN_FORM = {
+  selfie_url: "",
+  contest_reason: "",
+  contest_time: "",
+  contest_attachment_url: "",
+};
+
 function nowDateTimeValue() {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
@@ -263,6 +270,8 @@ export default function Registrador() {
   const [showMealDialog, setShowMealDialog] = useState(false);
   const [showAdaptacaoDialog, setShowAdaptacaoDialog] = useState(false);
   const [showManualDialog, setShowManualDialog] = useState(false);
+  const [showProviderCheckinDialog, setShowProviderCheckinDialog] = useState(false);
+  const [showProviderContestDialog, setShowProviderContestDialog] = useState(false);
   const [showNotifyDialog, setShowNotifyDialog] = useState(false);
   const [checkinDialogTab, setCheckinDialogTab] = useState("geral");
 
@@ -270,8 +279,11 @@ export default function Registrador() {
   const [checkoutForm, setCheckoutForm] = useState(EMPTY_CHECKOUT_FORM);
   const [mealForm, setMealForm] = useState(EMPTY_MEAL_FORM);
   const [adaptacaoRegistroForm, setAdaptacaoRegistroForm] = useState(EMPTY_ADAPTACAO_REGISTRO_FORM);
+  const [providerCheckinForm, setProviderCheckinForm] = useState(EMPTY_PROVIDER_CHECKIN_FORM);
+  const [providerCheckinDraft, setProviderCheckinDraft] = useState(null);
   const [manualForm, setManualForm] = useState({
     dog_id: "",
+    monitor_id: "",
     service_type: "",
     observacoes: "",
   });
@@ -282,6 +294,8 @@ export default function Registrador() {
   const checkoutPhotoInputRef = useRef(null);
   const mealFoodPhotoInputRef = useRef(null);
   const mealSelfieInputRef = useRef(null);
+  const providerSelfieInputRef = useRef(null);
+  const providerContestFileInputRef = useRef(null);
   const alertSyncRef = useRef(false);
 
   const ownerByDogId = useMemo(() => buildDogOwnerIndex(carteiras, responsaveis), [carteiras, responsaveis]);
@@ -629,10 +643,17 @@ export default function Registrador() {
     setSelectedDogForManual(dog || null);
     setManualForm({
       dog_id: dog?.id || "",
+      monitor_id: currentUser?.id || "",
       service_type: "",
       observacoes: "",
     });
     setShowManualDialog(true);
+  }
+
+  function resetProviderCheckinState() {
+    setProviderCheckinDraft(null);
+    setProviderCheckinForm(EMPTY_PROVIDER_CHECKIN_FORM);
+    setShowProviderContestDialog(false);
   }
 
   async function uploadPrivateAsset(file, folder, fallbackName) {
@@ -998,8 +1019,8 @@ export default function Registrador() {
   }
 
   async function submitManualAppointment() {
-    if (!manualForm.dog_id || !manualForm.service_type) {
-      openNotify("Campos obrigatórios", "Selecione o cão e o serviço.");
+    if (!manualForm.dog_id || !manualForm.service_type || !manualForm.monitor_id) {
+      openNotify("Campos obrigatórios", "Selecione o cão, o serviço e o monitor responsável.");
       return;
     }
     if (!canAddManualAppointment) {
@@ -1011,6 +1032,7 @@ export default function Registrador() {
     try {
       const dog = dogsById[manualForm.dog_id];
       const owner = ownerByDogId[manualForm.dog_id] || {};
+      const monitor = users.find((user) => user.id === manualForm.monitor_id);
       const now = buildDateTimeForDate(selectedDate || TODAY_KEY, "09:00");
       const appointment = await Appointment.create({
         empresa_id: currentUser?.empresa_id || null,
@@ -1034,6 +1056,8 @@ export default function Registrador() {
         metadata: {
           owner_nome: owner.nome || "",
           owner_celular: owner.celular || "",
+          manual_monitor_id: manualForm.monitor_id,
+          manual_monitor_nome: monitor?.full_name || monitor?.nome_completo || monitor?.email || "",
           created_from_registrador: true,
           commercial_review_pending: true,
         },
@@ -1054,7 +1078,7 @@ export default function Registrador() {
   async function handleProviderCheckin() {
     const digits = providerCpf.replace(/\D/g, "");
     if (digits.length !== 11) {
-      openNotify("CPF invalido", "Informe um CPF valido para o prestador.");
+      openNotify("CPF invalido", "Informe um CPF valido para o funcionário.");
       return;
     }
 
@@ -1062,34 +1086,105 @@ export default function Registrador() {
     try {
       const provider = users.find((user) => (user.cpf || "").replace(/\D/g, "") === digits);
       if (!provider) {
-        openNotify("Prestador não encontrado", "Não localizamos um usuário com esse CPF.");
+        openNotify("Funcionário não encontrado", "Não localizamos um usuário com esse CPF.");
         setIsSaving(false);
         return;
       }
 
       const alreadyPresent = activeProviderCheckins.some((checkin) => checkin.user_id === provider.id);
       if (alreadyPresent) {
-        openNotify("Prestador ja presente", `${provider.full_name || provider.nome_completo} ja esta registrado.`);
+        openNotify("Funcionário já presente", `${provider.full_name || provider.nome_completo} já está registrado.`);
         setIsSaving(false);
         return;
       }
 
       const now = nowDateTimeValue();
+      setProviderCheckinDraft({
+        provider,
+        expectedCheckinAt: now,
+      });
+      setProviderCheckinForm({
+        ...EMPTY_PROVIDER_CHECKIN_FORM,
+        contest_time: now.slice(11, 16),
+      });
+      setShowProviderCheckinDialog(true);
+    } catch (error) {
+      console.error("Erro ao registrar funcionário:", error);
+      openNotify("Erro", error?.message || "Não foi possível registrar o funcionário.");
+    }
+    setIsSaving(false);
+  }
+
+  async function handleProviderAssetUpload(file, target) {
+    if (!file) return;
+    try {
+      setIsSaving(true);
+      const folder = target === "contest_attachment" ? "prestadores-contestacao" : "prestadores-selfie";
+      const path = await uploadPrivateAsset(file, folder, file.name);
+      if (!path) {
+        openNotify("Erro", "Não foi possível enviar o arquivo.");
+        return;
+      }
+      if (target === "selfie") {
+        setProviderCheckinForm((current) => ({ ...current, selfie_url: path }));
+      } else if (target === "contest_attachment") {
+        setProviderCheckinForm((current) => ({ ...current, contest_attachment_url: path }));
+      }
+    } catch (error) {
+      console.error("Erro ao fazer upload do funcionário:", error);
+      openNotify("Erro", "Não foi possível enviar o anexo.");
+    }
+    setIsSaving(false);
+  }
+
+  function saveProviderContest() {
+    if (!providerCheckinForm.contest_reason.trim() || !providerCheckinForm.contest_time) {
+      openNotify("Campos obrigatórios", "Informe o motivo e o horário desejado para contestar.");
+      return;
+    }
+    setShowProviderContestDialog(false);
+  }
+
+  async function confirmProviderCheckin() {
+    if (!providerCheckinDraft?.provider) return;
+    if (!providerCheckinForm.selfie_url) {
+      openNotify("Campos obrigatórios", "Envie a selfie antes de confirmar a entrada.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const now = nowDateTimeValue();
+      const contestacaoHorario = providerCheckinForm.contest_reason.trim()
+        ? {
+            motivo: providerCheckinForm.contest_reason.trim(),
+            horario_desejado: providerCheckinForm.contest_time || "",
+            anexo_url: providerCheckinForm.contest_attachment_url || "",
+            created_at: new Date().toISOString(),
+          }
+        : null;
+
       await Checkin.create({
         empresa_id: currentUser?.empresa_id || null,
         tipo: "prestador",
-        user_id: provider.id,
+        user_id: providerCheckinDraft.provider.id,
         checkin_datetime: now,
         data_checkin: now,
         status: "presente",
+        metadata: {
+          selfie_url: providerCheckinForm.selfie_url,
+          contestacao_horario: contestacaoHorario,
+        },
       });
 
       setProviderCpf("");
+      setShowProviderCheckinDialog(false);
+      resetProviderCheckinState();
       await loadData();
-      openNotify("Prestador registrado", "Registro realizado com sucesso.");
+      openNotify("Funcionário registrado", "Registro realizado com sucesso.");
     } catch (error) {
-      console.error("Erro ao registrar prestador:", error);
-      openNotify("Erro", error?.message || "Não foi possível registrar o prestador.");
+      console.error("Erro ao registrar funcionário:", error);
+      openNotify("Erro", error?.message || "Não foi possível registrar o funcionário.");
     }
     setIsSaving(false);
   }
@@ -1104,9 +1199,9 @@ export default function Registrador() {
         status: "finalizado",
       });
       await loadData();
-      openNotify("Saída registrada", "Check-out do prestador concluído.");
+      openNotify("Saída registrada", "Check-out do funcionário concluído.");
     } catch (error) {
-      console.error("Erro ao registrar saida do prestador:", error);
+      console.error("Erro ao registrar saída do funcionário:", error);
       openNotify("Erro", error?.message || "Não foi possível concluir a saída.");
     }
     setIsSaving(false);
@@ -1392,7 +1487,7 @@ export default function Registrador() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <UserRound className="h-5 w-5 text-orange-600" />
-                  Registro de prestadores
+                  Registro de funcionários
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1400,7 +1495,7 @@ export default function Registrador() {
                   <Input
                     value={providerCpf}
                     onChange={(event) => setProviderCpf(event.target.value)}
-                    placeholder="CPF do prestador"
+                    placeholder="CPF do funcionário"
                     className="h-12"
                   />
                   <Button onClick={handleProviderCheckin} disabled={isSaving} className="h-12 bg-orange-600 text-white hover:bg-orange-700">
@@ -1410,7 +1505,7 @@ export default function Registrador() {
 
                 <div className="space-y-3">
                   {presentProviders.length === 0 ? (
-                    <p className="text-sm text-gray-500">Nenhum prestador presente agora.</p>
+                    <p className="text-sm text-gray-500">Nenhum funcionário presente agora.</p>
                   ) : (
                     presentProviders.map(({ checkin, user }) => (
                       <div key={checkin.id} className="flex flex-col gap-3 rounded-xl border border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1430,6 +1525,143 @@ export default function Registrador() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog
+        open={showProviderCheckinDialog}
+        onOpenChange={(open) => {
+          setShowProviderCheckinDialog(open);
+          if (!open) resetProviderCheckinState();
+        }}
+      >
+        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Confirmar entrada do funcionário</DialogTitle>
+            <DialogDescription>
+              O registro será salvo com o horário atual no momento da confirmação.
+            </DialogDescription>
+          </DialogHeader>
+
+          {providerCheckinDraft?.provider ? (
+            <div className="space-y-4 py-2">
+              <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                <p className="font-semibold text-orange-950">{providerCheckinDraft.provider.full_name || providerCheckinDraft.provider.nome_completo}</p>
+                <p className="mt-1 text-sm text-orange-800">
+                  Horário previsto: {formatDateTime(providerCheckinDraft.expectedCheckinAt)}
+                </p>
+              </div>
+
+              <div>
+                <Label>Selfie</Label>
+                <input
+                  ref={providerSelfieInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="user"
+                  className="hidden"
+                  onChange={(event) => handleProviderAssetUpload(event.target.files?.[0], "selfie")}
+                />
+                <Button type="button" variant="outline" className="mt-2" onClick={() => providerSelfieInputRef.current?.click()}>
+                  <Camera className="mr-2 h-4 w-4" />
+                  Tirar selfie
+                </Button>
+                {providerCheckinForm.selfie_url ? (
+                  <button type="button" onClick={() => handleAttachmentPreview(providerCheckinForm.selfie_url, "Selfie do funcionário")} className="mt-2 block text-sm text-blue-600">
+                    Ver selfie enviada
+                  </button>
+                ) : null}
+              </div>
+
+              {providerCheckinForm.contest_reason ? (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <p className="font-medium text-blue-950">Contestação de horário registrada</p>
+                  <p className="mt-1 text-sm text-blue-800">Motivo: {providerCheckinForm.contest_reason}</p>
+                  <p className="mt-1 text-sm text-blue-800">Horário desejado: {providerCheckinForm.contest_time || "-"}</p>
+                  {providerCheckinForm.contest_attachment_url ? (
+                    <button type="button" onClick={() => handleAttachmentPreview(providerCheckinForm.contest_attachment_url, "Comprovante da contestação")} className="mt-2 block text-sm text-blue-700">
+                      Ver anexo da contestação
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={() => setShowProviderContestDialog(true)} disabled={!providerCheckinDraft}>
+              Contestar horário
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setShowProviderCheckinDialog(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={confirmProviderCheckin} disabled={isSaving} className="bg-orange-600 text-white hover:bg-orange-700">
+              {isSaving ? "Confirmando..." : "Confirmar entrada"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showProviderContestDialog} onOpenChange={setShowProviderContestDialog}>
+        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Contestar horário</DialogTitle>
+            <DialogDescription>
+              Registre o motivo e o horário desejado para análise.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Motivo</Label>
+              <Textarea
+                value={providerCheckinForm.contest_reason}
+                onChange={(event) => setProviderCheckinForm((current) => ({ ...current, contest_reason: event.target.value }))}
+                className="mt-2"
+                rows={4}
+              />
+            </div>
+
+            <div>
+              <Label>Horário desejado</Label>
+              <div className="mt-2">
+                <TimePickerInput
+                  value={providerCheckinForm.contest_time}
+                  onChange={(value) => setProviderCheckinForm((current) => ({ ...current, contest_time: value }))}
+                  placeholder="Defina o horário"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Anexo para comprovação</Label>
+              <input
+                ref={providerContestFileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => handleProviderAssetUpload(event.target.files?.[0], "contest_attachment")}
+              />
+              <Button type="button" variant="outline" className="mt-2" onClick={() => providerContestFileInputRef.current?.click()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Anexar comprovante
+              </Button>
+              {providerCheckinForm.contest_attachment_url ? (
+                <button type="button" onClick={() => handleAttachmentPreview(providerCheckinForm.contest_attachment_url, "Comprovante da contestação")} className="mt-2 block text-sm text-blue-600">
+                  Ver comprovante anexado
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={() => setShowProviderContestDialog(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={saveProviderContest} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
+              Salvar contestação
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={showCheckinDialog}
@@ -1931,6 +2163,22 @@ export default function Registrador() {
                   {(selectedDogForManual ? [selectedDogForManual] : dogs.filter((dog) => matchingDogIds.has(dog.id))).map((dog) => (
                     <SelectItem key={dog.id} value={dog.id}>
                       {getDogDisplayName(dog)} - {getDogBreed(dog)} - {ownerByDogId[dog.id]?.nome || "Sem responsável"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Monitor responsável</Label>
+              <Select value={manualForm.monitor_id} onValueChange={(value) => setManualForm((current) => ({ ...current, monitor_id: value }))}>
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  {monitors.map((monitor) => (
+                    <SelectItem key={monitor.id} value={monitor.id}>
+                      {monitor.full_name || monitor.nome_completo || monitor.email}
                     </SelectItem>
                   ))}
                 </SelectContent>

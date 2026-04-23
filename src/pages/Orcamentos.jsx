@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { getAppointmentMeta } from "@/lib/attendance";
+import { getAppointmentMeta, getManualAppointmentMonitorName } from "@/lib/attendance";
 import { AlertTriangle, Calculator, Dog as DogIcon, FileText, Plus, Save, Send } from "lucide-react";
 import { differenceInDays } from "date-fns";
 
@@ -464,6 +464,15 @@ export default function Orcamentos() {
       }
 
       let nextPrefillNotice = null;
+      const buildManualPrefillNotice = (appointment) => {
+        const monitorName = getManualAppointmentMonitorName(appointment);
+        return {
+          title: "Agendamento manual",
+          message: monitorName
+            ? `Agendamento realizado manualmente por "${monitorName}".`
+            : "Agendamento realizado manualmente.",
+        };
+      };
 
       if (appointmentId) {
         try {
@@ -476,23 +485,14 @@ export default function Orcamentos() {
             : true;
 
           if (shouldShowNotice) {
-            nextPrefillNotice = {
-              title: "Agendamento manual do registrador",
-              message: "Confira valores, destinatário financeiro e confirmações antes de enviar este orçamento.",
-            };
+            nextPrefillNotice = buildManualPrefillNotice(appointment);
           }
         } catch (error) {
           console.error("Erro ao verificar a origem do agendamento:", error);
-          nextPrefillNotice = {
-            title: "Agendamento manual do registrador",
-            message: "Confira valores, destinatário financeiro e confirmações antes de enviar este orçamento.",
-          };
+          nextPrefillNotice = buildManualPrefillNotice(null);
         }
       } else {
-        nextPrefillNotice = {
-          title: "Agendamento manual do registrador",
-          message: "Confira valores, destinatário financeiro e confirmações antes de enviar este orçamento.",
-        };
+        nextPrefillNotice = buildManualPrefillNotice(null);
       }
 
       if (cancelled) return;
@@ -712,7 +712,6 @@ export default function Orcamentos() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Orçamentos</h1>
-              <p className="mt-1 text-sm text-gray-600">Área comercial para criação, acompanhamento e gestão de orçamentos.</p>
             </div>
           </div>
           <div className="flex gap-2">

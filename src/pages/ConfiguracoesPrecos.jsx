@@ -493,7 +493,6 @@ export default function ConfiguracoesPrecos() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Preços e descontos</h1>
-              <p className="text-sm text-gray-600">Gerencie Day Care, hospedagem, banho, tosa, transporte, descontos e o catálogo de raças.</p>
             </div>
           </div>
           <Button

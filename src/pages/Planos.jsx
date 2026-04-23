@@ -244,7 +244,6 @@ export default function Planos() {
             <img src={logoUrl} alt="Logo" className="h-10 w-10 sm:h-12 sm:w-12" />
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestão de Planos</h1>
-              <p className="text-sm text-gray-600">Controle de planos e reposições</p>
             </div>
           </div>
           <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-blue-600 hover:bg-blue-700 text-white">

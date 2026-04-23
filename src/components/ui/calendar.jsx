@@ -5,6 +5,47 @@ import { DayPicker } from "react-day-picker"
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
 
+function CalendarDropdown({
+  className,
+  style,
+  name,
+  value,
+  onChange,
+  children,
+  caption,
+  ...props
+}) {
+  const title = name === "months" ? "Mês" : name === "years" ? "Ano" : ""
+
+  return (
+    <div className={cn("min-w-0", className)} style={style}>
+      {title ? (
+        <span className="mb-1 block px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+          {title}
+        </span>
+      ) : null}
+      <div className="relative">
+        <select
+          name={name}
+          aria-label={props["aria-label"]}
+          className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
+          value={value}
+          onChange={onChange}
+        >
+          {children}
+        </select>
+        <div
+          aria-hidden="true"
+          className="flex h-11 items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 text-[15px] font-semibold text-slate-900 shadow-sm"
+        >
+          <span className="truncate capitalize">{caption}</span>
+          <ChevronDown className="ml-2 h-4 w-4 shrink-0 text-slate-400" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Calendar({
   className,
   classNames,
@@ -12,6 +53,7 @@ function Calendar({
   captionLayout,
   fixedWeeks,
   components,
+  labels,
   fromDate,
   fromMonth,
   fromYear,
@@ -41,6 +83,7 @@ function Calendar({
       toYear={resolvedToYear}
       className={cn("p-3", className)}
       classNames={{
+        vhidden: "sr-only",
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
         month: "space-y-4",
         caption: "flex justify-center pt-1 relative items-center",
@@ -85,7 +128,15 @@ function Calendar({
         day_hidden: "invisible",
         ...classNames,
       }}
+      labels={{
+        labelMonthDropdown: () => "Selecionar mês",
+        labelYearDropdown: () => "Selecionar ano",
+        labelNext: () => "Próximo mês",
+        labelPrevious: () => "Mês anterior",
+        ...labels,
+      }}
       components={{
+        Dropdown: CalendarDropdown,
         IconLeft: ({ className, ...props }) => (
           <ChevronLeft className={cn("h-4 w-4", className)} {...props} />
         ),

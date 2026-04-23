@@ -537,7 +537,6 @@ export default function Dev_Dashboard() {
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestão de Usuários</h1>
-              <p className="text-sm text-gray-600 mt-1">Convites, confirmacoes e acessos das unidades da Dog City Brasil.</p>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">

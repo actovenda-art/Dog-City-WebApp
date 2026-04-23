@@ -498,7 +498,6 @@ export default function ControleGerencial() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Controle Gerencial</h1>
-              <p className="mt-1 text-sm text-gray-600">Clientes fixos, cobranças, custos, orçamentos, contas e ausências por unidade.</p>
             </div>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">

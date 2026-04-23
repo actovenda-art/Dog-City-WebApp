@@ -281,7 +281,6 @@ export default function OrcamentosHistoricoPanel({
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Histórico de Orçamentos</h1>
-                <p className="text-sm text-gray-600">Visualize e gerencie todos os orçamentos</p>
               </div>
             </div>
           </div>

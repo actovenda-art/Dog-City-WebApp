@@ -264,7 +264,7 @@ export default function ContasReceber() {
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3"><div className="mt-1 rounded-xl bg-blue-100 p-3"><DollarSign className="h-6 w-6 text-blue-600" /></div><div><h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Valores a Receber / Cobranças</h1><p className="mt-1 text-sm text-gray-600">Cobranças avulsas e conferência das utilizações em pacote.</p></div></div>
+          <div className="flex items-start gap-3"><div className="mt-1 rounded-xl bg-blue-100 p-3"><DollarSign className="h-6 w-6 text-blue-600" /></div><div><h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Valores a Receber / Cobranças</h1></div></div>
           <Button variant="outline" onClick={loadData}><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
         </div>
 

@@ -239,12 +239,11 @@ export default function Layout({ children, currentPageName, initialUser = null }
         { title: "Cadastro", url: createPageUrl("Cadastro"), icon: UserPlus },
         { title: "Perfis", url: createPageUrl("Perfis"), icon: Users },
         { title: "Planos Recorrentes", url: createPageUrl("PlanosConfig"), icon: CreditCard },
-        { title: "Config. Preços", url: createPageUrl("ConfiguracoesPrecos"), icon: Settings },
       ],
     },
     {
       id: "relatorios",
-      title: "Relatórios",
+      title: "Gerência",
       icon: BarChart3,
       items: [
         { title: "Cockpit", url: createPageUrl("Cockpit"), icon: PieChart },
@@ -254,11 +253,12 @@ export default function Layout({ children, currentPageName, initialUser = null }
     },
     {
       id: "sistema",
-      title: "Sistema",
+      title: "Configurações",
       icon: Settings,
       items: [
         { title: "Gestão de Usuários", url: createPageUrl("Dev_Dashboard"), icon: Shield },
         { title: "Administração", url: createPageUrl("AdministracaoSistema"), icon: Building2 },
+        { title: "Preços e descontos", url: createPageUrl("ConfiguracoesPrecos"), icon: Settings },
         { title: "Backup", url: createPageUrl("Backup"), icon: Database },
         { title: "Tarefas", url: createPageUrl("PedidosInternos"), icon: FileText },
         {

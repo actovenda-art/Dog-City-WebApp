@@ -1690,6 +1690,23 @@ export default function PlanosConfig() {
   const coverageCandidatesCount = candidateClients.filter((client) => getCoverageSummary(client, selectedDogIds).isFullyLinked).length;
   const detailServiceMeta = detailItem?.serviceMeta || (detailItem ? getServiceMeta(detailItem.serviceId) : null);
   const DetailServiceIcon = detailServiceMeta?.icon || CreditCard;
+  const detailCurrentMonthDates = useMemo(() => {
+    if (!detailItem) return [];
+
+    const currentMonthKey = getMonthKey(new Date());
+    return [...new Set(
+      appointments
+        .filter((appointment) => {
+          const metadata = parseMetadata(appointment.metadata);
+          if (!detailItem.planIds.includes(metadata.plan_id)) return false;
+          if (["cancelado", "desconsiderado"].includes(appointment.status)) return false;
+          return getMonthKey(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10)) === currentMonthKey;
+        })
+        .map((appointment) => appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10))
+        .filter(Boolean),
+    )].sort();
+  }, [appointments, detailItem]);
+  const detailCurrentMonthLabel = useMemo(() => formatMonthLabel(new Date()), []);
 
   if (isLoading) {
     return (
@@ -1709,9 +1726,6 @@ export default function PlanosConfig() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Planos Recorrentes</h1>
-              <p className="text-sm text-gray-600">
-                Monte pacotes com 1 a 4 cães, use a tabela de Day Care da unidade e mantenha o vencimento herdado do responsável financeiro.
-              </p>
             </div>
           </div>
 
@@ -1880,18 +1894,20 @@ export default function PlanosConfig() {
                 </div>
               </div>
 
-              {detailItem.firstMonthDates.length > 0 ?(
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                  <p className="text-sm font-semibold text-emerald-900">Agendamentos 1º mês</p>
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-sm font-semibold text-emerald-900">Agendamentos de {detailCurrentMonthLabel}</p>
+                {detailCurrentMonthDates.length > 0 ? (
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {detailItem.firstMonthDates.map((dateKey) => (
+                    {detailCurrentMonthDates.map((dateKey) => (
                       <Badge key={`${detailItem.id}-${dateKey}`} className="border border-emerald-200 bg-white text-emerald-700">
                         {format(parseDateOnly(dateKey), "dd/MM/yyyy", { locale: ptBR })}
                       </Badge>
                     ))}
                   </div>
-                </div>
-              ) : null}
+                ) : (
+                  <p className="mt-3 text-sm text-emerald-800">Nenhum agendamento encontrado neste mês.</p>
+                )}
+              </div>
             </div>
           ) : null}
 
@@ -2170,7 +2186,6 @@ export default function PlanosConfig() {
                     </div>
                     <div>
                       <p className="font-semibold text-gray-900">{activeService.label}</p>
-                      <p className="text-sm text-gray-600">{activeService.description}</p>
                     </div>
                   </div>
                   <p className="text-sm text-gray-700">

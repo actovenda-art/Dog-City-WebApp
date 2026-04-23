@@ -451,7 +451,6 @@ export default function ContasPagar() {
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Contas a Pagar</h1>
-              <p className="text-sm text-gray-600 mt-1">Controle de pendências financeiras</p>
             </div>
           </div>
           <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-md">

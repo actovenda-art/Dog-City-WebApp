@@ -368,9 +368,6 @@ export default function Movimentacoes() {
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Transações</h1>
-            <p className="mt-1 text-sm text-gray-600">
-              Extrato bancário importado da API oficial com complemento manual apenas nos campos auxiliares.
-            </p>
           </div>
 
           <div className="flex flex-wrap gap-2">

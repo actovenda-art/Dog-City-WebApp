@@ -1283,7 +1283,7 @@ export default function Cadastro() {
           <CardContent className="p-5 sm:p-6">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
               <div className="max-w-3xl">
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                <div className="mb-3 hidden items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
                   <ClipboardList className="h-3.5 w-3.5" />
                   Central de cadastros
                 </div>
@@ -1293,10 +1293,13 @@ export default function Cadastro() {
                   </div>
                   <div>
                     <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Cadastro</h1>
-                    <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
+                    <p className="hidden mt-2 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
                       Organize cães, responsáveis e financeiro em um único fluxo, com leitura mais clara e ações rápidas no mesmo padrão visual do restante do sistema.
                     </p>
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
+                      Organize cães, responsáveis e financeiro em um único fluxo.
+                    </p>
+                    <div className="mt-4 hidden flex-wrap gap-2">
                       {tabItems.map((item) => {
                         const Icon = item.icon;
                         const isActive = activeTab === item.id;
@@ -1328,11 +1331,11 @@ export default function Cadastro() {
                 <Button onClick={openClientLinkModal} className="justify-between bg-blue-600 text-white hover:bg-blue-700">
                   <span className="flex items-center gap-2">
                     <LinkIcon className="h-4 w-4" />
-                    Gerar link universal de cadastro
+                    Link de cadastro
                   </span>
                   <ArrowRight className="h-4 w-4" />
                 </Button>
-                <div className={`rounded-2xl border p-4 ${activeHeaderTone.panelClass}`}>
+                <div className={`hidden rounded-2xl border p-4 ${activeHeaderTone.panelClass}`}>
                   <div className="flex items-start gap-3">
                     <div className={`rounded-2xl p-3 ${activeHeaderTone.iconClass}`}>
                       <ActiveTabHeaderIcon className="h-5 w-5" />
@@ -1342,7 +1345,6 @@ export default function Cadastro() {
                         <p className="font-semibold text-gray-900">{activeTabItem.label}</p>
                         <Badge className={activeTabItem.badgeClass}>{activeTabItem.count} cadastro(s)</Badge>
                       </div>
-                      <p className="text-sm text-gray-600">{activeTabItem.description}</p>
                       <p className="mt-2 text-xs font-medium text-gray-500">
                         {activeTab === "caes"
                           ? activeDogRecord
@@ -1360,7 +1362,7 @@ export default function Cadastro() {
           </CardContent>
         </Card>
 
-        <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        <div className="mb-6 hidden grid gap-4 sm:grid-cols-3">
           {cadastroStats.map((stat) => {
             const Icon = stat.icon;
             return (
@@ -1964,7 +1966,10 @@ export default function Cadastro() {
                         <p className="truncate text-sm text-gray-500">{dog.raca || "Raça não informada"}</p>
                       </div>
                       <div className="ml-3 flex gap-2">
-                        <Link to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dog))}`}>
+                        <Link
+                          to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dog))}`}
+                          state={{ backTo: `${location.pathname}${location.search}`, backLabel: "Cadastro" }}
+                        >
                           <Button type="button" variant="outline">Ficha</Button>
                         </Link>
                         <Button type="button" onClick={() => openDogForEditing(dog.id)}>

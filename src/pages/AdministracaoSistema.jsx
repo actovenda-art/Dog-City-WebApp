@@ -1165,7 +1165,6 @@ export default function AdministracaoSistema() {
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Administração Central</h1>
-              <p className="text-sm text-gray-600 mt-1">Dog City Brasil: unidades, perfis de acesso e branding em nuvem.</p>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
@@ -1393,9 +1392,6 @@ export default function AdministracaoSistema() {
                 <div className="space-y-4">
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Logo usada no webapp</p>
-                    <p className="mt-1 text-sm text-gray-600">
-                      A marca institucional do app é fixa na franquia. A única logo variável dentro do webapp é a da unidade exibida no menu lateral.
-                    </p>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                     <input

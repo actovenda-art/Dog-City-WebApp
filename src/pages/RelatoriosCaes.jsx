@@ -8,7 +8,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dog as DogIcon, Users, Cake, Syringe, Eye } from "lucide-react";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
 import { createPageUrl } from "@/utils";
 import { format, addDays, isBefore, isAfter, subDays, differenceInDays, getMonth } from "date-fns";
@@ -16,6 +16,7 @@ import { ptBR } from "date-fns/locale";
 import { useBranding } from "@/hooks/use-branding";
 
 export default function RelatoriosCaes() {
+  const location = useLocation();
   const { logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [dogs, setDogs] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
@@ -108,7 +109,7 @@ export default function RelatoriosCaes() {
       <div className="max-w-7xl mx-auto">
         <div className="mb-6 flex items-center gap-3">
           <img src={logoUrl} alt="Logo" className="h-10 w-10 sm:h-12 sm:w-12" />
-          <div><h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Relatórios de Cães</h1><p className="text-sm text-gray-600">Análises e listagens</p></div>
+          <div><h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Relatórios de Cães</h1></div>
         </div>
 
         {/* KPI Cards */}
@@ -142,7 +143,12 @@ export default function RelatoriosCaes() {
                   <CardContent>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {caes.map(d => (
-                        <Link key={d.id} to={createPageUrl("PerfilCao") + `?id=${encodeURIComponent(getInternalEntityReference(d))}`} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors">
+                        <Link
+                          key={d.id}
+                          to={createPageUrl("PerfilCao") + `?id=${encodeURIComponent(getInternalEntityReference(d))}`}
+                          state={{ backTo: `${location.pathname}${location.search}`, backLabel: "Relatórios de cães" }}
+                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors"
+                        >
                           {d.foto_url ? <img src={d.foto_url} className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">🐕</div>}
                           <div className="flex-1"><p className="font-medium text-gray-900">{d.nome}</p>{d.peso && <p className="text-xs text-gray-500">{d.peso} kg</p>}</div>
                           <Eye className="w-4 h-4 text-gray-400" />
@@ -174,7 +180,12 @@ export default function RelatoriosCaes() {
                   <CardContent>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                       {resp.caes.map(d => (
-                        <Link key={d.id} to={createPageUrl("PerfilCao") + `?id=${encodeURIComponent(getInternalEntityReference(d))}`} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors">
+                        <Link
+                          key={d.id}
+                          to={createPageUrl("PerfilCao") + `?id=${encodeURIComponent(getInternalEntityReference(d))}`}
+                          state={{ backTo: `${location.pathname}${location.search}`, backLabel: "Relatórios de cães" }}
+                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors"
+                        >
                           {d.foto_url ? <img src={d.foto_url} className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">🐕</div>}
                           <div className="flex-1"><p className="font-medium text-gray-900">{d.nome}</p><p className="text-xs text-gray-500">{d.raca || "Raça não informada"}</p></div>
                           <Eye className="w-4 h-4 text-gray-400" />
@@ -198,7 +209,12 @@ export default function RelatoriosCaes() {
               <CardContent>
                 <div className="space-y-3">
                   {aniversariantesMes().map(d => (
-                    <Link key={d.id} to={createPageUrl("PerfilCao") + `?id=${encodeURIComponent(getInternalEntityReference(d))}`} className="flex items-center gap-4 p-3 bg-orange-50 rounded-lg border border-orange-200 hover:bg-orange-100 transition-colors">
+                    <Link
+                      key={d.id}
+                      to={createPageUrl("PerfilCao") + `?id=${encodeURIComponent(getInternalEntityReference(d))}`}
+                      state={{ backTo: `${location.pathname}${location.search}`, backLabel: "Relatórios de cães" }}
+                      className="flex items-center gap-4 p-3 bg-orange-50 rounded-lg border border-orange-200 hover:bg-orange-100 transition-colors"
+                    >
                       {d.foto_url ? <img src={d.foto_url} className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">🐕</div>}
                       <div className="flex-1"><p className="font-semibold text-gray-900">{d.nome} {d.apelido && `(${d.apelido})`}</p><p className="text-sm text-gray-500">{d.raca}</p></div>
                       <div className="text-right"><Badge className="bg-orange-100 text-orange-700">Dia {new Date(d.data_nascimento).getDate()}</Badge><p className="text-xs text-gray-500 mt-1">{formatDate(d.data_nascimento)}</p></div>
@@ -220,7 +236,12 @@ export default function RelatoriosCaes() {
               <CardContent>
                 <div className="space-y-3">
                   {proximasRevacinacoes().map((d, i) => (
-                    <Link key={i} to={createPageUrl("PerfilCao") + `?id=${encodeURIComponent(getInternalEntityReference(d))}`} className={`flex items-center gap-4 p-3 rounded-lg border hover:opacity-80 transition-opacity ${d.diasRestantes <= 7 ? 'bg-red-50 border-red-200' : d.diasRestantes <= 14 ? 'bg-yellow-50 border-yellow-200' : 'bg-purple-50 border-purple-200'}`}>
+                    <Link
+                      key={i}
+                      to={createPageUrl("PerfilCao") + `?id=${encodeURIComponent(getInternalEntityReference(d))}`}
+                      state={{ backTo: `${location.pathname}${location.search}`, backLabel: "Relatórios de cães" }}
+                      className={`flex items-center gap-4 p-3 rounded-lg border hover:opacity-80 transition-opacity ${d.diasRestantes <= 7 ? 'bg-red-50 border-red-200' : d.diasRestantes <= 14 ? 'bg-yellow-50 border-yellow-200' : 'bg-purple-50 border-purple-200'}`}
+                    >
                       {d.foto_url ? <img src={d.foto_url} className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">🐕</div>}
                       <div className="flex-1"><p className="font-semibold text-gray-900">{d.nome} {d.apelido && `(${d.apelido})`}</p><p className="text-sm text-gray-500">{d.numeroVacina}ª Revacinação - {formatDate(d.dataRevacinacao)}</p></div>
                       <Badge className={d.diasRestantes <= 7 ? 'bg-red-100 text-red-700' : d.diasRestantes <= 14 ? 'bg-yellow-100 text-yellow-700' : 'bg-purple-100 text-purple-700'}>{d.diasRestantes === 0 ? 'Hoje!' : d.diasRestantes < 0 ? 'Vencida' : `${d.diasRestantes} dias`}</Badge>

@@ -215,7 +215,6 @@ export default function ServicosPrestados() {
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Serviços Prestados</h1>
-              <p className="text-sm text-gray-600">Registre os serviços realizados</p>
             </div>
           </div>
           <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-green-600 hover:bg-green-700 text-white">

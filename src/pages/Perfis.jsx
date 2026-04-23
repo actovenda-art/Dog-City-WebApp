@@ -2,7 +2,7 @@ import PropTypes from "prop-types";
 import { useEffect, useMemo, useState } from "react";
 import { Carteira, Dog, Responsavel } from "@/api/entities";
 import { clientRegistration } from "@/api/functions";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
@@ -31,9 +31,9 @@ import {
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   Check,
+  ChevronRight,
   Copy,
   Dog as DogIcon,
-  ExternalLink,
   FileText,
   Link2,
   Pencil,
@@ -208,6 +208,41 @@ function EmptyState({ title, description }) {
   );
 }
 
+function ProfileLineHeader({ columns, children }) {
+  return (
+    <div className="hidden border-b border-gray-200 bg-gray-50 px-4 py-3 md:grid md:items-center md:gap-4" style={{ gridTemplateColumns: columns }}>
+      {children}
+    </div>
+  );
+}
+
+function ProfileColumnTitle({ children }) {
+  return <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">{children}</p>;
+}
+
+function ProfileDetailField({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">{label}</p>
+      <p className="mt-2 text-sm font-medium text-gray-900">{value || "-"}</p>
+    </div>
+  );
+}
+
+ProfileLineHeader.propTypes = {
+  columns: PropTypes.string.isRequired,
+  children: PropTypes.node.isRequired,
+};
+
+ProfileColumnTitle.propTypes = {
+  children: PropTypes.node.isRequired,
+};
+
+ProfileDetailField.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.node,
+};
+
 EmptyState.propTypes = {
   title: PropTypes.string.isRequired,
   description: PropTypes.string.isRequired,
@@ -377,6 +412,7 @@ LinkedDogsSelector.propTypes = {
 };
 
 export default function Perfis() {
+  const location = useLocation();
   const [dogs, setDogs] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
@@ -388,6 +424,8 @@ export default function Perfis() {
   const [editorFeedback, setEditorFeedback] = useState(null);
   const [editingResponsavelId, setEditingResponsavelId] = useState("");
   const [editingCarteiraId, setEditingCarteiraId] = useState("");
+  const [viewingResponsavelId, setViewingResponsavelId] = useState("");
+  const [viewingCarteiraId, setViewingCarteiraId] = useState("");
   const [responsavelForm, setResponsavelForm] = useState(EMPTY_RESPONSAVEL_FORM);
   const [carteiraForm, setCarteiraForm] = useState(EMPTY_CARTEIRA_FORM);
   const [searchDogResp, setSearchDogResp] = useState("");
@@ -564,6 +602,14 @@ export default function Perfis() {
     () => carteirasView.find((item) => item.id === linkDialog.carteiraId) || null,
     [carteirasView, linkDialog.carteiraId]
   );
+  const viewingResponsavel = useMemo(
+    () => responsaveisView.find((item) => item.id === viewingResponsavelId) || null,
+    [responsaveisView, viewingResponsavelId]
+  );
+  const viewingCarteira = useMemo(
+    () => carteirasView.find((item) => item.id === viewingCarteiraId) || null,
+    [carteirasView, viewingCarteiraId]
+  );
   const availableCarteirasForLink = useMemo(() => {
     const linkedDogIds = new Set(selectedLinkResponsavel?.linkedDogIds || []);
     const normalizedSearch = normalizeSearchValue(linkDialog.search);
@@ -624,6 +670,14 @@ export default function Perfis() {
     setIsSaving(false);
   };
 
+  const openResponsavelDetails = (responsavelId) => {
+    setViewingResponsavelId(responsavelId);
+  };
+
+  const closeResponsavelDetails = () => {
+    setViewingResponsavelId("");
+  };
+
   const closeCarteiraEditor = () => {
     setEditingCarteiraId("");
     setCarteiraForm(EMPTY_CARTEIRA_FORM);
@@ -632,11 +686,20 @@ export default function Perfis() {
     setIsSaving(false);
   };
 
+  const openCarteiraDetails = (carteiraId) => {
+    setViewingCarteiraId(carteiraId);
+  };
+
+  const closeCarteiraDetails = () => {
+    setViewingCarteiraId("");
+  };
+
   const openResponsavelEditor = (responsavelId) => {
     const target = responsaveis.find((item) => item.id === responsavelId);
     if (!target) return;
 
     resetEditorFeedback();
+    setViewingResponsavelId("");
     setActiveTab("responsaveis");
     setEditingCarteiraId("");
     setSearchDogResp("");
@@ -652,6 +715,7 @@ export default function Perfis() {
     if (!target) return;
 
     resetEditorFeedback();
+    setViewingCarteiraId("");
     setActiveTab("carteiras");
     setEditingResponsavelId("");
     setSearchDogCart("");
@@ -967,9 +1031,6 @@ export default function Perfis() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Perfis</h1>
-              <p className="mt-1 text-sm text-gray-600">
-                Visualização consolidada de cães, responsáveis e carteiras da unidade em acesso.
-              </p>
             </div>
           </div>
 
@@ -1045,101 +1106,51 @@ export default function Perfis() {
                     description="Ajuste a busca para localizar um perfil canino desta unidade."
                   />
                 ) : (
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    {filteredDogs.map((dog) => (
-                      <Card key={dog.id} className="border-emerald-100 bg-white">
-                        <CardContent className="p-5">
-                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-3">
-                                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-lg font-bold text-emerald-700">
-                                  {String(dog.nome || "?").charAt(0).toUpperCase()}
-                                </div>
-                                <div className="min-w-0">
-                                  <h3 className="truncate text-lg font-semibold text-gray-900">
-                                    {dog.nome || "Sem nome"}
-                                  </h3>
-                                  <p className="truncate text-sm text-gray-500">
-                                    {dog.apelido ? `Apelido: ${dog.apelido}` : "Sem apelido cadastrado"}
-                                  </p>
-                                </div>
-                              </div>
+                  <Card className="overflow-hidden border-emerald-100 bg-white">
+                    <ProfileLineHeader columns="minmax(0,1.7fr) minmax(0,1.1fr) minmax(0,1.1fr) 120px 120px 24px">
+                      <ProfileColumnTitle>Nome</ProfileColumnTitle>
+                      <ProfileColumnTitle>Apelido</ProfileColumnTitle>
+                      <ProfileColumnTitle>Raça</ProfileColumnTitle>
+                      <ProfileColumnTitle>Responsáveis</ProfileColumnTitle>
+                      <ProfileColumnTitle>Carteiras</ProfileColumnTitle>
+                      <span />
+                    </ProfileLineHeader>
 
-                              <div className="mt-4 flex flex-wrap gap-2">
-                                {dog.raca ? (
-                                  <Badge className="bg-emerald-100 text-emerald-700">{dog.raca}</Badge>
-                                ) : null}
-                                {dog.porte ? (
-                                  <Badge className="bg-blue-100 text-blue-700">{dog.porte}</Badge>
-                                ) : null}
-                                <Badge className="bg-violet-100 text-violet-700">
-                                  {dog.linkedResponsaveis.length} responsável(is)
-                                </Badge>
-                                <Badge className="bg-orange-100 text-orange-700">
-                                  {dog.linkedCarteiras.length} carteira(s)
-                                </Badge>
-                              </div>
-                            </div>
-
-                            <div className="flex gap-2">
-                              <Link to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dog))}`}>
-                                <Button variant="outline" size="sm">
-                                  <ExternalLink className="mr-2 h-4 w-4" />
-                                  Ficha
-                                </Button>
-                              </Link>
-                            </div>
+                    <div className="divide-y divide-gray-100">
+                      {filteredDogs.map((dog) => (
+                        <Link
+                          key={dog.id}
+                          to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dog))}`}
+                          state={{ backTo: `${location.pathname}${location.search}`, backLabel: "Perfis" }}
+                          className="grid gap-3 px-4 py-4 transition-colors hover:bg-emerald-50/60 md:grid-cols-[minmax(0,1.7fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_120px_120px_24px] md:items-center md:gap-4"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Nome</p>
+                            <p className="truncate text-sm font-semibold text-gray-900">{dog.nome || "Sem nome"}</p>
                           </div>
-
-                          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-                                Responsáveis
-                              </p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {dog.linkedResponsaveis.length > 0 ? (
-                                  dog.linkedResponsaveis.map((responsavel) => (
-                                    <Badge
-                                      key={responsavel.id}
-                                      className="border border-violet-200 bg-violet-50 text-violet-700"
-                                    >
-                                      {responsavel.nome_completo}
-                                    </Badge>
-                                  ))
-                                ) : (
-                                  <Badge className="bg-gray-100 text-gray-600">
-                                    Sem responsável vinculado
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-                                Carteiras
-                              </p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {dog.linkedCarteiras.length > 0 ? (
-                                  dog.linkedCarteiras.map((carteira) => (
-                                    <Badge
-                                      key={carteira.id}
-                                      className="border border-orange-200 bg-orange-50 text-orange-700"
-                                    >
-                                      {carteira.nome_razao_social}
-                                    </Badge>
-                                  ))
-                                ) : (
-                                  <Badge className="bg-gray-100 text-gray-600">
-                                    Sem carteira vinculada
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Apelido</p>
+                            <p className="truncate text-sm text-gray-600">{dog.apelido || "-"}</p>
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Raça</p>
+                            <p className="truncate text-sm text-gray-600">{dog.raca || "-"}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Responsáveis</p>
+                            <p className="text-sm text-gray-600">{dog.linkedResponsaveis.length}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Carteiras</p>
+                            <p className="text-sm text-gray-600">{dog.linkedCarteiras.length}</p>
+                          </div>
+                          <div className="hidden justify-self-end text-gray-400 md:block">
+                            <ChevronRight className="h-4 w-4" />
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </Card>
                 )}
               </TabsContent>
 
@@ -1150,87 +1161,36 @@ export default function Perfis() {
                     description="Ajuste a busca para localizar um responsável desta unidade."
                   />
                 ) : (
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    {filteredResponsaveis.map((responsavel) => (
-                      <Card key={responsavel.id} className="border-violet-100 bg-white">
-                        <CardContent className="p-5">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <h3 className="truncate text-lg font-semibold text-gray-900">
-                                {responsavel.nome_completo || "Sem nome"}
-                              </h3>
-                              <div className="mt-2 space-y-1 text-sm text-gray-600">
-                                <p>{responsavel.cpf || "CPF não informado"}</p>
-                                <p>
-                                  {responsavel.celular ||
-                                    responsavel.celular_alternativo ||
-                                    "Celular não informado"}
-                                </p>
-                                <p className="truncate">{responsavel.email || "Email não informado"}</p>
-                              </div>
-                            </div>
+                  <Card className="overflow-hidden border-violet-100 bg-white">
+                    <ProfileLineHeader columns="minmax(0,1.8fr) minmax(0,1.1fr) 24px">
+                      <ProfileColumnTitle>Nome completo</ProfileColumnTitle>
+                      <ProfileColumnTitle>Telefone</ProfileColumnTitle>
+                      <span />
+                    </ProfileLineHeader>
 
-                            <div className="flex flex-col items-end gap-2">
-                              <Badge className="bg-violet-100 text-violet-700">
-                                {responsavel.linkedDogIds.length} cão(ães)
-                              </Badge>
-                            </div>
+                    <div className="divide-y divide-gray-100">
+                      {filteredResponsaveis.map((responsavel) => (
+                        <button
+                          key={responsavel.id}
+                          type="button"
+                          onClick={() => openResponsavelDetails(responsavel.id)}
+                          className="grid w-full gap-3 px-4 py-4 text-left transition-colors hover:bg-violet-50/60 md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_24px] md:items-center md:gap-4"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Nome completo</p>
+                            <p className="truncate text-sm font-semibold text-gray-900">{responsavel.nome_completo || "Sem nome"}</p>
                           </div>
-
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-violet-200 text-violet-700 hover:bg-violet-50"
-                              onClick={() => openLinkDialog(responsavel.id, "dog_only")}
-                            >
-                              <Link2 className="mr-2 h-4 w-4" />
-                              Link: apenas cão
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-violet-200 text-violet-700 hover:bg-violet-50"
-                              onClick={() => openLinkDialog(responsavel.id, "dog_and_financeiro")}
-                            >
-                              <Wallet className="mr-2 h-4 w-4" />
-                              Link: cão + financeiro
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openResponsavelEditor(responsavel.id)}
-                            >
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Editar
-                            </Button>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Telefone</p>
+                            <p className="truncate text-sm text-gray-600">{responsavel.celular || responsavel.celular_alternativo || "Telefone não informado"}</p>
                           </div>
-
-                          <div className="mt-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-                              Cães vinculados
-                            </p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {responsavel.linkedDogIds.length > 0 ? (
-                                responsavel.linkedDogIds.map((dogId) => (
-                                  <Link
-                                    key={dogId}
-                                    to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dogMap[dogId]) || dogId)}`}
-                                  >
-                                    <Badge className="cursor-pointer border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100">
-                                      {dogMap[dogId]?.nome || dogId}
-                                    </Badge>
-                                  </Link>
-                                ))
-                              ) : (
-                                <Badge className="bg-gray-100 text-gray-600">Sem cães vinculados</Badge>
-                              )}
-                            </div>
+                          <div className="hidden justify-self-end text-gray-400 md:block">
+                            <ChevronRight className="h-4 w-4" />
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                        </button>
+                      ))}
+                    </div>
+                  </Card>
                 )}
               </TabsContent>
 
@@ -1241,70 +1201,164 @@ export default function Perfis() {
                     description="Ajuste a busca para localizar uma carteira desta unidade."
                   />
                 ) : (
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    {filteredCarteiras.map((carteira) => (
-                      <Card key={carteira.id} className="border-orange-100 bg-white">
-                        <CardContent className="p-5">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <h3 className="truncate text-lg font-semibold text-gray-900">
-                                {carteira.nome_razao_social || "Sem nome"}
-                              </h3>
-                              <div className="mt-2 space-y-1 text-sm text-gray-600">
-                                <p>{carteira.cpf_cnpj || "CPF/CNPJ não informado"}</p>
-                                <p>{carteira.celular || "Celular não informado"}</p>
-                                <p className="truncate">{carteira.email || "Email não informado"}</p>
-                              </div>
-                            </div>
+                  <Card className="overflow-hidden border-orange-100 bg-white">
+                    <ProfileLineHeader columns="minmax(0,1.8fr) minmax(0,1.1fr) 24px">
+                      <ProfileColumnTitle>Nome completo</ProfileColumnTitle>
+                      <ProfileColumnTitle>Telefone</ProfileColumnTitle>
+                      <span />
+                    </ProfileLineHeader>
 
-                            <div className="flex flex-col items-end gap-2">
-                              {carteira.vencimento_planos ? (
-                                <Badge className="bg-orange-100 text-orange-700">
-                                  Dia {carteira.vencimento_planos}
-                                </Badge>
-                              ) : null}
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openCarteiraEditor(carteira.id)}
-                              >
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Editar
-                              </Button>
-                            </div>
+                    <div className="divide-y divide-gray-100">
+                      {filteredCarteiras.map((carteira) => (
+                        <button
+                          key={carteira.id}
+                          type="button"
+                          onClick={() => openCarteiraDetails(carteira.id)}
+                          className="grid w-full gap-3 px-4 py-4 text-left transition-colors hover:bg-orange-50/60 md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_24px] md:items-center md:gap-4"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Nome completo</p>
+                            <p className="truncate text-sm font-semibold text-gray-900">{carteira.nome_razao_social || "Sem nome"}</p>
                           </div>
-
-                          <div className="mt-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-                              Cães vinculados
-                            </p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {carteira.linkedDogIds.length > 0 ? (
-                                carteira.linkedDogIds.map((dogId) => (
-                                  <Link
-                                    key={dogId}
-                                    to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dogMap[dogId]) || dogId)}`}
-                                  >
-                                    <Badge className="cursor-pointer border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100">
-                                      {dogMap[dogId]?.nome || dogId}
-                                    </Badge>
-                                  </Link>
-                                ))
-                              ) : (
-                                <Badge className="bg-gray-100 text-gray-600">Sem cães vinculados</Badge>
-                              )}
-                            </div>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Telefone</p>
+                            <p className="truncate text-sm text-gray-600">{carteira.celular || "Telefone não informado"}</p>
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                          <div className="hidden justify-self-end text-gray-400 md:block">
+                            <ChevronRight className="h-4 w-4" />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </Card>
                 )}
               </TabsContent>
             </Tabs>
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={Boolean(viewingResponsavelId)} onOpenChange={(open) => !open && closeResponsavelDetails()}>
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{viewingResponsavel?.nome_completo || "Responsável"}</DialogTitle>
+            <DialogDescription>
+              Visualize os dados completos e escolha a próxima ação para este responsável.
+            </DialogDescription>
+          </DialogHeader>
+
+          {viewingResponsavel ? (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <ProfileDetailField label="Telefone principal" value={viewingResponsavel.celular || "Não informado"} />
+                <ProfileDetailField label="Telefone alternativo" value={viewingResponsavel.celular_alternativo || "Não informado"} />
+                <ProfileDetailField label="CPF" value={viewingResponsavel.cpf || "Não informado"} />
+                <ProfileDetailField label="Email" value={viewingResponsavel.email || "Não informado"} />
+              </div>
+
+              <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-500">Cães vinculados</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {viewingResponsavel.linkedDogIds.length > 0 ? (
+                    viewingResponsavel.linkedDogIds.map((dogId) => (
+                      <Badge key={dogId} className="border border-violet-200 bg-white text-violet-700">
+                        {dogMap[dogId]?.nome || dogId}
+                      </Badge>
+                    ))
+                  ) : (
+                    <Badge className="bg-white text-gray-600">Sem cães vinculados</Badge>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={closeResponsavelDetails}>Fechar</Button>
+                <Button
+                  variant="outline"
+                  className="border-violet-200 text-violet-700 hover:bg-violet-50"
+                  onClick={() => {
+                    closeResponsavelDetails();
+                    openLinkDialog(viewingResponsavel.id, "dog_only");
+                  }}
+                >
+                  <Link2 className="mr-2 h-4 w-4" />
+                  Link: apenas cão
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-violet-200 text-violet-700 hover:bg-violet-50"
+                  onClick={() => {
+                    closeResponsavelDetails();
+                    openLinkDialog(viewingResponsavel.id, "dog_and_financeiro");
+                  }}
+                >
+                  <Wallet className="mr-2 h-4 w-4" />
+                  Link: cão + financeiro
+                </Button>
+                <Button
+                  onClick={() => {
+                    closeResponsavelDetails();
+                    openResponsavelEditor(viewingResponsavel.id);
+                  }}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Editar
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(viewingCarteiraId)} onOpenChange={(open) => !open && closeCarteiraDetails()}>
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{viewingCarteira?.nome_razao_social || "Responsável financeiro"}</DialogTitle>
+            <DialogDescription>
+              Visualize os dados completos do responsável financeiro antes de editar.
+            </DialogDescription>
+          </DialogHeader>
+
+          {viewingCarteira ? (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <ProfileDetailField label="Telefone" value={viewingCarteira.celular || "Não informado"} />
+                <ProfileDetailField label="Email" value={viewingCarteira.email || "Não informado"} />
+                <ProfileDetailField label="CPF/CNPJ" value={viewingCarteira.cpf_cnpj || "Não informado"} />
+                <ProfileDetailField label="Vencimento" value={viewingCarteira.vencimento_planos ? `Dia ${viewingCarteira.vencimento_planos}` : "Não informado"} />
+              </div>
+
+              <div className="rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-500">Cães vinculados</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {viewingCarteira.linkedDogIds.length > 0 ? (
+                    viewingCarteira.linkedDogIds.map((dogId) => (
+                      <Badge key={dogId} className="border border-orange-200 bg-white text-orange-700">
+                        {dogMap[dogId]?.nome || dogId}
+                      </Badge>
+                    ))
+                  ) : (
+                    <Badge className="bg-white text-gray-600">Sem cães vinculados</Badge>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={closeCarteiraDetails}>Fechar</Button>
+                <Button
+                  onClick={() => {
+                    closeCarteiraDetails();
+                    openCarteiraEditor(viewingCarteira.id);
+                  }}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Editar
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(editingResponsavelId)} onOpenChange={(open) => !open && closeResponsavelEditor()}>
         <DialogContent className="max-h-[92vh] w-[96vw] max-w-4xl overflow-y-auto">

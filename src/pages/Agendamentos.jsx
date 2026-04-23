@@ -9,6 +9,7 @@ import {
   getAppointmentDateKey,
   getAppointmentEndDateKey,
   getAppointmentMeta,
+  getAppointmentSourceLabel,
   getChargeTypeLabel,
   getServiceLabel,
 } from "@/lib/attendance";
@@ -286,7 +287,6 @@ export default function Agendamentos() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Agendamentos</h1>
-              <p className="text-sm text-gray-600">Fila operacional e comercial dos agendamentos ativos.</p>
             </div>
           </div>
           <Button variant="outline" onClick={loadData}>
@@ -500,7 +500,7 @@ export default function Agendamentos() {
                         {owner.nome || "Responsável não identificado"} • {formatAppointmentPeriod(appointment)}
                       </p>
                       <p className="mt-1 text-xs text-gray-500">
-                        Origem: {appointment.source_type || "manual"} {appointment.valor_previsto ? `• Previsto ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(appointment.valor_previsto)}` : ""}
+                        {getAppointmentSourceLabel(appointment)} {appointment.valor_previsto ? `• Previsto ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(appointment.valor_previsto)}` : ""}
                       </p>
                     </div>
                     {!shouldHideOperationalAlerts && appointment.source_type === "manual_registrador" && appointment.charge_type === "pendente_comercial" && (

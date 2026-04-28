@@ -11,6 +11,7 @@ import {
   ClipboardList,
   FileText,
   RefreshCw,
+  Users,
 } from "lucide-react";
 import { Appointment, Notificacao } from "@/api/entities";
 import { getAppointmentMeta, getManualAppointmentClassificationMessage } from "@/lib/attendance";
@@ -24,6 +25,10 @@ const PENDING_TYPES = new Set([
 
 const REMINDER_TYPES = new Set([
   "lembrete_checkin",
+]);
+
+const REGISTRATION_TYPES = new Set([
+  "cadastro_concluido",
 ]);
 
 const COMMUNICATION_SCOPES = {
@@ -52,6 +57,10 @@ function isPendingNotification(notification) {
 
 function isReminderNotification(notification) {
   return REMINDER_TYPES.has(notification?.tipo);
+}
+
+function isRegistrationNotification(notification) {
+  return REGISTRATION_TYPES.has(notification?.tipo);
 }
 
 function getCommunicationScope(notification) {
@@ -87,6 +96,10 @@ function shouldShowPendingForDepartment(notification, department) {
 }
 
 function shouldShowNoticeForDepartment(notification, department) {
+  if (isRegistrationNotification(notification)) {
+    return department === "comercial" || department === "gerencial";
+  }
+
   if (isReminderNotification(notification)) {
     return department === "comercial" || department === "gerencial";
   }
@@ -115,6 +128,8 @@ function resolveNotificationLink(notification) {
       return createPageUrl("Agendamentos");
     case "lembrete_checkin":
       return createPageUrl("Registrador");
+    case "cadastro_concluido":
+      return createPageUrl("Perfis");
     case "comunicado_geral":
     case "comunicado_operacional":
     case "comunicado_comercial":
@@ -132,6 +147,8 @@ function getNotificationIcon(type) {
       return ClipboardList;
     case "lembrete_checkin":
       return BellRing;
+    case "cadastro_concluido":
+      return Users;
     case "comunicado_geral":
     case "comunicado_operacional":
     case "comunicado_comercial":
@@ -146,6 +163,13 @@ function getNotificationBadge(notification) {
     return {
       label: "Pendência",
       className: "border-rose-200 bg-rose-50 text-rose-700",
+    };
+  }
+
+  if (isRegistrationNotification(notification)) {
+    return {
+      label: "Cadastro",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
     };
   }
 
@@ -174,6 +198,13 @@ function getNotificationIconTone(notification) {
     return {
       active: "bg-gradient-to-br from-amber-500 to-orange-600 text-white",
       idle: "bg-amber-100 text-amber-600",
+    };
+  }
+
+  if (isRegistrationNotification(notification)) {
+    return {
+      active: "bg-gradient-to-br from-emerald-500 to-green-600 text-white",
+      idle: "bg-emerald-100 text-emerald-600",
     };
   }
 
@@ -273,6 +304,12 @@ function NotificationSection({ title, items, onOpenItem, pendingContextLoaded })
 
                 {notification.displayMessage ? (
                   <p className="mt-1 line-clamp-2 text-xs text-slate-500">{notification.displayMessage}</p>
+                ) : null}
+
+                {isRegistrationNotification(notification) ? (
+                  <span className="mt-2 inline-flex rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white">
+                    Ver perfil
+                  </span>
                 ) : null}
 
                 <p className="mt-1 text-xs text-slate-400">{formatRelativeTime(notification.created_date)}</p>

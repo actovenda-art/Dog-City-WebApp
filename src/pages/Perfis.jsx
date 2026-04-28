@@ -465,6 +465,30 @@ export default function Perfis() {
     }
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get("tab");
+    const profileType = params.get("perfil");
+    const profileId = params.get("id");
+
+    if (["caes", "responsaveis", "carteiras"].includes(tab)) {
+      setActiveTab(tab);
+    }
+
+    if (!profileId) return;
+
+    if (profileType === "responsavel" || tab === "responsaveis") {
+      setActiveTab("responsaveis");
+      setViewingResponsavelId(profileId);
+      return;
+    }
+
+    if (profileType === "financeiro" || profileType === "carteira" || tab === "carteiras") {
+      setActiveTab("carteiras");
+      setViewingCarteiraId(profileId);
+    }
+  }, [location.search]);
+
   const dogMap = useMemo(() => buildDogMap(dogs), [dogs]);
 
   const dogResponsaveisMap = useMemo(() => {

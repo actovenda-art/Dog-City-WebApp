@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Empresa, PerfilAcesso, User, UserInvite, UserProfile, UserUnitAccess } from "@/api/entities";
 import { SendEmail } from "@/api/integrations";
 import { createPageUrl } from "@/utils";
@@ -102,6 +102,7 @@ function getDraftUserAccessUnits(user, accessMap) {
 }
 
 export default function Dev_Dashboard() {
+  const location = useLocation();
   const [currentUser, setCurrentUser] = useState(null);
   const [units, setUnits] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -164,6 +165,20 @@ export default function Dev_Dashboard() {
       setIsLoading(false);
     }
   }
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const userId = params.get("user_id");
+    if (!userId || users.length === 0) return;
+
+    const targetUser = users.find((item) => item.id === userId);
+    if (!targetUser) return;
+
+    setSearchTerm(targetUser.email || targetUser.full_name || userId);
+    if (targetUser.empresa_id) {
+      setSelectedUnitId(targetUser.empresa_id);
+    }
+  }, [location.search, users]);
 
   const activeProfiles = useMemo(() => profiles.filter((profile) => profile.ativo !== false), [profiles]);
   const normalizedSearch = searchTerm.trim().toLowerCase();

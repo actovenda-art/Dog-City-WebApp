@@ -7,6 +7,26 @@ const corsHeaders = {
 };
 
 const DEFAULT_BOOTSTRAP_PIN = "654321";
+const COMMERCIAL_NOTIFICATION_PERMISSIONS = [
+  "orcamentos:*",
+  "orcamentos:read",
+  "orcamentos:update",
+];
+const MANAGERIAL_NOTIFICATION_PERMISSIONS = [
+  "financeiro:*",
+  "financeiro:read",
+  "financeiro:update",
+  "usuarios:*",
+  "usuarios:read",
+  "usuarios:update",
+  "empresa:*",
+  "empresa:read",
+  "empresa:update",
+  "precos:*",
+  "branding:*",
+  "storage:*",
+  "platform:*",
+];
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? serviceRoleKey;
@@ -394,6 +414,160 @@ async function loadEmpresaSummary(empresaId: string | null | undefined) {
   }
 
   return data || null;
+}
+
+function normalizeNotificationPermissions(value: unknown) {
+  return Array.isArray(value)
+    ? [...new Set(value.map((item) => sanitizeText(item).toLowerCase()).filter(Boolean))]
+    : [];
+}
+
+function buildNotificationAccessHaystack(user: Record<string, unknown>, profile: Record<string, unknown> | null) {
+  return [
+    user?.profile,
+    user?.company_role,
+    profile?.codigo,
+    profile?.nome,
+  ]
+    .map((item) => sanitizeText(item).toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function isCommercialNotificationRecipient(user: Record<string, unknown>, profile: Record<string, unknown> | null, permissions: string[]) {
+  const hasCommercialPermission = COMMERCIAL_NOTIFICATION_PERMISSIONS.some((permission) => hasPermission(permissions, permission));
+  if (hasCommercialPermission) return true;
+
+  const haystack = buildNotificationAccessHaystack(user, profile);
+  return ["comercial", "venda", "vendas", "orcamento", "orcamentos", "cadastro"].some((token) => haystack.includes(token));
+}
+
+function isManagerialNotificationRecipient(user: Record<string, unknown>, profile: Record<string, unknown> | null, permissions: string[]) {
+  if (user?.is_platform_admin === true || user?.company_role === "platform_admin") return true;
+
+  const hasManagerialPermission = MANAGERIAL_NOTIFICATION_PERMISSIONS.some((permission) => hasPermission(permissions, permission));
+  if (hasManagerialPermission) return true;
+
+  const haystack = buildNotificationAccessHaystack(user, profile);
+  return [
+    "gerencia",
+    "gerencial",
+    "administracao",
+    "administração",
+    "administrativo",
+    "financeiro",
+    "financas",
+    "finanças",
+    "contabilidade",
+    "backoffice",
+    "diretoria",
+    "gestao",
+    "gestão",
+    "gerente",
+    "adm",
+  ].some((token) => haystack.includes(token));
+}
+
+async function loadRegistrationNotificationRecipients(empresaId: string | null | undefined) {
+  const normalizedEmpresaId = sanitizeText(empresaId);
+
+  const [usersResult, profilesResult, accessResult] = await Promise.all([
+    admin
+      .from("users")
+      .select("id, email, full_name, profile, empresa_id, access_profile_id, company_role, is_platform_admin, active")
+      .limit(1000),
+    admin
+      .from("perfil_acesso")
+      .select("id, codigo, nome, permissoes, ativo")
+      .limit(1000),
+    normalizedEmpresaId
+      ? admin
+        .from("user_unit_access")
+        .select("user_id, empresa_id, access_profile_id, papel, ativo")
+        .eq("empresa_id", normalizedEmpresaId)
+        .eq("ativo", true)
+        .limit(2000)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (usersResult.error) {
+    console.warn("Nao foi possivel carregar usuarios para notificacao:", usersResult.error.message);
+    return [];
+  }
+
+  const profileById = new Map(
+    (profilesResult.data || []).map((profile) => [sanitizeText(profile.id), profile as Record<string, unknown>])
+  );
+  const accessByUserId = new Map(
+    (accessResult.data || []).map((access) => [sanitizeText(access.user_id), access as Record<string, unknown>])
+  );
+
+  return (usersResult.data || []).filter((user) => {
+    if (!user?.id || user.active === false) return false;
+
+    const accessRow = accessByUserId.get(sanitizeText(user.id));
+    const hasUnitAccess = normalizedEmpresaId
+      ? user.is_platform_admin === true || sanitizeText(user.empresa_id) === normalizedEmpresaId || Boolean(accessRow)
+      : user.is_platform_admin === true || user.company_role === "platform_admin";
+    if (!hasUnitAccess) return false;
+
+    const accessProfileId = sanitizeText(accessRow?.access_profile_id) || sanitizeText(user.access_profile_id);
+    const accessProfile = profileById.get(accessProfileId) || null;
+    const hydratedUser = {
+      ...user,
+      company_role: sanitizeText(accessRow?.papel) || user.company_role,
+    };
+    const permissions = normalizeNotificationPermissions(accessProfile?.permissoes);
+    return isCommercialNotificationRecipient(hydratedUser, accessProfile, permissions)
+      || isManagerialNotificationRecipient(hydratedUser, accessProfile, permissions);
+  });
+}
+
+async function createRegistrationCompletedNotifications({
+  empresaId,
+  mensagem,
+  link,
+  entityType,
+  entityId,
+  payload = {},
+}: {
+  empresaId: string | null | undefined;
+  mensagem: string;
+  link: string;
+  entityType: string;
+  entityId: string | null;
+  payload?: Record<string, unknown>;
+}) {
+  try {
+    const recipients = await loadRegistrationNotificationRecipients(empresaId);
+    if (!recipients.length) return;
+
+    const now = new Date().toISOString();
+    const rows = recipients.map((recipient) => ({
+      empresa_id: sanitizeText(empresaId) || null,
+      user_id: recipient.id,
+      tipo: "cadastro_concluido",
+      titulo: "Cadastro concluído com sucesso!",
+      mensagem,
+      link,
+      lido: false,
+      payload: {
+        notification_scope: "cadastro",
+        entity_type: entityType,
+        entity_id: entityId,
+        action_label: "Ver perfil",
+        ...payload,
+      },
+      created_date: now,
+    }));
+
+    const { error } = await admin.from("notificacao").insert(rows);
+    if (error) {
+      console.warn("Nao foi possivel criar notificacao de cadastro concluido:", error.message);
+    }
+  } catch (error) {
+    console.warn("Nao foi possivel criar notificacao de cadastro concluido:", error);
+  }
 }
 
 async function upsertUserUnitAccessRow({
@@ -1341,6 +1515,19 @@ async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) 
   if (inviteUpdateError) {
     return jsonResponse({ error: inviteUpdateError.message || "Nao foi possivel finalizar o convite." }, 500);
   }
+
+  await createRegistrationCompletedNotifications({
+    empresaId: savedUser?.empresa_id || invite.empresa_id || null,
+    mensagem: sanitizeText(savedUser?.full_name || fullName || normalizedEmail),
+    link: `/dashboard?user_id=${encodeURIComponent(savedUser?.id || resolvedAuthUserId)}`,
+    entityType: "usuario",
+    entityId: savedUser?.id || resolvedAuthUserId,
+    payload: {
+      user_id: savedUser?.id || resolvedAuthUserId,
+      user_email: normalizedEmail,
+      user_name: sanitizeText(savedUser?.full_name || fullName),
+    },
+  });
 
   const signInResult = await signInWithPassword(normalizedEmail, pin);
   if (!signInResult.ok || !signInResult?.payload?.access_token || !signInResult?.payload?.refresh_token) {

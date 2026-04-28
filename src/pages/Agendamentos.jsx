@@ -549,7 +549,7 @@ export default function Agendamentos() {
                         {owner.nome || "Responsável não identificado"} • {formatAppointmentPeriod(appointment)}
                       </p>
                       <p className="mt-1 text-xs text-gray-500">
-                        {getAppointmentSourceLabel(appointment)} {appointment.valor_previsto ? `• Previsto ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(appointment.valor_previsto)}` : ""}
+                        {getAppointmentSourceLabel(appointment)}
                       </p>
                     </div>
                     {!shouldHideOperationalAlerts && appointment.source_type === "manual_registrador" && appointment.charge_type === "pendente_comercial" && (

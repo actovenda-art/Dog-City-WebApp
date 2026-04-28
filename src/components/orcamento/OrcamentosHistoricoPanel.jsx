@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Appointment, Carteira, Dog, Orcamento, Responsavel, TabelaPrecos, User } from "@/api/entities";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
 import { notificacoesOrcamento } from "@/api/functions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,9 @@ import {
   buildAppointmentsFromOrcamento,
   buildDogOwnerIndex,
   buildPricingConfig,
+  getAppointmentDateKey,
   getAppointmentMeta,
+  getServiceLabel,
   isApprovedOrcamentoStatus,
 } from "@/lib/attendance";
 
@@ -155,6 +157,139 @@ function buildIncludedAppointments(orcamento, dogs = []) {
     .filter((group) => group.items.length > 0);
 }
 
+function getSafeMetadata(record) {
+  const metadata = record?.metadata;
+  if (!metadata) return {};
+  if (typeof metadata === "object") return metadata;
+  try {
+    return JSON.parse(metadata);
+  } catch {
+    return {};
+  }
+}
+
+function isAppointmentFromOrcamento(appointment, orcamentoId) {
+  if (!appointment || !orcamentoId) return false;
+  const metadata = getAppointmentMeta(appointment);
+  const sourceKey = String(appointment.source_key || "");
+  return appointment.orcamento_id === orcamentoId
+    || metadata.orcamento_id === orcamentoId
+    || (appointment.source_type === "orcamento_aprovado" && sourceKey.startsWith(`orcamento|${orcamentoId}|`));
+}
+
+function getAppointmentsGeneratedFromOrcamento(appointments = [], orcamentoId) {
+  const linkedIds = new Set();
+  const linkedSourceKeys = new Set();
+
+  appointments.forEach((appointment) => {
+    if (!isAppointmentFromOrcamento(appointment, orcamentoId)) return;
+    linkedIds.add(appointment.id);
+    if (appointment.source_key) linkedSourceKeys.add(appointment.source_key);
+
+    const metadata = getAppointmentMeta(appointment);
+    if (metadata.replacement_scheduled_appointment_id) {
+      linkedIds.add(metadata.replacement_scheduled_appointment_id);
+    }
+    if (metadata.replacement_scheduled_source_key) {
+      linkedSourceKeys.add(metadata.replacement_scheduled_source_key);
+    }
+  });
+
+  let added = true;
+  while (added) {
+    added = false;
+    appointments.forEach((appointment) => {
+      if (!appointment?.id || linkedIds.has(appointment.id)) return;
+      const metadata = getAppointmentMeta(appointment);
+      const sourceKey = String(appointment.source_key || "");
+      const replacementOfId = metadata.replacement_of_appointment_id;
+      const replacementOfSourceKey = metadata.replacement_of_source_key || metadata.replacement_scheduled_source_key;
+      const sourceKeyLinkedToOriginal = [...linkedIds].some((appointmentId) =>
+        sourceKey.startsWith(`reposicao_pacote|${appointmentId}|`)
+      );
+
+      if (
+        linkedSourceKeys.has(sourceKey)
+        || (replacementOfId && linkedIds.has(replacementOfId))
+        || (replacementOfSourceKey && linkedSourceKeys.has(replacementOfSourceKey))
+        || sourceKeyLinkedToOriginal
+      ) {
+        linkedIds.add(appointment.id);
+        if (appointment.source_key) linkedSourceKeys.add(appointment.source_key);
+        if (metadata.replacement_scheduled_appointment_id) {
+          linkedIds.add(metadata.replacement_scheduled_appointment_id);
+        }
+        if (metadata.replacement_scheduled_source_key) {
+          linkedSourceKeys.add(metadata.replacement_scheduled_source_key);
+        }
+        added = true;
+      }
+    });
+  }
+
+  return appointments.filter((appointment) => linkedIds.has(appointment.id));
+}
+
+function checkinMatchesAppointment(checkin, appointment) {
+  if (!checkin || !appointment) return false;
+  const metadata = getSafeMetadata(checkin);
+  return checkin.appointment_id === appointment.id
+    || metadata.appointment_id === appointment.id
+    || (appointment.linked_checkin_id && checkin.id === appointment.linked_checkin_id)
+    || (appointment.source_key && metadata.appointment_source_key === appointment.source_key);
+}
+
+function appointmentHasOperationalRecord(appointment, checkins = []) {
+  if (!appointment) return false;
+  if (appointment.linked_checkin_id) return true;
+  if (["presente", "finalizado"].includes(appointment.status)) return true;
+  return checkins.some((checkin) => checkinMatchesAppointment(checkin, appointment));
+}
+
+function isReceivableLinkedToDeletion(receivable, orcamentoId, appointmentIds) {
+  if (!receivable) return false;
+  const metadata = getSafeMetadata(receivable);
+  const sourceKey = String(receivable.source_key || "");
+  return receivable.orcamento_id === orcamentoId
+    || metadata.orcamento_id === orcamentoId
+    || appointmentIds.has(receivable.appointment_id)
+    || appointmentIds.has(metadata.appointment_id)
+    || [...appointmentIds].some((appointmentId) => sourceKey.includes(`|${appointmentId}|`));
+}
+
+function isReplacementLinkedToDeletion(replacement, orcamentoId, appointmentIds) {
+  if (!replacement) return false;
+  const metadata = getSafeMetadata(replacement);
+  const possibleAppointmentIds = [
+    replacement.appointment_id,
+    replacement.source_appointment_id,
+    replacement.original_appointment_id,
+    replacement.linked_appointment_id,
+    replacement.replacement_of_appointment_id,
+    metadata.appointment_id,
+    metadata.source_appointment_id,
+    metadata.original_appointment_id,
+    metadata.linked_appointment_id,
+    metadata.replacement_of_appointment_id,
+  ];
+
+  return replacement.orcamento_id === orcamentoId
+    || metadata.orcamento_id === orcamentoId
+    || possibleAppointmentIds.some((appointmentId) => appointmentIds.has(appointmentId));
+}
+
+function buildOperationalRecordSuggestion(appointments = [], dogs = []) {
+  const dogsById = Object.fromEntries((dogs || []).map((dog) => [dog.id, dog]));
+  return appointments
+    .slice(0, 8)
+    .map((appointment) => {
+      const dogName = dogsById[appointment.dog_id]?.nome || "Cão";
+      const serviceDate = getAppointmentDateKey(appointment);
+      return `- ${dogName} - ${getServiceLabel(appointment.service_type)}${serviceDate ? ` - ${formatDate(serviceDate)}` : ""}`;
+    })
+    .join("\n");
+}
+
 function getStatusBadge(status) {
   const config = {
     rascunho: { color: "bg-gray-100 text-gray-700", icon: Clock, label: "Rascunho" },
@@ -250,8 +385,54 @@ export default function OrcamentosHistoricoPanel({
 
   async function handleDelete(id) {
     if (!id) return;
-    if (!confirm("Excluir este orçamento?")) return;
     try {
+      const [appointmentRows, checkinRows, receivableRows, replacementRows] = await Promise.all([
+        Appointment.listAll("-created_date", 1000, 10000),
+        Checkin.listAll("-created_date", 1000, 10000),
+        ContaReceber.listAll("-created_date", 1000, 10000),
+        Replacement.listAll("-created_date", 1000, 10000),
+      ]);
+
+      const generatedAppointments = getAppointmentsGeneratedFromOrcamento(appointmentRows || [], id);
+      const generatedAppointmentIds = new Set(generatedAppointments.map((appointment) => appointment.id).filter(Boolean));
+      const operationalAppointments = generatedAppointments.filter((appointment) =>
+        appointmentHasOperationalRecord(appointment, checkinRows || [])
+      );
+
+      if (operationalAppointments.length > 0) {
+        const suggestion = buildOperationalRecordSuggestion(operationalAppointments, dogs);
+        alert([
+          "Este orçamento possui check-in ou check-out registrado em agendamentos gerados por ele.",
+          "",
+          "Para proteger o histórico operacional, a exclusão foi bloqueada.",
+          "",
+          "Sugestão: crie um novo orçamento incluindo apenas estes atendimentos já registrados:",
+          suggestion || "- Atendimentos registrados encontrados",
+        ].join("\n"));
+        return;
+      }
+
+      const linkedReceivables = (receivableRows || []).filter((receivable) =>
+        isReceivableLinkedToDeletion(receivable, id, generatedAppointmentIds)
+      );
+      const linkedReplacements = (replacementRows || []).filter((replacement) =>
+        isReplacementLinkedToDeletion(replacement, id, generatedAppointmentIds)
+      );
+
+      const deleteMessage = [
+        "Excluir este orçamento?",
+        "",
+        "Também serão excluídos os registros gerados a partir dele:",
+        `- ${generatedAppointments.length} agendamento(s)`,
+        `- ${linkedReplacements.length} reposição(ões)`,
+        `- ${linkedReceivables.length} valor(es) a receber`,
+      ].join("\n");
+
+      if (!confirm(deleteMessage)) return;
+
+      await Promise.all(linkedReplacements.map((replacement) => Replacement.delete(replacement.id)));
+      await Promise.all(linkedReceivables.map((receivable) => ContaReceber.delete(receivable.id)));
+      await Promise.all(generatedAppointments.map((appointment) => Appointment.delete(appointment.id)));
       await Orcamento.delete(id);
       await loadData();
       await onChange?.();

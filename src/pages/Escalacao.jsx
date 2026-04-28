@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarClock, Clock3, Coffee, Copy, Link as LinkIcon, Plus, ShieldCheck, Users } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 import { ServiceProvider, ServiceProviderSchedule, User } from "@/api/entities";
 import PageSubTabs from "@/components/common/PageSubTabs";
@@ -146,6 +147,7 @@ function toggleWeekdaySelection(currentValues, weekday) {
 }
 
 export default function Escalacao() {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState("funcionarios");
   const [coverageFilter, setCoverageFilter] = useState("monitor");
   const [providers, setProviders] = useState([]);
@@ -217,6 +219,21 @@ export default function Escalacao() {
     () => Object.fromEntries(providers.map((provider) => [provider.id, provider])),
     [providers],
   );
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get("tab");
+    const providerId = params.get("provider_id");
+
+    if (["funcionarios", "horarios", "cobertura"].includes(tab)) {
+      setActiveTab(tab);
+    }
+
+    if (!providerId) return;
+    const provider = providers.find((item) => item.id === providerId);
+    setActiveTab("funcionarios");
+    setSearchTerm(provider ? getProviderName(provider) : providerId);
+  }, [location.search, providers]);
 
   const scheduleCountByProviderId = useMemo(() => {
     const counts = new Map();

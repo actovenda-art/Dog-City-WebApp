@@ -380,7 +380,8 @@ begin
     'lancamento','extratobancario','plan_config','checkins','serviceprovided',
     'serviceproviders','serviceprovider_schedule','receita','pedidointerno','integracao_config',
     'integracao_sync_log','extrato_duplicidade',
-    'transaction','scheduledtransaction','replacement'
+    'transaction','scheduledtransaction','replacement',
+    'recurring_packages','package_sessions','package_credits','package_billings','audit_logs'
   ]
   loop
     if exists (

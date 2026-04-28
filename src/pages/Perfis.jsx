@@ -6,6 +6,7 @@ import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
+import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -785,8 +786,9 @@ export default function Perfis() {
     if (!editingResponsavelId) return;
 
     setEditorFeedback(null);
+    const formattedName = formatDisplayName(responsavelForm.nome_completo);
 
-    if (!responsavelForm.nome_completo || !responsavelForm.cpf || !responsavelForm.celular) {
+    if (!formattedName || !responsavelForm.cpf || !responsavelForm.celular) {
       setEditorFeedback({
         tone: "error",
         title: "Campos obrigatórios",
@@ -800,7 +802,7 @@ export default function Perfis() {
     try {
       const cpfValidation = await validateCpfWithGov({
         cpf: responsavelForm.cpf,
-        fullName: responsavelForm.nome_completo,
+        fullName: formattedName,
       });
 
       if (cpfValidation.shouldBlock) {
@@ -813,7 +815,7 @@ export default function Perfis() {
       }
 
       const payload = {
-        nome_completo: responsavelForm.nome_completo.trim(),
+        nome_completo: formattedName,
         cpf: responsavelForm.cpf.trim(),
         celular: responsavelForm.celular.trim(),
         celular_alternativo: optional(responsavelForm.celular_alternativo.trim()),
@@ -853,8 +855,9 @@ export default function Perfis() {
     if (!editingCarteiraId) return;
 
     setEditorFeedback(null);
+    const formattedName = formatDisplayName(carteiraForm.nome_razao_social);
 
-    if (!carteiraForm.nome_razao_social || !carteiraForm.cpf_cnpj || !carteiraForm.celular) {
+    if (!formattedName || !carteiraForm.cpf_cnpj || !carteiraForm.celular) {
       setEditorFeedback({
         tone: "error",
         title: "Campos obrigatórios",
@@ -871,7 +874,7 @@ export default function Perfis() {
       if (cpfOrCnpjDigits.length === 11) {
         const cpfValidation = await validateCpfWithGov({
           cpf: carteiraForm.cpf_cnpj,
-          fullName: carteiraForm.nome_razao_social,
+          fullName: formattedName,
         });
 
         if (cpfValidation.shouldBlock) {
@@ -885,7 +888,7 @@ export default function Perfis() {
       }
 
       const payload = {
-        nome_razao_social: carteiraForm.nome_razao_social.trim(),
+        nome_razao_social: formattedName,
         cpf_cnpj: carteiraForm.cpf_cnpj.trim(),
         celular: carteiraForm.celular.trim(),
         email: optional(carteiraForm.email.trim()),
@@ -1377,10 +1380,16 @@ export default function Perfis() {
                 <Label>Nome completo *</Label>
                 <Input
                   value={responsavelForm.nome_completo}
+                  onBlur={() =>
+                    setResponsavelForm((current) => ({
+                      ...current,
+                      nome_completo: formatDisplayName(current.nome_completo),
+                    }))
+                  }
                   onChange={(event) =>
                     setResponsavelForm((current) => ({
                       ...current,
-                      nome_completo: event.target.value,
+                      nome_completo: sanitizeDisplayNameInput(event.target.value),
                     }))
                   }
                   placeholder="Nome completo do responsável"
@@ -1492,10 +1501,16 @@ export default function Perfis() {
                 <Label>Nome / Razão social *</Label>
                 <Input
                   value={carteiraForm.nome_razao_social}
+                  onBlur={() =>
+                    setCarteiraForm((current) => ({
+                      ...current,
+                      nome_razao_social: formatDisplayName(current.nome_razao_social),
+                    }))
+                  }
                   onChange={(event) =>
                     setCarteiraForm((current) => ({
                       ...current,
-                      nome_razao_social: event.target.value,
+                      nome_razao_social: sanitizeDisplayNameInput(event.target.value),
                     }))
                   }
                   placeholder="Nome ou razão social"

@@ -45,6 +45,11 @@ alter table if exists public.pedidointerno enable row level security;
 alter table if exists public."transaction" enable row level security;
 alter table if exists public.scheduledtransaction enable row level security;
 alter table if exists public.replacement enable row level security;
+alter table if exists public.recurring_packages enable row level security;
+alter table if exists public.package_sessions enable row level security;
+alter table if exists public.package_credits enable row level security;
+alter table if exists public.package_billings enable row level security;
+alter table if exists public.audit_logs enable row level security;
 
 -- Opcional: confirma visualmente o estado apos a execucao.
 select
@@ -84,6 +89,11 @@ where schemaname = 'public'
     'pedidointerno',
     'transaction',
     'scheduledtransaction',
-    'replacement'
+    'replacement',
+    'recurring_packages',
+    'package_sessions',
+    'package_credits',
+    'package_billings',
+    'audit_logs'
   )
 order by tablename;

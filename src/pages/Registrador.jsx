@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, Notificacao, Orcamento, PerfilAcesso, Responsavel, ServiceProvided, ServiceProvider, User } from "@/api/entities";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, Notificacao, Orcamento, PerfilAcesso, Responsavel, ServiceProvided, ServiceProvider, ServiceProviderSchedule, User } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import {
   buildDogOwnerIndex,
@@ -241,6 +241,7 @@ export default function Registrador() {
   const [orcamentos, setOrcamentos] = useState([]);
   const [checkins, setCheckins] = useState([]);
   const [serviceProviders, setServiceProviders] = useState([]);
+  const [serviceProviderSchedules, setServiceProviderSchedules] = useState([]);
   const [users, setUsers] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
@@ -300,7 +301,16 @@ export default function Registrador() {
     () => Object.fromEntries(serviceProviders.map((provider) => [provider.id, provider])),
     [serviceProviders]
   );
-  const monitors = useMemo(() => users.filter((user) => user.active !== false), [users]);
+  const monitorProviderIds = useMemo(() => new Set(
+    serviceProviderSchedules
+      .filter((schedule) => schedule?.ativo !== false && schedule?.funcao === "monitor" && schedule?.serviceprovider_id)
+      .map((schedule) => schedule.serviceprovider_id)
+  ), [serviceProviderSchedules]);
+  const monitors = useMemo(() => {
+    const activeProviders = serviceProviders.filter((provider) => provider?.ativo !== false);
+    if (monitorProviderIds.size === 0) return activeProviders;
+    return activeProviders.filter((provider) => monitorProviderIds.has(provider.id));
+  }, [monitorProviderIds, serviceProviders]);
   const selectedDateTitle = selectedDate === TODAY_KEY ? "Hoje" : formatDateLabel(selectedDate);
   const canAddManualAppointment = selectedDate === TODAY_KEY;
   const selectedAppointmentRequiresReminderDateTime = selectedAppointment?.service_type === "hospedagem";
@@ -312,6 +322,10 @@ export default function Registrador() {
   const activeProviderCheckins = useMemo(
     () => checkins.filter((item) => item.tipo === "prestador" && item.status === "presente"),
     [checkins]
+  );
+  const presentMonitorIds = useMemo(
+    () => new Set(activeProviderCheckins.map((checkin) => checkin.user_id).filter(Boolean)),
+    [activeProviderCheckins]
   );
   const activeCheckinByAppointmentId = useMemo(
     () => Object.fromEntries(activePetCheckins.filter((item) => item.appointment_id).map((item) => [item.appointment_id, item])),
@@ -420,13 +434,14 @@ export default function Registrador() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [dogRows, carteiraRows, responsávelRows, appointmentRows, checkinRows, providerRows, userRows, profileRows, me] = await Promise.all([
+      const [dogRows, carteiraRows, responsávelRows, appointmentRows, checkinRows, providerRows, scheduleRows, userRows, profileRows, me] = await Promise.all([
         Dog.list("-created_date", 1000),
         Carteira.list("-created_date", 500),
         Responsavel.list("-created_date", 500),
         Appointment.listAll("-created_date", 1000, 5000),
         Checkin.listAll("-created_date", 1000, 5000),
         ServiceProvider.listAll ? ServiceProvider.listAll("nome", 1000, 5000) : ServiceProvider.list("nome", 1000),
+        ServiceProviderSchedule.listAll ? ServiceProviderSchedule.listAll("-created_date", 1000, 5000) : ServiceProviderSchedule.list("-created_date", 1000),
         User.list("-created_date", 500),
         PerfilAcesso.list("-created_date", 200),
         User.me(),
@@ -440,6 +455,7 @@ export default function Registrador() {
       setOrcamentos(orcamentoRows || []);
       setCheckins(checkinRows || []);
       setServiceProviders((providerRows || []).filter((item) => item.ativo !== false));
+      setServiceProviderSchedules((scheduleRows || []).filter((item) => item.ativo !== false));
       setUsers(userRows || []);
       setProfiles(profileRows || []);
       setCurrentUser(me || null);
@@ -639,7 +655,7 @@ export default function Registrador() {
     setSelectedDogForManual(dog || null);
     setManualForm({
       dog_id: dog?.id || "",
-      monitor_id: currentUser?.id || "",
+      monitor_id: "",
       service_type: "",
       observacoes: "",
     });
@@ -706,7 +722,7 @@ export default function Registrador() {
     try {
       const dog = dogsById[selectedAppointment.dog_id];
       const owner = ownerByDogId[selectedAppointment.dog_id] || {};
-      const monitor = users.find((user) => user.id === checkinForm.monitor_id);
+      const monitor = serviceProvidersById[checkinForm.monitor_id];
       const appointmentMeta = getAppointmentMeta(selectedAppointment);
       const reminderBaseDate = (checkinForm.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY;
       const reminderNotificationAt = checkinForm.tarefa_lembrete
@@ -737,7 +753,7 @@ export default function Registrador() {
         responsavel_nome: owner.nome || appointmentMeta.owner_nome || "",
         entregador_nome: checkinForm.entregador_nome,
         monitor_id: checkinForm.monitor_id,
-        checkin_monitor_nome: monitor?.full_name || monitor?.nome_completo || "",
+        checkin_monitor_nome: getProviderDisplayName(monitor),
         service_type: selectedAppointment.service_type,
         tipo_cobranca: selectedAppointment.charge_type || "avulso",
         pertences_entrada_foto_url: checkinForm.pertences_entrada_foto_url,
@@ -834,14 +850,14 @@ export default function Registrador() {
 
     setIsSaving(true);
     try {
-      const monitor = users.find((user) => user.id === checkoutForm.monitor_id);
+      const monitor = serviceProvidersById[checkoutForm.monitor_id];
       const mergedObservacoes = [selectedCheckin.observacoes, checkoutForm.observacoes].filter(Boolean).join("\n");
       const currentMeta = getCheckinMeta(selectedCheckin);
 
       await Checkin.update(selectedCheckin.id, {
         checkout_datetime: checkoutForm.checkout_datetime,
         data_checkout: checkoutForm.checkout_datetime,
-        checkout_monitor_nome: monitor?.full_name || monitor?.nome_completo || "",
+        checkout_monitor_nome: getProviderDisplayName(monitor),
         pertences_saida_foto_url: checkoutForm.pertences_saida_foto_url,
         observacoes: mergedObservacoes,
         status: "finalizado",
@@ -881,13 +897,13 @@ export default function Registrador() {
 
     setIsSaving(true);
     try {
-      const monitor = users.find((user) => user.id === mealForm.monitor_id);
+      const monitor = serviceProvidersById[mealForm.monitor_id];
       const nextRecords = [
         ...getCheckinMealRecords(selectedCheckin),
         {
           created_at: new Date().toISOString(),
           monitor_id: mealForm.monitor_id,
-          monitor_nome: monitor?.full_name || monitor?.nome_completo || "",
+          monitor_nome: getProviderDisplayName(monitor),
           percentual_consumido: mealForm.percentual_consumido,
           observacoes: mealForm.observacoes || "",
           foto_refeicao_url: mealForm.foto_refeicao_url,
@@ -918,7 +934,7 @@ export default function Registrador() {
 
     setIsSaving(true);
     try {
-      const monitor = users.find((user) => user.id === adaptacaoRegistroForm.monitor_id);
+      const monitor = serviceProvidersById[adaptacaoRegistroForm.monitor_id];
       const currentMeta = getCheckinMeta(selectedCheckin);
       const nextRecords = [
         ...getAdaptacaoProgressRecords(selectedCheckin),
@@ -926,7 +942,7 @@ export default function Registrador() {
           created_at: new Date().toISOString(),
           registro_datetime: adaptacaoRegistroForm.registro_datetime || nowDateTimeValue(),
           monitor_id: adaptacaoRegistroForm.monitor_id,
-          monitor_nome: monitor?.full_name || monitor?.nome_completo || "",
+          monitor_nome: getProviderDisplayName(monitor),
           observacoes: adaptacaoRegistroForm.observacoes.trim(),
         },
       ];
@@ -1038,7 +1054,7 @@ export default function Registrador() {
     try {
       const dog = dogsById[manualForm.dog_id];
       const owner = ownerByDogId[manualForm.dog_id] || {};
-      const monitor = users.find((user) => user.id === manualForm.monitor_id);
+      const monitor = serviceProvidersById[manualForm.monitor_id];
       const now = buildDateTimeForDate(selectedDate || TODAY_KEY, "09:00");
       const appointment = await Appointment.create({
         empresa_id: currentUser?.empresa_id || null,
@@ -1063,7 +1079,7 @@ export default function Registrador() {
           owner_nome: owner.nome || "",
           owner_celular: owner.celular || "",
           manual_monitor_id: manualForm.monitor_id,
-          manual_monitor_nome: monitor?.full_name || monitor?.nome_completo || monitor?.email || "",
+          manual_monitor_nome: getProviderDisplayName(monitor),
           created_from_registrador: true,
           commercial_review_pending: true,
         },
@@ -1723,11 +1739,14 @@ export default function Registrador() {
                     <SelectContent>
                       {monitors.map((monitor) => (
                         <SelectItem key={monitor.id} value={monitor.id}>
-                          {monitor.full_name || monitor.nome_completo || monitor.email}
+                          {getProviderDisplayName(monitor)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {checkinForm.monitor_id && !presentMonitorIds.has(checkinForm.monitor_id) ? (
+                    <p className="mt-2 text-sm font-medium text-amber-700">Monitor ausente.⚠️</p>
+                  ) : null}
                 </div>
               </div>
 
@@ -1945,11 +1964,14 @@ export default function Registrador() {
                   <SelectContent>
                     {monitors.map((monitor) => (
                       <SelectItem key={monitor.id} value={monitor.id}>
-                        {monitor.full_name || monitor.nome_completo || monitor.email}
+                        {getProviderDisplayName(monitor)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {checkoutForm.monitor_id && !presentMonitorIds.has(checkoutForm.monitor_id) ? (
+                  <p className="mt-2 text-sm font-medium text-amber-700">Monitor ausente.⚠️</p>
+                ) : null}
               </div>
             </div>
 
@@ -2016,7 +2038,7 @@ export default function Registrador() {
                   <SelectContent>
                     {monitors.map((monitor) => (
                       <SelectItem key={monitor.id} value={monitor.id}>
-                        {monitor.full_name || monitor.nome_completo || monitor.email}
+                        {getProviderDisplayName(monitor)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2125,7 +2147,7 @@ export default function Registrador() {
                   <SelectContent>
                     {monitors.map((monitor) => (
                       <SelectItem key={monitor.id} value={monitor.id}>
-                        {monitor.full_name || monitor.nome_completo || monitor.email}
+                        {getProviderDisplayName(monitor)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2187,7 +2209,7 @@ export default function Registrador() {
                 <SelectContent>
                   {monitors.map((monitor) => (
                     <SelectItem key={monitor.id} value={monitor.id}>
-                      {monitor.full_name || monitor.nome_completo || monitor.email}
+                      {getProviderDisplayName(monitor)}
                     </SelectItem>
                   ))}
                 </SelectContent>

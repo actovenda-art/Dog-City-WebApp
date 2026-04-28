@@ -41,6 +41,26 @@ function nullableText(value: unknown) {
   return normalized || null;
 }
 
+function sanitizeDisplayNameInput(value: unknown) {
+  return sanitizeText(value)
+    .replace(/[^\p{L}' -]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatDisplayName(value: unknown) {
+  return sanitizeDisplayNameInput(value)
+    .split(" ")
+    .filter(Boolean)
+    .map((word) =>
+      word
+        .split(/([-'])/)
+        .map((part) => (/^[-']$/.test(part) ? part : `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`))
+        .join("")
+    )
+    .join(" ");
+}
+
 function removeAccents(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
@@ -80,7 +100,7 @@ function isValidCpfFormat(cpf: string) {
 
 function isMissingClientRegistrationSchema(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
-  return /client_registration_link|restricoes_cuidados|observacoes_gerais|castrado|contato_orcamentos|contato_alinhamentos|street|neighborhood|city|state/i.test(message);
+  return /client_registration_link|restricoes_cuidados|observacoes_gerais|castrado|autorizacao_uso_imagem|contato_orcamentos|contato_alinhamentos|street|neighborhood|city|state/i.test(message);
 }
 
 function withSchemaHint(error: unknown, fallback: string) {
@@ -743,8 +763,8 @@ async function handleSubmit(payload: Record<string, unknown>) {
         .from("dogs")
         .insert([{
           empresa_id: link.empresa_id,
-          nome: sanitizeText(cao.nome),
-          apelido: nullableText(cao.apelido),
+          nome: formatDisplayName(cao.nome),
+          apelido: nullableText(formatDisplayName(cao.apelido)),
           raca: nullableText(cao.raca),
           peso: nullableText(cao.peso),
           data_nascimento: nullableText(cao.data_nascimento),
@@ -753,6 +773,7 @@ async function handleSubmit(payload: Record<string, unknown>) {
           cores_pelagem: nullableText(cao.cores_pelagem),
           pelagem: nullableText(cao.pelagem),
           castrado: !!cao.castrado,
+          autorizacao_uso_imagem: !!cao.autorizacao_uso_imagem,
           data_revacinacao_1: nullableText(cao.data_revacinacao_1),
           nome_vacina_revacinacao_1: nullableText(cao.nome_vacina_revacinacao_1),
           data_revacinacao_2: nullableText(cao.data_revacinacao_2),
@@ -794,7 +815,7 @@ async function handleSubmit(payload: Record<string, unknown>) {
         .from("responsavel")
         .insert([{
           empresa_id: link.empresa_id,
-          nome_completo: sanitizeText(responsavel.nome_completo),
+          nome_completo: formatDisplayName(responsavel.nome_completo),
           cpf: nullableText(responsavel.cpf),
           celular: nullableText(responsavel.celular),
           celular_alternativo: nullableText(responsavel.celular_alternativo),
@@ -821,13 +842,13 @@ async function handleSubmit(payload: Record<string, unknown>) {
     }
 
     const contatoOrcamentos = {
-      nome: nullableText(financeiro.contato_orcamentos_nome),
+      nome: nullableText(formatDisplayName(financeiro.contato_orcamentos_nome)),
       celular: nullableText(financeiro.contato_orcamentos_celular),
       email: nullableText(financeiro.contato_orcamentos_email)?.toLowerCase() || null,
     };
 
     const contatoAlinhamentos = {
-      nome: nullableText(financeiro.contato_alinhamentos_nome),
+      nome: nullableText(formatDisplayName(financeiro.contato_alinhamentos_nome)),
       celular: nullableText(financeiro.contato_alinhamentos_celular),
       email: nullableText(financeiro.contato_alinhamentos_email)?.toLowerCase() || null,
     };
@@ -844,7 +865,7 @@ async function handleSubmit(payload: Record<string, unknown>) {
         .from("carteira")
         .insert([{
           empresa_id: link.empresa_id,
-          nome_razao_social: sanitizeText(financeiro.nome_razao_social),
+          nome_razao_social: formatDisplayName(financeiro.nome_razao_social),
           cpf_cnpj: nullableText(financeiro.cpf_cnpj),
           celular: nullableText(financeiro.celular),
           email: nullableText(financeiro.email)?.toLowerCase() || null,

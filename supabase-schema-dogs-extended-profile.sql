@@ -7,6 +7,7 @@ alter table if exists public.dogs
   add column if not exists sexo text,
   add column if not exists porte text,
   add column if not exists castrado boolean default false,
+  add column if not exists autorizacao_uso_imagem boolean default false,
   add column if not exists foto_carteirinha_vacina_url text,
   add column if not exists data_revacinacao_1 date,
   add column if not exists nome_vacina_revacinacao_1 text,

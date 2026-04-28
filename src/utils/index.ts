@@ -3,6 +3,7 @@ export const PAGE_ROUTES: Record<string, string> = {
     AuthCallback: "auth-callback",
     CompletarCadastro: "completar-cadastro",
     CadastroClientePublico: "cadastro-cliente",
+    CadastroMonitorPublico: "cadastro-funcionario",
     DefinirPin: "definir-pin",
     ValidarPin: "validar-pin",
     Dev_Dashboard: "dashboard",

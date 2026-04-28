@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import { normalizeCpfDigits, validateCpfWithGov } from "@/lib/cpf-validation";
 import { createEmptyDogMeal } from "@/lib/dog-form-utils";
+import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import {
   AlertTriangle,
   CircleAlert,
@@ -110,6 +111,7 @@ function createEmptyDog() {
     cores_pelagem: "",
     pelagem: "",
     castrado: false,
+    autorizacao_uso_imagem: false,
     data_revacinacao_1: "",
     nome_vacina_revacinacao_1: "",
     data_revacinacao_2: "",
@@ -172,27 +174,6 @@ function formatPhone(value) {
 
 function formatCEP(value) {
   return String(value || "").replace(/\D/g, "").replace(/(\d{5})(\d)/, "$1-$2").slice(0, 9);
-}
-
-function sanitizeDisplayNameInput(value) {
-  return String(value || "")
-    .replace(/[^\p{L}' -]/gu, " ")
-    .replace(/\s+/g, " ")
-    .replace(/^\s+/g, "");
-}
-
-function formatDisplayName(value) {
-  return sanitizeDisplayNameInput(value)
-    .trim()
-    .split(" ")
-    .filter(Boolean)
-    .map((word) =>
-      word
-        .split(/([-'])/)
-        .map((part) => (/^[-']$/.test(part) ? part : `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`))
-        .join("")
-    )
-    .join(" ");
 }
 
 function formatDogTitle(dog, index) {
@@ -812,10 +793,20 @@ export default function CadastroClientePublico() {
         action: "submit",
         token,
         payload: {
-          responsavel: responsavelForm,
-          caes: caesForm,
+          responsavel: {
+            ...responsavelForm,
+            nome_completo: formatDisplayName(responsavelForm.nome_completo),
+          },
+          caes: caesForm.map((dog) => ({
+            ...dog,
+            nome: formatDisplayName(dog.nome),
+            apelido: formatDisplayName(dog.apelido),
+          })),
           financeiro: {
             ...financeiroForm,
+            nome_razao_social: formatDisplayName(financeiroForm.nome_razao_social),
+            contato_orcamentos_nome: formatDisplayName(financeiroForm.contato_orcamentos_nome),
+            contato_alinhamentos_nome: formatDisplayName(financeiroForm.contato_alinhamentos_nome),
             usar_dados_responsavel: financeiroIgualResponsavel,
           },
         },
@@ -1015,6 +1006,13 @@ export default function CadastroClientePublico() {
             <p className="text-xs text-slate-500">Informe se o dog é castrado.</p>
           </div>
           <Switch checked={!!dog.castrado} onCheckedChange={(checked) => updateDog(dogIndex, { castrado: checked })} />
+        </div>
+        <div className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Autorizo o uso de imagens do meu Dog</p>
+            <p className="text-xs text-slate-500">Permite fotos e vídeos do dog em registros e comunicação da Dog City.</p>
+          </div>
+          <Switch checked={!!dog.autorizacao_uso_imagem} onCheckedChange={(checked) => updateDog(dogIndex, { autorizacao_uso_imagem: checked })} />
         </div>
         {renderSelectField({
           label: "1Âª revacinaÃ§Ã£o",
@@ -1394,7 +1392,8 @@ export default function CadastroClientePublico() {
             fieldKey: "financeiro.nome_razao_social",
             label: "Nome / RazÃ£o social",
             value: financeiroForm.nome_razao_social,
-            onChange: (event) => setFinanceiroForm((current) => ({ ...current, nome_razao_social: event.target.value })),
+            onChange: (event) => setFinanceiroForm((current) => ({ ...current, nome_razao_social: sanitizeDisplayNameInput(event.target.value) })),
+            onBlur: () => setFinanceiroForm((current) => ({ ...current, nome_razao_social: formatDisplayName(current.nome_razao_social) })),
             requiredMessage: "Informe o nome ou razÃ£o social do responsÃ¡vel financeiro.",
           })}
           {renderTextField({

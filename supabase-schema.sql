@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS dogs (
   raca TEXT,
   peso DECIMAL(5,2),
   data_nascimento DATE,
+  autorizacao_uso_imagem BOOLEAN DEFAULT false,
   foto_url TEXT,
   ativo BOOLEAN DEFAULT true,
   created_date TIMESTAMP DEFAULT NOW(),

@@ -29,3 +29,11 @@ export const clientRegistration = async (...args) => {
 	}
 	return f.clientRegistration(...args);
 };
+
+export const monitorRegistration = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.monitorRegistration !== 'function') {
+		return Promise.reject(new Error('appClient.functions.monitorRegistration is not available'));
+	}
+	return f.monitorRegistration(...args);
+};

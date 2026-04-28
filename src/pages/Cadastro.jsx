@@ -22,6 +22,7 @@ import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { createEmptyDogMeal, extractDogMeals, isNaturalFoodType, serializeDogMeals } from "@/lib/dog-form-utils";
 import { findEntityByReference } from "@/lib/entity-identifiers";
+import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import { cn } from "@/lib/utils";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -161,27 +162,6 @@ function normalizeDocumentDigits(value, maxLength = 14) {
   return String(value || "").replace(/\D/g, "").slice(0, maxLength);
 }
 
-function sanitizeDisplayNameInput(value) {
-  return String(value || "")
-    .replace(/[^\p{L}' -]/gu, " ")
-    .replace(/\s+/g, " ")
-    .replace(/^\s+/g, "");
-}
-
-function formatDisplayName(value) {
-  return sanitizeDisplayNameInput(value)
-    .trim()
-    .split(" ")
-    .filter(Boolean)
-    .map((word) =>
-      word
-        .split(/([-'])/)
-        .map((part) => (/^[-']$/.test(part) ? part : `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`))
-        .join("")
-    )
-    .join(" ");
-}
-
 function hasValue(value) {
   return String(value ?? "").trim().length > 0;
 }
@@ -258,7 +238,8 @@ export default function Cadastro() {
     veterinario_responsavel: "", veterinario_horario_atendimento: "", veterinario_telefone: "", veterinario_clinica_telefone: "", veterinario_endereco: "",
     alimentacao_marca_racao: "", alimentacao_sabor: "", alimentacao_tipo: "", alimentacao_natural: false,
     refeicoes: [createEmptyDogMeal()],
-    medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }]
+    medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
+    autorizacao_uso_imagem: false,
   }), []);
   const [dogForm, setDogForm] = useState(emptyDog);
 
@@ -729,6 +710,7 @@ export default function Cadastro() {
       ...targetDog,
       sexo: targetDog.sexo || "",
       castrado: !!targetDog.castrado,
+      autorizacao_uso_imagem: !!targetDog.autorizacao_uso_imagem,
       porte: normalizeDogSize(targetDog.porte),
       pelagem: normalizeDogCoat(targetDog.pelagem),
       peso: targetDog.peso ?? "",
@@ -924,8 +906,8 @@ export default function Cadastro() {
       const mealPayload = serializeDogMeals(dogForm.refeicoes);
       const payload = {
         empresa_id: currentUser?.empresa_id || null,
-        nome: dogForm.nome.trim(),
-        apelido: optional(dogForm.apelido),
+        nome: formatDisplayName(dogForm.nome),
+        apelido: optional(formatDisplayName(dogForm.apelido)),
         raca: optional(dogForm.raca),
         porte: optional(normalizeDogSize(dogForm.porte)),
         cores_pelagem: optional(dogForm.cores_pelagem),
@@ -966,6 +948,7 @@ export default function Cadastro() {
         refeicao_4_horario: optional(mealPayload.refeicao_4_horario),
         refeicao_4_obs: optional(mealPayload.refeicao_4_obs),
         medicamentos_continuos: normalizeMedications(dogForm.medicamentos_continuos),
+        autorizacao_uso_imagem: !!dogForm.autorizacao_uso_imagem,
       };
       validateRelationCapacity(responsaveis, selectedResponsavelIds, editingDogId, "O responsável");
       validateRelationCapacity(carteiras, selectedCarteiraIds, editingDogId, "O responsável financeiro");
@@ -1019,7 +1002,7 @@ export default function Cadastro() {
 
       await Responsavel.create({
         empresa_id: currentUser?.empresa_id || null,
-        nome_completo: responsavelForm.nome_completo.trim(),
+        nome_completo: formatDisplayName(responsavelForm.nome_completo),
         cpf: optional(responsavelForm.cpf),
         celular: optional(responsavelForm.celular),
         celular_alternativo: optional(responsavelForm.celular_alternativo),
@@ -1093,7 +1076,7 @@ export default function Cadastro() {
 
       await Carteira.create({
         empresa_id: currentUser?.empresa_id || null,
-        nome_razao_social: carteiraForm.nome_razao_social.trim(),
+        nome_razao_social: formatDisplayName(carteiraForm.nome_razao_social),
         cpf_cnpj: optional(carteiraForm.cpf_cnpj),
         celular: optional(carteiraForm.celular),
         email: optional(carteiraForm.email),
@@ -1105,12 +1088,12 @@ export default function Cadastro() {
         state: optional(carteiraForm.state),
         vencimento_planos: optional(carteiraForm.vencimento_planos),
         contato_orcamentos: {
-          nome: optional(carteiraForm.contato_orcamentos_nome),
+          nome: optional(formatDisplayName(carteiraForm.contato_orcamentos_nome)),
           celular: optional(carteiraForm.contato_orcamentos_celular),
           email: optional(carteiraForm.contato_orcamentos_email),
         },
         contato_alinhamentos: {
-          nome: optional(carteiraForm.contato_alinhamentos_nome),
+          nome: optional(formatDisplayName(carteiraForm.contato_alinhamentos_nome)),
           celular: optional(carteiraForm.contato_alinhamentos_celular),
           email: optional(carteiraForm.contato_alinhamentos_email),
         },
@@ -1596,6 +1579,13 @@ export default function Cadastro() {
                       <p className="text-xs text-gray-500">Informe se o cão já é castrado.</p>
                     </div>
                     <Switch checked={!!dogForm.castrado} onCheckedChange={(checked) => setDogForm({ ...dogForm, castrado: checked })} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Autorizo o uso de imagens do meu Dog</p>
+                      <p className="text-xs text-gray-500">Permite fotos e vídeos do cão em registros e comunicação da Dog City.</p>
+                    </div>
+                    <Switch checked={!!dogForm.autorizacao_uso_imagem} onCheckedChange={(checked) => setDogForm({ ...dogForm, autorizacao_uso_imagem: checked })} />
                   </div>
                   <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <button type="button" onClick={() => openImageViewer(dogForm.foto_url, "Foto do perfil")} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
                   <div><Label>Carteirinha de vacinação</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
@@ -2128,7 +2118,14 @@ export default function Cadastro() {
                     fieldKey: "carteira.nome_razao_social",
                     label: "Nome / Razão social",
                     value: carteiraForm.nome_razao_social,
-                    onChange: (e) => setCarteiraForm({ ...carteiraForm, nome_razao_social: e.target.value }),
+                    onChange: (e) => setCarteiraForm({
+                      ...carteiraForm,
+                      nome_razao_social: sanitizeDisplayNameInput(e.target.value),
+                    }),
+                    onBlur: (e) => setCarteiraForm({
+                      ...carteiraForm,
+                      nome_razao_social: formatDisplayName(e.target.value),
+                    }),
                     placeholder: "Nome completo do responsável financeiro",
                     requiredMessage: "Informe o nome ou razão social.",
                   })}

@@ -52,6 +52,11 @@ const UNIT_SCOPED_ENTITIES = new Set([
   'ScheduledTransaction',
   'Replacement',
   'PlanConfig',
+  'RecurringPackage',
+  'PackageSession',
+  'PackageCredit',
+  'PackageBilling',
+  'AuditLog',
   'IntegracaoConfig',
   'Receita',
   'ContaReceber',
@@ -117,6 +122,7 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
   const missingCarteiraColumn = isMissingColumnFor('carteira');
   const missingOrcamentoColumn = isMissingColumnFor('orcamento');
   const missingCheckinColumn = isMissingColumnFor('checkins');
+  const missingServiceProviderColumn = isMissingColumnFor('serviceproviders');
   const missingExtratoColumn = isMissingColumnFor('extratobancario');
   const missingUsersPinColumn = isMissingColumnFor('users')
     && /pin_required_reset|pin_bootstrap_status|pin_updated_at|pin_last_verified_at/i.test(rawMessage);
@@ -134,6 +140,8 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
       ? `${rawMessage}. Execute o arquivo supabase-schema-cadastros-orcamento.sql no Supabase.`
     : missingCheckinColumn
       ? `${rawMessage}. Execute o arquivo supabase-schema-registrador-alertas.sql no Supabase.`
+    : missingServiceProviderColumn
+      ? `${rawMessage}. Execute o arquivo supabase-schema-escalacao.sql no Supabase.`
     : missingExtratoColumn
       ? `${rawMessage}. Execute os arquivos supabase-schema-finance-ledger.sql e supabase-schema-controle-gerencial.sql no Supabase.`
     : missingUsersPinColumn
@@ -392,6 +400,7 @@ const defaultEntities = {};
   'Dog', 'Checkin', 'Schedule', 'ServiceProvider', 'ServiceProviderSchedule', 'Lancamento', 'ExtratoBancario', 'Despesa',
   'Responsavel', 'Carteira', 'Notificacao', 'Orcamento', 'TabelaPrecos', 'Appointment',
   'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
+  'RecurringPackage', 'PackageSession', 'PackageCredit', 'PackageBilling', 'AuditLog',
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
   'UserInvite', 'UserUnitAccess',
   'UserProfile', 'ContaReceber', 'Client', 'PedidoInterno',
@@ -496,6 +505,33 @@ const mockFunctions = {
     }
 
     throw new Error('Ação de cadastro do cliente inválida.');
+  },
+  monitorRegistration: async (payload = {}) => {
+    const providers = readStorage('ServiceProvider');
+    const action = payload?.action;
+    const token = String(payload?.token || '').trim();
+
+    if (action === 'get_context') {
+      const provider = providers.find((item) => item.registration_token === token);
+      if (!provider) throw new Error('Link de cadastro de funcionário não localizado.');
+      return { ok: true, provider: { id: provider.id, nome: provider.nome || '' } };
+    }
+
+    if (action === 'submit') {
+      const providerIndex = providers.findIndex((item) => item.registration_token === token);
+      if (providerIndex < 0) throw new Error('Link de cadastro de funcionário não localizado.');
+      providers[providerIndex] = {
+        ...providers[providerIndex],
+        ...(payload?.profile || {}),
+        registration_status: 'concluido',
+        completed_at: new Date().toISOString(),
+        updated_date: new Date().toISOString(),
+      };
+      writeStorage('ServiceProvider', providers);
+      return { ok: true, provider: providers[providerIndex] };
+    }
+
+    throw new Error('Ação de cadastro do funcionário inválida.');
   },
 };
 
@@ -971,6 +1007,11 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     ContaReceber: 'conta_receber',
     Despesa: 'despesa',
     PlanConfig: 'plan_config',
+    RecurringPackage: 'recurring_packages',
+    PackageSession: 'package_sessions',
+    PackageCredit: 'package_credits',
+    PackageBilling: 'package_billings',
+    AuditLog: 'audit_logs',
     TabelaPrecos: 'tabelaprecos',
     ServiceProvided: 'serviceprovided',
     ServiceProvider: 'serviceproviders',
@@ -1092,6 +1133,27 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         const baseMessage = details || error.message || 'Falha no cadastro do cliente.';
         const shouldHintDeploy = /edge function|failed to send a request|non-2xx|not found/i.test(baseMessage);
         throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function client-registration no Supabase.` : baseMessage);
+      }
+      return data;
+    },
+    monitorRegistration: async (payload = {}) => {
+      const { data, error } = await supabase.functions.invoke('monitor-registration', {
+        body: payload,
+      });
+      if (error) {
+        let details = '';
+        try {
+          if (error.context) {
+            const cloned = error.context.clone ? error.context.clone() : error.context;
+            const errorPayload = await cloned.json();
+            details = errorPayload?.details || errorPayload?.error || '';
+          }
+        } catch {
+          details = '';
+        }
+        const baseMessage = details || error.message || 'Falha no cadastro do funcionário.';
+        const shouldHintDeploy = /edge function|failed to send a request|non-2xx|not found/i.test(baseMessage);
+        throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function monitor-registration no Supabase.` : baseMessage);
       }
       return data;
     },

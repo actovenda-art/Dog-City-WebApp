@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { createPageUrl, openImageViewer } from "@/utils";
+import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import { AlertTriangle, KeyRound, LoaderCircle, Upload, UserRound } from "lucide-react";
 
 const EMPTY_FORM = {
@@ -25,8 +25,6 @@ const EMPTY_FORM = {
   neighborhood: "",
   city: "",
   state: "",
-  pix_key_type: "",
-  pix_key: "",
   contact_nickname: "",
   emergency_contact: "",
   profile_photo_path: "",
@@ -55,8 +53,6 @@ function validateRegistrationForm(form) {
     || !form.neighborhood
     || !form.city
     || !form.state
-    || !form.pix_key_type
-    || !form.pix_key
     || !form.contact_nickname
     || !form.emergency_contact
   ) {
@@ -194,8 +190,6 @@ export default function CompletarCadastro() {
         neighborhood: me.neighborhood || "",
         city: me.city || "",
         state: me.state || "",
-        pix_key_type: me.pix_key_type || "",
-        pix_key: me.pix_key || "",
         contact_nickname: me.contact_nickname || "",
         emergency_contact: me.emergency_contact || "",
         profile_photo_path: me.profile_photo_path || "",
@@ -281,7 +275,7 @@ export default function CompletarCadastro() {
     try {
       const now = new Date().toISOString();
       await UserProfile.update(currentUser.id, {
-        full_name: form.full_name,
+        full_name: formatDisplayName(form.full_name),
         email: form.email,
         cpf: form.cpf,
         birth_date: form.birth_date,
@@ -291,9 +285,7 @@ export default function CompletarCadastro() {
         neighborhood: form.neighborhood,
         city: form.city,
         state: form.state,
-        pix_key_type: form.pix_key_type,
-        pix_key: form.pix_key,
-        contact_nickname: form.contact_nickname,
+        contact_nickname: formatDisplayName(form.contact_nickname),
         emergency_contact: form.emergency_contact,
         profile_photo_path: form.profile_photo_path || null,
         onboarding_status: "completo",
@@ -360,7 +352,7 @@ export default function CompletarCadastro() {
         token,
         pin: normalizedPin,
         profile: {
-          full_name: form.full_name,
+          full_name: formatDisplayName(form.full_name),
           cpf: form.cpf,
           birth_date: form.birth_date,
           cep: form.cep,
@@ -369,9 +361,7 @@ export default function CompletarCadastro() {
           neighborhood: form.neighborhood,
           city: form.city,
           state: form.state,
-          pix_key_type: form.pix_key_type,
-          pix_key: form.pix_key,
-          contact_nickname: form.contact_nickname,
+          contact_nickname: formatDisplayName(form.contact_nickname),
           emergency_contact: form.emergency_contact,
         },
       });
@@ -466,7 +456,8 @@ export default function CompletarCadastro() {
                     <Label>Nome completo *</Label>
                     <Input
                       value={form.full_name}
-                      onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))}
+                      onChange={(event) => setForm((current) => ({ ...current, full_name: sanitizeDisplayNameInput(event.target.value) }))}
+                      onBlur={() => setForm((current) => ({ ...current, full_name: formatDisplayName(current.full_name) }))}
                       className="mt-2"
                     />
                   </div>
@@ -551,33 +542,11 @@ export default function CompletarCadastro() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
-                    <Label>Tipo de chave PIX *</Label>
-                    <Select value={form.pix_key_type || "__none__"} onValueChange={(value) => setForm((current) => ({ ...current, pix_key_type: value === "__none__" ? "" : value }))}>
-                      <SelectTrigger className="mt-2">
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Selecionar</SelectItem>
-                        <SelectItem value="cpf">CPF</SelectItem>
-                        <SelectItem value="email">Email</SelectItem>
-                        <SelectItem value="telefone">Telefone</SelectItem>
-                        <SelectItem value="aleatoria">Aleatória</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label>Chave PIX *</Label>
-                    <Input
-                      value={form.pix_key}
-                      onChange={(event) => setForm((current) => ({ ...current, pix_key: event.target.value }))}
-                      className="mt-2"
-                    />
-                  </div>
-                  <div>
                     <Label>Nome/Apelido do contato *</Label>
                     <Input
                       value={form.contact_nickname}
-                      onChange={(event) => setForm((current) => ({ ...current, contact_nickname: event.target.value }))}
+                      onChange={(event) => setForm((current) => ({ ...current, contact_nickname: sanitizeDisplayNameInput(event.target.value) }))}
+                      onBlur={() => setForm((current) => ({ ...current, contact_nickname: formatDisplayName(current.contact_nickname) }))}
                       className="mt-2"
                     />
                   </div>

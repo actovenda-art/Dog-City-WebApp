@@ -20,7 +20,34 @@ import {
   Zap,
 } from "lucide-react";
 
-import { Appointment, Carteira, ContaReceber, Dog, PlanConfig, TabelaPrecos, User } from "@/api/entities";
+import {
+  Appointment,
+  AuditLog,
+  Carteira,
+  ContaReceber,
+  Dog,
+  PackageBilling,
+  PackageCredit,
+  PackageSession,
+  PlanConfig,
+  RecurringPackage,
+  TabelaPrecos,
+  User,
+} from "@/api/entities";
+import {
+  applyCreditsToSessions,
+  buildBillingPayload,
+  buildMonthKey as buildRecurringMonthKey,
+  calculateMonthlyBilling,
+  cancelSession,
+  formatDateKey as formatRecurringDateKey,
+  generateMonthlySessions,
+  getAvailableCredits,
+  getMonthKey as getRecurringMonthKey,
+  markSessionAsCompleted,
+  markSessionAsNoShow,
+  normalizeMetadata as normalizeRecurringMetadata,
+} from "@/lib/recurring-packages";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -133,6 +160,19 @@ const DEFAULT_FORM_DATA = {
   start_date: "",
   monthly_value: "",
   first_month_dates: [],
+};
+
+const PREPAID_PACKAGE_SERVICES = new Set(["day_care", "banho", "tosa", "banho_tosa", "transporte", "hospedagem"]);
+const PREPAID_SESSION_STATUS_LABELS = {
+  prevista: "Prevista",
+  agendada: "Agendada",
+  realizada: "Realizada",
+  cancelada_com_credito: "Cancelada com crédito",
+  cancelada_sem_credito: "Cancelada sem crédito",
+  falta_cobrada: "Falta cobrada",
+  falta_nao_cobrada: "Falta não cobrada",
+  vencida_nao_utilizada: "Vencida não utilizada",
+  convertida_em_credito: "Convertida em crédito",
 };
 
 function getLinkedDogIds(record) {
@@ -530,14 +570,18 @@ function buildFirstBillingPreview({
   const basePackageValue = Number(packageMonthlyValue || basePerDogValue * packageDogCount || 0) || 0;
 
   if (service !== "day_care") {
+    const realDates = buildFirstMonthRealDates(startDateValue, weekdays);
+    const plannedUses = realDates.length || 1;
     return {
       firstDueDate,
       nextRecurringDueDate,
-      plannedUses: 0,
-      chargedUses: 0,
-      cycleSlots: 0,
+      plannedUses,
+      chargedUses: plannedUses,
+      cycleSlots: plannedUses,
       isFullPackage: true,
-      firstPackageValue: basePackageValue,
+      projectedDates: buildProjectedFirstMonthDates(startDateValue, weekdays),
+      realDates,
+      firstPackageValue: basePerDogValue * plannedUses,
       firstPerDogValue: basePerDogValue,
     };
   }
@@ -622,6 +666,64 @@ function getPlanGroupPayload({
   };
 }
 
+function isPrepaidPackagePlan(plan) {
+  const metadata = parseMetadata(plan?.metadata_gerencial);
+  const serviceId = plan?.service || plan?.tipo_plano || "day_care";
+  return metadata.prepaid_package_enabled === true || PREPAID_PACKAGE_SERVICES.has(serviceId);
+}
+
+function getRecurringFrequencyFromPlan(plan) {
+  const frequency = plan?.frequency || "semanal";
+  if (frequency === "quinzenal") return "quinzenal";
+  if (frequency === "mensal") return "mensal";
+  if (frequency === "personalizada") return "personalizada";
+  return "semanal";
+}
+
+function getSessionUnitPriceFromPlan(plan) {
+  const serviceId = plan?.service || plan?.tipo_plano || "day_care";
+  const monthlyValue = getMonthlyValue(plan);
+  if (serviceId === "day_care") {
+    const slots = getDayCareCycleSlots(plan?.frequency);
+    return slots > 0 ? Number((monthlyValue / slots).toFixed(2)) : monthlyValue;
+  }
+  return monthlyValue;
+}
+
+function buildRecurringPackagePayloadFromPlan(plan) {
+  const metadata = parseMetadata(plan?.metadata_gerencial);
+  const weekdays = normalizeWeekdays(plan?.weekdays);
+  const serviceId = plan?.service || plan?.tipo_plano || "day_care";
+  const startDate = metadata.start_date || formatDateOnly(plan?.created_date ? parseISO(plan.created_date) : new Date());
+
+  return {
+    empresa_id: plan?.empresa_id || null,
+    client_id: plan?.client_id || plan?.carteira_id || null,
+    pet_id: plan?.dog_id || null,
+    service_id: serviceId,
+    weekday: weekdays[0] ?? null,
+    weekdays,
+    frequency: getRecurringFrequencyFromPlan(plan),
+    price_per_session: getSessionUnitPriceFromPlan(plan),
+    start_date: startDate,
+    end_date: metadata.end_date || null,
+    status: plan?.status === "cancelado" ? "cancelado" : "ativo",
+    cancellation_policy: metadata.cancellation_policy || "credito_com_aviso",
+    allow_credit_rollover: metadata.allow_credit_rollover !== false,
+    credit_expiration_months: Number.isFinite(Number(metadata.credit_expiration_months)) ? Number(metadata.credit_expiration_months) : null,
+    credit_limit: Number.isFinite(Number(metadata.credit_limit)) ? Number(metadata.credit_limit) : null,
+    blocked_dates: Array.isArray(metadata.blocked_dates) ? metadata.blocked_dates : [],
+    pause_ranges: Array.isArray(metadata.pause_ranges) ? metadata.pause_ranges : [],
+    notes: metadata.notes || "",
+    metadata: {
+      plan_config_id: plan?.id,
+      package_group_key: metadata.package_group_key || plan?.id,
+      client_name: plan?.client_name || "",
+      plan_metadata: metadata,
+    },
+  };
+}
+
 export default function PlanosConfig() {
   const [plans, setPlans] = useState([]);
   const [dogs, setDogs] = useState([]);
@@ -629,6 +731,10 @@ export default function PlanosConfig() {
   const [pricingRows, setPricingRows] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [receivables, setReceivables] = useState([]);
+  const [prepaidPackages, setPrepaidPackages] = useState([]);
+  const [packageSessions, setPackageSessions] = useState([]);
+  const [packageCredits, setPackageCredits] = useState([]);
+  const [packageBillings, setPackageBillings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [detailItem, setDetailItem] = useState(null);
@@ -637,6 +743,11 @@ export default function PlanosConfig() {
   const [deleteDate, setDeleteDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [replacementItem, setReplacementItem] = useState(null);
   const [replacementDate, setReplacementDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [prepaidMonth, setPrepaidMonth] = useState(format(new Date(), "yyyy-MM"));
+  const [selectedPrepaidPackage, setSelectedPrepaidPackage] = useState(null);
+  const [selectedPrepaidSession, setSelectedPrepaidSession] = useState(null);
+  const [manualReason, setManualReason] = useState("");
+  const [isSyncingPrepaid, setIsSyncingPrepaid] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -645,10 +756,34 @@ export default function PlanosConfig() {
   const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
   const [useSuggestedValue, setUseSuggestedValue] = useState(true);
   const isSilentSyncRunningRef = useRef(false);
+  const isPrepaidSilentSyncRunningRef = useRef(false);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (isLoading || isPrepaidSilentSyncRunningRef.current) return;
+    const activePrepaidPackages = prepaidPackages.filter((item) => item.status === "ativo");
+    if (!activePrepaidPackages.length) return;
+
+    const monthKey = format(new Date(), "yyyy-MM");
+    const storageKey = `dogcity_prepaid_month_sync:${monthKey}:${activePrepaidPackages.length}`;
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(storageKey)) return;
+
+    isPrepaidSilentSyncRunningRef.current = true;
+    Promise.all(activePrepaidPackages.map((packageRecord) => syncSinglePrepaidPackageMonth(packageRecord, monthKey)))
+      .then(() => {
+        if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, "1");
+        return loadData({ skipSilentSync: true });
+      })
+      .catch((error) => {
+        console.error("Erro ao gerar fichas pré-pagas automaticamente:", error);
+      })
+      .finally(() => {
+        isPrepaidSilentSyncRunningRef.current = false;
+      });
+  }, [isLoading, prepaidPackages.length]);
 
   async function loadData({ skipSilentSync = false } = {}) {
     setIsLoading(true);
@@ -662,13 +797,29 @@ export default function PlanosConfig() {
         }
       };
 
-      const [plansData, dogsData, carteirasData, tabelaPrecosData, appointmentsData, receivablesData, me] = await Promise.all([
+      const [
+        plansData,
+        dogsData,
+        carteirasData,
+        tabelaPrecosData,
+        appointmentsData,
+        receivablesData,
+        prepaidPackagesData,
+        packageSessionsData,
+        packageCreditsData,
+        packageBillingsData,
+        me,
+      ] = await Promise.all([
         safeLoad("planos recorrentes", () => PlanConfig.list("-created_date", 500), []),
         safeLoad("cães", () => Dog.list("-created_date", 500), []),
         safeLoad("responsáveis financeiros", () => Carteira.list("-created_date", 500), []),
         safeLoad("tabela de preços", () => TabelaPrecos.list("-created_date", 1000), []),
         safeLoad("agendamentos automáticos", () => (Appointment.listAll ? Appointment.listAll("-created_date", 1000, 10000) : Appointment.list("-created_date", 5000)), []),
         safeLoad("cobranças recorrentes", () => (ContaReceber.listAll ? ContaReceber.listAll("-created_date", 1000, 10000) : ContaReceber.list("-created_date", 5000)), []),
+        safeLoad("pacotes pré-pagos", () => (RecurringPackage.listAll ? RecurringPackage.listAll("-created_at", 1000, 10000) : RecurringPackage.list("-created_at", 5000)), []),
+        safeLoad("fichas de pacotes", () => (PackageSession.listAll ? PackageSession.listAll("-scheduled_date", 1000, 20000) : PackageSession.list("-scheduled_date", 5000)), []),
+        safeLoad("créditos de pacotes", () => (PackageCredit.listAll ? PackageCredit.listAll("-created_at", 1000, 20000) : PackageCredit.list("-created_at", 5000)), []),
+        safeLoad("cobranças de pacotes", () => (PackageBilling.listAll ? PackageBilling.listAll("-created_at", 1000, 20000) : PackageBilling.list("-created_at", 5000)), []),
         User.me().catch(() => null),
       ]);
 
@@ -676,6 +827,10 @@ export default function PlanosConfig() {
       const activePlans = plansData || [];
       const activeAppointments = appointmentsData || [];
       const activeReceivables = receivablesData || [];
+      const activePrepaidPackages = prepaidPackagesData || [];
+      const activePackageSessions = packageSessionsData || [];
+      const activePackageCredits = packageCreditsData || [];
+      const activePackageBillings = packageBillingsData || [];
 
       if (!skipSilentSync && activePlans.length > 0 && !isSilentSyncRunningRef.current) {
         isSilentSyncRunningRef.current = true;
@@ -697,6 +852,10 @@ export default function PlanosConfig() {
       setCarteiras((carteirasData || []).filter((item) => item.ativo !== false));
       setAppointments(activeAppointments);
       setReceivables(activeReceivables);
+      setPrepaidPackages(activePrepaidPackages);
+      setPackageSessions(activePackageSessions);
+      setPackageCredits(activePackageCredits);
+      setPackageBillings(activePackageBillings);
       setPricingRows(
         (tabelaPrecosData || []).filter(
           (item) => item.ativo !== false && item.tipo === DAY_CARE_PACKAGE_TYPE && (!item.empresa_id || item.empresa_id === empresaId),
@@ -1349,6 +1508,9 @@ export default function PlanosConfig() {
     const appointmentKeys = new Set(existingAppointments.map((item) => item.source_key).filter(Boolean));
 
     for (const plan of plansToSync) {
+      if (isPrepaidPackagePlan(plan)) {
+        continue;
+      }
       if (await generateAppointments(plan, appointmentKeys)) {
         changed = true;
       }
@@ -1357,6 +1519,270 @@ export default function PlanosConfig() {
       }
     }
     return changed;
+  }
+
+  async function syncRecurringPackagesForPlans(savedPlans = []) {
+    if (!savedPlans.length) return [];
+    const syncedPackages = [];
+
+    for (const plan of savedPlans) {
+      if (!isPrepaidPackagePlan(plan)) continue;
+      const payload = buildRecurringPackagePayloadFromPlan(plan);
+      if (!payload.client_id || !payload.pet_id || !payload.service_id || !payload.start_date) continue;
+
+      const existingPackage = prepaidPackages.find((item) => {
+        const metadata = normalizeRecurringMetadata(item.metadata);
+        return metadata.plan_config_id === plan.id
+          || (
+            metadata.package_group_key === payload.metadata.package_group_key
+            && item.pet_id === payload.pet_id
+            && item.service_id === payload.service_id
+          );
+      });
+
+      if (existingPackage?.id) {
+        const updated = await RecurringPackage.update(existingPackage.id, payload);
+        syncedPackages.push({ ...existingPackage, ...payload, ...(updated || {}) });
+      } else {
+        const created = await RecurringPackage.create(payload);
+        if (created) syncedPackages.push(created);
+      }
+    }
+
+    return syncedPackages;
+  }
+
+  async function cancelRecurringPackageForPlan(plan) {
+    const existingPackage = prepaidPackages.find((item) => normalizeRecurringMetadata(item.metadata).plan_config_id === plan.id);
+    if (!existingPackage?.id) return;
+    await RecurringPackage.update(existingPackage.id, {
+      status: "cancelado",
+      end_date: formatDateOnly(new Date()),
+      metadata: {
+        ...normalizeRecurringMetadata(existingPackage.metadata),
+        cancelled_from_plan_config: true,
+      },
+    });
+  }
+
+  async function writeAuditLogs(logs = []) {
+    const safeLogs = (logs || []).filter((log) => log?.action && log?.entity_type && log?.entity_id);
+    for (const log of safeLogs) {
+      try {
+        await AuditLog.create(log);
+      } catch (error) {
+        console.error("Erro ao registrar auditoria do pacote:", error);
+      }
+    }
+  }
+
+  async function ensureAppointmentForPackageSession(session, packageRecord) {
+    if (!session?.id || session.deleted_at) return null;
+    const sourceKey = `package_session|${session.package_id}|${session.pet_id}|${session.service_id}|${session.scheduled_date}`;
+    const existingAppointment = appointments.find((appointment) => appointment.source_key === sourceKey);
+    if (existingAppointment?.id) return existingAppointment;
+
+    const appointment = await Appointment.create({
+      empresa_id: session.empresa_id || packageRecord?.empresa_id || null,
+      dog_id: session.pet_id,
+      cliente_id: session.client_id,
+      service_type: session.service_id,
+      status: session.status === "cancelada_sem_credito" || session.status === "cancelada_com_credito" ? "cancelado" : "agendado",
+      data_referencia: session.scheduled_date,
+      data_hora_entrada: `${session.scheduled_date}T08:00:00`,
+      data_hora_saida: `${session.scheduled_date}T18:00:00`,
+      hora_entrada: "08:00",
+      hora_saida: "18:00",
+      valor_previsto: Number(packageRecord?.price_per_session || 0) || 0,
+      charge_type: session.covered_by_credit ? "credito_pacote" : "pacote",
+      source_type: "pacote_recorrente_pre_pago",
+      package_session_id: session.id,
+      recurring_package_id: session.package_id,
+      metadata: {
+        package_id: session.package_id,
+        package_session_id: session.id,
+        billing_month: session.billing_month,
+        covered_by_credit: !!session.covered_by_credit,
+        credit_id: session.credit_id || null,
+      },
+      source_key: sourceKey,
+    });
+
+    if (appointment?.id && !session.appointment_id) {
+      await PackageSession.update(session.id, { appointment_id: appointment.id });
+    }
+
+    return appointment;
+  }
+
+  async function ensureReceivableForPackageBilling(packageRecord, billing, billingRecord) {
+    if (!billingRecord?.id || billing.total_amount <= 0) return null;
+    const sourceKey = `package_billing|${packageRecord.id}|${billing.billing_month}`;
+    const existingCharge = receivables.find((item) => item.source_key === sourceKey);
+    const dueDayValue = clientsById[packageRecord.client_id]?.vencimento_planos || "";
+    const dueDate = buildDueDateForMonth(parseDateOnly(`${billing.billing_month}-01`), Number(dueDayValue)) || parseDateOnly(`${billing.billing_month}-01`);
+    const serviceMeta = getServiceMeta(packageRecord.service_id);
+    const dogName = dogsById[packageRecord.pet_id]?.nome || "Cão";
+    const payload = {
+      cliente_id: packageRecord.client_id,
+      dog_id: packageRecord.pet_id,
+      descricao: `Pacote ${serviceMeta.label} - ${dogName} - ${formatMonthLabel(`${billing.billing_month}-01`)}`,
+      servico: packageRecord.service_id,
+      valor: billing.total_amount,
+      vencimento: formatDateOnly(dueDate),
+      status: existingCharge?.status || "pendente",
+      origem: "pacote_recorrente_pre_pago",
+      tipo_agendamento: "recorrente",
+      tipo_cobranca: "pacote",
+      data_prestacao: `${billing.billing_month}-01`,
+      source_key: sourceKey,
+      package_billing_id: billingRecord.id,
+      recurring_package_id: packageRecord.id,
+      metadata: {
+        ...parseMetadata(existingCharge?.metadata),
+        package_id: packageRecord.id,
+        package_billing_id: billingRecord.id,
+        billing_month: billing.billing_month,
+        expected_sessions: billing.expected_sessions,
+        credits_used: billing.credits_used,
+        charged_sessions: billing.charged_sessions,
+      },
+    };
+
+    if (existingCharge?.id) {
+      if (!existingCharge.data_recebimento) {
+        await ContaReceber.update(existingCharge.id, payload);
+      }
+      return existingCharge;
+    }
+
+    const createdCharge = await ContaReceber.create(payload);
+    if (createdCharge?.id && !billingRecord.conta_receber_id) {
+      await PackageBilling.update(billingRecord.id, { conta_receber_id: createdCharge.id });
+    }
+    return createdCharge;
+  }
+
+  async function syncSinglePrepaidPackageMonth(packageRecord, monthKey) {
+    const generated = generateMonthlySessions({
+      packages: [packageRecord],
+      existingSessions: packageSessions,
+      month: monthKey,
+    });
+    const createdSessions = [];
+
+    for (const sessionPayload of generated.sessionsToCreate) {
+      const created = await PackageSession.create(sessionPayload);
+      if (created) createdSessions.push(created);
+    }
+
+    const sessionsAfterCreate = [...packageSessions, ...createdSessions];
+    const applied = applyCreditsToSessions({
+      packageRecord,
+      sessions: sessionsAfterCreate,
+      credits: packageCredits,
+      month: monthKey,
+      now: new Date(),
+    });
+
+    for (const update of applied.sessionUpdates) {
+      await PackageSession.update(update.id, update);
+    }
+    for (const update of applied.creditUpdates) {
+      await PackageCredit.update(update.id, update);
+    }
+
+    const existingBilling = packageBillings.find((item) => item.package_id === packageRecord.id && item.billing_month === monthKey);
+    const billingPayload = buildBillingPayload(packageRecord, applied.billing, existingBilling);
+    const billingRecord = existingBilling?.id
+      ? await PackageBilling.update(existingBilling.id, billingPayload)
+      : await PackageBilling.create(billingPayload);
+
+    const monthSessions = sessionsAfterCreate
+      .filter((session) => session.package_id === packageRecord.id && session.billing_month === monthKey && !session.deleted_at)
+      .map((session) => {
+        const sessionUpdate = applied.sessionUpdates.find((update) => update.id === session.id);
+        return { ...session, ...(sessionUpdate || {}) };
+      });
+
+    for (const session of monthSessions) {
+      if (!session.invoice_id && billingRecord?.id) {
+        await PackageSession.update(session.id, { invoice_id: billingRecord.id });
+      }
+      await ensureAppointmentForPackageSession({ ...session, invoice_id: billingRecord?.id || session.invoice_id }, packageRecord);
+    }
+
+    await ensureReceivableForPackageBilling(packageRecord, applied.billing, billingRecord);
+    await writeAuditLogs([...generated.logs, ...applied.logs]);
+    return {
+      createdSessions: createdSessions.length,
+      billing: applied.billing,
+    };
+  }
+
+  async function handleSyncPrepaidMonth(targetPackage = null) {
+    const monthKey = prepaidMonth || format(new Date(), "yyyy-MM");
+    let packagesToSync = targetPackage ? [targetPackage] : prepaidPackages.filter((item) => item.status === "ativo");
+    if (!targetPackage && packagesToSync.length === 0 && plans.length > 0) {
+      packagesToSync = await syncRecurringPackagesForPlans(plans.filter(isPrepaidPackagePlan));
+    }
+    if (!packagesToSync.length) {
+      alert("Nenhum pacote pré-pago ativo encontrado para gerar fichas.");
+      return;
+    }
+
+    setIsSyncingPrepaid(true);
+    try {
+      let createdCount = 0;
+      for (const packageRecord of packagesToSync) {
+        const result = await syncSinglePrepaidPackageMonth(packageRecord, monthKey);
+        createdCount += result.createdSessions;
+      }
+      await loadData({ skipSilentSync: true });
+      alert(`Geração concluída. ${createdCount} ficha(s) nova(s) criada(s).`);
+    } catch (error) {
+      console.error("Erro ao sincronizar pacotes pré-pagos:", error);
+      alert(error?.message || "Não foi possível gerar fichas e cobranças dos pacotes.");
+    }
+    setIsSyncingPrepaid(false);
+  }
+
+  async function handleManualSessionAction() {
+    if (!selectedPrepaidSession?.session || !selectedPrepaidSession?.action) return;
+    const { session, action } = selectedPrepaidSession;
+    const needsReason = action !== "realizada";
+    if (needsReason && !manualReason.trim()) {
+      alert("Informe o motivo do ajuste manual.");
+      return;
+    }
+
+    const actionMap = {
+      realizada: () => markSessionAsCompleted(session, { reason: manualReason || "Serviço realizado" }),
+      cancelada_com_credito: () => cancelSession(session, { reason: manualReason, withCredit: true }),
+      cancelada_sem_credito: () => cancelSession(session, { reason: manualReason, withCredit: false }),
+      falta_cobrada: () => markSessionAsNoShow(session, { charged: true, reason: manualReason }),
+      falta_nao_cobrada: () => markSessionAsNoShow(session, { charged: false, reason: manualReason }),
+    };
+    const result = actionMap[action]?.();
+    if (!result?.session) return;
+
+    setIsSaving(true);
+    try {
+      await PackageSession.update(session.id, {
+        status: result.session.status,
+        charged: result.session.charged,
+        cancellation_reason: result.session.cancellation_reason,
+        manual_reason: manualReason || result.log?.reason || null,
+      });
+      await writeAuditLogs([result.log]);
+      await handleSyncPrepaidMonth(prepaidPackages.find((item) => item.id === session.package_id));
+      setSelectedPrepaidSession(null);
+      setManualReason("");
+    } catch (error) {
+      console.error("Erro ao ajustar ficha:", error);
+      alert(error?.message || "Não foi possível ajustar esta ficha.");
+    }
+    setIsSaving(false);
   }
 
   async function handleSave() {
@@ -1393,7 +1819,7 @@ export default function PlanosConfig() {
     }
 
     if (!Number.isFinite(monthlyValuePerDog) || monthlyValuePerDog <= 0) {
-      alert("Informe um valor mensal por cão válido.");
+      alert(formData.service === "day_care" ? "Informe um valor mensal por cão válido." : "Informe um valor por atendimento válido.");
       return;
     }
 
@@ -1426,6 +1852,7 @@ export default function PlanosConfig() {
       const packageGroupKey = editingItem?.packageGroupKey || existingMetadata.package_group_key || createPackageGroupKey();
       const metadataGerencial = {
         ...existingMetadata,
+        prepaid_package_enabled: true,
         package_group_key: packageGroupKey,
         package_dog_count: packageDogCount,
         package_dog_ids: uniqueDogIds,
@@ -1459,6 +1886,7 @@ export default function PlanosConfig() {
             : formatDateOnly(firstBillingPreview.nextRecurringDueDate),
         metadataGerencial,
       };
+      const savedPlans = [];
 
       if (editingItem) {
         const existingPlans = editingItem.memberPlans || [editingItem];
@@ -1472,27 +1900,33 @@ export default function PlanosConfig() {
           });
 
           if (matchingPlan) {
-            await PlanConfig.update(matchingPlan.id, payload);
+            const updatedPlan = await PlanConfig.update(matchingPlan.id, payload);
+            savedPlans.push({ ...matchingPlan, ...payload, ...(updatedPlan || {}) });
           } else {
-            await PlanConfig.create(payload);
+            const createdPlan = await PlanConfig.create(payload);
+            savedPlans.push(createdPlan || payload);
           }
         }
 
         for (const existingPlan of existingPlans) {
           if (!uniqueDogIds.includes(existingPlan.dog_id)) {
+            await cancelRecurringPackageForPlan(existingPlan);
             await PlanConfig.delete(existingPlan.id);
           }
         }
       } else {
         for (const dogId of uniqueDogIds) {
-          await PlanConfig.create(
+          const createdPlan = await PlanConfig.create(
             getPlanGroupPayload({
               ...payloadBase,
               dogId,
             }),
           );
+          savedPlans.push(createdPlan);
         }
       }
+
+      await syncRecurringPackagesForPlans(savedPlans);
 
       await loadData();
       setShowModal(false);
@@ -1899,6 +2333,77 @@ export default function PlanosConfig() {
     };
   }, [appointments, deleteDate, deleteItem, groupReceivablesMap]);
 
+  const prepaidMonthKey = /^\d{4}-\d{2}$/.test(prepaidMonth) ? prepaidMonth : format(new Date(), "yyyy-MM");
+  const prepaidPackageViews = useMemo(() => {
+    return prepaidPackages
+      .filter((packageRecord) => packageRecord.status !== "cancelado")
+      .map((packageRecord) => {
+        const monthSessions = packageSessions
+          .filter((session) => session.package_id === packageRecord.id && session.billing_month === prepaidMonthKey && !session.deleted_at)
+          .sort((left, right) => String(left.scheduled_date).localeCompare(String(right.scheduled_date)));
+        const credits = packageCredits.filter((credit) => credit.package_id === packageRecord.id);
+        const availableCredits = getAvailableCredits(credits, packageRecord, parseDateOnly(`${prepaidMonthKey}-01`) || new Date());
+        const billing = packageBillings.find((item) => item.package_id === packageRecord.id && item.billing_month === prepaidMonthKey);
+        const dog = dogsById[packageRecord.pet_id];
+        const client = clientsById[packageRecord.client_id];
+        const serviceMeta = getServiceMeta(packageRecord.service_id);
+        const duplicateDates = monthSessions.reduce((accumulator, session) => {
+          const key = `${session.pet_id}|${session.service_id}|${session.scheduled_date}`;
+          accumulator[key] = (accumulator[key] || 0) + 1;
+          return accumulator;
+        }, {});
+        const hasDuplicate = Object.values(duplicateDates).some((count) => count > 1);
+        const sessionsWithoutBilling = monthSessions.some((session) => !session.invoice_id && !["cancelada_com_credito", "cancelada_sem_credito"].includes(session.status));
+        const billingWithoutSessions = Boolean(billing && monthSessions.length === 0);
+
+        return {
+          packageRecord,
+          dog,
+          client,
+          serviceMeta,
+          monthSessions,
+          credits,
+          availableCredits,
+          billing,
+          hasDuplicate,
+          sessionsWithoutBilling,
+          billingWithoutSessions,
+        };
+      })
+      .sort((left, right) => String(left.client?.nome_razao_social || "").localeCompare(String(right.client?.nome_razao_social || ""), "pt-BR"));
+  }, [clientsById, dogsById, packageBillings, packageCredits, packageSessions, prepaidMonthKey, prepaidPackages]);
+
+  const prepaidAlerts = useMemo(() => {
+    const alerts = [];
+    prepaidPackageViews.forEach((view) => {
+      const dogName = view.dog?.nome || "Cão";
+      if (view.availableCredits.length > 0) {
+        alerts.push(`${dogName} possui ${view.availableCredits.length} crédito(s) acumulado(s).`);
+      }
+      if (view.monthSessions.some((session) => session.status === "vencida_nao_utilizada")) {
+        alerts.push(`${dogName} tem ficha(s) vencida(s) não utilizada(s).`);
+      }
+      if (Number(view.billing?.credits_used || 0) > 0) {
+        alerts.push(`${dogName} teve cobrança reduzida por crédito em ${prepaidMonthKey}.`);
+      }
+      if (view.sessionsWithoutBilling) {
+        alerts.push(`${dogName} possui ficha prevista sem cobrança vinculada.`);
+      }
+      if (view.billingWithoutSessions) {
+        alerts.push(`${dogName} possui cobrança sem fichas vinculadas.`);
+      }
+      if (view.hasDuplicate) {
+        alerts.push(`${dogName} possui duplicidade de fichas para a mesma data/serviço.`);
+      }
+    });
+    return alerts;
+  }, [prepaidMonthKey, prepaidPackageViews]);
+
+  const selectedPrepaidView = useMemo(
+    () => prepaidPackageViews.find((view) => view.packageRecord.id === selectedPrepaidPackage?.id) || null,
+    [prepaidPackageViews, selectedPrepaidPackage],
+  );
+
   const activeService = getServiceMeta(formData.service);
   const ActiveServiceIcon = activeService.icon;
   const coverageCandidatesCount = candidateClients.filter((client) => getCoverageSummary(client, selectedDogIds).isFullyLinked).length;
@@ -1984,6 +2489,98 @@ export default function PlanosConfig() {
               }}
               filters={[]}
             />
+          </CardContent>
+        </Card>
+
+        <Card className="mb-6 border-emerald-200 bg-white">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <PackageCheck className="h-5 w-5 text-emerald-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">Fichas e créditos pré-pagos</h2>
+                </div>
+                <p className="mt-1 text-sm text-gray-600">
+                  Gere as fichas do mês, aplique créditos antigos primeiro e mantenha a cobrança separada dos agendamentos.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  type="month"
+                  value={prepaidMonth}
+                  onChange={(event) => setPrepaidMonth(event.target.value)}
+                  className="w-full sm:w-[180px]"
+                />
+                <Button
+                  onClick={() => handleSyncPrepaidMonth()}
+                  disabled={isSyncingPrepaid}
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                >
+                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  {isSyncingPrepaid ? "Atualizando..." : "Gerar mês"}
+                </Button>
+              </div>
+            </div>
+
+            {prepaidAlerts.length > 0 ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <div className="mb-2 flex items-center gap-2 text-amber-900">
+                  <AlertTriangle className="h-4 w-4" />
+                  <p className="font-semibold">Alertas do mês</p>
+                </div>
+                <div className="grid gap-2 text-sm text-amber-800 md:grid-cols-2">
+                  {prepaidAlerts.slice(0, 6).map((alert) => (
+                    <p key={alert}>• {alert}</p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {prepaidPackageViews.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500 lg:col-span-2">
+                  Nenhum pacote pré-pago foi criado ainda. Novos planos passam a alimentar esta área automaticamente.
+                </div>
+              ) : prepaidPackageViews.map((view) => {
+                const ServiceIcon = view.serviceMeta.icon;
+                return (
+                  <button
+                    key={view.packageRecord.id}
+                    type="button"
+                    onClick={() => setSelectedPrepaidPackage(view.packageRecord)}
+                    className="rounded-2xl border border-gray-200 bg-white p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50/40"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-gray-900">{view.client?.nome_razao_social || "Responsável financeiro"}</p>
+                        <p className="mt-1 text-sm text-gray-600">{view.dog?.nome || "Cão"} • {view.serviceMeta.label}</p>
+                      </div>
+                      <div className="rounded-full bg-emerald-100 p-2 text-emerald-700">
+                        <ServiceIcon className="h-4 w-4" />
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs">
+                      <div className="rounded-xl bg-gray-50 p-2">
+                        <p className="font-semibold text-gray-900">{view.monthSessions.length}</p>
+                        <p className="text-gray-500">Fichas</p>
+                      </div>
+                      <div className="rounded-xl bg-blue-50 p-2">
+                        <p className="font-semibold text-blue-700">{view.availableCredits.length}</p>
+                        <p className="text-blue-600">Créditos</p>
+                      </div>
+                      <div className="rounded-xl bg-emerald-50 p-2">
+                        <p className="font-semibold text-emerald-700">{view.billing?.charged_sessions ?? 0}</p>
+                        <p className="text-emerald-600">Cobradas</p>
+                      </div>
+                      <div className="rounded-xl bg-purple-50 p-2">
+                        <p className="font-semibold text-purple-700">{formatCurrency(view.billing?.total_amount || 0)}</p>
+                        <p className="text-purple-600">Total</p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
 
@@ -2169,6 +2766,170 @@ export default function PlanosConfig() {
             >
               <Pencil className="mr-2 h-4 w-4" />
               Editar plano
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(selectedPrepaidPackage)} onOpenChange={(open) => !open && setSelectedPrepaidPackage(null)}>
+        <DialogContent className="w-[95vw] max-w-[880px] max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Fichas do pacote pré-pago</DialogTitle>
+            <DialogDescription>
+              Visualize fichas, créditos, cobrança e ajustes auditáveis do mês selecionado.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedPrepaidView ? (
+            <div className="space-y-4 py-2">
+              <div className="grid gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-4 md:grid-cols-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Responsável</p>
+                  <p className="mt-2 font-semibold text-gray-900">{selectedPrepaidView.client?.nome_razao_social || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Dog</p>
+                  <p className="mt-2 font-semibold text-gray-900">{selectedPrepaidView.dog?.nome || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Serviço</p>
+                  <p className="mt-2 font-semibold text-gray-900">{selectedPrepaidView.serviceMeta.label}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Créditos disponíveis</p>
+                  <p className="mt-2 font-semibold text-blue-700">{selectedPrepaidView.availableCredits.length}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <div className="grid gap-3 sm:grid-cols-5">
+                  <div>
+                    <p className="text-xs text-emerald-700">Fichas previstas</p>
+                    <p className="font-semibold text-emerald-950">{selectedPrepaidView.billing?.expected_sessions ?? selectedPrepaidView.monthSessions.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-emerald-700">Canceladas antes</p>
+                    <p className="font-semibold text-emerald-950">{selectedPrepaidView.billing?.pre_cancelled_sessions ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-emerald-700">Créditos usados</p>
+                    <p className="font-semibold text-emerald-950">{selectedPrepaidView.billing?.credits_used ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-emerald-700">Fichas cobradas</p>
+                    <p className="font-semibold text-emerald-950">{selectedPrepaidView.billing?.charged_sessions ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-emerald-700">Valor total</p>
+                    <p className="font-semibold text-emerald-950">{formatCurrency(selectedPrepaidView.billing?.total_amount || 0)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => handleSyncPrepaidMonth(selectedPrepaidView.packageRecord)}
+                  disabled={isSyncingPrepaid}
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                >
+                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  Recalcular mês deste pacote
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                {selectedPrepaidView.monthSessions.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                    Nenhuma ficha gerada para este mês.
+                  </div>
+                ) : selectedPrepaidView.monthSessions.map((session) => (
+                  <div key={session.id} className="rounded-2xl border border-gray-200 bg-white p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {format(parseDateOnly(session.scheduled_date), "dd/MM/yyyy", { locale: ptBR })}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                          <Badge variant="outline">{PREPAID_SESSION_STATUS_LABELS[session.status] || session.status}</Badge>
+                          {session.covered_by_credit ? <Badge className="bg-blue-100 text-blue-700">Coberta por crédito</Badge> : null}
+                          {session.charged ? <Badge className="bg-emerald-100 text-emerald-700">Cobrada</Badge> : null}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "realizada" })}>
+                          Realizada
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "cancelada_com_credito" })}>
+                          Cancelar com crédito
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "cancelada_sem_credito" })}>
+                          Cancelar sem crédito
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "falta_cobrada" })}>
+                          Falta cobrada
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "falta_nao_cobrada" })}>
+                          Falta não cobrada
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedPrepaidPackage(null)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(selectedPrepaidSession)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedPrepaidSession(null);
+            setManualReason("");
+          }
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Ajuste manual da ficha</DialogTitle>
+            <DialogDescription>
+              Informe o motivo para manter o histórico auditável deste pacote.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+              Ação: <strong>{PREPAID_SESSION_STATUS_LABELS[selectedPrepaidSession?.action] || selectedPrepaidSession?.action || "-"}</strong>
+            </div>
+            <div>
+              <Label>Motivo</Label>
+              <Input
+                value={manualReason}
+                onChange={(event) => setManualReason(event.target.value)}
+                placeholder="Descreva o motivo do ajuste"
+                className="mt-2"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSelectedPrepaidSession(null);
+                setManualReason("");
+              }}
+              disabled={isSaving}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleManualSessionAction} disabled={isSaving} className="bg-emerald-600 text-white hover:bg-emerald-700">
+              Confirmar ajuste
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2520,7 +3281,11 @@ export default function PlanosConfig() {
                   <div className="space-y-4">
                     <div>
                       <div className="flex items-center justify-between gap-3">
-                        <Label>{packageDogCount > 1 ?"Valor mensal por cão *" : "Valor mensal *"}</Label>
+                        <Label>
+                          {formData.service === "day_care"
+                            ? (packageDogCount > 1 ?"Valor mensal por cão *" : "Valor mensal *")
+                            : "Valor por atendimento *"}
+                        </Label>
                         {formData.service === "day_care" ?(
                           <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
                             <Switch
@@ -2550,7 +3315,7 @@ export default function PlanosConfig() {
                             :"Cadastre este pacote em Preços e descontos > Day Care para usar o valor automático."
                           : packageDogCount > 1
                             ?"Cada plano salvo recebe este valor por cão. O total do pacote fica no resumo abaixo."
-                            : "Este será o valor mensal do plano."}
+                            : "Este será o valor unitário de cada atendimento do pacote."}
                       </p>
                     </div>
 

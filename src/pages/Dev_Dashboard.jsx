@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Empresa, PerfilAcesso, User, UserInvite, UserProfile, UserUnitAccess } from "@/api/entities";
 import { SendEmail } from "@/api/integrations";
 import { createPageUrl } from "@/utils";
+import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -278,7 +279,9 @@ export default function Dev_Dashboard() {
   }
 
   async function handleSendInvite() {
-    if (!inviteForm.full_name || !inviteForm.email) {
+    const formattedName = formatDisplayName(inviteForm.full_name);
+
+    if (!formattedName || !inviteForm.email) {
       alert("Preencha nome completo e email.");
       return;
     }
@@ -296,7 +299,7 @@ export default function Dev_Dashboard() {
 
       const invitePayload = {
         token,
-        full_name: inviteForm.full_name.trim(),
+        full_name: formattedName,
         email: inviteForm.email.trim().toLowerCase(),
         empresa_id: inviteForm.is_platform_admin ? null : inviteForm.empresa_id || null,
         access_profile_id: inviteForm.access_profile_id || null,
@@ -862,7 +865,8 @@ export default function Dev_Dashboard() {
               <Label>Nome completo</Label>
               <Input
                 value={inviteForm.full_name}
-                onChange={(event) => setInviteForm((current) => ({ ...current, full_name: event.target.value }))}
+                onChange={(event) => setInviteForm((current) => ({ ...current, full_name: sanitizeDisplayNameInput(event.target.value) }))}
+                onBlur={() => setInviteForm((current) => ({ ...current, full_name: formatDisplayName(current.full_name) }))}
                 className="mt-2"
               />
             </div>

@@ -49,6 +49,16 @@ export const Replacement = appClient.entities.Replacement;
 
 export const PlanConfig = appClient.entities.PlanConfig;
 
+export const RecurringPackage = appClient.entities.RecurringPackage;
+
+export const PackageSession = appClient.entities.PackageSession;
+
+export const PackageCredit = appClient.entities.PackageCredit;
+
+export const PackageBilling = appClient.entities.PackageBilling;
+
+export const AuditLog = appClient.entities.AuditLog;
+
 export const IntegracaoConfig = appClient.entities.IntegracaoConfig;
 
 export const Receita = appClient.entities.Receita;

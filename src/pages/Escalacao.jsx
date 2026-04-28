@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, Camera, Clock3, Coffee, Plus, ShieldCheck, Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarClock, Clock3, Coffee, Copy, Link as LinkIcon, Plus, ShieldCheck, Users } from "lucide-react";
 
 import { ServiceProvider, ServiceProviderSchedule, User } from "@/api/entities";
-import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Badge } from "@/components/ui/badge";
@@ -17,8 +16,9 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { TimePickerInput } from "@/components/common/DateTimeInputs";
-import { isValidCpfChecksum, normalizeCpfDigits } from "@/lib/cpf-validation";
-import { isImagePreviewable, openImageViewer } from "@/utils";
+import { normalizeCpfDigits } from "@/lib/cpf-validation";
+import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
+import { createPageUrl } from "@/utils";
 
 const ROLE_OPTIONS = [
   { value: "monitor", label: "Monitor" },
@@ -50,8 +50,7 @@ const COVERAGE_FILTERS = [
 
 const EMPTY_PROVIDER_FORM = {
   nome: "",
-  cpf: "",
-  selfie_url: "",
+  registration_token: "",
 };
 
 const EMPTY_SCHEDULE_FORM = {
@@ -82,6 +81,13 @@ function formatCpf(value) {
   const digits = normalizeCpfDigits(value);
   if (digits.length !== 11) return value || "";
   return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+}
+
+function createRegistrationToken() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function formatTimeRange(startTime, endTime) {
@@ -155,7 +161,7 @@ export default function Escalacao() {
   const [isSaving, setIsSaving] = useState(false);
   const [loadWarnings, setLoadWarnings] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
-  const providerSelfieInputRef = useRef(null);
+  const [generatedProviderLink, setGeneratedProviderLink] = useState("");
 
   useEffect(() => {
     loadData();
@@ -197,6 +203,7 @@ export default function Escalacao() {
   function resetProviderDialog() {
     setEditingProvider(null);
     setProviderForm(EMPTY_PROVIDER_FORM);
+    setGeneratedProviderLink("");
     setShowProviderDialog(false);
   }
 
@@ -269,51 +276,29 @@ export default function Escalacao() {
     }).length;
   }, [coverageRoleValues, providerById, schedules, searchTerm]);
 
+  function buildProviderRegistrationLink(token) {
+    if (!token || typeof window === "undefined") return "";
+    return `${window.location.origin}${createPageUrl("CadastroMonitorPublico")}?token=${encodeURIComponent(token)}`;
+  }
+
+  async function copyText(value, successMessage = "Link copiado.") {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      alert(successMessage);
+    } catch {
+      window.prompt("Copie o link de cadastro:", value);
+    }
+  }
+
   function openProviderDialog(provider = null) {
     setEditingProvider(provider);
     setProviderForm({
       nome: provider?.nome || "",
-      cpf: formatCpf(provider?.cpf || ""),
-      selfie_url: provider?.selfie_url || "",
+      registration_token: provider?.registration_token || "",
     });
+    setGeneratedProviderLink(provider?.registration_token ? buildProviderRegistrationLink(provider.registration_token) : "");
     setShowProviderDialog(true);
-  }
-
-  async function uploadProviderSelfie(file) {
-    if (!file) return;
-    try {
-      setIsSaving(true);
-      const empresaId = currentUser?.empresa_id || currentUser?.active_unit_id || "empresa-default";
-      const safeName = `${Date.now()}_${(file.name || "selfie").replace(/\s+/g, "_")}`;
-      const path = `${empresaId}/escalacao/funcionarios/${safeName}`;
-      const result = await UploadPrivateFile({ file, path });
-      const storedPath = result?.file_key || result?.path || "";
-      if (!storedPath) {
-        alert("Não foi possível enviar a selfie.");
-        return;
-      }
-      setProviderForm((current) => ({ ...current, selfie_url: storedPath }));
-    } catch (error) {
-      console.error("Erro ao enviar selfie do funcionário:", error);
-      alert("Não foi possível enviar a selfie do funcionário.");
-    }
-    setIsSaving(false);
-  }
-
-  async function openSelfiePreview(path, title = "Selfie do funcionário") {
-    if (!path) return;
-    try {
-      const signed = await CreateFileSignedUrl({ path, expires: 3600 });
-      const url = signed?.signedUrl || signed?.url;
-      if (!url) return;
-      if (isImagePreviewable(path) || isImagePreviewable(url)) {
-        openImageViewer(url, title);
-        return;
-      }
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (error) {
-      alert("Não foi possível abrir a selfie.");
-    }
   }
 
   function openScheduleDialog(schedule = null) {
@@ -333,53 +318,59 @@ export default function Escalacao() {
   }
 
   async function handleSaveProvider() {
-    const nome = providerForm.nome.trim();
-    const cpf = normalizeCpfDigits(providerForm.cpf);
+    const nome = formatDisplayName(providerForm.nome);
 
     if (!nome) {
       alert("Informe o nome do funcionário.");
       return;
     }
 
-    if (!isValidCpfChecksum(cpf)) {
-      alert("Informe um CPF válido.");
-      return;
-    }
-
-    if (!providerForm.selfie_url) {
-      alert("Envie a selfie do funcionário.");
-      return;
-    }
-
-    const duplicatedProvider = providers.find((item) =>
-      item.id !== editingProvider?.id
-      && normalizeCpfDigits(item?.cpf) === cpf
-    );
-    if (duplicatedProvider) {
-      alert("Já existe um funcionário cadastrado com este CPF.");
-      return;
-    }
-
     setIsSaving(true);
     try {
+      const token = providerForm.registration_token || editingProvider?.registration_token || createRegistrationToken();
       const payload = {
         nome,
-        cpf,
-        selfie_url: providerForm.selfie_url || "",
+        registration_token: token,
+        registration_status: editingProvider?.registration_status || "pendente",
         ativo: true,
       };
 
       if (editingProvider?.id) {
-        await ServiceProvider.update(editingProvider.id, payload);
+        const updated = await ServiceProvider.update(editingProvider.id, payload);
+        const link = buildProviderRegistrationLink(updated?.registration_token || token);
+        setGeneratedProviderLink(link);
+        await copyText(link, "Link de cadastro copiado.");
       } else {
-        await ServiceProvider.create(payload);
+        const created = await ServiceProvider.create(payload);
+        const link = buildProviderRegistrationLink(created?.registration_token || token);
+        setGeneratedProviderLink(link);
+        await copyText(link, "Link de cadastro criado e copiado.");
       }
 
       await loadData();
-      resetProviderDialog();
     } catch (error) {
       console.error("Erro ao salvar funcionário:", error);
       alert(error?.message || "Não foi possível salvar o funcionário.");
+    }
+    setIsSaving(false);
+  }
+
+  async function copyProviderRegistrationLink(provider) {
+    if (!provider?.id) return;
+    setIsSaving(true);
+    try {
+      const token = provider.registration_token || createRegistrationToken();
+      if (!provider.registration_token) {
+        await ServiceProvider.update(provider.id, {
+          registration_token: token,
+          registration_status: provider.registration_status || "pendente",
+        });
+        await loadData();
+      }
+      await copyText(buildProviderRegistrationLink(token), "Link de cadastro copiado.");
+    } catch (error) {
+      console.error("Erro ao copiar link de cadastro:", error);
+      alert(error?.message || "Não foi possível gerar o link de cadastro.");
     }
     setIsSaving(false);
   }
@@ -642,6 +633,10 @@ export default function Escalacao() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
+                              <Button variant="outline" size="sm" onClick={() => copyProviderRegistrationLink(provider)} disabled={isSaving}>
+                                <Copy className="mr-2 h-3.5 w-3.5" />
+                                Link
+                              </Button>
                               <Button variant="outline" size="sm" onClick={() => openProviderDialog(provider)}>
                                 Editar
                               </Button>
@@ -779,7 +774,7 @@ export default function Escalacao() {
           <DialogHeader>
             <DialogTitle>{editingProvider ? "Editar funcionário" : "Novo funcionário"}</DialogTitle>
             <DialogDescription>
-              Cadastre nome e CPF para incluir o funcionário na escala da unidade.
+              Informe apenas o nome completo para gerar o link de cadastro do funcionário.
             </DialogDescription>
           </DialogHeader>
 
@@ -788,49 +783,33 @@ export default function Escalacao() {
               <Label>Nome</Label>
               <Input
                 value={providerForm.nome}
-                onChange={(event) => setProviderForm((current) => ({ ...current, nome: event.target.value }))}
+                onChange={(event) => setProviderForm((current) => ({ ...current, nome: sanitizeDisplayNameInput(event.target.value) }))}
+                onBlur={() => setProviderForm((current) => ({ ...current, nome: formatDisplayName(current.nome) }))}
                 placeholder="Nome completo"
               />
             </div>
-            <div className="space-y-2">
-              <Label>CPF</Label>
-              <Input
-                value={providerForm.cpf}
-                onChange={(event) => setProviderForm((current) => ({ ...current, cpf: event.target.value }))}
-                placeholder="000.000.000-00"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Selfie do funcionário</Label>
-              <input
-                ref={providerSelfieInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(event) => uploadProviderSelfie(event.target.files?.[0])}
-              />
-              <Button type="button" variant="outline" onClick={() => providerSelfieInputRef.current?.click()}>
-                <Camera className="mr-2 h-4 w-4" />
-                {providerForm.selfie_url ? "Trocar selfie" : "Enviar selfie"}
-              </Button>
-              {providerForm.selfie_url ? (
-                <button
-                  type="button"
-                  onClick={() => openSelfiePreview(providerForm.selfie_url)}
-                  className="block text-sm text-blue-600"
-                >
-                  Ver selfie enviada
-                </button>
-              ) : (
-                <p className="text-sm text-gray-500">A selfie é obrigatória para cadastrar o funcionário.</p>
+            {generatedProviderLink ? (
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3">
+                <Label>Link de cadastro</Label>
+                <div className="mt-2 flex gap-2">
+                  <Input value={generatedProviderLink} readOnly className="bg-white" />
+                  <Button type="button" variant="outline" onClick={() => copyText(generatedProviderLink, "Link copiado.")}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+                <LinkIcon className="h-4 w-4 text-blue-600" />
+                Ao salvar, o link será criado e copiado automaticamente.
+              </div>
               )}
-            </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={resetProviderDialog}>Cancelar</Button>
             <Button onClick={handleSaveProvider} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
-              Salvar
+              {editingProvider ? "Salvar e copiar link" : "Gerar link"}
             </Button>
           </DialogFooter>
         </DialogContent>

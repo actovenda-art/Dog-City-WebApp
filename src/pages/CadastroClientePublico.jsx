@@ -34,16 +34,16 @@ import {
 } from "lucide-react";
 
 const STEP_DEFINITIONS = [
-  { id: "responsavel", label: "ResponsÃ¡vel", icon: UserRound },
-  { id: "caes", label: "CÃ£es", icon: Dog },
-  { id: "financeiro", label: "ResponsÃ¡vel Financeiro", icon: Wallet },
+  { id: "responsavel", label: "Responsável", icon: UserRound },
+  { id: "caes", label: "Cães", icon: Dog },
+  { id: "financeiro", label: "Responsável Financeiro", icon: Wallet },
 ];
 
 const DOG_SECTION_DEFINITIONS = [
-  { id: "basico", label: "InformaÃ§Ãµes bÃ¡sicas", icon: ShieldCheck },
-  { id: "alimentacao", label: "AlimentaÃ§Ã£o", icon: UtensilsCrossed },
-  { id: "cuidados", label: "RestriÃ§Ãµes e Cuidados", icon: HeartPulse },
-  { id: "observacoes", label: "ObservaÃ§Ãµes", icon: NotebookPen },
+  { id: "basico", label: "Informações básicas", icon: ShieldCheck },
+  { id: "alimentacao", label: "Alimentação", icon: UtensilsCrossed },
+  { id: "cuidados", label: "Restrições e Cuidados", icon: HeartPulse },
+  { id: "observacoes", label: "Observações", icon: NotebookPen },
 ];
 
 const OPTIONAL_TEXT = "opcional";
@@ -196,7 +196,7 @@ function formatDisplayName(value) {
 }
 
 function formatDogTitle(dog, index) {
-  return dog?.nome?.trim() || `${index + 1}Âº Dog`;
+  return dog?.nome?.trim() || `${index + 1}º Dog`;
 }
 
 function hasValue(value) {
@@ -219,19 +219,19 @@ function getTextFieldError({
 
   switch (kind) {
     case "email":
-      return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email vÃ¡lido.";
+      return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email válido.";
     case "cpf":
-      return digits.length === 11 ? "" : "Digite um CPF com 11 nÃºmeros.";
+      return digits.length === 11 ? "" : "Digite um CPF com 11 números.";
     case "cpf_cnpj":
-      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ vÃ¡lido.";
+      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ válido.";
     case "phone":
-      return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular vÃ¡lido.";
+      return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular válido.";
     case "cep":
-      return digits.length === 8 ? "" : "Digite um CEP vÃ¡lido.";
+      return digits.length === 8 ? "" : "Digite um CEP válido.";
     case "state":
       return trimmedValue.length === 2 ? "" : "Use a sigla do estado com 2 letras.";
     case "weight":
-      return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas nÃºmeros, vÃ­rgula ou ponto.";
+      return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas números, vírgula ou ponto.";
     default:
       return "";
   }
@@ -239,18 +239,18 @@ function getTextFieldError({
 
 function validateResponsavel(form) {
   if (!form.nome_completo || !form.cpf || !form.celular || !form.email) {
-    return "Preencha nome completo, CPF, celular e email do responsÃ¡vel.";
+    return "Preencha nome completo, CPF, celular e email do responsável.";
   }
   return "";
 }
 
 function validateDogs(dogs) {
   if (!Array.isArray(dogs) || dogs.length === 0) {
-    return "Adicione ao menos um cÃ£o para continuar.";
+    return "Adicione ao menos um cão para continuar.";
   }
   const invalidDog = dogs.find((dog) => !dog.nome || !dog.raca);
   if (invalidDog) {
-    return "Cada cÃ£o precisa ter pelo menos nome e raÃ§a informados.";
+    return "Cada cão precisa ter pelo menos nome e raça informados.";
   }
   return "";
 }
@@ -269,7 +269,7 @@ function validateFinanceiro(form) {
     || !form.state
     || !form.vencimento_planos
   ) {
-    return "Preencha os dados principais do responsÃ¡vel financeiro, incluindo endereÃ§o e vencimento.";
+    return "Preencha os dados principais do responsável financeiro, incluindo endereço e vencimento.";
   }
 
   if (
@@ -280,7 +280,7 @@ function validateFinanceiro(form) {
     || !form.contato_alinhamentos_celular
     || !form.contato_alinhamentos_email
   ) {
-    return "Preencha os contatos para orÃ§amentos e para avisos e tratativas de alinhamento.";
+    return "Preencha os contatos para orçamentos e para avisos e tratativas de alinhamento.";
   }
 
   return "";
@@ -615,7 +615,7 @@ export default function CadastroClientePublico() {
           state: data.uf || current.state,
         }));
       } catch (error) {
-        console.warn("Erro ao buscar CEP do responsÃ¡vel financeiro:", error);
+        console.warn("Erro ao buscar CEP do responsável financeiro:", error);
       } finally {
         if (!cancelled) {
           setAddressLoading(false);
@@ -651,7 +651,7 @@ export default function CadastroClientePublico() {
     setSuccessMessage("");
 
     if (!token) {
-      setErrorMessage("Link de cadastro invÃ¡lido. Solicite um novo link Ã  equipe da Dog City Brasil.");
+      setErrorMessage("Link de cadastro inválido. Solicite um novo link à equipe da Dog City Brasil.");
       setIsLoading(false);
       return;
     }
@@ -679,7 +679,7 @@ export default function CadastroClientePublico() {
       }
     } catch (error) {
       console.error("Erro ao carregar contexto do cadastro do cliente:", error);
-      setErrorMessage(error?.message || "NÃ£o foi possÃ­vel carregar este link de cadastro.");
+      setErrorMessage(error?.message || "Não foi possível carregar este link de cadastro.");
     } finally {
       setIsLoading(false);
     }
@@ -796,8 +796,8 @@ export default function CadastroClientePublico() {
             setErrorMessage(cpfValidation.message);
             return;
           }
-        } catch (error) {
-          setErrorMessage(error?.message || "NÃ£o foi possÃ­vel validar o CPF do responsÃ¡vel financeiro.");
+          } catch (error) {
+          setErrorMessage(error?.message || "Não foi possível validar o CPF do responsável financeiro.");
           return;
         }
       }
@@ -821,10 +821,10 @@ export default function CadastroClientePublico() {
         },
       });
 
-      setSuccessMessage("Cadastro enviado com sucesso. Nossa equipe vai seguir com os prÃ³ximos passos.");
+      setSuccessMessage("Cadastro enviado com sucesso. Nossa equipe vai seguir com os próximos passos.");
     } catch (error) {
       console.error("Erro ao concluir cadastro do cliente:", error);
-      setErrorMessage(error?.message || "NÃ£o foi possÃ­vel concluir o cadastro.");
+      setErrorMessage(error?.message || "Não foi possível concluir o cadastro.");
     } finally {
       setIsSaving(false);
     }
@@ -853,8 +853,8 @@ export default function CadastroClientePublico() {
           setErrorMessage(cpfValidation.message);
           return;
         }
-      } catch (error) {
-        setErrorMessage(error?.message || "NÃ£o foi possÃ­vel validar o CPF do responsÃ¡vel.");
+        } catch (error) {
+        setErrorMessage(error?.message || "Não foi possível validar o CPF do responsável.");
         return;
       }
     }
@@ -873,8 +873,8 @@ export default function CadastroClientePublico() {
           value: responsavelForm.nome_completo,
           onChange: (event) => setResponsavelForm((current) => ({ ...current, nome_completo: sanitizeDisplayNameInput(event.target.value) })),
           onBlur: () => setResponsavelForm((current) => ({ ...current, nome_completo: formatDisplayName(current.nome_completo) })),
-          placeholder: "Como devemos chamar o responsÃ¡vel",
-          requiredMessage: "Informe o nome completo do responsÃ¡vel.",
+          placeholder: "Como devemos chamar o responsável",
+          requiredMessage: "Informe o nome completo do responsável.",
           className: "md:col-span-2",
         })}
         {renderTextField({
@@ -885,7 +885,7 @@ export default function CadastroClientePublico() {
           onChange: (event) => setResponsavelForm((current) => ({ ...current, cpf: formatCPF(event.target.value) })),
           maxLength: 14,
           placeholder: "000.000.000-00",
-          requiredMessage: "Informe o CPF do responsÃ¡vel.",
+          requiredMessage: "Informe o CPF do responsável.",
         })}
         {renderTextField({
           fieldKey: "responsavel.celular",
@@ -895,7 +895,7 @@ export default function CadastroClientePublico() {
           onChange: (event) => setResponsavelForm((current) => ({ ...current, celular: formatPhone(event.target.value) })),
           maxLength: 15,
           placeholder: "(00) 00000-0000",
-          requiredMessage: "Informe o celular principal do responsÃ¡vel.",
+          requiredMessage: "Informe o celular principal do responsável.",
         })}
         {renderTextField({
           fieldKey: "responsavel.celular_alternativo",
@@ -915,7 +915,7 @@ export default function CadastroClientePublico() {
           onChange: (event) => setResponsavelForm((current) => ({ ...current, email: event.target.value })),
           type: "email",
           placeholder: "email@exemplo.com",
-          requiredMessage: "Informe o email do responsÃ¡vel.",
+          requiredMessage: "Informe o email do responsável.",
         })}
       </div>
     );
@@ -942,10 +942,10 @@ export default function CadastroClientePublico() {
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.raca`,
-          label: "RaÃ§a",
+          label: "Raça",
           value: dog.raca,
           onChange: (event) => updateDog(dogIndex, { raca: event.target.value }),
-          requiredMessage: "Informe a raÃ§a do dog.",
+          requiredMessage: "Informe a raça do dog.",
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.peso`,
@@ -974,7 +974,7 @@ export default function CadastroClientePublico() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="macho">Macho</SelectItem>
-                <SelectItem value="femea">FÃªmea</SelectItem>
+                <SelectItem value="femea">Fêmea</SelectItem>
               </SelectContent>
             </Select>
           ),
@@ -988,7 +988,7 @@ export default function CadastroClientePublico() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pequeno">Pequeno</SelectItem>
-                <SelectItem value="medio">MÃ©dio</SelectItem>
+                <SelectItem value="medio">Médio</SelectItem>
                 <SelectItem value="grande">Grande</SelectItem>
               </SelectContent>
             </Select>
@@ -1006,7 +1006,7 @@ export default function CadastroClientePublico() {
           label: "Pelagem",
           value: dog.pelagem,
           onChange: (event) => updateDog(dogIndex, { pelagem: event.target.value }),
-          placeholder: "Ex: curta, mÃ©dia ou longa",
+          placeholder: "Ex: curta, média ou longa",
           requiredMessage: "Informe o tipo de pelagem.",
         })}
         <div className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
@@ -1017,7 +1017,7 @@ export default function CadastroClientePublico() {
           <Switch checked={!!dog.castrado} onCheckedChange={(checked) => updateDog(dogIndex, { castrado: checked })} />
         </div>
         {renderSelectField({
-          label: "1Âª revacinaÃ§Ã£o",
+          label: "1ª revacinação",
           optional: true,
           children: (
             <DatePickerInput
@@ -1028,14 +1028,14 @@ export default function CadastroClientePublico() {
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.nome_vacina_revacinacao_1`,
-          label: "Vacina da 1Âª revacinaÃ§Ã£o",
+          label: "Vacina da 1ª revacinação",
           optional: true,
           value: dog.nome_vacina_revacinacao_1,
           onChange: (event) => updateDog(dogIndex, { nome_vacina_revacinacao_1: event.target.value }),
-          placeholder: "Ex: V10, AntirrÃ¡bica",
+          placeholder: "Ex: V10, Antirrábica",
         })}
         {renderSelectField({
-          label: "2Âª revacinaÃ§Ã£o",
+          label: "2ª revacinação",
           optional: true,
           children: (
             <DatePickerInput
@@ -1046,14 +1046,14 @@ export default function CadastroClientePublico() {
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.nome_vacina_revacinacao_2`,
-          label: "Vacina da 2Âª revacinaÃ§Ã£o",
+          label: "Vacina da 2ª revacinação",
           optional: true,
           value: dog.nome_vacina_revacinacao_2,
           onChange: (event) => updateDog(dogIndex, { nome_vacina_revacinacao_2: event.target.value }),
-          placeholder: "Ex: V10, AntirrÃ¡bica",
+          placeholder: "Ex: V10, Antirrábica",
         })}
         {renderSelectField({
-          label: "3Âª revacinaÃ§Ã£o",
+          label: "3ª revacinação",
           optional: true,
           children: (
             <DatePickerInput
@@ -1064,11 +1064,11 @@ export default function CadastroClientePublico() {
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.nome_vacina_revacinacao_3`,
-          label: "Vacina da 3Âª revacinaÃ§Ã£o",
+          label: "Vacina da 3ª revacinação",
           optional: true,
           value: dog.nome_vacina_revacinacao_3,
           onChange: (event) => updateDog(dogIndex, { nome_vacina_revacinacao_3: event.target.value }),
-          placeholder: "Ex: V10, AntirrÃ¡bica",
+          placeholder: "Ex: V10, Antirrábica",
         })}
       </div>
     );
@@ -1079,7 +1079,7 @@ export default function CadastroClientePublico() {
     return (
       <div key={`meal-public-${mealIndex}`} className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-slate-900">{mealIndex + 1}Âª refeiÃ§Ã£o</p>
+          <p className="text-sm font-semibold text-slate-900">{mealIndex + 1}ª refeição</p>
           <Button type="button" variant="outline" size="sm" onClick={() => removeDogMeal(dogIndex, mealIndex)} className="rounded-xl">
             <Trash2 className="mr-2 h-4 w-4" />
             Remover
@@ -1092,10 +1092,10 @@ export default function CadastroClientePublico() {
             value: meal.qnt || "",
             onChange: (event) => updateDogMeal(dogIndex, mealIndex, "qnt", event.target.value),
             placeholder: "Ex: 120g",
-            requiredMessage: "Informe a quantidade desta refeiÃ§Ã£o.",
+            requiredMessage: "Informe a quantidade desta refeição.",
           })}
           {renderSelectField({
-            label: "HorÃ¡rio",
+            label: "Horário",
             children: (
               <TimePickerInput
                 value={meal.horario || ""}
@@ -1105,11 +1105,11 @@ export default function CadastroClientePublico() {
           })}
           {renderTextField({
             fieldKey: `caes.${dogIndex}.refeicoes.${mealIndex}.obs`,
-            label: "ObservaÃ§Ã£o",
+            label: "Observação",
             optional: true,
             value: meal.obs || "",
             onChange: (event) => updateDogMeal(dogIndex, mealIndex, "obs", event.target.value),
-            placeholder: "Ex: misturar com sachÃª",
+            placeholder: "Ex: misturar com sachê",
           })}
         </div>
       </div>
@@ -1121,14 +1121,14 @@ export default function CadastroClientePublico() {
       <div className="space-y-4">
         <div className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
           <div>
-            <p className="text-sm font-semibold text-slate-900">AlimentaÃ§Ã£o natural</p>
+            <p className="text-sm font-semibold text-slate-900">Alimentação natural</p>
             <p className="text-xs text-slate-500">Ao marcar, os campos de marca, sabor e tipo ficam ocultos.</p>
           </div>
           <Switch
             checked={!!dog.alimentacao_natural}
             onCheckedChange={(checked) => updateDog(dogIndex, {
               alimentacao_natural: checked,
-              alimentacao_tipo: checked ? "AlimentaÃ§Ã£o natural" : dog.alimentacao_tipo,
+              alimentacao_tipo: checked ? "Alimentação natural" : dog.alimentacao_tipo,
               alimentacao_marca_racao: checked ? "" : dog.alimentacao_marca_racao,
               alimentacao_sabor: checked ? "" : dog.alimentacao_sabor,
             })}
@@ -1138,7 +1138,7 @@ export default function CadastroClientePublico() {
           <div className="grid gap-4 md:grid-cols-3">
             {renderTextField({
               fieldKey: `caes.${dogIndex}.alimentacao_marca_racao`,
-              label: "Marca da raÃ§Ã£o",
+              label: "Marca da ração",
               optional: true,
               value: dog.alimentacao_marca_racao,
               onChange: (event) => updateDog(dogIndex, { alimentacao_marca_racao: event.target.value }),
@@ -1156,19 +1156,19 @@ export default function CadastroClientePublico() {
               optional: true,
               value: dog.alimentacao_tipo,
               onChange: (event) => updateDog(dogIndex, { alimentacao_tipo: event.target.value }),
-              placeholder: "Ex: seca, Ãºmida ou natural",
+              placeholder: "Ex: seca, úmida ou natural",
             })}
           </div>
         ) : (
           <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            O dog estÃ¡ marcado com alimentaÃ§Ã£o natural.
+            O dog está marcado com alimentação natural.
           </div>
         )}
         <div className="rounded-[24px] border border-slate-200 bg-slate-50/85 p-4">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-slate-900">RefeiÃ§Ãµes</p>
-              <p className="text-xs text-slate-500">Comece com uma linha e adicione outras quando necessÃ¡rio.</p>
+              <p className="text-sm font-semibold text-slate-900">Refeições</p>
+              <p className="text-xs text-slate-500">Comece com uma linha e adicione outras quando necessário.</p>
             </div>
             <Button type="button" variant="outline" onClick={() => addDogMeal(dogIndex)} disabled={(dog.refeicoes || []).length >= 4} className="rounded-xl">
               <Plus className="mr-2 h-4 w-4" />
@@ -1197,7 +1197,7 @@ export default function CadastroClientePublico() {
         })}
         {renderTextAreaField({
           fieldKey: `caes.${dogIndex}.restricoes_cuidados`,
-          label: "RestriÃ§Ãµes e cuidados",
+          label: "Restrições e cuidados",
           optional: true,
           value: dog.restricoes_cuidados,
           onChange: (event) => updateDog(dogIndex, { restricoes_cuidados: event.target.value }),
@@ -1206,21 +1206,21 @@ export default function CadastroClientePublico() {
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.veterinario_responsavel`,
-          label: "VeterinÃ¡rio responsÃ¡vel",
+          label: "Veterinário responsável",
           optional: true,
           value: dog.veterinario_responsavel,
           onChange: (event) => updateDog(dogIndex, { veterinario_responsavel: event.target.value }),
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.veterinario_horario_atendimento`,
-          label: "HorÃ¡rio de atendimento",
+          label: "Horário de atendimento",
           optional: true,
           value: dog.veterinario_horario_atendimento,
           onChange: (event) => updateDog(dogIndex, { veterinario_horario_atendimento: event.target.value }),
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.veterinario_telefone`,
-          label: "Telefone do veterinÃ¡rio",
+          label: "Telefone do veterinário",
           optional: true,
           kind: "phone",
           value: dog.veterinario_telefone,
@@ -1229,7 +1229,7 @@ export default function CadastroClientePublico() {
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.veterinario_clinica_telefone`,
-          label: "Telefone da clÃ­nica",
+          label: "Telefone da clínica",
           optional: true,
           kind: "phone",
           value: dog.veterinario_clinica_telefone,
@@ -1238,7 +1238,7 @@ export default function CadastroClientePublico() {
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.veterinario_endereco`,
-          label: "EndereÃ§o veterinÃ¡rio / clÃ­nica",
+          label: "Endereço veterinário / clínica",
           optional: true,
           value: dog.veterinario_endereco,
           onChange: (event) => updateDog(dogIndex, { veterinario_endereco: event.target.value }),
@@ -1247,8 +1247,8 @@ export default function CadastroClientePublico() {
           <div className="rounded-[24px] border border-slate-200 bg-white/90 p-4 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-slate-900">Medicamentos de longo perÃ­odo / vitalÃ­cio</p>
-                <p className="text-xs text-slate-500">Informe especificaÃ§Ãµes, cuidados, horÃ¡rio e dose.</p>
+                <p className="text-sm font-semibold text-slate-900">Medicamentos de longo período / vitalício</p>
+                <p className="text-xs text-slate-500">Informe especificações, cuidados, horário e dose.</p>
               </div>
               <Button type="button" variant="outline" onClick={() => addDogMedication(dogIndex)} className="rounded-xl">
                 <Plus className="mr-2 h-4 w-4" />
@@ -1268,7 +1268,7 @@ export default function CadastroClientePublico() {
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     {renderTextField({
                       fieldKey: `caes.${dogIndex}.medicamentos.${medicationIndex}.especificacoes`,
-                      label: "EspecificaÃ§Ãµes",
+                      label: "Especificações",
                       optional: true,
                       value: medicacao.especificacoes || "",
                       onChange: (event) => updateDogMedication(dogIndex, medicationIndex, "especificacoes", event.target.value),
@@ -1281,7 +1281,7 @@ export default function CadastroClientePublico() {
                       onChange: (event) => updateDogMedication(dogIndex, medicationIndex, "cuidados", event.target.value),
                     })}
                     {renderSelectField({
-                      label: "HorÃ¡rio",
+                      label: "Horário",
                       optional: true,
                       children: (
                         <TimePickerInput
@@ -1311,12 +1311,12 @@ export default function CadastroClientePublico() {
     return (
       renderTextAreaField({
         fieldKey: `caes.${dogIndex}.observacoes_gerais`,
-        label: "ObservaÃ§Ãµes gerais",
+        label: "Observações gerais",
         optional: true,
         value: dog.observacoes_gerais,
         onChange: (event) => updateDog(dogIndex, { observacoes_gerais: event.target.value }),
         rows: 6,
-        placeholder: "Informe aqui detalhes importantes sobre comportamento, rotina, preferÃªncias ou observaÃ§Ãµes gerais.",
+        placeholder: "Informe aqui detalhes importantes sobre comportamento, rotina, preferências ou observações gerais.",
       })
     );
   }
@@ -1383,8 +1383,8 @@ export default function CadastroClientePublico() {
       <div className="space-y-5">
         <div className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-slate-50/90 px-4 py-3 shadow-sm">
           <div>
-            <p className="text-sm font-semibold text-slate-900">Usar os mesmos dados do responsÃ¡vel</p>
-            <p className="text-xs text-slate-500">Preenchimento automÃ¡tico para nome, documento, celular e email.</p>
+            <p className="text-sm font-semibold text-slate-900">Usar os mesmos dados do responsável</p>
+              <p className="text-xs text-slate-500">Preenchimento automático para nome, documento, celular e email.</p>
           </div>
           <Switch checked={financeiroIgualResponsavel} onCheckedChange={setFinanceiroIgualResponsavel} />
         </div>
@@ -1392,10 +1392,10 @@ export default function CadastroClientePublico() {
         <div className="grid gap-4 md:grid-cols-2">
           {renderTextField({
             fieldKey: "financeiro.nome_razao_social",
-            label: "Nome / RazÃ£o social",
+            label: "Nome / Razão social",
             value: financeiroForm.nome_razao_social,
             onChange: (event) => setFinanceiroForm((current) => ({ ...current, nome_razao_social: event.target.value })),
-            requiredMessage: "Informe o nome ou razÃ£o social do responsÃ¡vel financeiro.",
+            requiredMessage: "Informe o nome ou razão social do responsável financeiro.",
           })}
           {renderTextField({
             fieldKey: "financeiro.cpf_cnpj",
@@ -1404,7 +1404,7 @@ export default function CadastroClientePublico() {
             value: financeiroForm.cpf_cnpj,
             onChange: (event) => setFinanceiroForm((current) => ({ ...current, cpf_cnpj: formatCpfOrCnpj(event.target.value) })),
             maxLength: 18,
-            requiredMessage: "Informe o CPF ou CNPJ do responsÃ¡vel financeiro.",
+            requiredMessage: "Informe o CPF ou CNPJ do responsável financeiro.",
           })}
           {renderTextField({
             fieldKey: "financeiro.celular",
@@ -1413,7 +1413,7 @@ export default function CadastroClientePublico() {
             value: financeiroForm.celular,
             onChange: (event) => setFinanceiroForm((current) => ({ ...current, celular: formatPhone(event.target.value) })),
             maxLength: 15,
-            requiredMessage: "Informe o celular do responsÃ¡vel financeiro.",
+            requiredMessage: "Informe o celular do responsável financeiro.",
           })}
           {renderTextField({
             fieldKey: "financeiro.email",
@@ -1422,7 +1422,7 @@ export default function CadastroClientePublico() {
             value: financeiroForm.email,
             onChange: (event) => setFinanceiroForm((current) => ({ ...current, email: event.target.value })),
             type: "email",
-            requiredMessage: "Informe o email do responsÃ¡vel financeiro.",
+            requiredMessage: "Informe o email do responsável financeiro.",
           })}
           {renderTextField({
             fieldKey: "financeiro.cep",
@@ -1431,22 +1431,22 @@ export default function CadastroClientePublico() {
             value: financeiroForm.cep,
             onChange: (event) => setFinanceiroForm((current) => ({ ...current, cep: formatCEP(event.target.value) })),
             maxLength: 9,
-            requiredMessage: "Informe o CEP do responsÃ¡vel financeiro.",
-            description: addressLoading ? "Buscando endereÃ§o..." : "Rua, bairro, cidade e estado serÃ£o preenchidos pelo CEP.",
+            requiredMessage: "Informe o CEP do responsável financeiro.",
+            description: addressLoading ? "Buscando endereço..." : "Rua, bairro, cidade e estado serão preenchidos pelo CEP.",
           })}
           {renderTextField({
             fieldKey: "financeiro.number",
-            label: "NÃºmero",
+            label: "Número",
             value: financeiroForm.number,
             onChange: (event) => setFinanceiroForm((current) => ({ ...current, number: event.target.value })),
-            requiredMessage: "Informe o nÃºmero do endereÃ§o.",
+            requiredMessage: "Informe o número do endereço.",
           })}
           {renderTextField({
             fieldKey: "financeiro.street",
             label: "Rua",
             value: financeiroForm.street,
             onChange: (event) => setFinanceiroForm((current) => ({ ...current, street: event.target.value })),
-            requiredMessage: "Informe a rua do endereÃ§o.",
+            requiredMessage: "Informe a rua do endereço.",
             className: "md:col-span-2",
           })}
           {renderTextField({
@@ -1454,14 +1454,14 @@ export default function CadastroClientePublico() {
             label: "Bairro",
             value: financeiroForm.neighborhood,
             onChange: (event) => setFinanceiroForm((current) => ({ ...current, neighborhood: event.target.value })),
-            requiredMessage: "Informe o bairro do endereÃ§o.",
+            requiredMessage: "Informe o bairro do endereço.",
           })}
           {renderTextField({
             fieldKey: "financeiro.city",
             label: "Cidade",
             value: financeiroForm.city,
             onChange: (event) => setFinanceiroForm((current) => ({ ...current, city: event.target.value })),
-            requiredMessage: "Informe a cidade do endereÃ§o.",
+            requiredMessage: "Informe a cidade do endereço.",
           })}
           {renderTextField({
             fieldKey: "financeiro.state",
@@ -1470,7 +1470,7 @@ export default function CadastroClientePublico() {
             value: financeiroForm.state,
             onChange: (event) => setFinanceiroForm((current) => ({ ...current, state: event.target.value.toUpperCase() })),
             maxLength: 2,
-            requiredMessage: "Informe o estado do endereÃ§o.",
+            requiredMessage: "Informe o estado do endereço.",
           })}
           {renderSelectField({
             label: "Vencimento de planos",
@@ -1490,7 +1490,7 @@ export default function CadastroClientePublico() {
 
         <Card className="border-slate-200 bg-white/90 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Contato para envio de orÃ§amentos</CardTitle>
+            <CardTitle className="text-base">Contato para envio de orçamentos</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-3">
             {renderTextField({
@@ -1499,7 +1499,7 @@ export default function CadastroClientePublico() {
               value: financeiroForm.contato_orcamentos_nome,
               onChange: (event) => setFinanceiroForm((current) => ({ ...current, contato_orcamentos_nome: sanitizeDisplayNameInput(event.target.value) })),
               onBlur: () => setFinanceiroForm((current) => ({ ...current, contato_orcamentos_nome: formatDisplayName(current.contato_orcamentos_nome) })),
-              requiredMessage: "Informe o nome do contato para orÃ§amentos.",
+              requiredMessage: "Informe o nome do contato para orçamentos.",
             })}
             {renderTextField({
               fieldKey: "financeiro.contato_orcamentos_celular",
@@ -1508,7 +1508,7 @@ export default function CadastroClientePublico() {
               value: financeiroForm.contato_orcamentos_celular,
               onChange: (event) => setFinanceiroForm((current) => ({ ...current, contato_orcamentos_celular: formatPhone(event.target.value) })),
               maxLength: 15,
-              requiredMessage: "Informe o celular do contato para orÃ§amentos.",
+              requiredMessage: "Informe o celular do contato para orçamentos.",
             })}
             {renderTextField({
               fieldKey: "financeiro.contato_orcamentos_email",
@@ -1517,7 +1517,7 @@ export default function CadastroClientePublico() {
               value: financeiroForm.contato_orcamentos_email,
               onChange: (event) => setFinanceiroForm((current) => ({ ...current, contato_orcamentos_email: event.target.value })),
               type: "email",
-              requiredMessage: "Informe o email do contato para orÃ§amentos.",
+              requiredMessage: "Informe o email do contato para orçamentos.",
             })}
           </CardContent>
         </Card>
@@ -1599,9 +1599,9 @@ export default function CadastroClientePublico() {
           <Card className="border-rose-200 bg-white shadow-sm">
             <CardContent className="p-8 text-center">
               <AlertTriangle className="mx-auto h-12 w-12 text-rose-600" />
-              <h1 className="mt-5 text-3xl font-brand text-slate-900">Link indisponÃ­vel</h1>
+              <h1 className="mt-5 text-3xl font-brand text-slate-900">Link indisponível</h1>
               <p className="mt-3 text-sm text-slate-600">
-                {errorMessage || "NÃ£o foi possÃ­vel carregar este cadastro. Solicite um novo link Ã  equipe da Dog City Brasil."}
+                {errorMessage || "Não foi possível carregar este cadastro. Solicite um novo link à equipe da Dog City Brasil."}
               </p>
             </CardContent>
           </Card>
@@ -1636,7 +1636,7 @@ export default function CadastroClientePublico() {
             <Card className="border-slate-200 bg-white/90 shadow-sm">
               <CardContent className="p-5">
                 <div className="mb-4 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-900">AvanÃ§o</span>
+                  <span className="text-sm font-semibold text-slate-900">Avanço</span>
                   <span className="text-sm text-slate-500">{Math.round(progressValue)}%</span>
                 </div>
                 <Progress value={progressValue} className="h-2 bg-slate-100" />

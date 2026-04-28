@@ -27,9 +27,14 @@ alter table if exists public.serviceproviders
   add column if not exists health_issue boolean not null default false,
   add column if not exists health_issue_description text,
   add column if not exists controlled_medication boolean not null default false,
+  add column if not exists signature_code text,
   add column if not exists registration_token text,
   add column if not exists registration_status text not null default 'pendente',
   add column if not exists completed_at timestamptz;
+
+update public.serviceproviders
+set signature_code = lpad(floor(random() * 10000)::int::text, 4, '0')
+where signature_code is null;
 
 create unique index if not exists idx_serviceproviders_empresa_cpf_unique
   on public.serviceproviders (

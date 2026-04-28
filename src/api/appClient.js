@@ -523,6 +523,7 @@ const mockFunctions = {
       providers[providerIndex] = {
         ...providers[providerIndex],
         ...(payload?.profile || {}),
+        signature_code: providers[providerIndex].signature_code || String(Math.floor(Math.random() * 10000)).padStart(4, '0'),
         registration_status: 'concluido',
         completed_at: new Date().toISOString(),
         updated_date: new Date().toISOString(),

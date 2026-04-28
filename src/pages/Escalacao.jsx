@@ -52,6 +52,7 @@ const COVERAGE_FILTERS = [
 const EMPTY_PROVIDER_FORM = {
   nome: "",
   registration_token: "",
+  signature_code: "",
 };
 
 const EMPTY_SCHEDULE_FORM = {
@@ -89,6 +90,19 @@ function createRegistrationToken() {
     return crypto.randomUUID();
   }
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function createSignatureCode() {
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const values = new Uint32Array(1);
+    crypto.getRandomValues(values);
+    return String(values[0] % 10000).padStart(4, "0");
+  }
+  return String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+}
+
+function normalizeSignatureCode(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 4);
 }
 
 function formatTimeRange(startTime, endTime) {
@@ -313,6 +327,7 @@ export default function Escalacao() {
     setProviderForm({
       nome: provider?.nome || "",
       registration_token: provider?.registration_token || "",
+      signature_code: normalizeSignatureCode(provider?.signature_code),
     });
     setGeneratedProviderLink(provider?.registration_token ? buildProviderRegistrationLink(provider.registration_token) : "");
     setShowProviderDialog(true);
@@ -345,21 +360,25 @@ export default function Escalacao() {
     setIsSaving(true);
     try {
       const token = providerForm.registration_token || editingProvider?.registration_token || createRegistrationToken();
+      const signatureCode = normalizeSignatureCode(providerForm.signature_code || editingProvider?.signature_code) || createSignatureCode();
       const payload = {
         nome,
         registration_token: token,
         registration_status: editingProvider?.registration_status || "pendente",
+        signature_code: signatureCode,
         ativo: true,
       };
 
       if (editingProvider?.id) {
         const updated = await ServiceProvider.update(editingProvider.id, payload);
         const link = buildProviderRegistrationLink(updated?.registration_token || token);
+        setProviderForm((current) => ({ ...current, signature_code: normalizeSignatureCode(updated?.signature_code || signatureCode) }));
         setGeneratedProviderLink(link);
         await copyText(link, "Link de cadastro copiado.");
       } else {
         const created = await ServiceProvider.create(payload);
         const link = buildProviderRegistrationLink(created?.registration_token || token);
+        setProviderForm((current) => ({ ...current, signature_code: normalizeSignatureCode(created?.signature_code || signatureCode) }));
         setGeneratedProviderLink(link);
         await copyText(link, "Link de cadastro criado e copiado.");
       }
@@ -821,6 +840,28 @@ export default function Escalacao() {
                 Ao salvar, o link será criado e copiado automaticamente.
               </div>
               )}
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+              <Label>Código de Assinatura</Label>
+              <div className="mt-2 flex gap-2">
+                <Input
+                  value={providerForm.signature_code || (editingProvider ? "" : "Gerado ao salvar")}
+                  readOnly
+                  type="text"
+                  className="bg-white font-mono tracking-[0.4em]"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!providerForm.signature_code}
+                  onClick={() => copyText(providerForm.signature_code, "Código de assinatura copiado.")}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-amber-800">
+                Código sigiloso de 4 dígitos usado para confirmar ações operacionais do funcionário.
+              </p>
+            </div>
           </div>
 
           <DialogFooter>

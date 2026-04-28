@@ -38,6 +38,12 @@ function nullableText(value: unknown) {
   return normalized || null;
 }
 
+function generateSignatureCode() {
+  const values = new Uint32Array(1);
+  crypto.getRandomValues(values);
+  return String(values[0] % 10000).padStart(4, "0");
+}
+
 function sanitizeDisplayNameInput(value: unknown) {
   return sanitizeText(value)
     .replace(/[^\p{L}' -]/gu, " ")
@@ -407,6 +413,7 @@ Deno.serve(async (request) => {
       health_issue: normalizeBoolean(profile.health_issue),
       health_issue_description: nullableText(profile.health_issue_description),
       controlled_medication: normalizeBoolean(profile.controlled_medication),
+      signature_code: sanitizeText(provider.signature_code) || generateSignatureCode(),
       registration_status: "concluido",
       completed_at: new Date().toISOString(),
       updated_date: new Date().toISOString(),

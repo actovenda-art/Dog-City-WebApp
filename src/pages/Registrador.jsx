@@ -64,6 +64,7 @@ function createEmptyBodyCheckup() {
 const EMPTY_CHECKIN_FORM = {
   checkin_datetime: `${TODAY_KEY}T09:00:00`,
   monitor_id: "",
+  monitor_signature_code: "",
   entregador_nome: "",
   observacoes: "",
   tarefa_lembrete: "",
@@ -80,6 +81,7 @@ const EMPTY_CHECKIN_FORM = {
 const EMPTY_CHECKOUT_FORM = {
   checkout_datetime: `${TODAY_KEY}T18:00:00`,
   monitor_id: "",
+  monitor_signature_code: "",
   retirador_nome: "",
   observacoes: "",
   pertences_saida_foto_url: "",
@@ -87,6 +89,7 @@ const EMPTY_CHECKOUT_FORM = {
 
 const EMPTY_MEAL_FORM = {
   monitor_id: "",
+  monitor_signature_code: "",
   percentual_consumido: "",
   observacoes: "",
   foto_refeicao_url: "",
@@ -95,6 +98,7 @@ const EMPTY_MEAL_FORM = {
 
 const EMPTY_ADAPTACAO_REGISTRO_FORM = {
   monitor_id: "",
+  monitor_signature_code: "",
   registro_datetime: nowDateTimeValue(),
   observacoes: "",
 };
@@ -141,6 +145,31 @@ function sanitizeDateKey(value) {
 
 function getProviderDisplayName(provider) {
   return provider?.nome || provider?.full_name || provider?.nome_completo || "Funcionário";
+}
+
+function normalizeSignatureCode(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 4);
+}
+
+function getProviderSignatureCode(provider) {
+  return normalizeSignatureCode(provider?.signature_code);
+}
+
+function MonitorSignatureInput({ value, onChange, className = "" }) {
+  return (
+    <div className={className}>
+      <Label>Verificação: Insira a sua senha</Label>
+      <Input
+        value={value}
+        onChange={(event) => onChange(normalizeSignatureCode(event.target.value))}
+        className="mt-2 font-mono tracking-[0.35em]"
+        inputMode="numeric"
+        maxLength={4}
+        placeholder="4 dígitos"
+        type="password"
+      />
+    </div>
+  );
 }
 
 function formatCpf(value) {
@@ -275,6 +304,7 @@ export default function Registrador() {
   const [manualForm, setManualForm] = useState({
     dog_id: "",
     monitor_id: "",
+    monitor_signature_code: "",
     service_type: "",
     observacoes: "",
   });
@@ -571,6 +601,27 @@ export default function Registrador() {
     setShowNotifyDialog(true);
   }
 
+  function validateMonitorSignature(monitorId, signatureCode) {
+    const monitor = serviceProvidersById[monitorId];
+    if (!monitor) {
+      openNotify("Verificação necessária", "Selecione o monitor responsável antes de confirmar.");
+      return false;
+    }
+
+    const expectedCode = getProviderSignatureCode(monitor);
+    if (!expectedCode) {
+      openNotify("Código não cadastrado", "Este funcionário ainda não possui Código de Assinatura cadastrado em Escalação.");
+      return false;
+    }
+
+    if (normalizeSignatureCode(signatureCode) !== expectedCode) {
+      openNotify("Verificação inválida", "A senha informada não confere com o Código de Assinatura deste funcionário.");
+      return false;
+    }
+
+    return true;
+  }
+
   function findSharedDailyCheckin(appointment) {
     if (!appointment?.dog_id) return null;
     const appointmentDate = getAppointmentDateKey(appointment) || selectedDate || TODAY_KEY;
@@ -656,6 +707,7 @@ export default function Registrador() {
     setManualForm({
       dog_id: dog?.id || "",
       monitor_id: "",
+      monitor_signature_code: "",
       service_type: "",
       observacoes: "",
     });
@@ -699,6 +751,7 @@ export default function Registrador() {
       openNotify("Campos obrigatórios", "Informe monitor, responsável pela entrega e foto dos pertences.");
       return;
     }
+    if (!validateMonitorSignature(checkinForm.monitor_id, checkinForm.monitor_signature_code)) return;
     if (checkinForm.tarefa_lembrete && !checkinForm.tarefa_lembrete_setor) {
       openNotify("Campos obrigatórios", "Selecione o setor que deve receber o lembrete.");
       return;
@@ -771,6 +824,7 @@ export default function Registrador() {
         status: "presente",
         metadata: {
           appointment_source_key: selectedAppointment.source_key || "",
+          checkin_signature_verified_at: new Date().toISOString(),
           body_checkup: checkinForm.body_checkup || createEmptyBodyCheckup(),
           body_checkup_observacao: checkinForm.body_checkup_observacao || "",
         },
@@ -847,6 +901,7 @@ export default function Registrador() {
       openNotify("Campos obrigatórios", "Informe quem buscou o cão, o monitor da entrega e a foto dos itens devolvidos.");
       return;
     }
+    if (!validateMonitorSignature(checkoutForm.monitor_id, checkoutForm.monitor_signature_code)) return;
 
     setIsSaving(true);
     try {
@@ -865,6 +920,7 @@ export default function Registrador() {
           ...currentMeta,
           retirador_nome: checkoutForm.retirador_nome,
           checkout_monitor_id: checkoutForm.monitor_id,
+          checkout_signature_verified_at: new Date().toISOString(),
         },
       });
 
@@ -894,6 +950,7 @@ export default function Registrador() {
       openNotify("Campos obrigatórios", "Complete monitor, percentual consumido, foto da refeição e selfie.");
       return;
     }
+    if (!validateMonitorSignature(mealForm.monitor_id, mealForm.monitor_signature_code)) return;
 
     setIsSaving(true);
     try {
@@ -908,6 +965,7 @@ export default function Registrador() {
           observacoes: mealForm.observacoes || "",
           foto_refeicao_url: mealForm.foto_refeicao_url,
           selfie_monitor_url: mealForm.selfie_monitor_url,
+          signature_verified_at: new Date().toISOString(),
         },
       ];
 
@@ -931,6 +989,7 @@ export default function Registrador() {
       openNotify("Campos obrigatórios", "Informe o monitor e descreva a evolução da adaptação.");
       return;
     }
+    if (!validateMonitorSignature(adaptacaoRegistroForm.monitor_id, adaptacaoRegistroForm.monitor_signature_code)) return;
 
     setIsSaving(true);
     try {
@@ -944,6 +1003,7 @@ export default function Registrador() {
           monitor_id: adaptacaoRegistroForm.monitor_id,
           monitor_nome: getProviderDisplayName(monitor),
           observacoes: adaptacaoRegistroForm.observacoes.trim(),
+          signature_verified_at: new Date().toISOString(),
         },
       ];
 
@@ -1045,6 +1105,7 @@ export default function Registrador() {
       openNotify("Campos obrigatórios", "Selecione o cão, o serviço e o monitor responsável.");
       return;
     }
+    if (!validateMonitorSignature(manualForm.monitor_id, manualForm.monitor_signature_code)) return;
     if (!canAddManualAppointment) {
       openNotify("Data invalida", "A inclusao manual pelo Registrador fica disponível apenas para o dia de hoje.");
       return;
@@ -1080,6 +1141,7 @@ export default function Registrador() {
           owner_celular: owner.celular || "",
           manual_monitor_id: manualForm.monitor_id,
           manual_monitor_nome: getProviderDisplayName(monitor),
+          manual_monitor_signature_verified_at: new Date().toISOString(),
           created_from_registrador: true,
           commercial_review_pending: true,
         },
@@ -1732,7 +1794,7 @@ export default function Registrador() {
                 </div>
                 <div>
                   <Label>Monitor responsável</Label>
-                  <Select value={checkinForm.monitor_id} onValueChange={(value) => setCheckinForm((current) => ({ ...current, monitor_id: value }))}>
+                  <Select value={checkinForm.monitor_id} onValueChange={(value) => setCheckinForm((current) => ({ ...current, monitor_id: value, monitor_signature_code: "" }))}>
                     <SelectTrigger className="mt-2">
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
@@ -1749,6 +1811,11 @@ export default function Registrador() {
                   ) : null}
                 </div>
               </div>
+
+              <MonitorSignatureInput
+                value={checkinForm.monitor_signature_code}
+                onChange={(value) => setCheckinForm((current) => ({ ...current, monitor_signature_code: value }))}
+              />
 
               <div>
                 <Label>Responsável pela entrega</Label>
@@ -1957,7 +2024,7 @@ export default function Registrador() {
               </div>
               <div>
                 <Label>Monitor da entrega</Label>
-                <Select value={checkoutForm.monitor_id} onValueChange={(value) => setCheckoutForm((current) => ({ ...current, monitor_id: value }))}>
+                <Select value={checkoutForm.monitor_id} onValueChange={(value) => setCheckoutForm((current) => ({ ...current, monitor_id: value, monitor_signature_code: "" }))}>
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
@@ -1974,6 +2041,11 @@ export default function Registrador() {
                 ) : null}
               </div>
             </div>
+
+            <MonitorSignatureInput
+              value={checkoutForm.monitor_signature_code}
+              onChange={(value) => setCheckoutForm((current) => ({ ...current, monitor_signature_code: value }))}
+            />
 
             <div>
               <Label>Quem buscou?</Label>
@@ -2031,7 +2103,7 @@ export default function Registrador() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <Label>Monitor responsável</Label>
-                <Select value={mealForm.monitor_id} onValueChange={(value) => setMealForm((current) => ({ ...current, monitor_id: value }))}>
+                <Select value={mealForm.monitor_id} onValueChange={(value) => setMealForm((current) => ({ ...current, monitor_id: value, monitor_signature_code: "" }))}>
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
@@ -2060,6 +2132,11 @@ export default function Registrador() {
                 </Select>
               </div>
             </div>
+
+            <MonitorSignatureInput
+              value={mealForm.monitor_signature_code}
+              onChange={(value) => setMealForm((current) => ({ ...current, monitor_signature_code: value }))}
+            />
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -2139,7 +2216,7 @@ export default function Registrador() {
                 <Label>Monitor responsavel</Label>
                 <Select
                   value={adaptacaoRegistroForm.monitor_id}
-                  onValueChange={(value) => setAdaptacaoRegistroForm((current) => ({ ...current, monitor_id: value }))}
+                  onValueChange={(value) => setAdaptacaoRegistroForm((current) => ({ ...current, monitor_id: value, monitor_signature_code: "" }))}
                 >
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder="Selecione" />
@@ -2154,6 +2231,11 @@ export default function Registrador() {
                 </Select>
               </div>
             </div>
+
+            <MonitorSignatureInput
+              value={adaptacaoRegistroForm.monitor_signature_code}
+              onChange={(value) => setAdaptacaoRegistroForm((current) => ({ ...current, monitor_signature_code: value }))}
+            />
 
             <div>
               <Label>Observacoes do progresso</Label>
@@ -2202,7 +2284,7 @@ export default function Registrador() {
 
             <div>
               <Label>Monitor responsável</Label>
-              <Select value={manualForm.monitor_id} onValueChange={(value) => setManualForm((current) => ({ ...current, monitor_id: value }))}>
+              <Select value={manualForm.monitor_id} onValueChange={(value) => setManualForm((current) => ({ ...current, monitor_id: value, monitor_signature_code: "" }))}>
                 <SelectTrigger className="mt-2">
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
@@ -2215,6 +2297,11 @@ export default function Registrador() {
                 </SelectContent>
               </Select>
             </div>
+
+            <MonitorSignatureInput
+              value={manualForm.monitor_signature_code}
+              onChange={(value) => setManualForm((current) => ({ ...current, monitor_signature_code: value }))}
+            />
 
             <div>
               <Label>Serviço</Label>

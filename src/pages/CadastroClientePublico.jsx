@@ -325,7 +325,7 @@ function validateFinanceiro(form) {
 
 function StepSidebar({ currentStep, steps }) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 xl:block xl:space-y-3">
+    <div className="flex gap-1.5 overflow-x-auto pb-1 xl:block xl:space-y-3">
       {steps.map((step, index) => {
         const Icon = step.icon;
         const isActive = currentStep === index;
@@ -340,11 +340,11 @@ function StepSidebar({ currentStep, steps }) {
                 : isDone
                   ? "border-emerald-200 bg-emerald-50"
                   : "border-slate-200 bg-white"
-            } min-w-[190px] shrink-0 xl:min-w-0`}
+            } min-w-[138px] shrink-0 px-3 py-2.5 xl:min-w-0 xl:p-4`}
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5 xl:gap-3">
               <div
-                className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
+                className={`flex h-8 w-8 items-center justify-center rounded-xl xl:h-10 xl:w-10 xl:rounded-2xl ${
                   isActive
                     ? "bg-blue-600 text-white"
                     : isDone
@@ -352,13 +352,13 @@ function StepSidebar({ currentStep, steps }) {
                       : "bg-slate-100 text-slate-500"
                 }`}
               >
-                {isDone ? <CheckCircle2 className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+                {isDone ? <CheckCircle2 className="h-4 w-4 xl:h-5 xl:w-5" /> : <Icon className="h-4 w-4 xl:h-5 xl:w-5" />}
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 xl:text-xs xl:tracking-[0.2em]">
                   Etapa {index + 1}
                 </p>
-                <p className="text-sm font-semibold text-slate-900">{step.label}</p>
+                <p className="text-[13px] font-semibold leading-tight text-slate-900 xl:text-sm">{step.label}</p>
               </div>
             </div>
           </div>
@@ -370,7 +370,7 @@ function StepSidebar({ currentStep, steps }) {
 
 function DogSectionSidebar({ activeSection, onSelect, unlockedIndex = 0 }) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 xl:block xl:space-y-2">
+    <div className="flex gap-1.5 overflow-x-auto pb-1 xl:block xl:space-y-2">
       {DOG_SECTION_DEFINITIONS.map((section, index) => {
         const Icon = section.icon;
         const isActive = activeSection === section.id;
@@ -384,24 +384,24 @@ function DogSectionSidebar({ activeSection, onSelect, unlockedIndex = 0 }) {
               if (isUnlocked) onSelect(section.id);
             }}
             disabled={!isUnlocked}
-            className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+            className={`flex w-full items-center gap-2 rounded-2xl border px-3 py-2.5 text-left transition xl:gap-3 xl:px-4 xl:py-3 ${
               isActive
                 ? "border-blue-200 bg-blue-50 text-blue-700"
                 : isUnlocked
                   ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300"
-            } min-w-[220px] shrink-0 xl:min-w-0`}
+            } min-w-[176px] shrink-0 xl:min-w-0`}
           >
             <div
-              className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold ${
+              className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold xl:h-9 xl:w-9 xl:text-xs ${
                 isActive ? "bg-blue-600 text-white" : isUnlocked ? "bg-slate-100 text-slate-500" : "bg-slate-100 text-slate-300"
               }`}
             >
               {index + 1}
             </div>
             <div className="flex min-w-0 items-center gap-2">
-              <Icon className="h-4 w-4" />
-              <span className="text-sm font-semibold">{section.label}</span>
+              <Icon className="h-3.5 w-3.5 xl:h-4 xl:w-4" />
+              <span className="text-[13px] font-semibold leading-tight xl:text-sm">{section.label}</span>
             </div>
           </button>
         );
@@ -1785,33 +1785,33 @@ export default function CadastroClientePublico() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] p-4 sm:p-8">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] p-3 sm:p-8">
       <div className="mx-auto max-w-7xl">
-        <div className="grid gap-4 sm:gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-          <div className="space-y-4">
+        <div className="grid gap-3 sm:gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <div className="space-y-3 sm:space-y-4">
             <Card className="border-slate-200 bg-white/90 shadow-sm">
-              <CardContent className="p-5 text-center sm:p-6">
+              <CardContent className="p-4 text-center sm:p-6">
                 {isResolved && logoUrl ? (
-                  <img src={logoUrl} alt={companyName} className="mx-auto h-16 w-16 object-contain sm:h-20 sm:w-20" />
+                  <img src={logoUrl} alt={companyName} className="mx-auto h-12 w-12 object-contain sm:h-20 sm:w-20" />
                 ) : (
-                  <div className="mx-auto h-16 w-16 rounded-3xl bg-slate-100 sm:h-20 sm:w-20" />
+                  <div className="mx-auto h-12 w-12 rounded-2xl bg-slate-100 sm:h-20 sm:w-20 sm:rounded-3xl" />
                 )}
-                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.25em] text-blue-500">Cadastro do cliente</p>
-                <h1 className="mt-3 text-xl font-brand text-slate-900 sm:text-2xl">{pageTitle}</h1>
-                <p className="mt-2 text-sm text-slate-500">
+                <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-500 sm:mt-4 sm:text-xs sm:tracking-[0.25em]">Cadastro do cliente</p>
+                <h1 className="mt-2 text-lg font-brand leading-tight text-slate-900 sm:mt-3 sm:text-2xl">{pageTitle}</h1>
+                <p className="mt-2 text-[13px] leading-snug text-slate-500 sm:text-sm">
                   Preencha os dados abaixo para concluir a ficha cadastral.
                 </p>
-                <p className="mt-3 text-xs text-slate-400">
+                <p className="mt-2 text-[11px] leading-snug text-slate-400 sm:mt-3 sm:text-xs">
                   Somente os campos marcados como <span className="font-semibold text-slate-500">opcional</span> podem ficar em branco.
                 </p>
               </CardContent>
             </Card>
 
             <Card className="border-slate-200 bg-white/90 shadow-sm">
-              <CardContent className="p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-900">Avanço</span>
-                  <span className="text-sm text-slate-500">{Math.round(progressValue)}%</span>
+              <CardContent className="p-4 sm:p-5">
+                <div className="mb-3 flex items-center justify-between sm:mb-4">
+                  <span className="text-[13px] font-semibold text-slate-900 sm:text-sm">Avanço</span>
+                  <span className="text-[13px] text-slate-500 sm:text-sm">{Math.round(progressValue)}%</span>
                 </div>
                 <Progress value={progressValue} className="h-2 bg-slate-100" />
               </CardContent>
@@ -1820,7 +1820,7 @@ export default function CadastroClientePublico() {
             <StepSidebar currentStep={currentStep} steps={visibleStepDefinitions} />
           </div>
 
-          <div className="space-y-5">
+          <div className="space-y-4 sm:space-y-5">
             <Card className="overflow-hidden border-slate-200 bg-white/90 shadow-sm">
               <CardHeader className="border-b border-slate-100">
                 <CardTitle className="text-xl text-slate-900 sm:text-2xl">{currentStepDefinition?.label}</CardTitle>
@@ -1845,19 +1845,19 @@ export default function CadastroClientePublico() {
               </div>
             ) : null}
 
-            <div className="flex flex-col gap-3 rounded-[24px] border border-slate-200 bg-white/90 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-4">
-              <div className="text-sm text-slate-500">
+            <div className="flex flex-col gap-2.5 rounded-[22px] border border-slate-200 bg-white/90 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:rounded-[24px] sm:p-4">
+              <div className="text-[13px] leading-snug text-slate-500 sm:text-sm">
                 {currentStepDefinition?.id === "caes"
                   ? `Dog ${activeDogIndex + 1} de ${caesForm.length} • ${DOG_SECTION_DEFINITIONS[activeDogSectionIndex]?.label || "Informações básicas"}`
                   : `Etapa ${currentStep + 1} de ${visibleStepDefinitions.length}`}
               </div>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button type="button" variant="outline" onClick={handlePreviousStep} disabled={currentStep === 0 || isSaving} className="w-full rounded-xl sm:w-auto">
-                  <ChevronLeft className="mr-2 h-4 w-4" />
+              <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                <Button type="button" variant="outline" onClick={handlePreviousStep} disabled={currentStep === 0 || isSaving} className="h-10 w-full rounded-xl px-3 text-sm sm:h-11 sm:w-auto">
+                  <ChevronLeft className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                   Voltar
                 </Button>
                 {shouldShowContinueButton ? (
-                  <Button type="button" onClick={handleNextStep} className="w-full rounded-xl bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
+                  <Button type="button" onClick={handleNextStep} className="h-10 w-full rounded-xl px-3 text-sm bg-blue-600 text-white hover:bg-blue-700 sm:h-11 sm:w-auto">
                     {currentStepDefinition?.id === "caes"
                       ? isLastDogSection
                         ? "Continuar para responsável financeiro"
@@ -1865,13 +1865,13 @@ export default function CadastroClientePublico() {
                           ? `Continuar para ${formatDogTitle(caesForm[activeDogIndex + 1], activeDogIndex + 1)}`
                         : nextDogSectionLabel
                           ? `Continuar para ${nextDogSectionLabel}`
-                          : "Continuar"
+                        : "Continuar"
                       : "Continuar"}
-                    <ChevronRight className="ml-2 h-4 w-4" />
+                    <ChevronRight className="ml-1.5 h-3.5 w-3.5 sm:ml-2 sm:h-4 sm:w-4" />
                   </Button>
                 ) : (
-                  <Button type="button" onClick={handleSubmit} disabled={isSaving} className="w-full rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto">
-                    {isSaving ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
+                  <Button type="button" onClick={handleSubmit} disabled={isSaving} className="h-10 w-full rounded-xl px-3 text-sm bg-emerald-600 text-white hover:bg-emerald-700 sm:h-11 sm:w-auto">
+                    {isSaving ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin sm:mr-2 sm:h-4 sm:w-4" /> : <Copy className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />}
                     {isSaving ? "Enviando..." : "Enviar cadastro"}
                   </Button>
                 )}

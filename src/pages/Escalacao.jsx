@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Clock3, Coffee, Copy, Link as LinkIcon, Plus, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Clock3, Coffee, Copy, Link as LinkIcon, Plus, ShieldCheck, Users } from "lucide-react";
 import { useLocation } from "react-router-dom";
 
 import { ServiceProvider, ServiceProviderSchedule, User } from "@/api/entities";
@@ -65,6 +65,29 @@ const EMPTY_SCHEDULE_FORM = {
   almoco_saida: "",
   almoco_volta: "",
   automatico: false,
+};
+
+const FEEDBACK_TONE_STYLES = {
+  success: {
+    icon: CheckCircle2,
+    iconClassName: "bg-emerald-100 text-emerald-700",
+    buttonClassName: "bg-emerald-600 text-white hover:bg-emerald-700",
+  },
+  warning: {
+    icon: AlertTriangle,
+    iconClassName: "bg-amber-100 text-amber-700",
+    buttonClassName: "bg-amber-600 text-white hover:bg-amber-700",
+  },
+  error: {
+    icon: AlertTriangle,
+    iconClassName: "bg-red-100 text-red-700",
+    buttonClassName: "bg-red-600 text-white hover:bg-red-700",
+  },
+  info: {
+    icon: ShieldCheck,
+    iconClassName: "bg-blue-100 text-blue-700",
+    buttonClassName: "bg-blue-600 text-white hover:bg-blue-700",
+  },
 };
 
 function safeLoad(loader, fallback = []) {
@@ -178,6 +201,8 @@ export default function Escalacao() {
   const [loadWarnings, setLoadWarnings] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [generatedProviderLink, setGeneratedProviderLink] = useState("");
+  const [feedbackDialog, setFeedbackDialog] = useState({ open: false, title: "", description: "", tone: "info", value: "", valueLabel: "" });
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: "", description: "", confirmLabel: "Confirmar", kind: "", item: null });
 
   useEffect(() => {
     loadData();
@@ -221,6 +246,48 @@ export default function Escalacao() {
     setProviderForm(EMPTY_PROVIDER_FORM);
     setGeneratedProviderLink("");
     setShowProviderDialog(false);
+  }
+
+  function openFeedbackDialog({
+    title,
+    description,
+    tone = "info",
+    value = "",
+    valueLabel = "",
+  }) {
+    setFeedbackDialog({
+      open: true,
+      title,
+      description,
+      tone,
+      value,
+      valueLabel,
+    });
+  }
+
+  function closeFeedbackDialog() {
+    setFeedbackDialog((current) => ({ ...current, open: false }));
+  }
+
+  function openConfirmDialog({
+    title,
+    description,
+    confirmLabel = "Confirmar",
+    kind,
+    item,
+  }) {
+    setConfirmDialog({
+      open: true,
+      title,
+      description,
+      confirmLabel,
+      kind,
+      item,
+    });
+  }
+
+  function closeConfirmDialog() {
+    setConfirmDialog((current) => ({ ...current, open: false, item: null, kind: "" }));
   }
 
   function resetScheduleDialog() {
@@ -312,13 +379,32 @@ export default function Escalacao() {
     return `${window.location.origin}${createPageUrl("CadastroMonitorPublico")}?token=${encodeURIComponent(token)}`;
   }
 
-  async function copyText(value, successMessage = "Link copiado.") {
+  async function copyText(value, options = {}) {
     if (!value) return;
+
+    const {
+      title = "Copiado com sucesso",
+      description = "O conteúdo já está disponível para colar.",
+      fallbackTitle = "Copie manualmente",
+      fallbackDescription = "Não foi possível copiar automaticamente neste dispositivo.",
+      valueLabel = "Conteúdo",
+    } = options;
+
     try {
       await navigator.clipboard.writeText(value);
-      alert(successMessage);
+      openFeedbackDialog({
+        title,
+        description,
+        tone: "success",
+      });
     } catch {
-      window.prompt("Copie o link de cadastro:", value);
+      openFeedbackDialog({
+        title: fallbackTitle,
+        description: fallbackDescription,
+        tone: "info",
+        value,
+        valueLabel,
+      });
     }
   }
 
@@ -353,7 +439,11 @@ export default function Escalacao() {
     const nome = formatDisplayName(providerForm.nome);
 
     if (!nome) {
-      alert("Informe o nome do funcionário.");
+      openFeedbackDialog({
+        title: "Nome pendente",
+        description: "Informe o nome do funcionário para gerar o cadastro.",
+        tone: "warning",
+      });
       return;
     }
 
@@ -374,19 +464,31 @@ export default function Escalacao() {
         const link = buildProviderRegistrationLink(updated?.registration_token || token);
         setProviderForm((current) => ({ ...current, signature_code: normalizeSignatureCode(updated?.signature_code || signatureCode) }));
         setGeneratedProviderLink(link);
-        await copyText(link, "Link de cadastro copiado.");
+        await copyText(link, {
+          title: "Link copiado",
+          description: "O link de cadastro do funcionário foi copiado para você compartilhar.",
+          valueLabel: "Link de cadastro",
+        });
       } else {
         const created = await ServiceProvider.create(payload);
         const link = buildProviderRegistrationLink(created?.registration_token || token);
         setProviderForm((current) => ({ ...current, signature_code: normalizeSignatureCode(created?.signature_code || signatureCode) }));
         setGeneratedProviderLink(link);
-        await copyText(link, "Link de cadastro criado e copiado.");
+        await copyText(link, {
+          title: "Link criado e copiado",
+          description: "O cadastro do funcionário já está pronto para ser compartilhado.",
+          valueLabel: "Link de cadastro",
+        });
       }
 
       await loadData();
     } catch (error) {
       console.error("Erro ao salvar funcionário:", error);
-      alert(error?.message || "Não foi possível salvar o funcionário.");
+      openFeedbackDialog({
+        title: "Não foi possível salvar",
+        description: error?.message || "Revise os dados do funcionário e tente novamente.",
+        tone: "error",
+      });
     }
     setIsSaving(false);
   }
@@ -403,10 +505,18 @@ export default function Escalacao() {
         });
         await loadData();
       }
-      await copyText(buildProviderRegistrationLink(token), "Link de cadastro copiado.");
+      await copyText(buildProviderRegistrationLink(token), {
+        title: "Link copiado",
+        description: "O link de cadastro do funcionário já está disponível para envio.",
+        valueLabel: "Link de cadastro",
+      });
     } catch (error) {
       console.error("Erro ao copiar link de cadastro:", error);
-      alert(error?.message || "Não foi possível gerar o link de cadastro.");
+      openFeedbackDialog({
+        title: "Não foi possível gerar o link",
+        description: error?.message || "Tente novamente em instantes.",
+        tone: "error",
+      });
     }
     setIsSaving(false);
   }
@@ -414,47 +524,87 @@ export default function Escalacao() {
   async function handleDeleteProvider(provider) {
     const providerSchedules = schedules.filter((item) => item.serviceprovider_id === provider.id);
     if (providerSchedules.length > 0) {
-      alert("Exclua os horários deste funcionário antes de removê-lo.");
+      openFeedbackDialog({
+        title: "Não é possível excluir agora",
+        description: "Exclua primeiro os horários vinculados a este funcionário e depois tente novamente.",
+        tone: "warning",
+      });
       return;
     }
 
-    const confirmed = window.confirm(`Excluir ${getProviderName(provider)} da escalação?`);
-    if (!confirmed) return;
+    openConfirmDialog({
+      title: "Excluir funcionário da escalação?",
+      description: `${getProviderName(provider)} será removido da base de funcionários desta unidade.`,
+      confirmLabel: "Excluir funcionário",
+      kind: "provider",
+      item: provider,
+    });
+  }
 
+  async function deleteProvider(provider) {
     setIsSaving(true);
     try {
       await ServiceProvider.delete(provider.id);
       await loadData();
+      openFeedbackDialog({
+        title: "Funcionário excluído",
+        description: `${getProviderName(provider)} foi removido da escalação.`,
+        tone: "success",
+      });
     } catch (error) {
       console.error("Erro ao excluir funcionário:", error);
-      alert(error?.message || "Não foi possível excluir o funcionário.");
+      openFeedbackDialog({
+        title: "Não foi possível excluir",
+        description: error?.message || "Tente novamente em instantes.",
+        tone: "error",
+      });
     }
     setIsSaving(false);
   }
 
   async function handleSaveSchedule() {
     if (!scheduleForm.serviceprovider_id) {
-      alert("Selecione o funcionário.");
+      openFeedbackDialog({
+        title: "Funcionário pendente",
+        description: "Selecione quem ficará vinculado a este horário.",
+        tone: "warning",
+      });
       return;
     }
 
     if (!scheduleForm.funcao) {
-      alert("Selecione a função.");
+      openFeedbackDialog({
+        title: "Função pendente",
+        description: "Escolha a função que será coberta por este horário.",
+        tone: "warning",
+      });
       return;
     }
 
     if (normalizeWeekdays(scheduleForm.weekdays).length === 0) {
-      alert("Selecione pelo menos um dia da semana.");
+      openFeedbackDialog({
+        title: "Dias pendentes",
+        description: "Selecione pelo menos um dia da semana para a cobertura.",
+        tone: "warning",
+      });
       return;
     }
 
     if (!scheduleForm.automatico && (!scheduleForm.horario_entrada || !scheduleForm.horario_saida)) {
-      alert("Informe o horário de entrada e saída.");
+      openFeedbackDialog({
+        title: "Horário incompleto",
+        description: "Informe os horários de entrada e saída para continuar.",
+        tone: "warning",
+      });
       return;
     }
 
     if (scheduleForm.tem_almoco && (!scheduleForm.almoco_saida || !scheduleForm.almoco_volta)) {
-      alert("Informe os horários de saída e volta do almoço.");
+      openFeedbackDialog({
+        title: "Almoço incompleto",
+        description: "Informe a saída e a volta do almoço para este horário.",
+        tone: "warning",
+      });
       return;
     }
 
@@ -482,7 +632,11 @@ export default function Escalacao() {
       resetScheduleDialog();
     } catch (error) {
       console.error("Erro ao salvar horário:", error);
-      alert(error?.message || "Não foi possível salvar o horário.");
+      openFeedbackDialog({
+        title: "Não foi possível salvar",
+        description: error?.message || "Revise o horário e tente novamente.",
+        tone: "error",
+      });
     }
     setIsSaving(false);
   }
@@ -524,18 +678,48 @@ export default function Escalacao() {
   }, [coverageRoleValues, providerById, schedules, searchTerm]);
 
   async function handleDeleteSchedule(schedule) {
-    const confirmed = window.confirm("Excluir este horário?");
-    if (!confirmed) return;
+    openConfirmDialog({
+      title: "Excluir horário da escala?",
+      description: "Este horário deixará de aparecer na cobertura da unidade.",
+      confirmLabel: "Excluir horário",
+      kind: "schedule",
+      item: schedule,
+    });
+  }
 
+  async function deleteSchedule(schedule) {
     setIsSaving(true);
     try {
       await ServiceProviderSchedule.delete(schedule.id);
       await loadData();
+      openFeedbackDialog({
+        title: "Horário excluído",
+        description: "A cobertura foi removida da escala.",
+        tone: "success",
+      });
     } catch (error) {
       console.error("Erro ao excluir horário:", error);
-      alert(error?.message || "Não foi possível excluir o horário.");
+      openFeedbackDialog({
+        title: "Não foi possível excluir",
+        description: error?.message || "Tente novamente em instantes.",
+        tone: "error",
+      });
     }
     setIsSaving(false);
+  }
+
+  async function handleConfirmDialog() {
+    const current = confirmDialog;
+    closeConfirmDialog();
+
+    if (current.kind === "provider" && current.item) {
+      await deleteProvider(current.item);
+      return;
+    }
+
+    if (current.kind === "schedule" && current.item) {
+      await deleteSchedule(current.item);
+    }
   }
 
   if (isLoading) {
@@ -829,7 +1013,15 @@ export default function Escalacao() {
                 <Label>Link de cadastro</Label>
                 <div className="mt-2 flex gap-2">
                   <Input value={generatedProviderLink} readOnly className="bg-white" />
-                  <Button type="button" variant="outline" onClick={() => copyText(generatedProviderLink, "Link copiado.")}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => copyText(generatedProviderLink, {
+                      title: "Link copiado",
+                      description: "O link de cadastro já está pronto para ser enviado.",
+                      valueLabel: "Link de cadastro",
+                    })}
+                  >
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>
@@ -853,7 +1045,11 @@ export default function Escalacao() {
                   type="button"
                   variant="outline"
                   disabled={!providerForm.signature_code}
-                  onClick={() => copyText(providerForm.signature_code, "Código de assinatura copiado.")}
+                  onClick={() => copyText(providerForm.signature_code, {
+                    title: "Código copiado",
+                    description: "O código de assinatura já está disponível para uso seguro.",
+                    valueLabel: "Código de assinatura",
+                  })}
                 >
                   <Copy className="h-4 w-4" />
                 </Button>
@@ -1038,6 +1234,70 @@ export default function Escalacao() {
             <Button variant="outline" onClick={resetScheduleDialog}>Cancelar</Button>
             <Button onClick={handleSaveSchedule} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
               Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={feedbackDialog.open} onOpenChange={(open) => !open && closeFeedbackDialog()}>
+        <DialogContent className="w-[95vw] max-w-[460px]">
+          <DialogHeader>
+            <div className="flex items-start gap-3">
+              {(() => {
+                const tone = FEEDBACK_TONE_STYLES[feedbackDialog.tone] || FEEDBACK_TONE_STYLES.info;
+                const Icon = tone.icon;
+
+                return (
+                  <>
+                    <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${tone.iconClassName}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <DialogTitle>{feedbackDialog.title}</DialogTitle>
+                      <DialogDescription>{feedbackDialog.description}</DialogDescription>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </DialogHeader>
+
+          {feedbackDialog.value ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <Label>{feedbackDialog.valueLabel || "Conteúdo"}</Label>
+              <Input value={feedbackDialog.value} readOnly className="mt-2 bg-white" />
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              onClick={closeFeedbackDialog}
+              className={(FEEDBACK_TONE_STYLES[feedbackDialog.tone] || FEEDBACK_TONE_STYLES.info).buttonClassName}
+            >
+              Entendi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && closeConfirmDialog()}>
+        <DialogContent className="w-[95vw] max-w-[460px]">
+          <DialogHeader>
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="space-y-1">
+                <DialogTitle>{confirmDialog.title}</DialogTitle>
+                <DialogDescription>{confirmDialog.description}</DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeConfirmDialog}>Cancelar</Button>
+            <Button onClick={handleConfirmDialog} className="bg-red-600 text-white hover:bg-red-700">
+              {confirmDialog.confirmLabel}
             </Button>
           </DialogFooter>
         </DialogContent>

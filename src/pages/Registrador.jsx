@@ -36,7 +36,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, DateTimePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { BellRing, Building2, CalendarClock, Camera, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, Search, UserRound, UtensilsCrossed } from "lucide-react";
+import { BellRing, Building2, CalendarClock, Camera, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, RefreshCcw, Search, UserRound, UtensilsCrossed } from "lucide-react";
 import { isCommercialProfile, isManagerialProfile, isOperationalProfile } from "@/lib/access-control";
 
 const TODAY_KEY = new Date().toISOString().slice(0, 10);
@@ -1441,12 +1441,18 @@ export default function Registrador() {
 
           <TabsContent value="pets" className="space-y-6">
             <Card className="border-gray-200 bg-white">
-              <CardContent className="p-3 sm:p-6">
+              <CardContent className="p-2.5 sm:p-6">
                 <SearchFiltersToolbar
                   searchTerm={searchTerm}
                   onSearchChange={setSearchTerm}
                   searchPlaceholder="Buscar por nome do cão, raça ou responsável..."
                   hasActiveFilters={Boolean(searchTerm || selectedDate !== TODAY_KEY)}
+                  searchClassName="min-w-0"
+                  searchInputClassName="h-10 pl-10 pr-3 text-sm sm:h-11 sm:pl-11 sm:pr-4 sm:text-base"
+                  searchIconClassName="left-3.5 h-3.5 w-3.5 sm:left-4 sm:h-4 sm:w-4"
+                  filtersClassName="gap-1.5 sm:gap-2"
+                  filterButtonClassName="h-10 w-10 sm:h-11 sm:w-11"
+                  filterIconClassName="h-3.5 w-3.5 sm:h-4 sm:w-4"
                   onClear={() => {
                     setSearchTerm("");
                     setSelectedDate(TODAY_KEY);
@@ -1470,20 +1476,33 @@ export default function Registrador() {
                     },
                   ]}
                   rightContent={(
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setSearchTerm("");
-                        loadData();
-                      }}
-                      className="h-11 w-full rounded-full px-5 sm:w-auto"
-                    >
-                      Atualizar
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setSearchTerm("");
+                          loadData();
+                        }}
+                        className="h-10 w-10 rounded-full p-0 sm:hidden"
+                        aria-label="Atualizar agendamentos"
+                      >
+                        <RefreshCcw className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setSearchTerm("");
+                          loadData();
+                        }}
+                        className="hidden h-11 rounded-full px-5 sm:inline-flex"
+                      >
+                        Atualizar
+                      </Button>
+                    </>
                   )}
                 />
-                <p className="mt-3 text-xs text-gray-500">
-                  {selectedDateTitle}: {filteredAppointments.length} agendamento(s) encontrado(s) para a busca atual.
+                <p className="mt-2 px-1 text-[11px] text-gray-500 sm:mt-3 sm:px-0 sm:text-xs">
+                  {selectedDateTitle} • {filteredAppointments.length} agendamento(s) para esta busca.
                 </p>
               </CardContent>
             </Card>

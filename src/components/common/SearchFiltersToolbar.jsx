@@ -12,6 +12,9 @@ function FilterChip({
   active = false,
   children,
   contentClassName,
+  buttonClassName,
+  labelClassName,
+  iconClassName,
 }) {
   const [open, setOpen] = useState(false);
 
@@ -27,14 +30,16 @@ function FilterChip({
               ? "border-blue-200 bg-blue-50 text-blue-700"
               : active
                 ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700"
+                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700",
+            buttonClassName,
           )}
         >
-          <Icon className="h-4 w-4 shrink-0" />
+          <Icon className={cn("h-4 w-4 shrink-0", iconClassName)} />
           <span
             className={cn(
               "overflow-hidden whitespace-nowrap pl-2 text-sm font-medium transition-all duration-200",
-              open ? "max-w-[120px] opacity-100" : "max-w-0 opacity-0"
+              open ? "max-w-[120px] opacity-100" : "max-w-0 opacity-0",
+              labelClassName,
             )}
           >
             {label}
@@ -61,21 +66,27 @@ export default function SearchFiltersToolbar({
   hasActiveFilters = false,
   className,
   searchClassName,
+  searchInputClassName,
+  searchIconClassName,
+  filtersClassName,
+  filterButtonClassName,
+  filterLabelClassName,
+  filterIconClassName,
   rightContent = null,
 }) {
   return (
     <div className={cn("flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between", className)}>
       <div className={cn("relative min-w-[220px] flex-1", searchClassName)}>
-        <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <Search className={cn("pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400", searchIconClassName)} />
         <Input
           value={searchTerm}
           onChange={(event) => onSearchChange?.(event.target.value)}
           placeholder={searchPlaceholder}
-          className="h-11 rounded-full border-gray-200 bg-white pl-11 pr-4 shadow-sm"
+          className={cn("h-11 rounded-full border-gray-200 bg-white pl-11 pr-4 shadow-sm", searchInputClassName)}
         />
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap sm:flex-row-reverse">
+      <div className={cn("flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap sm:flex-row-reverse", filtersClassName)}>
         {filters.map((filter) => (
           <FilterChip
             key={filter.id}
@@ -83,6 +94,9 @@ export default function SearchFiltersToolbar({
             label={filter.label}
             active={Boolean(filter.active)}
             contentClassName={filter.contentClassName}
+            buttonClassName={filterButtonClassName}
+            labelClassName={filterLabelClassName}
+            iconClassName={filterIconClassName}
           >
             {filter.content}
           </FilterChip>

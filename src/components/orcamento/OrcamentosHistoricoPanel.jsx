@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createPageUrl } from "@/utils";
@@ -13,7 +14,6 @@ import {
   AlertTriangle,
   Search,
   FileText,
-  Copy,
   Eye,
   Trash2,
   Calendar,
@@ -23,6 +23,8 @@ import {
   XCircle,
   Clock,
   Send,
+  Pencil,
+  Save,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -31,7 +33,9 @@ import {
   buildDogOwnerIndex,
   buildPricingConfig,
   getAppointmentDateKey,
+  getAppointmentEndDateKey,
   getAppointmentMeta,
+  getAppointmentTimeValue,
   getServiceLabel,
   isApprovedOrcamentoStatus,
 } from "@/lib/attendance";
@@ -53,6 +57,22 @@ function formatTimeRange(startTime, endTime) {
   if (startTime) return startTime;
   if (endTime) return endTime;
   return "-";
+}
+
+function combineDateTimeLocal(date, time) {
+  if (!date) return null;
+  const normalizedTime = (time || "09:00").slice(0, 5);
+  return `${date}T${normalizedTime}:00`;
+}
+
+function getCreatedTimestamp(record) {
+  const candidates = [record?.created_date, record?.created_at, record?.data_criacao];
+  for (const value of candidates) {
+    if (!value) continue;
+    const time = new Date(value).getTime();
+    if (Number.isFinite(time)) return time;
+  }
+  return 0;
 }
 
 function inferOrcamentoServiceDate(cao, orcamento) {
@@ -317,6 +337,93 @@ function serializeOperationalAppointmentForPrefill(appointment) {
   };
 }
 
+function buildAppointmentEditRow(appointment) {
+  const metadata = getAppointmentMeta(appointment);
+  const snapshot = metadata.snapshot || {};
+  const sharedDogs = Array.isArray(snapshot.hosp_dormitorio_com)
+    ? snapshot.hosp_dormitorio_com
+    : [];
+
+  return {
+    id: appointment.id,
+    dog_id: appointment.dog_id || "",
+    service_type: appointment.service_type || "",
+    data_inicio: getAppointmentDateKey(appointment),
+    data_fim: getAppointmentEndDateKey(appointment),
+    hora_entrada: getAppointmentTimeValue(appointment, "entrada"),
+    hora_saida: getAppointmentTimeValue(appointment, "saida"),
+    observacoes: appointment.observacoes || "",
+    lembrete_texto: metadata.lembrete_texto || metadata.lembrete_orcamento || "",
+    lembrete_horario: metadata.lembrete_horario || metadata.lembrete_horario_orcamento || "",
+    hosp_dormitorio_compartilhado: !!snapshot.hosp_dormitorio_compartilhado,
+    hosp_dormitorio_com: sharedDogs.filter(Boolean),
+    original: appointment,
+  };
+}
+
+function buildUpdatedAppointmentPayload(row) {
+  const metadata = getAppointmentMeta(row.original);
+  const snapshot = { ...(metadata.snapshot || {}) };
+  const serviceType = row.service_type;
+  const startDate = row.data_inicio || "";
+  const endDate = serviceType === "hospedagem" ? (row.data_fim || startDate) : startDate;
+
+  if (serviceType === "hospedagem") {
+    snapshot.hosp_data_entrada = startDate;
+    snapshot.hosp_data_saida = endDate;
+    snapshot.hosp_horario_entrada = row.hora_entrada || "";
+    snapshot.hosp_horario_saida = row.hora_saida || "";
+    snapshot.hosp_dormitorio_compartilhado = !!row.hosp_dormitorio_compartilhado;
+    snapshot.hosp_dormitorio_com = row.hosp_dormitorio_com || [];
+  }
+
+  if (serviceType === "day_care") {
+    snapshot.day_care_data = startDate;
+    snapshot.day_care_horario_entrada = row.hora_entrada || "";
+    snapshot.day_care_horario_saida = row.hora_saida || "";
+  }
+
+  if (serviceType === "adaptacao") {
+    snapshot.adaptacao_data = startDate;
+    snapshot.adaptacao_horario_entrada = row.hora_entrada || "";
+    snapshot.adaptacao_horario_saida = row.hora_saida || "";
+  }
+
+  if (serviceType === "banho") {
+    snapshot.banho_data = startDate;
+    snapshot.banho_horario_inicio = row.hora_entrada || "";
+    snapshot.banho_horario_saida = row.hora_saida || "";
+  }
+
+  if (serviceType === "tosa") {
+    snapshot.tosa_data = startDate;
+    snapshot.tosa_horario_entrada = row.hora_entrada || "";
+    snapshot.tosa_horario_saida = row.hora_saida || "";
+  }
+
+  if (serviceType === "transporte") {
+    snapshot.transporte_data = startDate;
+  }
+
+  return {
+    dog_id: row.dog_id || null,
+    data_referencia: startDate || null,
+    data_hora_entrada: combineDateTimeLocal(startDate, row.hora_entrada || "09:00"),
+    data_hora_saida: row.hora_saida ? combineDateTimeLocal(endDate, row.hora_saida) : null,
+    hora_entrada: row.hora_entrada || "",
+    hora_saida: row.hora_saida || "",
+    observacoes: row.observacoes || "",
+    metadata: {
+      ...metadata,
+      snapshot,
+      lembrete_texto: row.lembrete_texto || "",
+      lembrete_horario: row.lembrete_horario || "",
+      editado_no_orcamento: true,
+      editado_em: new Date().toISOString(),
+    },
+  };
+}
+
 function getStatusBadge(status) {
   const config = {
     rascunho: { color: "bg-gray-100 text-gray-700", icon: Clock, label: "Rascunho" },
@@ -351,7 +458,17 @@ export default function OrcamentosHistoricoPanel({
   const [filterPeriodo, setFilterPeriodo] = useState("all");
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedOrcamento, setSelectedOrcamento] = useState(null);
+  const [selectedStatusDraft, setSelectedStatusDraft] = useState("");
   const [blockedDeleteContext, setBlockedDeleteContext] = useState(null);
+  const [deleteConfirmContext, setDeleteConfirmContext] = useState(null);
+  const [feedbackDialog, setFeedbackDialog] = useState(null);
+  const [isDeletingOrcamento, setIsDeletingOrcamento] = useState(false);
+  const [showAppointmentsEditor, setShowAppointmentsEditor] = useState(false);
+  const [editingOrcamento, setEditingOrcamento] = useState(null);
+  const [appointmentEditRows, setAppointmentEditRows] = useState([]);
+  const [isLoadingAppointmentEdits, setIsLoadingAppointmentEdits] = useState(false);
+  const [isSavingAppointmentEdits, setIsSavingAppointmentEdits] = useState(false);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -361,8 +478,7 @@ export default function OrcamentosHistoricoPanel({
     if (!openOrcamentoId || !orcamentos.length) return;
     const matchedOrcamento = orcamentos.find((item) => item.id === openOrcamentoId);
     if (!matchedOrcamento) return;
-    setSelectedOrcamento(matchedOrcamento);
-    setShowDetailModal(true);
+    openOrcamentoDetail(matchedOrcamento);
   }, [openOrcamentoId, orcamentos]);
 
   async function loadData() {
@@ -389,25 +505,18 @@ export default function OrcamentosHistoricoPanel({
     return dog?.nome || "Cão não encontrado";
   }
 
-  async function handleDuplicate(orcamento) {
-    if (!orcamento) return;
+  function showFeedback(title, description, tone = "info") {
+    setFeedbackDialog({ title, description, tone });
+  }
+
+  function openOrcamentoDetail(orcamento) {
     try {
-      const newOrcamento = {
-        ...orcamento,
-        id: undefined,
-        created_date: undefined,
-        updated_date: undefined,
-        data_criacao: new Date().toISOString().split("T")[0],
-        data_validade: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        status: "rascunho",
-      };
-      await Orcamento.create(newOrcamento);
-      await loadData();
-      await onChange?.();
-      alert("Orçamento duplicado com sucesso!");
-    } catch (error) {
-      console.error("Erro ao duplicar orçamento:", error);
-      alert("Erro ao duplicar orçamento.");
+      setSelectedOrcamento(orcamento);
+      setSelectedStatusDraft(orcamento?.status || "rascunho");
+      setShowDetailModal(true);
+    } catch {
+      setSelectedOrcamento(null);
+      setSelectedStatusDraft("");
     }
   }
 
@@ -443,26 +552,38 @@ export default function OrcamentosHistoricoPanel({
         isReplacementLinkedToDeletion(replacement, id, generatedAppointmentIds)
       );
 
-      const deleteMessage = [
-        "Excluir este orçamento?",
-        "",
-        "Também serão excluídos os registros gerados a partir dele:",
-        `- ${generatedAppointments.length} agendamento(s)`,
-        `- ${linkedReplacements.length} reposição(ões)`,
-        `- ${linkedReceivables.length} valor(es) a receber`,
-      ].join("\n");
-
-      if (!confirm(deleteMessage)) return;
-
-      await Promise.all(linkedReplacements.map((replacement) => Replacement.delete(replacement.id)));
-      await Promise.all(linkedReceivables.map((receivable) => ContaReceber.delete(receivable.id)));
-      await Promise.all(generatedAppointments.map((appointment) => Appointment.delete(appointment.id)));
-      await Orcamento.delete(id);
-      await loadData();
-      await onChange?.();
+      setDeleteConfirmContext({
+        orcamentoId: id,
+        orcamento: orcamentos.find((item) => item.id === id) || null,
+        generatedAppointments,
+        linkedReplacements,
+        linkedReceivables,
+        rows: buildOperationalRecordSuggestion(generatedAppointments, dogs),
+      });
     } catch (error) {
       console.error("Erro ao excluir orçamento:", error);
-      alert("Erro ao excluir orçamento.");
+      showFeedback("Não foi possível preparar a exclusão", "Tente novamente em alguns instantes.", "error");
+    }
+  }
+
+  async function confirmDeleteOrcamento() {
+    if (!deleteConfirmContext?.orcamentoId) return;
+
+    setIsDeletingOrcamento(true);
+    try {
+      await Promise.all((deleteConfirmContext.linkedReplacements || []).map((replacement) => Replacement.delete(replacement.id)));
+      await Promise.all((deleteConfirmContext.linkedReceivables || []).map((receivable) => ContaReceber.delete(receivable.id)));
+      await Promise.all((deleteConfirmContext.generatedAppointments || []).map((appointment) => Appointment.delete(appointment.id)));
+      await Orcamento.delete(deleteConfirmContext.orcamentoId);
+      await loadData();
+      await onChange?.();
+      setDeleteConfirmContext(null);
+      showFeedback("Orçamento excluído", "Os registros gerados por ele também foram removidos.", "success");
+    } catch (error) {
+      console.error("Erro ao excluir orçamento:", error);
+      showFeedback("Não foi possível excluir", "O orçamento não foi removido. Verifique as permissões ou tente novamente.", "error");
+    } finally {
+      setIsDeletingOrcamento(false);
     }
   }
 
@@ -577,33 +698,111 @@ export default function OrcamentosHistoricoPanel({
 
       await loadData();
       await onChange?.();
+      return true;
     } catch (error) {
       console.error("Erro ao alterar status do orçamento:", error);
-      alert("Erro ao alterar status do orçamento.");
+      showFeedback("Não foi possível alterar o status", "A alteração não foi salva. Tente novamente em alguns instantes.", "error");
+      return false;
     }
   }
 
-  const filtered = orcamentos.filter((orcamento) => {
-    const normalizedSearch = searchTerm.toLowerCase();
-    const matchSearch = !searchTerm || (
-      orcamento.id?.includes(searchTerm) ||
-      orcamento.caes?.some((cao) => getDogName(cao.dog_id).toLowerCase().includes(normalizedSearch))
-    );
+  async function saveSelectedOrcamentoChanges() {
+    if (!selectedOrcamento?.id) return;
+    if (selectedStatusDraft === selectedOrcamento.status) return;
 
-    const matchStatus = filterStatus === "all" || orcamento.status === filterStatus;
-
-    let matchPeriodo = true;
-    if (filterPeriodo !== "all" && orcamento.data_criacao) {
-      const dataCriacao = new Date(orcamento.data_criacao);
-      const hoje = new Date();
-      const diferencaDias = (hoje - dataCriacao) / (1000 * 60 * 60 * 24);
-      if (filterPeriodo === "7dias") matchPeriodo = diferencaDias <= 7;
-      if (filterPeriodo === "30dias") matchPeriodo = diferencaDias <= 30;
-      if (filterPeriodo === "90dias") matchPeriodo = diferencaDias <= 90;
+    setIsSavingStatus(true);
+    const saved = await handleStatusChange(selectedOrcamento.id, selectedStatusDraft);
+    if (saved) {
+      setSelectedOrcamento((current) => current ? { ...current, status: selectedStatusDraft } : current);
+      showFeedback("Alterações salvas", "O status do orçamento foi atualizado.", "success");
     }
+    setIsSavingStatus(false);
+  }
 
-    return matchSearch && matchStatus && matchPeriodo;
-  });
+  async function openAppointmentsEditor(orcamento) {
+    if (!orcamento?.id) return;
+    setEditingOrcamento(orcamento);
+    setShowAppointmentsEditor(true);
+    setIsLoadingAppointmentEdits(true);
+    try {
+      const appointmentRows = await Appointment.listAll("-created_date", 1000, 10000);
+      const linkedAppointments = getAppointmentsGeneratedFromOrcamento(appointmentRows || [], orcamento.id)
+        .sort((a, b) => {
+          const dateCompare = String(getAppointmentDateKey(a)).localeCompare(String(getAppointmentDateKey(b)));
+          if (dateCompare !== 0) return dateCompare;
+          return String(getAppointmentTimeValue(a, "entrada")).localeCompare(String(getAppointmentTimeValue(b, "entrada")));
+        });
+      setAppointmentEditRows(linkedAppointments.map(buildAppointmentEditRow));
+    } catch (error) {
+      console.error("Erro ao carregar agendamentos do orçamento:", error);
+      setAppointmentEditRows([]);
+      showFeedback("Não foi possível abrir a edição", "Os agendamentos vinculados não foram carregados.", "error");
+    } finally {
+      setIsLoadingAppointmentEdits(false);
+    }
+  }
+
+  function updateAppointmentEditRow(rowId, patch) {
+    setAppointmentEditRows((currentRows) =>
+      currentRows.map((row) => row.id === rowId ? { ...row, ...patch } : row)
+    );
+  }
+
+  function toggleSharedKennelDog(rowId, dogId) {
+    setAppointmentEditRows((currentRows) =>
+      currentRows.map((row) => {
+        if (row.id !== rowId) return row;
+        const currentIds = new Set(row.hosp_dormitorio_com || []);
+        if (currentIds.has(dogId)) currentIds.delete(dogId);
+        else currentIds.add(dogId);
+        return { ...row, hosp_dormitorio_com: [...currentIds] };
+      })
+    );
+  }
+
+  async function saveAppointmentEdits() {
+    if (!appointmentEditRows.length) return;
+    setIsSavingAppointmentEdits(true);
+    try {
+      await Promise.all(
+        appointmentEditRows.map((row) => Appointment.update(row.id, buildUpdatedAppointmentPayload(row)))
+      );
+      await loadData();
+      await onChange?.();
+      setShowAppointmentsEditor(false);
+      setEditingOrcamento(null);
+      showFeedback("Agendamentos atualizados", "As alterações foram salvas nos agendamentos deste orçamento.", "success");
+    } catch (error) {
+      console.error("Erro ao salvar agendamentos do orçamento:", error);
+      showFeedback("Não foi possível salvar", "Revise os dados dos agendamentos e tente novamente.", "error");
+    } finally {
+      setIsSavingAppointmentEdits(false);
+    }
+  }
+
+  const filtered = orcamentos
+    .filter((orcamento) => {
+      const normalizedSearch = searchTerm.toLowerCase();
+      const matchSearch = !searchTerm || (
+        orcamento.id?.includes(searchTerm) ||
+        orcamento.caes?.some((cao) => getDogName(cao.dog_id).toLowerCase().includes(normalizedSearch))
+      );
+
+      const matchStatus = filterStatus === "all" || orcamento.status === filterStatus;
+
+      let matchPeriodo = true;
+      if (filterPeriodo !== "all" && orcamento.data_criacao) {
+        const dataCriacao = new Date(orcamento.data_criacao);
+        const hoje = new Date();
+        const diferencaDias = (hoje - dataCriacao) / (1000 * 60 * 60 * 24);
+        if (filterPeriodo === "7dias") matchPeriodo = diferencaDias <= 7;
+        if (filterPeriodo === "30dias") matchPeriodo = diferencaDias <= 30;
+        if (filterPeriodo === "90dias") matchPeriodo = diferencaDias <= 90;
+      }
+
+      return matchSearch && matchStatus && matchPeriodo;
+    })
+    .sort((a, b) => getCreatedTimestamp(b) - getCreatedTimestamp(a));
 
   const stats = {
     total: orcamentos.length,
@@ -617,6 +816,13 @@ export default function OrcamentosHistoricoPanel({
   const selectedOrcamentoIncludedAppointments = selectedOrcamento
     ? buildIncludedAppointments(selectedOrcamento, dogs)
     : [];
+  const deleteConfirmRows = deleteConfirmContext?.rows || [];
+  const FeedbackIcon = feedbackDialog?.tone === "success" ? CheckCircle : AlertTriangle;
+  const feedbackToneClasses = feedbackDialog?.tone === "error"
+    ? "bg-red-100 text-red-700"
+    : feedbackDialog?.tone === "success"
+      ? "bg-green-100 text-green-700"
+      : "bg-blue-100 text-blue-700";
 
   if (isLoading) {
     return (
@@ -797,21 +1003,9 @@ export default function OrcamentosHistoricoPanel({
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          onClick={() => {
-                            setSelectedOrcamento(orcamento);
-                            setShowDetailModal(true);
-                          }}
+                          onClick={() => openOrcamentoDetail(orcamento)}
                         >
                           <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleDuplicate(orcamento)}
-                          title="Duplicar"
-                        >
-                          <Copy className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -831,12 +1025,18 @@ export default function OrcamentosHistoricoPanel({
         </CardContent>
       </Card>
 
-      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+      <Dialog
+        open={showDetailModal}
+        onOpenChange={(open) => {
+          setShowDetailModal(open);
+          if (!open) setSelectedStatusDraft(selectedOrcamento?.status || "");
+        }}
+      >
         <DialogContent className="max-h-[90vh] w-[95vw] max-w-[600px] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detalhes do Orçamento</DialogTitle>
             <DialogDescription className="sr-only">
-              Visualização detalhada do orçamento com ações de status e duplicação.
+              Visualização detalhada do orçamento com ações de status e edição dos agendamentos.
             </DialogDescription>
           </DialogHeader>
           {selectedOrcamento && (
@@ -939,28 +1139,230 @@ export default function OrcamentosHistoricoPanel({
                   {["rascunho", "enviado", "aprovado", "recusado"].map((status) => (
                     <Button
                       key={status}
-                      variant={selectedOrcamento.status === status ? "default" : "outline"}
+                      variant={selectedStatusDraft === status ? "default" : "outline"}
                       size="sm"
-                      onClick={async () => {
-                        await handleStatusChange(selectedOrcamento.id, status);
-                        setSelectedOrcamento((current) => current ? { ...current, status } : current);
-                      }}
+                      onClick={() => setSelectedStatusDraft(status)}
                     >
                       {status.charAt(0).toUpperCase() + status.slice(1)}
                     </Button>
                   ))}
                 </div>
+                {selectedStatusDraft !== selectedOrcamento.status && (
+                  <p className="mt-2 text-sm text-blue-700">
+                    Alteração pendente. Clique em salvar para aplicar.
+                  </p>
+                )}
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowDetailModal(false)}>Fechar</Button>
             <Button
-              onClick={() => handleDuplicate(selectedOrcamento)}
+              variant="outline"
+              onClick={() => openAppointmentsEditor(selectedOrcamento)}
+              disabled={!selectedOrcamento?.id}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Editar
+            </Button>
+            <Button
+              onClick={saveSelectedOrcamentoChanges}
+              disabled={!selectedOrcamento?.id || selectedStatusDraft === selectedOrcamento?.status || isSavingStatus}
               className="bg-blue-600 text-white hover:bg-blue-700"
             >
-              <Copy className="mr-2 h-4 w-4" />
-              Duplicar
+              <Save className="mr-2 h-4 w-4" />
+              {isSavingStatus ? "Salvando..." : "Salvar alterações"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showAppointmentsEditor}
+        onOpenChange={(open) => {
+          setShowAppointmentsEditor(open);
+          if (!open) {
+            setEditingOrcamento(null);
+            setAppointmentEditRows([]);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-[900px] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar agendamentos do orçamento</DialogTitle>
+            <DialogDescription>
+              Ajuste individualmente as datas, horários, cães, observações e lembretes dos agendamentos já criados
+              {editingOrcamento?.id ? ` para este orçamento.` : "."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {isLoadingAppointmentEdits ? (
+            <div className="flex items-center justify-center py-10">
+              <div className="h-10 w-10 animate-spin rounded-full border-b-4 border-blue-600" />
+            </div>
+          ) : appointmentEditRows.length === 0 ? (
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center">
+              <Calendar className="mx-auto mb-3 h-10 w-10 text-gray-400" />
+              <p className="font-medium text-gray-900">Nenhum agendamento vinculado encontrado</p>
+              <p className="mt-1 text-sm text-gray-600">
+                Este orçamento ainda não gerou agendamentos ou eles já foram removidos.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {appointmentEditRows.map((row, index) => {
+                const isHospedagem = row.service_type === "hospedagem";
+                const availableKennelDogs = dogs.filter((dog) => dog.id !== row.dog_id);
+
+                return (
+                  <div key={row.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue-600">
+                          Agendamento {index + 1}
+                        </p>
+                        <h4 className="mt-1 text-lg font-bold text-gray-900">
+                          {getServiceLabel(row.service_type)} {row.data_inicio ? formatDate(row.data_inicio) : ""}
+                        </h4>
+                      </div>
+                      <Badge variant="outline">{row.id}</Badge>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Cão incluso</label>
+                        <Select value={row.dog_id} onValueChange={(value) => updateAppointmentEditRow(row.id, { dog_id: value })}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o cão" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {dogs.map((dog) => (
+                              <SelectItem key={dog.id} value={dog.id}>{dog.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Serviço</label>
+                        <Input value={getServiceLabel(row.service_type)} disabled />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">
+                          {isHospedagem ? "Data de entrada" : "Data agendada"}
+                        </label>
+                        <Input
+                          type="date"
+                          value={row.data_inicio || ""}
+                          onChange={(event) => updateAppointmentEditRow(row.id, { data_inicio: event.target.value })}
+                        />
+                      </div>
+
+                      {isHospedagem && (
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-700">Data de saída</label>
+                          <Input
+                            type="date"
+                            value={row.data_fim || ""}
+                            onChange={(event) => updateAppointmentEditRow(row.id, { data_fim: event.target.value })}
+                          />
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Horário de início</label>
+                        <Input
+                          type="time"
+                          value={row.hora_entrada || ""}
+                          onChange={(event) => updateAppointmentEditRow(row.id, { hora_entrada: event.target.value })}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Horário de término</label>
+                        <Input
+                          type="time"
+                          value={row.hora_saida || ""}
+                          onChange={(event) => updateAppointmentEditRow(row.id, { hora_saida: event.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    {isHospedagem && (
+                      <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                        <label className="flex items-center gap-2 text-sm font-medium text-blue-900">
+                          <input
+                            type="checkbox"
+                            checked={row.hosp_dormitorio_compartilhado}
+                            onChange={(event) => updateAppointmentEditRow(row.id, { hosp_dormitorio_compartilhado: event.target.checked })}
+                          />
+                          Divide canil
+                        </label>
+
+                        {row.hosp_dormitorio_compartilhado && (
+                          <div className="mt-3">
+                            <p className="mb-2 text-sm font-medium text-blue-900">Com quais cães?</p>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {availableKennelDogs.map((dog) => (
+                                <label key={dog.id} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm text-gray-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={(row.hosp_dormitorio_com || []).includes(dog.id)}
+                                    onChange={() => toggleSharedKennelDog(row.id, dog.id)}
+                                  />
+                                  {dog.nome}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Observações</label>
+                        <Textarea
+                          value={row.observacoes || ""}
+                          onChange={(event) => updateAppointmentEditRow(row.id, { observacoes: event.target.value })}
+                          rows={3}
+                          placeholder="Observações deste agendamento"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Lembrete</label>
+                        <Textarea
+                          value={row.lembrete_texto || ""}
+                          onChange={(event) => updateAppointmentEditRow(row.id, { lembrete_texto: event.target.value })}
+                          rows={2}
+                          placeholder="Lembrete relacionado a este agendamento"
+                        />
+                        <Input
+                          type="time"
+                          value={row.lembrete_horario || ""}
+                          onChange={(event) => updateAppointmentEditRow(row.id, { lembrete_horario: event.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowAppointmentsEditor(false)} disabled={isSavingAppointmentEdits}>
+              Fechar
+            </Button>
+            <Button
+              onClick={saveAppointmentEdits}
+              disabled={isLoadingAppointmentEdits || isSavingAppointmentEdits || appointmentEditRows.length === 0}
+              className="bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <Save className="mr-2 h-4 w-4" />
+              {isSavingAppointmentEdits ? "Salvando..." : "Salvar agendamentos"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1010,6 +1412,101 @@ export default function OrcamentosHistoricoPanel({
             <Button onClick={handleCreateBudgetForUsedAppointments} className="bg-blue-600 text-white hover:bg-blue-700">
               <FileText className="mr-2 h-4 w-4" />
               Criar orçamento para o que já foi utilizado
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteConfirmContext)}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingOrcamento) setDeleteConfirmContext(null);
+        }}
+      >
+        <DialogContent className="max-h-[92vh] w-[95vw] max-w-[640px] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-red-100 p-3">
+                <Trash2 className="h-6 w-6 text-red-700" />
+              </div>
+              <div>
+                <DialogTitle>Excluir orçamento?</DialogTitle>
+                <DialogDescription className="mt-2 text-sm leading-6">
+                  Esta ação remove o orçamento e os registros gerados por ele. Nenhum atendimento com check-in ou check-out foi encontrado neste vínculo.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                { label: "Agendamentos", value: deleteConfirmContext?.generatedAppointments?.length || 0 },
+                { label: "Reposições", value: deleteConfirmContext?.linkedReplacements?.length || 0 },
+                { label: "Valores a receber", value: deleteConfirmContext?.linkedReceivables?.length || 0 },
+              ].map((item) => (
+                <div key={item.label} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-2xl font-bold text-gray-900">{item.value}</p>
+                  <p className="mt-1 text-sm text-gray-600">{item.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {deleteConfirmRows.length > 0 && (
+              <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                <p className="text-sm font-semibold text-gray-900">Registros que serão removidos</p>
+                <div className="mt-3 space-y-2">
+                  {deleteConfirmRows.slice(0, 4).map((row) => (
+                    <div key={row.id} className="flex flex-col gap-1 rounded-xl bg-gray-50 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-medium text-gray-900">{row.dogName}</p>
+                        <p className="text-gray-600">{row.serviceName}</p>
+                      </div>
+                      <Badge variant="outline">{row.serviceDate ? formatDate(row.serviceDate) : "Data não informada"}</Badge>
+                    </div>
+                  ))}
+                </div>
+                {deleteConfirmRows.length > 4 && (
+                  <p className="mt-3 text-xs text-gray-500">+{deleteConfirmRows.length - 4} registro(s) relacionado(s)</p>
+                )}
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-800">
+              Confirme apenas se deseja remover estes registros gerados automaticamente junto com o orçamento.
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteConfirmContext(null)} disabled={isDeletingOrcamento}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmDeleteOrcamento} disabled={isDeletingOrcamento} className="bg-red-600 text-white hover:bg-red-700">
+              <Trash2 className="mr-2 h-4 w-4" />
+              {isDeletingOrcamento ? "Excluindo..." : "Excluir orçamento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(feedbackDialog)} onOpenChange={(open) => !open && setFeedbackDialog(null)}>
+        <DialogContent className="w-[95vw] max-w-[460px]">
+          <DialogHeader>
+            <div className="flex items-start gap-3">
+              <div className={`rounded-2xl p-3 ${feedbackToneClasses}`}>
+                <FeedbackIcon className="h-6 w-6" />
+              </div>
+              <div>
+                <DialogTitle>{feedbackDialog?.title}</DialogTitle>
+                <DialogDescription className="mt-2 text-sm leading-6">
+                  {feedbackDialog?.description}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setFeedbackDialog(null)} className="bg-blue-600 text-white hover:bg-blue-700">
+              Entendi
             </Button>
           </DialogFooter>
         </DialogContent>

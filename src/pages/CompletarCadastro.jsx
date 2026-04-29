@@ -403,13 +403,13 @@ export default function CompletarCadastro() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#fff7ed,_#f8fafc_55%,_#e2e8f0)] p-4 sm:p-6">
-      <div className="max-w-4xl mx-auto">
+      <div className="mx-auto max-w-4xl">
         <Card className="border-orange-200 bg-white/95 shadow-xl shadow-orange-100">
-          <CardHeader className="space-y-3">
+          <CardHeader className="space-y-3 p-5 sm:p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.25em] text-orange-500">Convite aceito</p>
-                <CardTitle className="mt-2 text-2xl text-slate-900">
+                <CardTitle className="mt-2 text-xl text-slate-900 sm:text-2xl">
                   {isInviteFlow ? "Complete sua ficha e defina seu PIN" : "Complete sua ficha de cadastro"}
                 </CardTitle>
                 <p className="mt-2 text-sm text-slate-600">
@@ -441,7 +441,7 @@ export default function CompletarCadastro() {
             )}
           </CardHeader>
 
-          <CardContent>
+          <CardContent className="p-4 sm:p-6">
             {errorMessage && (
               <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 mt-0.5" />
@@ -574,6 +574,7 @@ export default function CompletarCadastro() {
                         variant="outline"
                         onClick={() => document.getElementById("invite-profile-photo")?.click()}
                         disabled={isUploading}
+                        className="w-full sm:w-auto"
                       >
                         <Upload className="w-4 h-4 mr-2" />
                         {isUploading ? "Enviando..." : "Anexar foto"}
@@ -594,7 +595,7 @@ export default function CompletarCadastro() {
                     <UserRound className="w-4 h-4" />
                     <span>{isInviteFlow ? "Seu acesso será liberado após a definição do PIN." : "Seu acesso será liberado após concluir esta ficha."}</span>
                   </div>
-                  <Button type="submit" disabled={isSaving} className="bg-slate-900 hover:bg-slate-800 text-white">
+                  <Button type="submit" disabled={isSaving} className="w-full bg-slate-900 hover:bg-slate-800 text-white sm:w-auto">
                     {isSaving ? "Salvando..." : (isInviteFlow ? "Continuar para definir PIN" : "Concluir cadastro")}
                   </Button>
                 </div>
@@ -648,10 +649,10 @@ export default function CompletarCadastro() {
                 </div>
 
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between sm:items-center">
-                  <Button type="button" variant="outline" onClick={() => setStep("profile")}>
+                  <Button type="button" variant="outline" onClick={() => setStep("profile")} className="w-full sm:w-auto">
                     Voltar para a ficha
                   </Button>
-                  <Button type="submit" disabled={isSaving} className="bg-slate-900 hover:bg-slate-800 text-white">
+                  <Button type="submit" disabled={isSaving} className="w-full bg-slate-900 hover:bg-slate-800 text-white sm:w-auto">
                     {isSaving ? "Concluindo..." : "Concluir cadastro e entrar"}
                   </Button>
                 </div>

@@ -209,9 +209,9 @@ export default function CadastroMonitorPublico() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
         <Card className="w-full max-w-xl border-0 shadow-lg">
-          <CardContent className="p-8 text-center">
+          <CardContent className="p-6 text-center sm:p-8">
             <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" />
-            <h1 className="mt-4 text-2xl font-bold text-slate-900">Cadastro enviado</h1>
+            <h1 className="mt-4 text-xl font-bold text-slate-900 sm:text-2xl">Cadastro enviado</h1>
             <p className="mt-2 text-slate-600">As informações do funcionário foram salvas com sucesso.</p>
           </CardContent>
         </Card>
@@ -222,11 +222,11 @@ export default function CadastroMonitorPublico() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-center gap-3">
-          {logoUrl ? <img src={logoUrl} alt={appName} className="h-14 w-14 rounded-2xl object-contain" /> : null}
+        <div className="mb-5 flex flex-col items-start gap-3 sm:mb-6 sm:flex-row sm:items-center">
+          {logoUrl ? <img src={logoUrl} alt={appName} className="h-12 w-12 rounded-2xl object-contain sm:h-14 sm:w-14" /> : null}
           <div>
             <p className="text-sm font-semibold text-blue-600">Dog City Brasil</p>
-            <h1 className="text-2xl font-bold text-slate-950">Cadastro de funcionário</h1>
+            <h1 className="text-xl font-bold text-slate-950 sm:text-2xl">Cadastro de funcionário</h1>
           </div>
         </div>
 
@@ -237,7 +237,7 @@ export default function CadastroMonitorPublico() {
               Ficha cadastral
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 sm:p-6">
             {errorMessage ? (
               <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">
                 {errorMessage}
@@ -390,7 +390,7 @@ export default function CadastroMonitorPublico() {
               </div>
 
               <div className="flex justify-end">
-                <Button type="submit" disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
+                <Button type="submit" disabled={isSaving} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
                   {isSaving ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                   Enviar cadastro
                 </Button>

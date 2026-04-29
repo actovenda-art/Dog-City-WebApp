@@ -149,6 +149,35 @@ function normalizeDogCoat(value) {
   return coatMap[normalized] || String(value || "").trim();
 }
 
+function parseVaccineCardImages(value) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => typeof item === "string" && item.trim());
+  }
+
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return [];
+
+  if (rawValue.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(rawValue);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item) => typeof item === "string" && item.trim());
+      }
+    } catch {
+      return [rawValue];
+    }
+  }
+
+  return [rawValue];
+}
+
+function serializeVaccineCardImages(value) {
+  const images = parseVaccineCardImages(value);
+  if (!images.length) return null;
+  if (images.length === 1) return images[0];
+  return JSON.stringify(images);
+}
+
 function buildSelectOptions(options, currentValue) {
   const trimmedValue = String(currentValue || "").trim();
   if (!trimmedValue || options.includes(trimmedValue)) {
@@ -230,7 +259,7 @@ export default function Cadastro() {
   const emptyDog = useMemo(() => ({
     nome: "", apelido: "", raca: "", porte: "", cores_pelagem: "", pelagem: "", peso: "", data_nascimento: "",
     sexo: "", castrado: false,
-    foto_url: "", foto_carteirinha_vacina_url: "",
+    foto_url: "", foto_carteirinha_vacina_url: [],
     data_revacinacao_1: "", nome_vacina_revacinacao_1: "",
     data_revacinacao_2: "", nome_vacina_revacinacao_2: "",
     data_revacinacao_3: "", nome_vacina_revacinacao_3: "",
@@ -708,6 +737,7 @@ export default function Cadastro() {
     setDogForm({
       ...emptyDog,
       ...targetDog,
+      foto_carteirinha_vacina_url: parseVaccineCardImages(targetDog.foto_carteirinha_vacina_url),
       sexo: targetDog.sexo || "",
       castrado: !!targetDog.castrado,
       autorizacao_uso_imagem: !!targetDog.autorizacao_uso_imagem,
@@ -868,7 +898,10 @@ export default function Cadastro() {
         const safeName = `${Date.now()}_${(file.name || "arquivo").replace(/\s+/g, "_")}`;
         const path = `${empresaId}/dogs/${dogId}/documentos/${safeName}`;
         const { file_key } = await UploadPrivateFile({ file, path });
-        setDogForm(prev => ({ ...prev, [field]: file_key }));
+        setDogForm((prev) => ({
+          ...prev,
+          [field]: [...parseVaccineCardImages(prev[field]), file_key],
+        }));
       } else {
         const { file_url } = await UploadFile({ file });
         setDogForm(prev => ({ ...prev, [field]: file_url }));
@@ -877,6 +910,14 @@ export default function Cadastro() {
       setNotifyTitle("Erro"); setNotifyMessage("Erro ao enviar arquivo."); setNotifyOpen(true);
     }
     setIsUploading(false);
+  };
+
+  const removeDogDocument = (index) => {
+    const currentImages = parseVaccineCardImages(dogForm.foto_carteirinha_vacina_url);
+    setDogForm((prev) => ({
+      ...prev,
+      foto_carteirinha_vacina_url: currentImages.filter((_, imageIndex) => imageIndex !== index),
+    }));
   };
 
   const openDogDocument = async (path) => {
@@ -917,7 +958,7 @@ export default function Cadastro() {
         sexo: optional(dogForm.sexo),
         castrado: !!dogForm.castrado,
         foto_url: optional(dogForm.foto_url),
-        foto_carteirinha_vacina_url: optional(dogForm.foto_carteirinha_vacina_url),
+        foto_carteirinha_vacina_url: serializeVaccineCardImages(dogForm.foto_carteirinha_vacina_url),
         data_revacinacao_1: optional(dogForm.data_revacinacao_1),
         nome_vacina_revacinacao_1: optional(dogForm.nome_vacina_revacinacao_1),
         data_revacinacao_2: optional(dogForm.data_revacinacao_2),
@@ -1588,7 +1629,56 @@ export default function Cadastro() {
                     <Switch checked={!!dogForm.autorizacao_uso_imagem} onCheckedChange={(checked) => setDogForm({ ...dogForm, autorizacao_uso_imagem: checked })} />
                   </div>
                   <div><Label>Foto Perfil</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="foto-perfil" onChange={(e) => handleUpload(e.target.files?.[0], "foto_url")} /><Button variant="outline" onClick={() => document.getElementById("foto-perfil").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_url && <button type="button" onClick={() => openImageViewer(dogForm.foto_url, "Foto do perfil")} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
-                  <div><Label>Carteirinha de vacinação</Label><div className="flex gap-2"><input type="file" accept="image/*" className="hidden" id="carteirinha" onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")} /><Button variant="outline" onClick={() => document.getElementById("carteirinha").click()} disabled={isUploading} className="flex-1"><Upload className="w-4 h-4 mr-2" />{isUploading ? "..." : "Enviar"}</Button>{dogForm.foto_carteirinha_vacina_url && <button type="button" onClick={() => openDogDocument(dogForm.foto_carteirinha_vacina_url)} className="text-blue-600 text-sm self-center">Ver</button>}</div></div>
+                  <div>
+                    <Label>Carteirinha de vacinação</Label>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        id="carteirinha"
+                        onChange={(e) => handleUpload(e.target.files?.[0], "foto_carteirinha_vacina_url")}
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={() => document.getElementById("carteirinha").click()}
+                        disabled={isUploading}
+                        className="flex-1"
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        {isUploading ? "..." : "Adicionar imagem"}
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500">Você pode anexar frente, verso e páginas extras da carteirinha.</p>
+                    {parseVaccineCardImages(dogForm.foto_carteirinha_vacina_url).length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        {parseVaccineCardImages(dogForm.foto_carteirinha_vacina_url).map((path, index) => (
+                          <div key={`${path}-${index}`} className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">Imagem {index + 1}</p>
+                              <p className="text-xs text-gray-500">Carteirinha de vacinação</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => openDogDocument(path)}
+                                className="text-sm text-blue-600"
+                              >
+                                Ver
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeDogDocument(index)}
+                                className="text-sm text-red-600"
+                              >
+                                Remover
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   {renderDateField({
                     fieldKey: "dog.data_revacinacao_1",
                     label: "1ª revacinação",
@@ -1964,16 +2054,16 @@ export default function Cadastro() {
           </TabsContent>
 
           {/* Responsáveis Tab */}
-          <TabsContent value="responsaveis">
-            <Card className="mb-4 border-emerald-200 bg-emerald-50/70">
-              <CardContent className="p-4">
+          <TabsContent value="responsaveis" className="space-y-4">
+            <Card className="border-emerald-200 bg-emerald-50/70">
+              <CardContent className="p-3 sm:p-4">
                 <div className="flex items-start gap-3">
-                  <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-700">
+                  <div className="rounded-2xl bg-emerald-100 p-2.5 text-emerald-700 sm:p-3">
                     <Users className="h-5 w-5" />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-emerald-900">Responsáveis do dia a dia</p>
-                    <p className="mt-1 text-sm text-emerald-800">
+                    <p className="mt-1 text-sm leading-6 text-emerald-800">
                       Cadastre os contatos principais, documentos e os cães vinculados para facilitar operação e comunicação.
                     </p>
                   </div>
@@ -1982,7 +2072,7 @@ export default function Cadastro() {
             </Card>
             <Card className="border-green-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-green-600" />Cadastrar Responsável</h3>
+                <h3 className="mb-4 flex items-center gap-2 text-base font-semibold text-gray-900 sm:text-lg"><Users className="h-5 w-5 text-green-600" />Cadastrar Responsável</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {renderTextField({
                     fieldKey: "responsavel.nome_completo",
@@ -2034,7 +2124,7 @@ export default function Cadastro() {
                     requiredMessage: "Informe o email.",
                     className: "sm:col-span-2",
                   })}
-                  <div className="sm:col-span-2">
+                  <div className="sm:col-span-2 rounded-2xl border border-emerald-100 bg-emerald-50/40 p-3 sm:p-4">
                     <Label>Vincular Cães (até 8)</Label>
                     <div className="mt-2">
                       <SearchFiltersToolbar
@@ -2045,13 +2135,13 @@ export default function Cadastro() {
                         onClear={() => setSearchDogResp("")}
                       />
                     </div>
-                    <div className="mt-2 max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">
+                    <div className="mt-3 max-h-48 overflow-y-auto rounded-2xl border border-emerald-100 bg-white p-2">
                       {dogs.filter(d => !searchDogResp || d.nome?.toLowerCase().includes(searchDogResp.toLowerCase())).map(d => {
                         const selectedSlot = [1,2,3,4,5,6,7,8].find(n => responsavelForm[`dog_id_${n}`] === d.id);
                         const isSelected = !!selectedSlot;
                         const canSelect = !isSelected && [1,2,3,4,5,6,7,8].some(n => !responsavelForm[`dog_id_${n}`]);
                         return (
-                          <div key={d.id} className={`flex items-center justify-between p-2 rounded cursor-pointer hover:bg-gray-100 ${isSelected ? 'bg-green-50' : ''}`}
+                          <div key={d.id} className={`flex items-center justify-between gap-3 rounded-xl p-2.5 transition-colors hover:bg-gray-50 ${isSelected ? 'bg-green-50' : ''}`}
                             onClick={() => {
                               if (isSelected) {
                                 setResponsavelForm({ ...responsavelForm, [`dog_id_${selectedSlot}`]: "" });
@@ -2060,10 +2150,12 @@ export default function Cadastro() {
                                 if (emptySlot) setResponsavelForm({ ...responsavelForm, [`dog_id_${emptySlot}`]: d.id });
                               }
                             }}>
-                            <div className="flex items-center gap-2">
-                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">ðŸ•</div>}
-                              <span className="text-sm font-medium">{d.nome}</span>
-                              {d.raca && <span className="text-xs text-gray-500">({d.raca})</span>}
+                            <div className="flex min-w-0 items-center gap-2">
+                              {d.foto_url ? <img src={d.foto_url} className="h-8 w-8 rounded-full object-cover" /> : <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-xs">🐕</div>}
+                              <div className="min-w-0">
+                                <span className="block truncate text-sm font-medium">{d.nome}</span>
+                                {d.raca && <span className="block truncate text-xs text-gray-500">{d.raca}</span>}
+                              </div>
                             </div>
                             {isSelected && <Check className="w-5 h-5 text-green-600" />}
                           </div>
@@ -2071,32 +2163,32 @@ export default function Cadastro() {
                       })}
                       {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum cão cadastrado</p>}
                     </div>
-                    <div className="flex flex-wrap gap-1 mt-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
                       {[1,2,3,4,5,6,7,8].map(n => {
                         const dogId = responsavelForm[`dog_id_${n}`];
                         const dog = dogs.find(d => d.id === dogId);
                         if (!dogId) return null;
-                        return <Badge key={n} className="bg-green-100 text-green-700 flex items-center gap-1">{dog?.nome || dogId}<X className="w-3 h-3 cursor-pointer" onClick={() => setResponsavelForm({ ...responsavelForm, [`dog_id_${n}`]: "" })} /></Badge>;
+                        return <Badge key={n} className="bg-green-100 px-2.5 py-1 text-green-700 flex items-center gap-1">{dog?.nome || dogId}<X className="w-3 h-3 cursor-pointer" onClick={() => setResponsavelForm({ ...responsavelForm, [`dog_id_${n}`]: "" })} /></Badge>;
                       })}
                     </div>
                   </div>
                 </div>
-                <Button onClick={handleSaveResponsavel} disabled={isSaving} className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Respons?vel"}</Button>
+                <Button onClick={handleSaveResponsavel} disabled={isSaving} className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Responsável"}</Button>
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* Carteiras Tab */}
-          <TabsContent value="carteiras">
-            <Card className="mb-4 border-orange-200 bg-orange-50/70">
-              <CardContent className="p-4">
+          <TabsContent value="carteiras" className="space-y-4">
+            <Card className="border-orange-200 bg-orange-50/70">
+              <CardContent className="p-3 sm:p-4">
                 <div className="flex items-start gap-3">
-                  <div className="rounded-2xl bg-orange-100 p-3 text-orange-700">
+                  <div className="rounded-2xl bg-orange-100 p-2.5 text-orange-700 sm:p-3">
                     <Wallet className="h-5 w-5" />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-orange-900">Financeiro vinculado ao cão</p>
-                    <p className="mt-1 text-sm text-orange-800">
+                    <p className="mt-1 text-sm leading-6 text-orange-800">
                       Mantenha quem paga, dados de cobrança e vencimento dos planos organizados em um bloco separado.
                     </p>
                   </div>
@@ -2105,8 +2197,8 @@ export default function Cadastro() {
             </Card>
             <Card className="border-orange-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><Wallet className="w-5 h-5 text-orange-600" />Cadastrar Carteira</h3>
-                <div className="mb-4 flex items-center justify-between rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
+                <h3 className="mb-4 flex items-center gap-2 text-base font-semibold text-gray-900 sm:text-lg"><Wallet className="h-5 w-5 text-orange-600" />Cadastrar Carteira</h3>
+                <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-orange-900">Usar os mesmos dados do responsável</p>
                     <p className="text-xs text-orange-700">Preenche nome, documento, contato principal e contatos de orçamento/alinhamento.</p>
@@ -2235,7 +2327,7 @@ export default function Cadastro() {
                       </Select>
                     ),
                   })}
-                  <div></div>
+                  <div className="hidden sm:block" />
                   <div className="sm:col-span-2 rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
                     <h4 className="mb-3 text-sm font-semibold text-orange-900">Contato para envio de orçamentos</h4>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -2304,7 +2396,7 @@ export default function Cadastro() {
                       })}
                     </div>
                   </div>
-                  <div className="sm:col-span-2">
+                  <div className="sm:col-span-2 rounded-2xl border border-orange-100 bg-orange-50/30 p-3 sm:p-4">
                     <Label>Vincular Cães (até 8)</Label>
                     <div className="mt-2">
                       <SearchFiltersToolbar
@@ -2315,13 +2407,13 @@ export default function Cadastro() {
                         onClear={() => setSearchDogCart("")}
                       />
                     </div>
-                    <div className="mt-2 max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">
+                    <div className="mt-3 max-h-48 overflow-y-auto rounded-2xl border border-orange-100 bg-white p-2">
                       {dogs.filter(d => !searchDogCart || d.nome?.toLowerCase().includes(searchDogCart.toLowerCase())).map(d => {
                         const selectedSlot = [1,2,3,4,5,6,7,8].find(n => carteiraForm[`dog_id_${n}`] === d.id);
                         const isSelected = !!selectedSlot;
                         const canSelect = !isSelected && [1,2,3,4,5,6,7,8].some(n => !carteiraForm[`dog_id_${n}`]);
                         return (
-                          <div key={d.id} className={`flex items-center justify-between p-2 rounded cursor-pointer hover:bg-gray-100 ${isSelected ? 'bg-green-50' : ''}`}
+                          <div key={d.id} className={`flex items-center justify-between gap-3 rounded-xl p-2.5 transition-colors hover:bg-gray-50 ${isSelected ? 'bg-green-50' : ''}`}
                             onClick={() => {
                               if (isSelected) {
                                 setCarteiraForm({ ...carteiraForm, [`dog_id_${selectedSlot}`]: "" });
@@ -2330,10 +2422,12 @@ export default function Cadastro() {
                                 if (emptySlot) setCarteiraForm({ ...carteiraForm, [`dog_id_${emptySlot}`]: d.id });
                               }
                             }}>
-                            <div className="flex items-center gap-2">
-                              {d.foto_url ? <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">ðŸ•</div>}
-                              <span className="text-sm font-medium">{d.nome}</span>
-                              {d.raca && <span className="text-xs text-gray-500">({d.raca})</span>}
+                            <div className="flex min-w-0 items-center gap-2">
+                              {d.foto_url ? <img src={d.foto_url} className="h-8 w-8 rounded-full object-cover" /> : <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-xs">🐕</div>}
+                              <div className="min-w-0">
+                                <span className="block truncate text-sm font-medium">{d.nome}</span>
+                                {d.raca && <span className="block truncate text-xs text-gray-500">{d.raca}</span>}
+                              </div>
                             </div>
                             {isSelected && <Check className="w-5 h-5 text-green-600" />}
                           </div>
@@ -2341,12 +2435,12 @@ export default function Cadastro() {
                       })}
                       {dogs.length === 0 && <p className="text-sm text-gray-500 text-center py-2">Nenhum cão cadastrado</p>}
                     </div>
-                    <div className="flex flex-wrap gap-1 mt-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
                       {[1,2,3,4,5,6,7,8].map(n => {
                         const dogId = carteiraForm[`dog_id_${n}`];
                         const dog = dogs.find(d => d.id === dogId);
                         if (!dogId) return null;
-                        return <Badge key={n} className="bg-green-100 text-green-700 flex items-center gap-1">{dog?.nome || dogId}<X className="w-3 h-3 cursor-pointer" onClick={() => setCarteiraForm({ ...carteiraForm, [`dog_id_${n}`]: "" })} /></Badge>;
+                        return <Badge key={n} className="bg-green-100 px-2.5 py-1 text-green-700 flex items-center gap-1">{dog?.nome || dogId}<X className="w-3 h-3 cursor-pointer" onClick={() => setCarteiraForm({ ...carteiraForm, [`dog_id_${n}`]: "" })} /></Badge>;
                       })}
                     </div>
                   </div>

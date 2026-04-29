@@ -43,6 +43,28 @@ function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
 }
 
+function parseVaccineCardImages(value) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => typeof item === "string" && item.trim());
+  }
+
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return [];
+
+  if (rawValue.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(rawValue);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item) => typeof item === "string" && item.trim());
+      }
+    } catch {
+      return [rawValue];
+    }
+  }
+
+  return [rawValue];
+}
+
 function normalizeVisibleText(value) {
   if (!value) return value;
 
@@ -120,7 +142,7 @@ export default function PerfilCao() {
   const [faltas, setFaltas] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dogPhotoUrl, setDogPhotoUrl] = useState("");
-  const [vaccineCardUrl, setVaccineCardUrl] = useState("");
+  const [vaccineCardUrls, setVaccineCardUrls] = useState([]);
 
   const urlParams = new URLSearchParams(location.search);
   const dogReference = urlParams.get("id");
@@ -156,7 +178,15 @@ export default function PerfilCao() {
       const resolvedDogId = foundDog?.id || "";
       setDog(foundDog || null);
       setDogPhotoUrl(await resolveMediaUrl(foundDog?.foto_url));
-      setVaccineCardUrl(await resolveMediaUrl(foundDog?.foto_carteirinha_vacina_url));
+      const vaccineImages = parseVaccineCardImages(foundDog?.foto_carteirinha_vacina_url);
+      setVaccineCardUrls(
+        await Promise.all(
+          vaccineImages.map(async (path) => ({
+            path,
+            url: await resolveMediaUrl(path),
+          }))
+        )
+      );
 
       const linkedResponsaveis = (responsaveisData || []).filter((item) => getLinkedDogIds(item).includes(resolvedDogId));
       const linkedCarteiras = (carteirasData || []).filter((item) => getLinkedDogIds(item).includes(resolvedDogId));
@@ -471,10 +501,19 @@ export default function PerfilCao() {
                   <CardTitle>Carteirinha de vacinação</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {vaccineCardUrl ? (
-                    <button type="button" onClick={() => handleOpenImage(dog?.foto_carteirinha_vacina_url, vaccineCardUrl, "Carteirinha de vacinação")} className="block w-full text-left">
-                      <img src={vaccineCardUrl} alt="Carteirinha de vacinação" className="w-full rounded-lg border" />
-                    </button>
+                  {vaccineCardUrls.filter((item) => item.url).length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {vaccineCardUrls.filter((item) => item.url).map((item, index) => (
+                        <button
+                          key={`${item.path}-${index}`}
+                          type="button"
+                          onClick={() => handleOpenImage(item.path, item.url, `Carteirinha de vacinação ${index + 1}`)}
+                          className="block w-full text-left"
+                        >
+                          <img src={item.url} alt={`Carteirinha de vacinação ${index + 1}`} className="w-full rounded-lg border" />
+                        </button>
+                      ))}
+                    </div>
                   ) : (
                     <p className="py-8 text-center text-gray-500">Carteirinha não cadastrada.</p>
                   )}

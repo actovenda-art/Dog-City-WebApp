@@ -94,16 +94,16 @@ const EMPTY_CAO = {
 };
 
 const EDIT_STEPS = [
-  { id: "responsaveis", label: "ResponsÃ¡veis", icon: Users },
-  { id: "caes", label: "CÃ£es", icon: Dog },
-  { id: "periodo", label: "PerÃ­odo e detalhes", icon: CalendarDays },
+  { id: "responsaveis", label: "Responsáveis", icon: Users },
+  { id: "caes", label: "Cães", icon: Dog },
+  { id: "periodo", label: "Período e detalhes", icon: CalendarDays },
 ];
 
 const TOSA_HIGIENICA_OPTIONS = [
   { id: "pequeno_baixa", label: "Pequeno - Pelagem baixa" },
   { id: "pequeno_alta", label: "Pequeno - Pelagem alta" },
-  { id: "medio_baixa", label: "MÃ©dio - Pelagem baixa" },
-  { id: "medio_alta", label: "MÃ©dio - Pelagem alta" },
+  { id: "medio_baixa", label: "Médio - Pelagem baixa" },
+  { id: "medio_alta", label: "Médio - Pelagem alta" },
   { id: "grande_baixa", label: "Grande - Pelagem baixa" },
   { id: "grande_alta", label: "Grande - Pelagem alta" },
 ];
@@ -226,7 +226,7 @@ function buildInitialGroups(orcamento, appointments, checkins, dogs) {
         caoIndex,
         kind,
         dogId: baseCao?.dog_id || "",
-        dogName: dog?.nome || `CÃ£o ${caoIndex + 1}`,
+        dogName: dog?.nome || `Cão ${caoIndex + 1}`,
         appointments: itemAppointments,
         hasOperationalRecord: itemAppointments.some((appointment) => appointmentHasOperationalRecord(appointment, checkins)),
       });
@@ -397,10 +397,10 @@ function getGroupTitle(group, cao) {
     return `Day Care ${formatDate(cao?.day_care_data)}`;
   }
   if (group.kind === "adaptacao") {
-    return `AdaptaÃ§Ã£o ${formatDate(cao?.adaptacao_data)}`;
+    return `Adaptação ${formatDate(cao?.adaptacao_data)}`;
   }
   if (group.kind === "banho_tosa") {
-    if (cao?.servicos?.banho && cao?.servicos?.tosa) return `Banho e Tosa â€¢ ${formatDate(cao?.banho_data || cao?.tosa_data)}`;
+    if (cao?.servicos?.banho && cao?.servicos?.tosa) return `Banho e Tosa • ${formatDate(cao?.banho_data || cao?.tosa_data)}`;
     if (cao?.servicos?.banho) return `Banho ${formatDate(cao?.banho_data)}`;
     return `Tosa ${formatDate(cao?.tosa_data)}`;
   }
@@ -416,23 +416,23 @@ function getGroupDescription(group, cao) {
   if (group.kind === "hospedagem") {
     const dates = (cao?.hosp_datas_daycare || []).filter(Boolean);
     return dates.length > 0
-      ? `PerÃ­odo completo com ${dates.length} diÃ¡ria(s) vinculada(s) ao Day Care.`
-      : "PerÃ­odo completo da hospedagem.";
+      ? `Período completo com ${dates.length} diária(s) vinculada(s) ao Day Care.`
+      : "Período completo da hospedagem.";
   }
   if (group.kind === "day_care") {
-    return `Entrada ${cao?.day_care_horario_entrada || "08:00"} â€¢ SaÃ­da ${cao?.day_care_horario_saida || "18:00"}`;
+    return `Entrada ${cao?.day_care_horario_entrada || "08:00"} • Saída ${cao?.day_care_horario_saida || "18:00"}`;
   }
   if (group.kind === "adaptacao") {
-    return `${cao?.adaptacao_horario_entrada || "09:00"} Ã s ${cao?.adaptacao_horario_saida || "10:00"}`;
+    return `${cao?.adaptacao_horario_entrada || "09:00"} às ${cao?.adaptacao_horario_saida || "10:00"}`;
   }
   if (group.kind === "banho_tosa") {
     const labels = [];
     if (cao?.servicos?.banho) labels.push(`Banho ${formatDate(cao?.banho_data)}`);
     if (cao?.servicos?.tosa) labels.push(`Tosa ${formatDate(cao?.tosa_data)}`);
-    return labels.join(" â€¢ ");
+    return labels.join(" • ");
   }
   if (group.kind === "transporte") {
-    return `${(cao?.transporte_viagens || []).length} viagem(ns) cadastrada(s) neste orÃ§amento.`;
+    return `${(cao?.transporte_viagens || []).length} viagem(ns) cadastrada(s) neste orçamento.`;
   }
   return "";
 }
@@ -451,7 +451,7 @@ function ensureOperationalCoverage(group, draftCao, checkinsByAppointmentId) {
   if (!group?.hasOperationalRecord) return null;
 
   if (draftCao.dog_id !== group.dogId) {
-    return `O atendimento "${group.dogName}" jÃ¡ possui registro operacional. Para proteger o histÃ³rico, o cÃ£o deste serviÃ§o nÃ£o pode ser alterado.`;
+    return `O atendimento "${group.dogName}" já possui registro operacional. Para proteger o histórico, o cão deste serviço não pode ser alterado.`;
   }
 
   let startDate = "";
@@ -484,7 +484,7 @@ function ensureOperationalCoverage(group, draftCao, checkinsByAppointmentId) {
   );
 
   if (outsideCheckin) {
-    return `As novas datas de "${group.dogName}" deixariam um check-in ou check-out fora do perÃ­odo coberto por este atendimento. Ajuste o perÃ­odo para manter os registros existentes.`;
+    return `As novas datas de "${group.dogName}" deixariam um check-in ou check-out fora do período coberto por este atendimento. Ajuste o período para manter os registros existentes.`;
   }
 
   return null;
@@ -517,7 +517,7 @@ function calculateOrcamento(caes, dogs, precos) {
 
     if (cao?.servicos?.adaptacao && cao?.adaptacao_data) {
       const valor = Number(precos?.adaptacao || 0);
-      linhas.push({ tipo: "adaptacao", descricao: "AdaptaÃ§Ã£o", valor });
+      linhas.push({ tipo: "adaptacao", descricao: "Adaptação", valor });
       total += valor;
       subtotalServicos += valor;
     }
@@ -539,14 +539,14 @@ function calculateOrcamento(caes, dogs, precos) {
       if (diariasNormais > 0) {
         linhas.push({
           tipo: "hospedagem",
-          descricao: `${diariasNormais} diÃ¡ria(s) Ã— ${formatCurrency(valorDiaria)}`,
+          descricao: `${diariasNormais} diária(s) × ${formatCurrency(valorDiaria)}`,
           valor: subtotalDiarias,
         });
       }
       if (numDaycare > 0) {
         linhas.push({
           tipo: "pernoite",
-          descricao: `${numDaycare} pernoite(s) Ã— ${formatCurrency(precos.pernoite)}`,
+          descricao: `${numDaycare} pernoite(s) × ${formatCurrency(precos.pernoite)}`,
           valor: subtotalPernoite,
         });
       }
@@ -554,7 +554,7 @@ function calculateOrcamento(caes, dogs, precos) {
       let descDormitorio = 0;
       if (getSharedKennelEnabled(cao) && getSharedKennelDogs(cao).length > 0) {
         descDormitorio = subtotalDiarias * precos.desconto_canil;
-        linhas.push({ tipo: "desconto", descricao: "Desc. dormitÃ³rio compartilhado", valor: -descDormitorio });
+        linhas.push({ tipo: "desconto", descricao: "Desc. dormitório compartilhado", valor: -descDormitorio });
         descontoTotal += descDormitorio;
       }
 
@@ -583,7 +583,7 @@ function calculateOrcamento(caes, dogs, precos) {
       let descricao = "Tosa";
       if (cao.tosa_tipo === "higienica") {
         valor = precos?.tosa_higienica?.[cao.tosa_subtipo_higienica || "pequeno_baixa"] || 0;
-        descricao = "Tosa higiÃªnica";
+        descricao = "Tosa higiênica";
       } else {
         const raca = normalizeBreedName(cao?.banho_raca || dog?.raca || "Outro") || "Outro";
         valor = cao.tosa_tipo === "detalhada"
@@ -602,7 +602,7 @@ function calculateOrcamento(caes, dogs, precos) {
         if (km <= 0) return;
         const valor = km * (precos?.transporte_km || 0);
         transporte.push({
-          dog_nome: dog?.nome || "CÃ£o",
+          dog_nome: dog?.nome || "Cão",
           viagem_num: index + 1,
           km,
           valor,
@@ -616,7 +616,7 @@ function calculateOrcamento(caes, dogs, precos) {
     if (linhas.length > 0 || total > 0) {
       detalhes.push({
         dog_id: cao.dog_id,
-        dog_nome: dog?.nome || "CÃ£o",
+        dog_nome: dog?.nome || "Cão",
         linhas,
         total,
       });
@@ -754,7 +754,7 @@ export default function OrcamentoAgendamentoEditorDialog({
       setCheckinsByAppointmentId(byAppointmentId);
     } catch (error) {
       console.error("Erro ao abrir editor de agendamentos:", error);
-      onFeedback?.("NÃ£o foi possÃ­vel abrir a ediÃ§Ã£o", "Os agendamentos deste orÃ§amento nÃ£o foram carregados.", "error");
+      onFeedback?.("Não foi possível abrir a edição", "Os agendamentos deste orçamento não foram carregados.", "error");
       onClose?.();
     } finally {
       setIsLoading(false);
@@ -853,7 +853,7 @@ export default function OrcamentoAgendamentoEditorDialog({
     if (!selectedGroup || !groupDraft || !draftOrcamento) return;
     const validationMessage = ensureOperationalCoverage(selectedGroup, groupDraft, checkinsByAppointmentId);
     if (validationMessage) {
-      onFeedback?.("AlteraÃ§Ã£o bloqueada", validationMessage, "error");
+      onFeedback?.("Alteração bloqueada", validationMessage, "error");
       return;
     }
 
@@ -917,7 +917,7 @@ export default function OrcamentoAgendamentoEditorDialog({
           originalItems.slice(plannedItems.length).forEach((appointment) => {
             if (appointmentHasOperationalRecord(appointment, checkinsByAppointmentId[appointment.id] || [])) {
               blockingMessages.push(
-                `${getServiceLabel(appointment.service_type)} de ${formatDate(getAppointmentDateKey(appointment))} jÃ¡ possui registro operacional e nÃ£o pode perder cobertura.`
+                `${getServiceLabel(appointment.service_type)} de ${formatDate(getAppointmentDateKey(appointment))} já possui registro operacional e não pode perder cobertura.`
               );
               return;
             }
@@ -927,7 +927,7 @@ export default function OrcamentoAgendamentoEditorDialog({
       });
 
       if (blockingMessages.length > 0) {
-        onFeedback?.("Algumas alteraÃ§Ãµes foram bloqueadas", blockingMessages.slice(0, 3).join(" "), "error");
+        onFeedback?.("Algumas alterações foram bloqueadas", blockingMessages.slice(0, 3).join(" "), "error");
         setIsSaving(false);
         return;
       }
@@ -949,8 +949,8 @@ export default function OrcamentoAgendamentoEditorDialog({
       await Orcamento.update(draftOrcamento.id, payload);
       onSaved?.({ ...draftOrcamento, ...payload });
     } catch (error) {
-      console.error("Erro ao salvar ediÃ§Ã£o do orÃ§amento:", error);
-      onFeedback?.("NÃ£o foi possÃ­vel salvar", "Revise os dados alterados e tente novamente.", "error");
+      console.error("Erro ao salvar edição do orçamento:", error);
+      onFeedback?.("Não foi possível salvar", "Revise os dados alterados e tente novamente.", "error");
     } finally {
       setIsSaving(false);
     }
@@ -963,19 +963,19 @@ export default function OrcamentoAgendamentoEditorDialog({
       <div className="space-y-4">
         {selectedGroup.hasOperationalRecord ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Qualquer nova data precisa continuar abrangendo o check-in e o check-out jÃ¡ registrados para este atendimento.
+            Qualquer nova data precisa continuar abrangendo o check-in e o check-out já registrados para este atendimento.
           </div>
         ) : null}
 
         <Card className="border-gray-200 bg-white">
           <CardContent className="space-y-5 p-5">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">ServiÃ§o selecionado</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Serviço selecionado</p>
               <h3 className="mt-2 text-lg font-bold text-gray-900">
                 {selectedGroupBaseCao ? getGroupTitle(selectedGroup, selectedGroupBaseCao) : "Atendimento"}
               </h3>
               <p className="mt-2 text-sm text-gray-600">
-                Revise apenas as informaÃ§Ãµes deste atendimento. As demais partes do orÃ§amento continuam preservadas.
+                Revise apenas as informações deste atendimento. As demais partes do orçamento continuam preservadas.
               </p>
             </div>
 
@@ -987,15 +987,15 @@ export default function OrcamentoAgendamentoEditorDialog({
                     <DatePickerInput className="mt-2" value={groupDraft.hosp_data_entrada} onChange={(value) => patchGroupDraft({ hosp_data_entrada: value })} />
                   </div>
                   <div>
-                    <Label>HorÃ¡rio de entrada</Label>
+                    <Label>Horário de entrada</Label>
                     <TimePickerInput className="mt-2" value={groupDraft.hosp_horario_entrada} onChange={(value) => patchGroupDraft({ hosp_horario_entrada: value })} />
                   </div>
                   <div>
-                    <Label>Data de saÃ­da</Label>
+                    <Label>Data de saída</Label>
                     <DatePickerInput className="mt-2" value={groupDraft.hosp_data_saida} onChange={(value) => patchGroupDraft({ hosp_data_saida: value })} />
                   </div>
                   <div>
-                    <Label>HorÃ¡rio de saÃ­da</Label>
+                    <Label>Horário de saída</Label>
                     <TimePickerInput className="mt-2" value={groupDraft.hosp_horario_saida} onChange={(value) => patchGroupDraft({ hosp_horario_saida: value })} />
                   </div>
                 </div>
@@ -1005,7 +1005,7 @@ export default function OrcamentoAgendamentoEditorDialog({
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <Label className="text-sm font-medium">Mensalista de Day Care</Label>
-                        <p className="mt-1 text-xs text-gray-500">Usa diÃ¡ria diferenciada na hospedagem.</p>
+                        <p className="mt-1 text-xs text-gray-500">Usa diária diferenciada na hospedagem.</p>
                       </div>
                       <Switch checked={Boolean(groupDraft.hosp_is_mensalista)} onCheckedChange={(checked) => patchGroupDraft({ hosp_is_mensalista: checked })} />
                     </div>
@@ -1062,26 +1062,26 @@ export default function OrcamentoAgendamentoEditorDialog({
                     <DatePickerInput className="mt-2" value={groupDraft.day_care_data} onChange={(value) => patchGroupDraft({ day_care_data: value })} />
                   </div>
                   <div>
-                    <Label>HorÃ¡rio de entrada</Label>
+                    <Label>Horário de entrada</Label>
                     <TimePickerInput className="mt-2" value={groupDraft.day_care_horario_entrada} onChange={(value) => patchGroupDraft({ day_care_horario_entrada: value })} />
                   </div>
                   <div>
-                    <Label>HorÃ¡rio de saÃ­da</Label>
+                    <Label>Horário de saída</Label>
                     <TimePickerInput className="mt-2" value={groupDraft.day_care_horario_saida} onChange={(value) => patchGroupDraft({ day_care_horario_saida: value })} />
                   </div>
                 </div>
                 <div className="rounded-2xl bg-white p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <Label className="text-sm font-medium">CÃ£o com pacote de Day Care ativo</Label>
+                      <Label className="text-sm font-medium">Cão com pacote de Day Care ativo</Label>
                       <p className="mt-1 text-xs text-gray-500">Aplica o valor avulso reduzido para clientes com pacote em vigor.</p>
                     </div>
                     <Switch checked={Boolean(groupDraft.day_care_plano_ativo)} onCheckedChange={(checked) => patchGroupDraft({ day_care_plano_ativo: checked })} />
                   </div>
                 </div>
                 <div>
-                  <Label>ObservaÃ§Ãµes do Day Care</Label>
-                  <Input className="mt-2" value={groupDraft.day_care_observacoes || ""} onChange={(event) => patchGroupDraft({ day_care_observacoes: event.target.value })} placeholder="Ex.: socializaÃ§Ã£o, gasto de energia, horÃ¡rio especial" />
+                  <Label>Observações do Day Care</Label>
+                  <Input className="mt-2" value={groupDraft.day_care_observacoes || ""} onChange={(event) => patchGroupDraft({ day_care_observacoes: event.target.value })} placeholder="Ex.: socialização, gasto de energia, horário especial" />
                 </div>
               </div>
             ) : null}
@@ -1089,7 +1089,7 @@ export default function OrcamentoAgendamentoEditorDialog({
             {selectedGroup.kind === "adaptacao" ? (
               <div className="space-y-5 rounded-3xl border border-sky-100 bg-sky-50/60 p-5">
                 <div className="rounded-2xl bg-white p-4">
-                  <p className="text-sm font-medium text-gray-900">AdaptaÃ§Ã£o</p>
+                  <p className="text-sm font-medium text-gray-900">Adaptação</p>
                   <p className="mt-1 text-xs text-gray-500">Valor configurado: {formatCurrency(precos?.adaptacao ?? 0)}</p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-3">
@@ -1098,16 +1098,16 @@ export default function OrcamentoAgendamentoEditorDialog({
                     <DatePickerInput className="mt-2" value={groupDraft.adaptacao_data} onChange={(value) => patchGroupDraft({ adaptacao_data: value })} />
                   </div>
                   <div>
-                    <Label>HorÃ¡rio de inÃ­cio</Label>
+                    <Label>Horário de início</Label>
                     <TimePickerInput className="mt-2" value={groupDraft.adaptacao_horario_entrada} onChange={(value) => patchGroupDraft({ adaptacao_horario_entrada: value })} />
                   </div>
                   <div>
-                    <Label>HorÃ¡rio de tÃ©rmino</Label>
+                    <Label>Horário de término</Label>
                     <TimePickerInput className="mt-2" value={groupDraft.adaptacao_horario_saida} onChange={(value) => patchGroupDraft({ adaptacao_horario_saida: value })} />
                   </div>
                 </div>
                 <div>
-                  <Label>ObservaÃ§Ãµes da adaptaÃ§Ã£o</Label>
+                  <Label>Observações da adaptação</Label>
                   <Textarea className="mt-2" rows={3} value={groupDraft.adaptacao_observacoes || ""} onChange={(event) => patchGroupDraft({ adaptacao_observacoes: event.target.value })} placeholder="Ex.: tolerou bem o ambiente, precisa de nova etapa, avisar comercial" />
                 </div>
               </div>
@@ -1120,7 +1120,7 @@ export default function OrcamentoAgendamentoEditorDialog({
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <Label className="text-sm font-medium">Banho</Label>
-                        <p className="mt-1 text-xs text-gray-500">Mantenha ligado apenas se este serviÃ§o faz parte deste atendimento.</p>
+                        <p className="mt-1 text-xs text-gray-500">Mantenha ligado apenas se este serviço faz parte deste atendimento.</p>
                       </div>
                       <Switch checked={Boolean(groupDraft.servicos?.banho)} onCheckedChange={(checked) => patchGroupServices({ banho: checked })} />
                     </div>
@@ -1129,7 +1129,7 @@ export default function OrcamentoAgendamentoEditorDialog({
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <Label className="text-sm font-medium">Tosa</Label>
-                        <p className="mt-1 text-xs text-gray-500">Use quando a tosa estÃ¡ incluÃ­da neste mesmo dia.</p>
+                        <p className="mt-1 text-xs text-gray-500">Use quando a tosa está incluída neste mesmo dia.</p>
                       </div>
                       <Switch checked={Boolean(groupDraft.servicos?.tosa)} onCheckedChange={(checked) => patchGroupServices({ tosa: checked })} />
                     </div>
@@ -1141,7 +1141,7 @@ export default function OrcamentoAgendamentoEditorDialog({
                     <h4 className="text-sm font-semibold text-gray-900">Banho</h4>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
-                        <Label>RaÃ§a para banho</Label>
+                        <Label>Raça para banho</Label>
                         <Input className="mt-2" value={groupDraft.banho_raca || ""} onChange={(event) => patchGroupDraft({ banho_raca: event.target.value })} />
                       </div>
                       <div>
@@ -1149,15 +1149,15 @@ export default function OrcamentoAgendamentoEditorDialog({
                         <DatePickerInput className="mt-2" value={groupDraft.banho_data} onChange={(value) => patchGroupDraft({ banho_data: value })} />
                       </div>
                       <div>
-                        <Label>HorÃ¡rio de inÃ­cio</Label>
+                        <Label>Horário de início</Label>
                         <TimePickerInput className="mt-2" value={groupDraft.banho_horario_inicio || groupDraft.banho_horario} onChange={(value) => patchGroupDraft({ banho_horario_inicio: value, banho_horario: value })} />
                       </div>
                       <div>
-                        <Label>HorÃ¡rio de tÃ©rmino</Label>
+                        <Label>Horário de término</Label>
                         <TimePickerInput className="mt-2" value={groupDraft.banho_horario_saida} onChange={(value) => patchGroupDraft({ banho_horario_saida: value })} />
                       </div>
                     </div>
-                    <Textarea className="mt-1" rows={3} value={groupDraft.banho_observacoes || ""} onChange={(event) => patchGroupDraft({ banho_observacoes: event.target.value })} placeholder="Ex.: o cÃ£o estava mais agitado hoje" />
+                    <Textarea className="mt-1" rows={3} value={groupDraft.banho_observacoes || ""} onChange={(event) => patchGroupDraft({ banho_observacoes: event.target.value })} placeholder="Ex.: o cão estava mais agitado hoje" />
                   </div>
                 ) : null}
 
@@ -1170,11 +1170,11 @@ export default function OrcamentoAgendamentoEditorDialog({
                         <DatePickerInput className="mt-2" value={groupDraft.tosa_data} onChange={(value) => patchGroupDraft({ tosa_data: value })} />
                       </div>
                       <div>
-                        <Label>HorÃ¡rio de inÃ­cio</Label>
+                        <Label>Horário de início</Label>
                         <TimePickerInput className="mt-2" value={groupDraft.tosa_horario_entrada} onChange={(value) => patchGroupDraft({ tosa_horario_entrada: value })} />
                       </div>
                       <div>
-                        <Label>HorÃ¡rio de tÃ©rmino</Label>
+                        <Label>Horário de término</Label>
                         <TimePickerInput className="mt-2" value={groupDraft.tosa_horario_saida} onChange={(value) => patchGroupDraft({ tosa_horario_saida: value })} />
                       </div>
                     </div>
@@ -1185,7 +1185,7 @@ export default function OrcamentoAgendamentoEditorDialog({
                           <SelectValue placeholder="Escolha o tipo" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="higienica">HigiÃªnica</SelectItem>
+                          <SelectItem value="higienica">Higiênica</SelectItem>
                           <SelectItem value="geral">Geral</SelectItem>
                           <SelectItem value="detalhada">Detalhada</SelectItem>
                         </SelectContent>
@@ -1193,7 +1193,7 @@ export default function OrcamentoAgendamentoEditorDialog({
                     </div>
                     {groupDraft.tosa_tipo === "higienica" ? (
                       <div>
-                        <Label>Subtipo higiÃªnica</Label>
+                        <Label>Subtipo higiênica</Label>
                         <Select value={groupDraft.tosa_subtipo_higienica || ""} onValueChange={(value) => patchGroupDraft({ tosa_subtipo_higienica: value })}>
                           <SelectTrigger className="mt-2">
                             <SelectValue placeholder="Escolha o subtipo" />
@@ -1206,7 +1206,7 @@ export default function OrcamentoAgendamentoEditorDialog({
                         </Select>
                       </div>
                     ) : null}
-                    <Textarea className="mt-1" rows={3} value={groupDraft.tosa_obs || ""} onChange={(event) => patchGroupDraft({ tosa_obs: event.target.value })} placeholder="ObservaÃ§Ãµes especÃ­ficas da tosa" />
+                    <Textarea className="mt-1" rows={3} value={groupDraft.tosa_obs || ""} onChange={(event) => patchGroupDraft({ tosa_obs: event.target.value })} placeholder="Observações específicas da tosa" />
                   </div>
                 ) : null}
               </div>
@@ -1219,7 +1219,7 @@ export default function OrcamentoAgendamentoEditorDialog({
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <h4 className="text-sm font-semibold text-gray-900">Viagem {tripIndex + 1}</h4>
-                        <p className="mt-1 text-xs text-gray-500">Edite partida, destino, dia, horÃ¡rios e quilometragem.</p>
+                        <p className="mt-1 text-xs text-gray-500">Edite partida, destino, dia, horários e quilometragem.</p>
                       </div>
                       {(groupDraft.transporte_viagens || []).length > 1 ? (
                         <Button type="button" variant="ghost" className="text-red-600 hover:text-red-700" onClick={() => removeTrip(tripIndex)}>
@@ -1241,11 +1241,11 @@ export default function OrcamentoAgendamentoEditorDialog({
                         <DatePickerInput className="mt-2" value={trip.data || ""} onChange={(value) => updateTrip(tripIndex, "data", value)} />
                       </div>
                       <div>
-                        <Label>HorÃ¡rio de inÃ­cio</Label>
+                        <Label>Horário de início</Label>
                         <TimePickerInput className="mt-2" value={trip.horario || ""} onChange={(value) => updateTrip(tripIndex, "horario", value)} />
                       </div>
                       <div>
-                        <Label>HorÃ¡rio de tÃ©rmino</Label>
+                        <Label>Horário de término</Label>
                         <TimePickerInput className="mt-2" value={trip.horario_fim || ""} onChange={(value) => updateTrip(tripIndex, "horario_fim", value)} />
                       </div>
                       <div>
@@ -1254,8 +1254,8 @@ export default function OrcamentoAgendamentoEditorDialog({
                       </div>
                     </div>
                     <div>
-                      <Label>ObservaÃ§Ãµes do transporte</Label>
-                      <Textarea className="mt-2" rows={2} value={trip.observacao || ""} onChange={(event) => updateTrip(tripIndex, "observacao", event.target.value)} placeholder="Ex.: parada intermediÃ¡ria, observaÃ§Ã£o de acesso, janela de retirada" />
+                      <Label>Observações do transporte</Label>
+                      <Textarea className="mt-2" rows={2} value={trip.observacao || ""} onChange={(event) => updateTrip(tripIndex, "observacao", event.target.value)} placeholder="Ex.: parada intermediária, observação de acesso, janela de retirada" />
                     </div>
                   </div>
                 ))}
@@ -1276,11 +1276,11 @@ export default function OrcamentoAgendamentoEditorDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && !isSaving && onClose?.()}>
       <DialogContent className="flex max-h-[95vh] w-[98vw] max-w-[1180px] flex-col overflow-hidden">
         <DialogHeader>
-          <DialogTitle>{selectedGroup ? "Editar atendimento do orÃ§amento" : "Editar agendamentos do orÃ§amento"}</DialogTitle>
+          <DialogTitle>{selectedGroup ? "Editar atendimento do orçamento" : "Editar agendamentos do orçamento"}</DialogTitle>
           <DialogDescription>
             {selectedGroup
-              ? "Revise este atendimento usando o mesmo raciocÃ­nio do orÃ§amento original, sem perder a vinculaÃ§Ã£o com os registros operacionais."
-              : "Escolha qual atendimento deseja revisar. As alteraÃ§Ãµes ficam em rascunho atÃ© vocÃª salvar o orÃ§amento inteiro."}
+              ? "Revise este atendimento usando o mesmo raciocínio do orçamento original, sem perder a vinculação com os registros operacionais."
+              : "Escolha qual atendimento deseja revisar. As alterações ficam em rascunho até você salvar o orçamento inteiro."}
           </DialogDescription>
         </DialogHeader>
 
@@ -1333,7 +1333,7 @@ export default function OrcamentoAgendamentoEditorDialog({
             <div className="overflow-y-auto rounded-3xl border border-gray-200 bg-gray-50 p-4">
               <div className="mb-4 flex items-center gap-2">
                 <FileText className="h-5 w-5 text-blue-600" />
-                <h3 className="text-lg font-semibold text-gray-900">Resumo atualizado do orÃ§amento</h3>
+                <h3 className="text-lg font-semibold text-gray-900">Resumo atualizado do orçamento</h3>
               </div>
               <OrcamentoResumo calculo={calculo} />
             </div>
@@ -1365,10 +1365,10 @@ export default function OrcamentoAgendamentoEditorDialog({
                 <div className="space-y-4">
                   <Card className="border-gray-200 bg-white">
                     <CardContent className="p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">ResponsÃ¡vel financeiro</p>
-                      <h3 className="mt-2 text-lg font-bold text-gray-900">{financialContact?.nome_razao_social || "NÃ£o informado"}</h3>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Responsável financeiro</p>
+                      <h3 className="mt-2 text-lg font-bold text-gray-900">{financialContact?.nome_razao_social || "Não informado"}</h3>
                       <p className="mt-2 text-sm text-gray-600">
-                        {financialContact?.celular || "-"} {financialContact?.cpf_cnpj ? `â€¢ ${financialContact.cpf_cnpj}` : ""}
+                        {financialContact?.celular || "-"} {financialContact?.cpf_cnpj ? `• ${financialContact.cpf_cnpj}` : ""}
                       </p>
                       {financialContact?.email ? <p className="mt-1 text-sm text-gray-500">{financialContact.email}</p> : null}
                     </CardContent>
@@ -1376,18 +1376,18 @@ export default function OrcamentoAgendamentoEditorDialog({
 
                   <Card className="border-gray-200 bg-white">
                     <CardContent className="p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">ResponsÃ¡veis vinculados ao cÃ£o</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Responsáveis vinculados ao cão</p>
                       <div className="mt-4 space-y-3">
                         {linkedResponsaveis.length > 0 ? linkedResponsaveis.map((responsavel) => (
                           <div key={responsavel.id} className="rounded-2xl bg-gray-50 px-4 py-3">
                             <p className="font-medium text-gray-900">{responsavel.nome_completo}</p>
                             <p className="mt-1 text-sm text-gray-600">
-                              {responsavel.celular || "-"} {responsavel.email ? `â€¢ ${responsavel.email}` : ""}
+                              {responsavel.celular || "-"} {responsavel.email ? `• ${responsavel.email}` : ""}
                             </p>
                           </div>
                         )) : (
                           <div className="rounded-2xl bg-gray-50 px-4 py-4 text-sm text-gray-500">
-                            Nenhum responsÃ¡vel adicional foi encontrado para este cÃ£o.
+                            Nenhum responsável adicional foi encontrado para este cão.
                           </div>
                         )}
                       </div>
@@ -1400,7 +1400,7 @@ export default function OrcamentoAgendamentoEditorDialog({
                 <div className="space-y-4">
                   <Card className="border-gray-200 bg-white">
                     <CardContent className="p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Atendimento em ediÃ§Ã£o</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Atendimento em edição</p>
                       <h3 className="mt-2 text-lg font-bold text-gray-900">
                         {selectedGroupBaseCao ? getGroupTitle(selectedGroup, selectedGroupBaseCao) : "Atendimento"}
                       </h3>
@@ -1414,12 +1414,12 @@ export default function OrcamentoAgendamentoEditorDialog({
                     <CardContent className="p-5">
                       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">CÃ£o vinculado neste atendimento</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Cão vinculado neste atendimento</p>
                           <div className="mt-3">
-                            <Label className="text-sm text-gray-700">Selecione o cÃ£o</Label>
+                            <Label className="text-sm text-gray-700">Selecione o cão</Label>
                             <Select value={groupDraft?.dog_id || ""} onValueChange={(value) => patchGroupDraft({ dog_id: value })}>
                               <SelectTrigger className="mt-2">
-                                <SelectValue placeholder="Escolha o cÃ£o" />
+                                <SelectValue placeholder="Escolha o cão" />
                               </SelectTrigger>
                               <SelectContent>
                                 {(dogs || []).map((dog) => (
@@ -1434,12 +1434,12 @@ export default function OrcamentoAgendamentoEditorDialog({
 
                         {selectedGroup?.kind === "hospedagem" ? (
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">ConfiguraÃ§Ã£o do canil</p>
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Configuração do canil</p>
                             <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
                               <div className="flex items-center justify-between gap-3">
                                 <div>
                                   <Label className="text-sm font-medium text-gray-900">Divide canil</Label>
-                                  <p className="mt-1 text-xs text-gray-500">Se este cÃ£o divide hospedagem, selecione os demais envolvidos.</p>
+                                  <p className="mt-1 text-xs text-gray-500">Se este cão divide hospedagem, selecione os demais envolvidos.</p>
                                 </div>
                                 <Switch
                                   checked={getSharedKennelEnabled(groupDraft)}
@@ -1473,11 +1473,11 @@ export default function OrcamentoAgendamentoEditorDialog({
 
                   <Card className="border-gray-200 bg-white">
                     <CardContent className="p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">ProteÃ§Ã£o do histÃ³rico</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Proteção do histórico</p>
                       <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
                         {selectedGroup.hasOperationalRecord
-                          ? "Este atendimento jÃ¡ possui check-in ou check-out. VocÃª pode ajustar datas e detalhes, mas o novo perÃ­odo precisa continuar cobrindo os registros que jÃ¡ existem."
-                          : "Este atendimento ainda nÃ£o possui registro operacional. VocÃª pode ajustar cÃ£o, datas e detalhes normalmente."}
+                          ? "Este atendimento já possui check-in ou check-out. Você pode ajustar datas e detalhes, mas o novo período precisa continuar cobrindo os registros que já existem."
+                          : "Este atendimento ainda não possui registro operacional. Você pode ajustar cão, datas e detalhes normalmente."}
                       </div>
                     </CardContent>
                   </Card>
@@ -1508,7 +1508,7 @@ export default function OrcamentoAgendamentoEditorDialog({
               </Button>
               <Button onClick={saveAllChanges} className="bg-green-600 text-white hover:bg-green-700" disabled={isSaving || isLoading}>
                 <Save className="mr-2 h-4 w-4" />
-                {isSaving ? "Salvando..." : "Salvar alteraÃ§Ãµes do orÃ§amento"}
+                {isSaving ? "Salvando..." : "Salvar alterações do orçamento"}
               </Button>
             </>
           )}

@@ -93,7 +93,6 @@ const EMPTY_MEAL_FORM = {
   percentual_consumido: "",
   observacoes: "",
   foto_refeicao_url: "",
-  selfie_monitor_url: "",
 };
 
 const EMPTY_ADAPTACAO_REGISTRO_FORM = {
@@ -345,7 +344,6 @@ export default function Registrador() {
   const checkinPhotoInputRef = useRef(null);
   const checkoutPhotoInputRef = useRef(null);
   const mealFoodPhotoInputRef = useRef(null);
-  const mealSelfieInputRef = useRef(null);
   const providerSelfieInputRef = useRef(null);
   const providerContestFileInputRef = useRef(null);
   const alertSyncRef = useRef(false);
@@ -1030,8 +1028,8 @@ export default function Registrador() {
 
   async function submitMeal() {
     if (!selectedCheckin) return;
-    if (!mealForm.monitor_id || !mealForm.percentual_consumido || !mealForm.foto_refeicao_url || !mealForm.selfie_monitor_url) {
-      openNotify("Campos obrigatórios", "Complete monitor, percentual consumido, foto da refeição e selfie.");
+    if (!mealForm.monitor_id || !mealForm.percentual_consumido || !mealForm.foto_refeicao_url) {
+      openNotify("Campos obrigatórios", "Complete monitor, percentual consumido e foto da refeição.");
       return;
     }
     if (!validateMonitorSignature(mealForm.monitor_id, mealForm.monitor_signature_code)) return;
@@ -1048,7 +1046,6 @@ export default function Registrador() {
           percentual_consumido: mealForm.percentual_consumido,
           observacoes: mealForm.observacoes || "",
           foto_refeicao_url: mealForm.foto_refeicao_url,
-          selfie_monitor_url: mealForm.selfie_monitor_url,
           signature_verified_at: new Date().toISOString(),
         },
       ];
@@ -1393,8 +1390,6 @@ export default function Registrador() {
         setCheckoutForm((current) => ({ ...current, pertences_saida_foto_url: path }));
       } else if (target === "meal_food") {
         setMealForm((current) => ({ ...current, foto_refeicao_url: path }));
-      } else if (target === "meal_selfie") {
-        setMealForm((current) => ({ ...current, selfie_monitor_url: path }));
       }
     } catch (error) {
       console.error("Erro ao fazer upload:", error);
@@ -1420,11 +1415,11 @@ export default function Registrador() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
-            <div className="mt-1 rounded-xl bg-green-100 p-3">
-              <DogIcon className="h-6 w-6 text-green-700" />
+            <div className="mt-1 rounded-xl bg-green-100 p-2.5 sm:p-3">
+              <DogIcon className="h-5 w-5 text-green-700 sm:h-6 sm:w-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Registrador</h1>
+              <h1 className="text-xl font-bold text-gray-900 sm:text-3xl">Registrador</h1>
               <p className="mt-1 text-sm text-gray-600">
                 Presenças do dia, check-in, refeição, check-out e inclusões manuais.
               </p>
@@ -1446,7 +1441,7 @@ export default function Registrador() {
 
           <TabsContent value="pets" className="space-y-6">
             <Card className="border-gray-200 bg-white">
-              <CardContent className="p-4 sm:p-6">
+              <CardContent className="p-3 sm:p-6">
                 <SearchFiltersToolbar
                   searchTerm={searchTerm}
                   onSearchChange={setSearchTerm}
@@ -1481,7 +1476,7 @@ export default function Registrador() {
                         setSearchTerm("");
                         loadData();
                       }}
-                      className="h-11 rounded-full px-5"
+                      className="h-11 w-full rounded-full px-5 sm:w-auto"
                     >
                       Atualizar
                     </Button>
@@ -1515,22 +1510,22 @@ export default function Registrador() {
                             <img
                               src={dog.foto_url}
                               alt={getDogDisplayName(dog)}
-                              className="h-16 w-16 rounded-2xl object-cover"
+                              className="h-14 w-14 rounded-2xl object-cover sm:h-16 sm:w-16"
                             />
                           ) : (
-                            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
-                              <DogIcon className="h-7 w-7 text-gray-400" />
+                            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 sm:h-16 sm:w-16">
+                              <DogIcon className="h-6 w-6 text-gray-400 sm:h-7 sm:w-7" />
                             </div>
                           )}
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate text-lg font-semibold text-gray-900">{getDogDisplayName(dog)}</p>
-                              <Badge variant="outline">{getServiceLabel(appointment.service_type)}</Badge>
-                              <Badge className={status === "presente" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}>
+                              <p className="truncate text-base font-semibold text-gray-900 sm:text-lg">{getDogDisplayName(dog)}</p>
+                              <Badge variant="outline" className="text-[11px] sm:text-xs">{getServiceLabel(appointment.service_type)}</Badge>
+                              <Badge className={`text-[11px] sm:text-xs ${status === "presente" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
                                 {status === "presente" ? "Presente" : "Agendado"}
                               </Badge>
                             </div>
-                            <p className="mt-1 text-sm text-gray-600">
+                            <p className="mt-1 text-xs text-gray-600 sm:text-sm">
                               {getDogBreed(dog)} • {owner.nome || "Responsável não informado"}
                             </p>
                             <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
@@ -1578,27 +1573,27 @@ export default function Registrador() {
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-2 lg:justify-end">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
                           {!activeCheckin ? (
-                            <Button onClick={() => openCheckinDialogForAppointment(appointment)} className="bg-green-600 text-white hover:bg-green-700">
+                            <Button onClick={() => openCheckinDialogForAppointment(appointment)} className="w-full bg-green-600 text-white hover:bg-green-700 sm:w-auto">
                               <LogIn className="mr-2 h-4 w-4" />
                               Check-in
                             </Button>
                           ) : (
                             <>
                               {appointment.service_type === "adaptacao" && (
-                                <Button variant="outline" onClick={() => openAdaptacaoDialogForCheckin(appointment, activeCheckin)}>
+                                <Button variant="outline" onClick={() => openAdaptacaoDialogForCheckin(appointment, activeCheckin)} className="w-full sm:w-auto">
                                   <Plus className="mr-2 h-4 w-4" />
                                   Adicionar registro{adaptacaoRegistros.length > 0 ? ` (${adaptacaoRegistros.length})` : ""}
                                 </Button>
                               )}
                               {mealEnabled && (
-                                <Button variant="outline" onClick={() => openMealDialogForCheckin(appointment, activeCheckin)}>
+                                <Button variant="outline" onClick={() => openMealDialogForCheckin(appointment, activeCheckin)} className="w-full sm:w-auto">
                                   <UtensilsCrossed className="mr-2 h-4 w-4" />
                   Refeição {mealCount > 0 ? `(${mealCount})` : ""}
                                 </Button>
                               )}
-                              <Button onClick={() => openCheckoutDialogForCheckin(appointment, activeCheckin)} className="bg-slate-900 text-white hover:bg-slate-800">
+                              <Button onClick={() => openCheckoutDialogForCheckin(appointment, activeCheckin)} className="w-full bg-slate-900 text-white hover:bg-slate-800 sm:w-auto">
                                 <LogOut className="mr-2 h-4 w-4" />
                                 Check-out
                               </Button>
@@ -1621,7 +1616,7 @@ export default function Registrador() {
                           Você pode incluir manualmente o atendimento e liberar a classificação comercial depois.
                         </p>
                       </div>
-                      <Button onClick={() => openManualDialogForDog(matchedDogsWithoutAppointments[0])} className="bg-green-600 text-white hover:bg-green-700">
+                      <Button onClick={() => openManualDialogForDog(matchedDogsWithoutAppointments[0])} className="w-full bg-green-600 text-white hover:bg-green-700 sm:w-auto">
                         <Plus className="mr-2 h-4 w-4" />
                         Incluir manualmente
                       </Button>
@@ -1668,7 +1663,7 @@ export default function Registrador() {
                     placeholder="CPF do funcionário"
                     className="h-12"
                   />
-                  <Button onClick={handleProviderCheckin} disabled={isSaving} className="h-12 bg-orange-600 text-white hover:bg-orange-700">
+                  <Button onClick={handleProviderCheckin} disabled={isSaving} className="h-12 w-full bg-orange-600 text-white hover:bg-orange-700 sm:w-auto">
                     Registrar entrada
                   </Button>
                 </div>
@@ -1684,7 +1679,7 @@ export default function Registrador() {
                           <p className="text-sm text-gray-500">CPF: {formatCpf(provider?.cpf || "")}</p>
                           <p className="text-sm text-gray-500">Entrada: {formatDateTime(checkin.checkin_datetime || checkin.data_checkin)}</p>
                         </div>
-                        <Button variant="outline" onClick={() => handleProviderCheckout(checkin)}>
+                        <Button variant="outline" onClick={() => handleProviderCheckout(checkin)} className="w-full sm:w-auto">
                           Registrar saida
                         </Button>
                       </div>
@@ -1704,7 +1699,7 @@ export default function Registrador() {
           if (!open) resetProviderCheckinState();
         }}
       >
-        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Confirmar entrada do funcionário</DialogTitle>
             <DialogDescription>
@@ -1757,14 +1752,14 @@ export default function Registrador() {
             </div>
           ) : null}
 
-          <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={() => setShowProviderContestDialog(true)} disabled={!providerCheckinDraft}>
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+            <Button type="button" variant="outline" onClick={() => setShowProviderContestDialog(true)} disabled={!providerCheckinDraft} className="w-full sm:w-auto">
               Contestar horário
             </Button>
-            <Button type="button" variant="outline" onClick={() => setShowProviderCheckinDialog(false)}>
+            <Button type="button" variant="outline" onClick={() => setShowProviderCheckinDialog(false)} className="w-full sm:w-auto">
               Cancelar
             </Button>
-            <Button type="button" onClick={confirmProviderCheckin} disabled={isSaving} className="bg-orange-600 text-white hover:bg-orange-700">
+            <Button type="button" onClick={confirmProviderCheckin} disabled={isSaving} className="w-full bg-orange-600 text-white hover:bg-orange-700 sm:w-auto">
               {isSaving ? "Confirmando..." : "Confirmar entrada"}
             </Button>
           </DialogFooter>
@@ -1772,7 +1767,7 @@ export default function Registrador() {
       </Dialog>
 
       <Dialog open={showProviderContestDialog} onOpenChange={setShowProviderContestDialog}>
-        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Contestar horário</DialogTitle>
             <DialogDescription>
@@ -1823,11 +1818,11 @@ export default function Registrador() {
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={() => setShowProviderContestDialog(false)}>
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+            <Button type="button" variant="outline" onClick={() => setShowProviderContestDialog(false)} className="w-full sm:w-auto">
               Cancelar
             </Button>
-            <Button type="button" onClick={saveProviderContest} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
+            <Button type="button" onClick={saveProviderContest} disabled={isSaving} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
               Salvar contestação
             </Button>
           </DialogFooter>
@@ -1841,7 +1836,7 @@ export default function Registrador() {
           if (!open) setCheckinSharedSource(null);
         }}
       >
-        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Confirmar check-in</DialogTitle>
             <DialogDescription>
@@ -1944,7 +1939,7 @@ export default function Registrador() {
                 </div>
               </div>
 
-              <div className="rounded-[28px] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-5 shadow-sm">
+              <div className="rounded-[28px] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-4 shadow-sm sm:p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="max-w-2xl">
                     <div className="flex items-center gap-2">
@@ -2216,9 +2211,9 @@ export default function Registrador() {
               </div>
             </TabsContent>
           </Tabs>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowCheckinDialog(false); setCheckinSharedSource(null); }}>Cancelar</Button>
-            <Button onClick={submitCheckin} disabled={isSaving} className="bg-green-600 text-white hover:bg-green-700">
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => { setShowCheckinDialog(false); setCheckinSharedSource(null); }} className="w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={submitCheckin} disabled={isSaving} className="w-full bg-green-600 text-white hover:bg-green-700 sm:w-auto">
               {isSaving ? "Salvando..." : "Confirmar check-in"}
             </Button>
           </DialogFooter>
@@ -2226,7 +2221,7 @@ export default function Registrador() {
       </Dialog>
 
       <Dialog open={showCheckoutDialog} onOpenChange={setShowCheckoutDialog}>
-        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Confirmar check-out</DialogTitle>
             <DialogDescription>
@@ -2299,9 +2294,9 @@ export default function Registrador() {
               <Textarea value={checkoutForm.observacoes} onChange={(event) => setCheckoutForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCheckoutDialog(false)}>Cancelar</Button>
-            <Button onClick={submitCheckout} disabled={isSaving} className="bg-slate-900 text-white hover:bg-slate-800">
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setShowCheckoutDialog(false)} className="w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={submitCheckout} disabled={isSaving} className="w-full bg-slate-900 text-white hover:bg-slate-800 sm:w-auto">
               {isSaving ? "Salvando..." : "Confirmar check-out"}
             </Button>
           </DialogFooter>
@@ -2309,11 +2304,11 @@ export default function Registrador() {
       </Dialog>
 
       <Dialog open={showMealDialog} onOpenChange={setShowMealDialog}>
-        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Registrar refeição</DialogTitle>
             <DialogDescription>
-              Tire a foto do pote, informe quanto o cão comeu e anexe a selfie do monitor.
+              Tire a foto do pote, informe quanto o cão comeu e confirme a ação com o código do monitor responsável.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
@@ -2376,26 +2371,6 @@ export default function Registrador() {
                   </button>
                 )}
               </div>
-              <div>
-                <Label>Selfie do monitor</Label>
-                <input
-                  ref={mealSelfieInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="user"
-                  className="hidden"
-                  onChange={(event) => handleAttachmentUpload(event, "meal_selfie", "selfie")}
-                />
-                <Button type="button" variant="outline" onClick={() => mealSelfieInputRef.current?.click()} className="mt-2 w-full">
-                  <Camera className="mr-2 h-4 w-4" />
-                  Tirar selfie do monitor
-                </Button>
-                {mealForm.selfie_monitor_url && (
-                  <button type="button" onClick={() => handleAttachmentPreview(mealForm.selfie_monitor_url, "Selfie do monitor")} className="mt-2 text-sm text-blue-600">
-                    Ver imagem enviada
-                  </button>
-                )}
-              </div>
             </div>
 
             <div>
@@ -2403,9 +2378,9 @@ export default function Registrador() {
               <Textarea value={mealForm.observacoes} onChange={(event) => setMealForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMealDialog(false)}>Cancelar</Button>
-            <Button onClick={submitMeal} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setShowMealDialog(false)} className="w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={submitMeal} disabled={isSaving} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
               {isSaving ? "Salvando..." : "Registrar refeição"}
             </Button>
           </DialogFooter>
@@ -2413,7 +2388,7 @@ export default function Registrador() {
       </Dialog>
 
       <Dialog open={showAdaptacaoDialog} onOpenChange={setShowAdaptacaoDialog}>
-        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Adicionar registro da adaptação</DialogTitle>
             <DialogDescription>
@@ -2465,9 +2440,9 @@ export default function Registrador() {
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAdaptacaoDialog(false)}>Cancelar</Button>
-            <Button onClick={submitAdaptacaoRegistro} disabled={isSaving} className="bg-sky-600 text-white hover:bg-sky-700">
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setShowAdaptacaoDialog(false)} className="w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={submitAdaptacaoRegistro} disabled={isSaving} className="w-full bg-sky-600 text-white hover:bg-sky-700 sm:w-auto">
               {isSaving ? "Salvando..." : "Salvar registro"}
             </Button>
           </DialogFooter>
@@ -2475,7 +2450,7 @@ export default function Registrador() {
       </Dialog>
 
       <Dialog open={showManualDialog} onOpenChange={setShowManualDialog}>
-        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-xl">
+        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-xl">
             <DialogHeader>
               <DialogTitle>Incluir manualmente</DialogTitle>
               <DialogDescription>
@@ -2545,9 +2520,9 @@ export default function Registrador() {
               Após incluir, o Comercial recebe uma notificação para decidir se este atendimento entra em pacote ou vira orçamento avulso.
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowManualDialog(false)}>Cancelar</Button>
-            <Button onClick={submitManualAppointment} disabled={isSaving} className="bg-green-600 text-white hover:bg-green-700">
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setShowManualDialog(false)} className="w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={submitManualAppointment} disabled={isSaving} className="w-full bg-green-600 text-white hover:bg-green-700 sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
               {isSaving ? "Agendando..." : "Agendar"}
             </Button>

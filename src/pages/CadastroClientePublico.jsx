@@ -47,6 +47,55 @@ const DOG_SECTION_DEFINITIONS = [
   { id: "observacoes", label: "Observações", icon: NotebookPen },
 ];
 
+const DOG_BREED_OPTIONS = [
+  "SRD",
+  "Akita",
+  "American Bully",
+  "Basset Hound",
+  "Beagle",
+  "Bichon Frise",
+  "Border Collie",
+  "Boston Terrier",
+  "Boxer",
+  "Bulldog Francês",
+  "Bulldog Inglês",
+  "Cane Corso",
+  "Cavalier King Charles Spaniel",
+  "Chihuahua",
+  "Chow Chow",
+  "Cocker Spaniel",
+  "Dachshund",
+  "Dálmata",
+  "Dobermann",
+  "Dogue Alemão",
+  "Fila Brasileiro",
+  "Golden Retriever",
+  "Husky Siberiano",
+  "Jack Russell Terrier",
+  "Labrador",
+  "Lhasa Apso",
+  "Lulu da Pomerânia",
+  "Maltês",
+  "Pastor Alemão",
+  "Pastor Australiano",
+  "Pastor Belga",
+  "Pequinês",
+  "Pinscher Miniatura",
+  "Poodle",
+  "Pug",
+  "Rottweiler",
+  "Samoieda",
+  "São Bernardo",
+  "Schnauzer",
+  "Shih Tzu",
+  "Spitz Alemão",
+  "Terrier Brasileiro",
+  "Weimaraner",
+  "Welsh Corgi Pembroke",
+  "Yorkshire",
+  "Outro",
+];
+
 const OPTIONAL_TEXT = "opcional";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WEIGHT_REGEX = /^\d+(?:[.,]\d{1,2})?$/;
@@ -236,6 +285,13 @@ function validateDogs(dogs) {
   return "";
 }
 
+function validateDogBasicSection(dog) {
+  if (!dog?.nome || !dog?.raca || !dog?.peso || !dog?.data_nascimento || !dog?.sexo || !dog?.porte || !dog?.cores_pelagem || !dog?.pelagem) {
+    return "Preencha os dados básicos obrigatórios do dog antes de seguir.";
+  }
+  return "";
+}
+
 function validateFinanceiro(form) {
   if (
     !form.nome_razao_social
@@ -269,7 +325,7 @@ function validateFinanceiro(form) {
 
 function StepSidebar({ currentStep, steps }) {
   return (
-    <div className="space-y-3">
+    <div className="flex gap-2 overflow-x-auto pb-1 xl:block xl:space-y-3">
       {steps.map((step, index) => {
         const Icon = step.icon;
         const isActive = currentStep === index;
@@ -284,7 +340,7 @@ function StepSidebar({ currentStep, steps }) {
                 : isDone
                   ? "border-emerald-200 bg-emerald-50"
                   : "border-slate-200 bg-white"
-            }`}
+            } min-w-[190px] shrink-0 xl:min-w-0`}
           >
             <div className="flex items-center gap-3">
               <div
@@ -312,27 +368,33 @@ function StepSidebar({ currentStep, steps }) {
   );
 }
 
-function DogSectionSidebar({ activeSection, onSelect }) {
+function DogSectionSidebar({ activeSection, onSelect, unlockedIndex = 0 }) {
   return (
-    <div className="space-y-2">
+    <div className="flex gap-2 overflow-x-auto pb-1 xl:block xl:space-y-2">
       {DOG_SECTION_DEFINITIONS.map((section, index) => {
         const Icon = section.icon;
         const isActive = activeSection === section.id;
+        const isUnlocked = index <= unlockedIndex;
 
         return (
           <button
             key={section.id}
             type="button"
-            onClick={() => onSelect(section.id)}
+            onClick={() => {
+              if (isUnlocked) onSelect(section.id);
+            }}
+            disabled={!isUnlocked}
             className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
               isActive
                 ? "border-blue-200 bg-blue-50 text-blue-700"
-                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            }`}
+                : isUnlocked
+                  ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300"
+            } min-w-[220px] shrink-0 xl:min-w-0`}
           >
             <div
               className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold ${
-                isActive ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
+                isActive ? "bg-blue-600 text-white" : isUnlocked ? "bg-slate-100 text-slate-500" : "bg-slate-100 text-slate-300"
               }`}
             >
               {index + 1}
@@ -361,6 +423,7 @@ export default function CadastroClientePublico() {
   const [currentStep, setCurrentStep] = useState(0);
   const [activeDogIndex, setActiveDogIndex] = useState(0);
   const [activeDogSection, setActiveDogSection] = useState("basico");
+  const [dogSectionProgress, setDogSectionProgress] = useState([0]);
   const [financeiroIgualResponsavel, setFinanceiroIgualResponsavel] = useState(false);
   const [responsavelForm, setResponsavelForm] = useState(EMPTY_RESPONSAVEL);
   const [caesForm, setCaesForm] = useState([createEmptyDog()]);
@@ -370,6 +433,11 @@ export default function CadastroClientePublico() {
   const registrationMode = useMemo(() => getRegistrationMode(context?.link), [context?.link]);
   const visibleStepDefinitions = useMemo(() => getVisibleStepDefinitions(registrationMode), [registrationMode]);
   const currentStepDefinition = visibleStepDefinitions[currentStep] || visibleStepDefinitions[0] || STEP_DEFINITIONS[0];
+  const activeDogSectionIndex = useMemo(
+    () => Math.max(DOG_SECTION_DEFINITIONS.findIndex((section) => section.id === activeDogSection), 0),
+    [activeDogSection]
+  );
+  const activeDogUnlockedSectionIndex = dogSectionProgress[activeDogIndex] ?? 0;
 
   function touchField(fieldKey) {
     setFieldTouched((current) => (current[fieldKey] ? current : { ...current, [fieldKey]: true }));
@@ -576,6 +644,14 @@ export default function CadastroClientePublico() {
   }, [currentStep]);
 
   useEffect(() => {
+    setDogSectionProgress((current) => {
+      const next = Array.from({ length: caesForm.length }, (_, index) => current[index] ?? 0);
+      const unchanged = next.length === current.length && next.every((value, index) => value === current[index]);
+      return unchanged ? current : next;
+    });
+  }, [caesForm.length]);
+
+  useEffect(() => {
     const cepDigits = financeiroForm.cep.replace(/\D/g, "");
     if (cepDigits.length !== 8) return undefined;
 
@@ -744,7 +820,9 @@ export default function CadastroClientePublico() {
       if (current.length <= 1) return current;
       return current.filter((_, dogIndex) => dogIndex !== index);
     });
+    setDogSectionProgress((current) => current.filter((_, dogIndex) => dogIndex !== index));
     setActiveDogIndex((current) => Math.max(0, Math.min(current, caesForm.length - 2)));
+    setActiveDogSection("basico");
   }
 
   async function handleNextStep() {
@@ -754,10 +832,41 @@ export default function CadastroClientePublico() {
   function handlePreviousStep() {
     setErrorMessage("");
     setValidationScope("");
+    if (currentStepDefinition?.id === "caes") {
+      if (activeDogSectionIndex > 0) {
+        setActiveDogSection(DOG_SECTION_DEFINITIONS[activeDogSectionIndex - 1].id);
+        return;
+      }
+
+      if (activeDogIndex > 0) {
+        const previousDogIndex = activeDogIndex - 1;
+        setActiveDogIndex(previousDogIndex);
+        setActiveDogSection(DOG_SECTION_DEFINITIONS[DOG_SECTION_DEFINITIONS.length - 1].id);
+        return;
+      }
+    }
     setCurrentStep((current) => Math.max(current - 1, 0));
   }
 
   async function handleSubmit() {
+    if (visibleStepDefinitions.some((step) => step.id === "responsavel")) {
+      setValidationScope("responsavel");
+      const responsavelError = validateResponsavel(responsavelForm);
+      if (responsavelError) {
+        setErrorMessage(responsavelError);
+        return;
+      }
+    }
+
+    if (visibleStepDefinitions.some((step) => step.id === "caes")) {
+      setValidationScope(`caes.${activeDogIndex}`);
+      const dogsError = validateDogs(caesForm);
+      if (dogsError) {
+        setErrorMessage(dogsError);
+        return;
+      }
+    }
+
     setValidationScope("financeiro");
     if (visibleStepDefinitions.some((step) => step.id === "financeiro")) {
       const financeError = validateFinanceiro(financeiroForm);
@@ -822,12 +931,45 @@ export default function CadastroClientePublico() {
   }
 
   async function validateAndAdvanceStep() {
+    if (currentStepDefinition?.id === "caes") {
+      setValidationScope(`caes.${activeDogIndex}`);
+      const currentDog = caesForm[activeDogIndex] || createEmptyDog();
+      const validationError = activeDogSection === "basico"
+        ? validateDogBasicSection(currentDog)
+        : validateDogs(caesForm);
+
+      if (validationError) {
+        setErrorMessage(validationError);
+        return;
+      }
+
+      setErrorMessage("");
+      setValidationScope("");
+
+      if (activeDogSectionIndex < DOG_SECTION_DEFINITIONS.length - 1) {
+        const nextSectionIndex = activeDogSectionIndex + 1;
+        setDogSectionProgress((current) => current.map((value, index) => (
+          index === activeDogIndex ? Math.max(value ?? 0, nextSectionIndex) : value
+        )));
+        setActiveDogSection(DOG_SECTION_DEFINITIONS[nextSectionIndex].id);
+        return;
+      }
+
+      if (activeDogIndex < caesForm.length - 1) {
+        const nextDogIndex = activeDogIndex + 1;
+        setActiveDogIndex(nextDogIndex);
+        setActiveDogSection(DOG_SECTION_DEFINITIONS[dogSectionProgress[nextDogIndex] ?? 0]?.id || "basico");
+        return;
+      }
+
+      setCurrentStep((current) => Math.min(current + 1, visibleStepDefinitions.length - 1));
+      return;
+    }
+
     setValidationScope(currentStepDefinition?.id || "");
     const validationError = currentStepDefinition?.id === "responsavel"
       ? validateResponsavel(responsavelForm)
-      : currentStepDefinition?.id === "caes"
-        ? validateDogs(caesForm)
-        : validateFinanceiro(financeiroForm);
+      : validateFinanceiro(financeiroForm);
 
     if (validationError) {
       setErrorMessage(validationError);
@@ -931,12 +1073,22 @@ export default function CadastroClientePublico() {
           onChange: (event) => updateDog(dogIndex, { apelido: sanitizeDisplayNameInput(event.target.value) }),
           onBlur: () => updateDog(dogIndex, { apelido: formatDisplayName(dog.apelido) }),
         })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.raca`,
+        {renderSelectField({
           label: "Raça",
-          value: dog.raca,
-          onChange: (event) => updateDog(dogIndex, { raca: event.target.value }),
-          requiredMessage: "Informe a raça do dog.",
+          children: (
+            <Select value={dog.raca || ""} onValueChange={(value) => updateDog(dogIndex, { raca: value })}>
+              <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white/90 px-4 text-[15px] shadow-sm transition focus:ring-4 focus:ring-blue-100">
+                <SelectValue placeholder="Selecione a raça" />
+              </SelectTrigger>
+              <SelectContent>
+                {DOG_BREED_OPTIONS.map((breed) => (
+                  <SelectItem key={breed} value={breed}>
+                    {breed}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ),
         })}
         {renderTextField({
           fieldKey: `caes.${dogIndex}.peso`,
@@ -1007,13 +1159,6 @@ export default function CadastroClientePublico() {
           </div>
           <Switch checked={!!dog.castrado} onCheckedChange={(checked) => updateDog(dogIndex, { castrado: checked })} />
         </div>
-        <div className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Autorizo o uso de imagens do meu Dog</p>
-            <p className="text-xs text-slate-500">Permite fotos e vídeos do dog em registros e comunicação da Dog City.</p>
-          </div>
-          <Switch checked={!!dog.autorizacao_uso_imagem} onCheckedChange={(checked) => updateDog(dogIndex, { autorizacao_uso_imagem: checked })} />
-        </div>
         {renderSelectField({
           label: "1ª revacinação",
           optional: true,
@@ -1068,6 +1213,15 @@ export default function CadastroClientePublico() {
           onChange: (event) => updateDog(dogIndex, { nome_vacina_revacinacao_3: event.target.value }),
           placeholder: "Ex: V10, Antirrábica",
         })}
+        <div className="md:col-span-2">
+          <div className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Autorizo o uso de imagens do meu Dog</p>
+              <p className="text-xs text-slate-500">Permite fotos e vídeos do dog em registros e comunicação da Dog City.</p>
+            </div>
+            <Switch checked={!!dog.autorizacao_uso_imagem} onCheckedChange={(checked) => updateDog(dogIndex, { autorizacao_uso_imagem: checked })} />
+          </div>
+        </div>
       </div>
     );
   }
@@ -1321,6 +1475,7 @@ export default function CadastroClientePublico() {
 
   function renderDogsStep() {
     const currentDog = caesForm[activeDogIndex] || createEmptyDog();
+    const currentDogTitle = formatDogTitle(currentDog, activeDogIndex);
 
     return (
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
@@ -1330,11 +1485,18 @@ export default function CadastroClientePublico() {
               <button
                 key={`dog-${index}`}
                 type="button"
-                onClick={() => setActiveDogIndex(index)}
+                onClick={() => {
+                  if (index > activeDogIndex) return;
+                  setActiveDogIndex(index);
+                  setActiveDogSection(DOG_SECTION_DEFINITIONS[dogSectionProgress[index] ?? 0]?.id || "basico");
+                }}
+                disabled={index > activeDogIndex}
                 className={`flex items-center gap-2 rounded-[24px] border px-4 py-3 text-sm font-semibold shadow-sm transition ${
                   activeDogIndex === index
                     ? "border-blue-200 bg-blue-50 text-blue-700"
-                    : "border-slate-200 bg-white/90 text-slate-600 hover:bg-slate-50"
+                    : index > activeDogIndex
+                      ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300"
+                      : "border-slate-200 bg-white/90 text-slate-600 hover:bg-slate-50"
                 }`}
               >
                 <Dog className="h-4 w-4" />
@@ -1355,7 +1517,12 @@ export default function CadastroClientePublico() {
 
           <Card className="border-slate-200 bg-white/90 shadow-sm">
             <CardHeader className="border-b border-slate-100">
-              <CardTitle className="text-xl">{formatDogTitle(currentDog, activeDogIndex)}</CardTitle>
+              <div className="space-y-2">
+                <CardTitle className="text-xl">{currentDogTitle}</CardTitle>
+                <p className="text-sm text-slate-500">
+                  Etapa guiada do dog: {activeDogIndex + 1} de {caesForm.length} • seção {activeDogSectionIndex + 1} de {DOG_SECTION_DEFINITIONS.length}
+                </p>
+              </div>
             </CardHeader>
             <CardContent className="relative overflow-hidden p-6">
               <div className="pointer-events-none absolute inset-y-6 left-4 hidden border-l border-dashed border-slate-200/90 md:block" />
@@ -1370,7 +1537,7 @@ export default function CadastroClientePublico() {
         </div>
 
         <div>
-          <DogSectionSidebar activeSection={activeDogSection} onSelect={setActiveDogSection} />
+          <DogSectionSidebar activeSection={activeDogSection} onSelect={setActiveDogSection} unlockedIndex={activeDogUnlockedSectionIndex} />
         </div>
       </div>
     );
@@ -1560,6 +1727,14 @@ export default function CadastroClientePublico() {
 
   const progressValue = ((currentStep + 1) / visibleStepDefinitions.length) * 100;
   const pageTitle = context?.empresa?.nome_fantasia || companyName;
+  const nextDogSectionLabel = currentStepDefinition?.id === "caes" && activeDogSectionIndex < DOG_SECTION_DEFINITIONS.length - 1
+    ? DOG_SECTION_DEFINITIONS[activeDogSectionIndex + 1].label
+    : "";
+  const hasNextDogInFlow = currentStepDefinition?.id === "caes" && activeDogIndex < caesForm.length - 1 && activeDogSectionIndex === DOG_SECTION_DEFINITIONS.length - 1;
+  const isLastDogSection = currentStepDefinition?.id === "caes"
+    && activeDogIndex === caesForm.length - 1
+    && activeDogSectionIndex === DOG_SECTION_DEFINITIONS.length - 1;
+  const shouldShowContinueButton = currentStep < visibleStepDefinitions.length - 1 || (currentStepDefinition?.id === "caes" && !isLastDogSection);
 
   if (isLoading) {
     return (
@@ -1612,17 +1787,17 @@ export default function CadastroClientePublico() {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] p-4 sm:p-8">
       <div className="mx-auto max-w-7xl">
-        <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="grid gap-4 sm:gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
           <div className="space-y-4">
             <Card className="border-slate-200 bg-white/90 shadow-sm">
-              <CardContent className="p-6 text-center">
+              <CardContent className="p-5 text-center sm:p-6">
                 {isResolved && logoUrl ? (
-                  <img src={logoUrl} alt={companyName} className="mx-auto h-20 w-20 object-contain" />
+                  <img src={logoUrl} alt={companyName} className="mx-auto h-16 w-16 object-contain sm:h-20 sm:w-20" />
                 ) : (
-                  <div className="mx-auto h-20 w-20 rounded-3xl bg-slate-100" />
+                  <div className="mx-auto h-16 w-16 rounded-3xl bg-slate-100 sm:h-20 sm:w-20" />
                 )}
                 <p className="mt-4 text-xs font-semibold uppercase tracking-[0.25em] text-blue-500">Cadastro do cliente</p>
-                <h1 className="mt-3 text-2xl font-brand text-slate-900">{pageTitle}</h1>
+                <h1 className="mt-3 text-xl font-brand text-slate-900 sm:text-2xl">{pageTitle}</h1>
                 <p className="mt-2 text-sm text-slate-500">
                   Preencha os dados abaixo para concluir a ficha cadastral.
                 </p>
@@ -1648,9 +1823,9 @@ export default function CadastroClientePublico() {
           <div className="space-y-5">
             <Card className="overflow-hidden border-slate-200 bg-white/90 shadow-sm">
               <CardHeader className="border-b border-slate-100">
-                <CardTitle className="text-2xl text-slate-900">{currentStepDefinition?.label}</CardTitle>
+                <CardTitle className="text-xl text-slate-900 sm:text-2xl">{currentStepDefinition?.label}</CardTitle>
               </CardHeader>
-              <CardContent className="relative overflow-hidden p-6">
+              <CardContent className="relative overflow-hidden p-4 sm:p-6">
                 <div className="pointer-events-none absolute inset-y-6 left-8 hidden border-l border-dashed border-blue-100 lg:block" />
                 <div className="pointer-events-none absolute inset-y-6 right-8 hidden border-r border-dashed border-blue-100 lg:block" />
                 <div className="relative z-10 space-y-1">
@@ -1670,22 +1845,32 @@ export default function CadastroClientePublico() {
               </div>
             ) : null}
 
-            <div className="flex flex-col gap-3 rounded-[24px] border border-slate-200 bg-white/90 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 rounded-[24px] border border-slate-200 bg-white/90 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-4">
               <div className="text-sm text-slate-500">
-                Etapa {currentStep + 1} de {visibleStepDefinitions.length}
+                {currentStepDefinition?.id === "caes"
+                  ? `Dog ${activeDogIndex + 1} de ${caesForm.length} • ${DOG_SECTION_DEFINITIONS[activeDogSectionIndex]?.label || "Informações básicas"}`
+                  : `Etapa ${currentStep + 1} de ${visibleStepDefinitions.length}`}
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Button type="button" variant="outline" onClick={handlePreviousStep} disabled={currentStep === 0 || isSaving} className="rounded-xl">
+                <Button type="button" variant="outline" onClick={handlePreviousStep} disabled={currentStep === 0 || isSaving} className="w-full rounded-xl sm:w-auto">
                   <ChevronLeft className="mr-2 h-4 w-4" />
                   Voltar
                 </Button>
-                {currentStep < visibleStepDefinitions.length - 1 ? (
-                  <Button type="button" onClick={handleNextStep} className="rounded-xl bg-blue-600 text-white hover:bg-blue-700">
-                    Continuar
+                {shouldShowContinueButton ? (
+                  <Button type="button" onClick={handleNextStep} className="w-full rounded-xl bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
+                    {currentStepDefinition?.id === "caes"
+                      ? isLastDogSection
+                        ? "Continuar para responsável financeiro"
+                        : hasNextDogInFlow
+                          ? `Continuar para ${formatDogTitle(caesForm[activeDogIndex + 1], activeDogIndex + 1)}`
+                        : nextDogSectionLabel
+                          ? `Continuar para ${nextDogSectionLabel}`
+                          : "Continuar"
+                      : "Continuar"}
                     <ChevronRight className="ml-2 h-4 w-4" />
                   </Button>
                 ) : (
-                  <Button type="button" onClick={handleSubmit} disabled={isSaving} className="rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
+                  <Button type="button" onClick={handleSubmit} disabled={isSaving} className="w-full rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto">
                     {isSaving ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
                     {isSaving ? "Enviando..." : "Enviar cadastro"}
                   </Button>

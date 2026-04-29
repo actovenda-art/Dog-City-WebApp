@@ -56,7 +56,7 @@ function formatTime(value) {
 }
 
 function formatTimeRange(startTime, endTime) {
-  if (startTime && endTime) return `${startTime} Ã s ${endTime}`;
+  if (startTime && endTime) return `${startTime} às ${endTime}`;
   if (startTime) return startTime;
   if (endTime) return endTime;
   return "-";
@@ -101,7 +101,7 @@ function buildIncludedAppointments(orcamento, dogs = []) {
   return (orcamento?.caes || [])
     .map((cao, index) => {
       const dog = dogsById[cao?.dog_id];
-      const dogName = dog?.nome || `CÃ£o ${index + 1}`;
+    const dogName = dog?.nome || `Cão ${index + 1}`;
       const items = [];
 
       if (cao?.servicos?.day_care && cao?.day_care_data) {
@@ -117,8 +117,8 @@ function buildIncludedAppointments(orcamento, dogs = []) {
           key: `${cao.dog_id || index}-hospedagem`,
           title: "Hospedagem",
           lines: [
-            `Entrada: ${formatDate(cao.hosp_data_entrada)} Ã s ${formatTime(cao.hosp_horario_entrada)}`,
-            `SaÃ­da: ${formatDate(cao.hosp_data_saida)} Ã s ${formatTime(cao.hosp_horario_saida)}`,
+            `Entrada: ${formatDate(cao.hosp_data_entrada)} às ${formatTime(cao.hosp_horario_entrada)}`,
+            `Saída: ${formatDate(cao.hosp_data_saida)} às ${formatTime(cao.hosp_horario_saida)}`,
             ...(cao.hosp_datas_daycare || []).filter(Boolean).length > 0
               ? [`Day Care/Pernoite: ${(cao.hosp_datas_daycare || []).filter(Boolean).map((date) => formatDate(date)).join(", ")}`]
               : [],
@@ -129,7 +129,7 @@ function buildIncludedAppointments(orcamento, dogs = []) {
       if (cao?.servicos?.adaptacao && cao?.adaptacao_data) {
         items.push({
           key: `${cao.dog_id || index}-adaptacao`,
-          title: "AdaptaÃ§Ã£o",
+          title: "Adaptação",
           lines: [
             `Dia: ${formatDate(cao.adaptacao_data)}`,
             `HorÃ¡rio: ${formatTimeRange(cao.adaptacao_horario_entrada, cao.adaptacao_horario_saida)}`,
@@ -312,7 +312,7 @@ function buildOperationalRecordSuggestion(appointments = [], dogs = []) {
   return appointments
     .slice(0, 8)
     .map((appointment) => {
-      const dogName = dogsById[appointment.dog_id]?.nome || "CÃ£o";
+      const dogName = dogsById[appointment.dog_id]?.nome || "Cão";
       const serviceDate = getAppointmentDateKey(appointment);
       return {
         id: appointment.id,
@@ -515,7 +515,7 @@ export default function OrcamentosHistoricoPanel({
 
   function getDogName(dogId) {
     const dog = dogs.find((item) => item.id === dogId);
-    return dog?.nome || "CÃ£o nÃ£o encontrado";
+    return dog?.nome || "Cão não encontrado";
   }
 
   function showFeedback(title, description, tone = "info") {
@@ -838,7 +838,7 @@ export default function OrcamentosHistoricoPanel({
                 <FileText className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">HistÃ³rico de OrÃ§amentos</h1>
+                <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Histórico de Orçamentos</h1>
               </div>
             </div>
           </div>
@@ -880,7 +880,7 @@ export default function OrcamentosHistoricoPanel({
         <CardHeader className={embedded ? "border-b border-gray-100" : undefined}>
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-blue-600" />
-            {embedded ? "HistÃ³rico de OrÃ§amentos" : "OrÃ§amentos"}
+            {embedded ? "Histórico de Orçamentos" : "Orçamentos"}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -888,7 +888,7 @@ export default function OrcamentosHistoricoPanel({
             <SearchFiltersToolbar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
-              searchPlaceholder="Buscar por cÃ£o ou ID..."
+              searchPlaceholder="Buscar por cão ou ID..."
               hasActiveFilters={Boolean(searchTerm || filterStatus !== "all" || filterPeriodo !== "all")}
               onClear={() => {
                 setSearchTerm("");
@@ -903,7 +903,7 @@ export default function OrcamentosHistoricoPanel({
                   active: filterStatus !== "all",
                   content: (
                     <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status do orÃ§amento</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status do orçamento</p>
                       <Select value={filterStatus} onValueChange={setFilterStatus}>
                         <SelectTrigger>
                           <SelectValue />
@@ -922,21 +922,21 @@ export default function OrcamentosHistoricoPanel({
                 },
                 {
                   id: "periodo",
-                  label: "PerÃ­odo",
+                  label: "Período",
                   icon: Calendar,
                   active: filterPeriodo !== "all",
                   content: (
                     <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">PerÃ­odo</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período</p>
                       <Select value={filterPeriodo} onValueChange={setFilterPeriodo}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">Todo perÃ­odo</SelectItem>
-                          <SelectItem value="7dias">Ãšltimos 7 dias</SelectItem>
-                          <SelectItem value="30dias">Ãšltimos 30 dias</SelectItem>
-                          <SelectItem value="90dias">Ãšltimos 90 dias</SelectItem>
+                          <SelectItem value="all">Todo período</SelectItem>
+                          <SelectItem value="7dias">Últimos 7 dias</SelectItem>
+                          <SelectItem value="30dias">Últimos 30 dias</SelectItem>
+                          <SelectItem value="90dias">Últimos 90 dias</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -949,7 +949,7 @@ export default function OrcamentosHistoricoPanel({
           {filtered.length === 0 ? (
             <div className="py-12 text-center">
               <FileText className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-              <p className="text-gray-500">Nenhum orÃ§amento encontrado</p>
+              <p className="text-gray-500">Nenhum orçamento encontrado</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
@@ -963,10 +963,10 @@ export default function OrcamentosHistoricoPanel({
                         </div>
                         <div>
                           <p className="font-medium text-gray-900">
-                            {orcamento.caes?.map((cao) => getDogName(cao.dog_id)).join(", ") || "Sem cÃ£es"}
+                            {orcamento.caes?.map((cao) => getDogName(cao.dog_id)).join(", ") || "Sem cães"}
                           </p>
                           <p className="text-sm text-gray-500">
-                            Criado em {formatDate(orcamento.data_criacao)} â€¢ VÃ¡lido atÃ© {formatDate(orcamento.data_validade)}
+                            Criado em {formatDate(orcamento.data_criacao)} • Válido até {formatDate(orcamento.data_validade)}
                           </p>
                         </div>
                       </div>
@@ -976,7 +976,7 @@ export default function OrcamentosHistoricoPanel({
                           <Badge variant="outline" className="text-xs">Hospedagem</Badge>
                         )}
                         {orcamento.subtotal_servicos > 0 && (
-                          <Badge variant="outline" className="text-xs">ServiÃ§os</Badge>
+                          <Badge variant="outline" className="text-xs">Serviços</Badge>
                         )}
                         {orcamento.subtotal_transporte > 0 && (
                           <Badge variant="outline" className="text-xs">Transporte</Badge>
@@ -1030,9 +1030,9 @@ export default function OrcamentosHistoricoPanel({
       >
         <DialogContent className="max-h-[90vh] w-[95vw] max-w-[600px] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detalhes do OrÃ§amento</DialogTitle>
+            <DialogTitle>Detalhes do Orçamento</DialogTitle>
             <DialogDescription className="sr-only">
-              VisualizaÃ§Ã£o detalhada do orÃ§amento com aÃ§Ãµes de status e ediÃ§Ã£o dos agendamentos.
+              Visualização detalhada do orçamento com ações de status e edição dos agendamentos.
             </DialogDescription>
           </DialogHeader>
           {selectedOrcamento && (
@@ -1046,13 +1046,13 @@ export default function OrcamentosHistoricoPanel({
                 <span>{formatDate(selectedOrcamento.data_criacao)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">VÃ¡lido atÃ©:</span>
+                <span className="text-gray-600">Válido até:</span>
                 <span>{formatDate(selectedOrcamento.data_validade)}</span>
               </div>
 
               <hr />
 
-              <h4 className="font-semibold">CÃ£es:</h4>
+              <h4 className="font-semibold">Cães:</h4>
               {selectedOrcamento.caes?.map((cao, index) => (
                 <div key={`${cao.dog_id || "cao"}-${index}`} className="rounded-lg bg-gray-50 p-3">
                   <p className="font-medium">{getDogName(cao.dog_id)}</p>
@@ -1061,7 +1061,7 @@ export default function OrcamentosHistoricoPanel({
 
               {selectedOrcamentoIncludedAppointments.length > 0 && (
                 <div>
-                  <h4 className="mb-3 font-semibold">Agendamentos incluÃ­dos</h4>
+                  <h4 className="mb-3 font-semibold">Agendamentos incluídos</h4>
                   <div className="space-y-3">
                     {selectedOrcamentoIncludedAppointments.map((group) => (
                       <div key={group.dogId} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
@@ -1095,7 +1095,7 @@ export default function OrcamentosHistoricoPanel({
                 )}
                 {selectedOrcamento.subtotal_servicos > 0 && (
                   <div className="flex justify-between">
-                    <span>ServiÃ§os:</span>
+                    <span>Serviços:</span>
                     <span>{formatCurrency(selectedOrcamento.subtotal_servicos)}</span>
                   </div>
                 )}
@@ -1122,7 +1122,7 @@ export default function OrcamentosHistoricoPanel({
                 <>
                   <hr />
                   <div>
-                    <h4 className="mb-2 font-semibold">ObservaÃ§Ãµes</h4>
+                    <h4 className="mb-2 font-semibold">Observações</h4>
                     <p className="rounded bg-yellow-50 p-3 text-gray-600">{selectedOrcamento.observacoes}</p>
                   </div>
                 </>
@@ -1145,7 +1145,7 @@ export default function OrcamentosHistoricoPanel({
                 </div>
                 {selectedStatusDraft !== selectedOrcamento.status && (
                   <p className="mt-2 text-sm text-blue-700">
-                    AlteraÃ§Ã£o pendente. Clique em salvar para aplicar.
+                    Alteração pendente. Clique em salvar para aplicar.
                   </p>
                 )}
               </div>
@@ -1167,7 +1167,7 @@ export default function OrcamentosHistoricoPanel({
               className="bg-blue-600 text-white hover:bg-blue-700"
             >
               <Save className="mr-2 h-4 w-4" />
-              {isSavingStatus ? "Salvando..." : "Salvar alteraÃ§Ãµes"}
+              {isSavingStatus ? "Salvando..." : "Salvar alterações"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1206,9 +1206,9 @@ export default function OrcamentosHistoricoPanel({
                 <AlertTriangle className="h-6 w-6 text-amber-700" />
               </div>
               <div>
-                <DialogTitle>OrÃ§amento com atendimento jÃ¡ registrado</DialogTitle>
+                <DialogTitle>Orçamento com atendimento já registrado</DialogTitle>
                 <DialogDescription className="mt-2 text-sm leading-6">
-                  A exclusÃ£o foi bloqueada para proteger o histÃ³rico operacional. JÃ¡ existe check-in ou check-out em agendamentos gerados por este orÃ§amento.
+                  A exclusão foi bloqueada para proteger o histórico operacional. Já existe check-in ou check-out em agendamentos gerados por este orçamento.
                 </DialogDescription>
               </div>
             </div>
@@ -1216,7 +1216,7 @@ export default function OrcamentosHistoricoPanel({
 
           <div className="space-y-4 py-2">
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <p className="text-sm font-semibold text-amber-900">Atendimentos que serÃ£o levados para o novo orÃ§amento</p>
+              <p className="text-sm font-semibold text-amber-900">Atendimentos que serão levados para o novo orçamento</p>
               <div className="mt-3 space-y-2">
                 {(blockedDeleteContext?.rows || []).map((row) => (
                   <div key={row.id} className="flex flex-col gap-1 rounded-xl bg-white px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
@@ -1224,24 +1224,24 @@ export default function OrcamentosHistoricoPanel({
                       <p className="font-medium text-gray-900">{row.dogName}</p>
                       <p className="text-gray-600">{row.serviceName}</p>
                     </div>
-                    <Badge variant="outline">{row.serviceDate ? formatDate(row.serviceDate) : "Data nÃ£o informada"}</Badge>
+                    <Badge variant="outline">{row.serviceDate ? formatDate(row.serviceDate) : "Data não informada"}</Badge>
                   </div>
                 ))}
               </div>
             </div>
 
             <p className="text-sm leading-6 text-gray-600">
-              Use o botÃ£o abaixo para abrir um orÃ§amento jÃ¡ preenchido com os cÃ£es, responsÃ¡vel financeiro e serviÃ§os que foram utilizados. Depois revise valores e envie normalmente.
+              Use o botão abaixo para abrir um orçamento já preenchido com os cães, responsável financeiro e serviços que foram utilizados. Depois revise valores e envie normalmente.
             </p>
           </div>
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setBlockedDeleteContext(null)}>
-              Manter orÃ§amento atual
+              Manter orçamento atual
             </Button>
             <Button onClick={handleCreateBudgetForUsedAppointments} className="bg-blue-600 text-white hover:bg-blue-700">
               <FileText className="mr-2 h-4 w-4" />
-              Criar orÃ§amento para o que jÃ¡ foi utilizado
+              Criar orçamento para o que já foi utilizado
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1260,9 +1260,9 @@ export default function OrcamentosHistoricoPanel({
                 <Trash2 className="h-6 w-6 text-red-700" />
               </div>
               <div>
-                <DialogTitle>Excluir orÃ§amento?</DialogTitle>
+            <DialogTitle>Excluir orçamento?</DialogTitle>
                 <DialogDescription className="mt-2 text-sm leading-6">
-                  Esta aÃ§Ã£o remove o orÃ§amento e os registros gerados por ele. Nenhum atendimento com check-in ou check-out foi encontrado neste vÃ­nculo.
+              Esta ação remove o orçamento e os registros gerados por ele. Nenhum atendimento com check-in ou check-out foi encontrado neste vínculo.
                 </DialogDescription>
               </div>
             </div>
@@ -1272,7 +1272,7 @@ export default function OrcamentosHistoricoPanel({
             <div className="grid gap-3 sm:grid-cols-3">
               {[
                 { label: "Agendamentos", value: deleteConfirmContext?.generatedAppointments?.length || 0 },
-                { label: "ReposiÃ§Ãµes", value: deleteConfirmContext?.linkedReplacements?.length || 0 },
+                { label: "Reposições", value: deleteConfirmContext?.linkedReplacements?.length || 0 },
                 { label: "Valores a receber", value: deleteConfirmContext?.linkedReceivables?.length || 0 },
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
@@ -1284,7 +1284,7 @@ export default function OrcamentosHistoricoPanel({
 
             {deleteConfirmRows.length > 0 && (
               <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                <p className="text-sm font-semibold text-gray-900">Registros que serÃ£o removidos</p>
+              <p className="text-sm font-semibold text-gray-900">Registros que serão removidos</p>
                 <div className="mt-3 space-y-2">
                   {deleteConfirmRows.slice(0, 4).map((row) => (
                     <div key={row.id} className="flex flex-col gap-1 rounded-xl bg-gray-50 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
@@ -1292,7 +1292,7 @@ export default function OrcamentosHistoricoPanel({
                         <p className="font-medium text-gray-900">{row.dogName}</p>
                         <p className="text-gray-600">{row.serviceName}</p>
                       </div>
-                      <Badge variant="outline">{row.serviceDate ? formatDate(row.serviceDate) : "Data nÃ£o informada"}</Badge>
+                  <Badge variant="outline">{row.serviceDate ? formatDate(row.serviceDate) : "Data não informada"}</Badge>
                     </div>
                   ))}
                 </div>
@@ -1303,7 +1303,7 @@ export default function OrcamentosHistoricoPanel({
             )}
 
             <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-800">
-              Confirme apenas se deseja remover estes registros gerados automaticamente junto com o orÃ§amento.
+              Confirme apenas se deseja remover estes registros gerados automaticamente junto com o orçamento.
             </div>
           </div>
 
@@ -1313,7 +1313,7 @@ export default function OrcamentosHistoricoPanel({
             </Button>
             <Button onClick={confirmDeleteOrcamento} disabled={isDeletingOrcamento} className="bg-red-600 text-white hover:bg-red-700">
               <Trash2 className="mr-2 h-4 w-4" />
-              {isDeletingOrcamento ? "Excluindo..." : "Excluir orÃ§amento"}
+            {isDeletingOrcamento ? "Excluindo..." : "Excluir orçamento"}
             </Button>
           </DialogFooter>
         </DialogContent>

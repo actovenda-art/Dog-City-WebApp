@@ -322,23 +322,23 @@ export default function Agendamentos() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="mx-auto max-w-7xl space-y-4 sm:space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-blue-100 p-3">
-              <Calendar className="h-6 w-6 text-blue-700" />
+            <div className="rounded-xl bg-blue-100 p-2.5 sm:p-3">
+              <Calendar className="h-5 w-5 text-blue-700 sm:h-6 sm:w-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Agendamentos</h1>
+              <h1 className="text-xl font-bold text-gray-900 sm:text-3xl">Agendamentos</h1>
             </div>
           </div>
-          <Button variant="outline" onClick={loadData}>
+          <Button variant="outline" onClick={loadData} className="w-full sm:w-auto">
             <RefreshCw className="mr-2 h-4 w-4" />
             Atualizar
           </Button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           {[
             { label: "Total", value: stats.total, tone: "text-blue-600", border: "border-blue-200" },
             { label: "Hoje", value: stats.hoje, tone: "text-emerald-600", border: "border-emerald-200" },
@@ -346,9 +346,9 @@ export default function Agendamentos() {
             ...(!shouldHideOperationalAlerts ? [{ label: "Pendencias comerciais", value: stats.pendencias, tone: "text-rose-600", border: "border-rose-200" }] : []),
           ].map((item) => (
             <Card key={item.label} className={`${item.border} bg-white`}>
-              <CardContent className="p-4">
-                <p className="text-sm text-gray-600">{item.label}</p>
-                <p className={`mt-1 text-2xl font-bold ${item.tone}`}>{item.value}</p>
+              <CardContent className="p-3 sm:p-4">
+                <p className="text-xs text-gray-600 sm:text-sm">{item.label}</p>
+                <p className={`mt-1 text-xl font-bold sm:text-2xl ${item.tone}`}>{item.value}</p>
               </CardContent>
             </Card>
           ))}
@@ -387,11 +387,11 @@ export default function Agendamentos() {
                             : "Se confirmar a falta, o financeiro continua com a análise de pagamento ou crédito."}
                         </p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" onClick={() => openRegistradorForAppointment(appointment)}>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                        <Button variant="outline" onClick={() => openRegistradorForAppointment(appointment)} className="w-full sm:w-auto">
                           Abrir no registrador
                         </Button>
-                        <Button onClick={() => handleMarkAbsence(appointment)} disabled={isSaving} className="bg-rose-600 text-white hover:bg-rose-700">
+                        <Button onClick={() => handleMarkAbsence(appointment)} disabled={isSaving} className="w-full bg-rose-600 text-white hover:bg-rose-700 sm:w-auto">
                           Confirmar falta
                         </Button>
                       </div>
@@ -427,12 +427,12 @@ export default function Agendamentos() {
                           {owner.nome || "Responsável não identificado"} • {formatAppointmentPeriod(appointment)}
                         </p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" onClick={() => openPackageDialog(appointment)}>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                        <Button variant="outline" onClick={() => openPackageDialog(appointment)} className="w-full sm:w-auto">
                           <Tag className="mr-2 h-4 w-4" />
                           Marcar pacote
                         </Button>
-                        <Button onClick={() => handleCreateOrcamento(appointment)} className="bg-blue-600 text-white hover:bg-blue-700">
+                        <Button onClick={() => handleCreateOrcamento(appointment)} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
                           Criar orçamento
                         </Button>
                       </div>
@@ -445,7 +445,7 @@ export default function Agendamentos() {
         )}
 
         <Card className="border-gray-200 bg-white">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <SearchFiltersToolbar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
@@ -534,18 +534,18 @@ export default function Agendamentos() {
                   : "border-gray-200 bg-white"}
                 onClick={appointment.charge_type === "avulso" ? () => openAvulsoActionsDialog(appointment) : undefined}
               >
-                <CardContent className="p-4">
+                <CardContent className="p-3 sm:p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold text-gray-900">{dog?.nome || "Cão"}</p>
-                        <Badge variant="outline">{getServiceLabel(appointment.service_type)}</Badge>
-                        <Badge className="bg-gray-100 text-gray-700">{appointment.status || "agendado"}</Badge>
-                        <Badge className={appointment.charge_type === "pacote" ? "bg-emerald-100 text-emerald-700" : appointment.charge_type === "avulso" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}>
+                        <Badge variant="outline" className="text-[11px] sm:text-xs">{getServiceLabel(appointment.service_type)}</Badge>
+                        <Badge className="bg-gray-100 text-[11px] text-gray-700 sm:text-xs">{appointment.status || "agendado"}</Badge>
+                        <Badge className={`text-[11px] sm:text-xs ${appointment.charge_type === "pacote" ? "bg-emerald-100 text-emerald-700" : appointment.charge_type === "avulso" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
                           {getChargeTypeLabel(appointment.charge_type)}
                         </Badge>
                       </div>
-                      <p className="mt-1 text-sm text-gray-600">
+                      <p className="mt-1 text-xs text-gray-600 sm:text-sm">
                         {owner.nome || "Responsável não identificado"} • {formatAppointmentPeriod(appointment)}
                       </p>
                       <p className="mt-1 text-xs text-gray-500">
@@ -553,9 +553,9 @@ export default function Agendamentos() {
                       </p>
                     </div>
                     {!shouldHideOperationalAlerts && appointment.source_type === "manual_registrador" && appointment.charge_type === "pendente_comercial" && (
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" onClick={(event) => { event.stopPropagation(); openPackageDialog(appointment); }}>Pacote</Button>
-                        <Button onClick={(event) => { event.stopPropagation(); handleCreateOrcamento(appointment); }} className="bg-blue-600 text-white hover:bg-blue-700">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                        <Button variant="outline" onClick={(event) => { event.stopPropagation(); openPackageDialog(appointment); }} className="w-full sm:w-auto">Pacote</Button>
+                        <Button onClick={(event) => { event.stopPropagation(); handleCreateOrcamento(appointment); }} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
                           Criar orçamento
                         </Button>
                       </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
 import { notificacoesOrcamento } from "@/api/functions";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
+import OrcamentoAgendamentoEditorDialog from "@/components/orcamento/OrcamentoAgendamentoEditorDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createPageUrl } from "@/utils";
 import {
@@ -55,7 +56,7 @@ function formatTime(value) {
 }
 
 function formatTimeRange(startTime, endTime) {
-  if (startTime && endTime) return `${startTime} às ${endTime}`;
+  if (startTime && endTime) return `${startTime} Ã s ${endTime}`;
   if (startTime) return startTime;
   if (endTime) return endTime;
   return "-";
@@ -100,7 +101,7 @@ function buildIncludedAppointments(orcamento, dogs = []) {
   return (orcamento?.caes || [])
     .map((cao, index) => {
       const dog = dogsById[cao?.dog_id];
-      const dogName = dog?.nome || `Cão ${index + 1}`;
+      const dogName = dog?.nome || `CÃ£o ${index + 1}`;
       const items = [];
 
       if (cao?.servicos?.day_care && cao?.day_care_data) {
@@ -116,8 +117,8 @@ function buildIncludedAppointments(orcamento, dogs = []) {
           key: `${cao.dog_id || index}-hospedagem`,
           title: "Hospedagem",
           lines: [
-            `Entrada: ${formatDate(cao.hosp_data_entrada)} às ${formatTime(cao.hosp_horario_entrada)}`,
-            `Saída: ${formatDate(cao.hosp_data_saida)} às ${formatTime(cao.hosp_horario_saida)}`,
+            `Entrada: ${formatDate(cao.hosp_data_entrada)} Ã s ${formatTime(cao.hosp_horario_entrada)}`,
+            `SaÃ­da: ${formatDate(cao.hosp_data_saida)} Ã s ${formatTime(cao.hosp_horario_saida)}`,
             ...(cao.hosp_datas_daycare || []).filter(Boolean).length > 0
               ? [`Day Care/Pernoite: ${(cao.hosp_datas_daycare || []).filter(Boolean).map((date) => formatDate(date)).join(", ")}`]
               : [],
@@ -128,10 +129,10 @@ function buildIncludedAppointments(orcamento, dogs = []) {
       if (cao?.servicos?.adaptacao && cao?.adaptacao_data) {
         items.push({
           key: `${cao.dog_id || index}-adaptacao`,
-          title: "Adaptação",
+          title: "AdaptaÃ§Ã£o",
           lines: [
             `Dia: ${formatDate(cao.adaptacao_data)}`,
-            `Horário: ${formatTimeRange(cao.adaptacao_horario_entrada, cao.adaptacao_horario_saida)}`,
+            `HorÃ¡rio: ${formatTimeRange(cao.adaptacao_horario_entrada, cao.adaptacao_horario_saida)}`,
           ],
         });
       }
@@ -143,7 +144,7 @@ function buildIncludedAppointments(orcamento, dogs = []) {
           title: "Banho",
           lines: [
             `Dia: ${formatDate(banhoDate)}`,
-            `Horário: ${formatTimeRange(cao.banho_horario_inicio || cao.banho_horario, cao.banho_horario_saida)}`,
+            `HorÃ¡rio: ${formatTimeRange(cao.banho_horario_inicio || cao.banho_horario, cao.banho_horario_saida)}`,
           ],
         });
       }
@@ -155,7 +156,7 @@ function buildIncludedAppointments(orcamento, dogs = []) {
           title: "Tosa",
           lines: [
             `Dia: ${formatDate(tosaDate)}`,
-            `Horário: ${formatTimeRange(cao.tosa_horario_entrada, cao.tosa_horario_saida)}`,
+            `HorÃ¡rio: ${formatTimeRange(cao.tosa_horario_entrada, cao.tosa_horario_saida)}`,
           ],
         });
       }
@@ -170,7 +171,7 @@ function buildIncludedAppointments(orcamento, dogs = []) {
               `Partida: ${viagem.partida || "-"}`,
               `Destino: ${viagem.destino || "-"}`,
               `Dia: ${formatDate(viagem.data)}`,
-              `Horário: ${formatTimeRange(viagem.horario, viagem.horario_fim)}`,
+              `HorÃ¡rio: ${formatTimeRange(viagem.horario, viagem.horario_fim)}`,
             ],
           });
         });
@@ -311,7 +312,7 @@ function buildOperationalRecordSuggestion(appointments = [], dogs = []) {
   return appointments
     .slice(0, 8)
     .map((appointment) => {
-      const dogName = dogsById[appointment.dog_id]?.nome || "Cão";
+      const dogName = dogsById[appointment.dog_id]?.nome || "CÃ£o";
       const serviceDate = getAppointmentDateKey(appointment);
       return {
         id: appointment.id,
@@ -460,6 +461,7 @@ export default function OrcamentosHistoricoPanel({
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
+  const [precos, setPrecos] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -492,25 +494,28 @@ export default function OrcamentosHistoricoPanel({
   async function loadData() {
     setIsLoading(true);
     try {
-      const [orcData, dogsData, carteirasData, responsaveisData] = await Promise.all([
+      const [orcData, dogsData, carteirasData, responsaveisData, precosData, currentUser] = await Promise.all([
         Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
         Responsavel.list("-created_date", 500),
+        TabelaPrecos.list("-created_date", 1000),
+        User.me(),
       ]);
       setOrcamentos(orcData || []);
       setDogs(dogsData || []);
       setCarteiras(carteirasData || []);
       setResponsaveis(responsaveisData || []);
+      setPrecos(buildPricingConfig(precosData || [], currentUser?.empresa_id || null));
     } catch (error) {
-      console.error("Erro ao carregar histórico de orçamentos:", error);
+      console.error("Erro ao carregar histÃ³rico de orÃ§amentos:", error);
     }
     setIsLoading(false);
   }
 
   function getDogName(dogId) {
     const dog = dogs.find((item) => item.id === dogId);
-    return dog?.nome || "Cão não encontrado";
+    return dog?.nome || "CÃ£o nÃ£o encontrado";
   }
 
   function showFeedback(title, description, tone = "info") {
@@ -569,8 +574,8 @@ export default function OrcamentosHistoricoPanel({
         rows: buildOperationalRecordSuggestion(generatedAppointments, dogs),
       });
     } catch (error) {
-      console.error("Erro ao excluir orçamento:", error);
-      showFeedback("Não foi possível preparar a exclusão", "Tente novamente em alguns instantes.", "error");
+      console.error("Erro ao excluir orÃ§amento:", error);
+      showFeedback("NÃ£o foi possÃ­vel preparar a exclusÃ£o", "Tente novamente em alguns instantes.", "error");
     }
   }
 
@@ -586,10 +591,10 @@ export default function OrcamentosHistoricoPanel({
       await loadData();
       await onChange?.();
       setDeleteConfirmContext(null);
-      showFeedback("Orçamento excluído", "Os registros gerados por ele também foram removidos.", "success");
+      showFeedback("OrÃ§amento excluÃ­do", "Os registros gerados por ele tambÃ©m foram removidos.", "success");
     } catch (error) {
-      console.error("Erro ao excluir orçamento:", error);
-      showFeedback("Não foi possível excluir", "O orçamento não foi removido. Verifique as permissões ou tente novamente.", "error");
+      console.error("Erro ao excluir orÃ§amento:", error);
+      showFeedback("NÃ£o foi possÃ­vel excluir", "O orÃ§amento nÃ£o foi removido. Verifique as permissÃµes ou tente novamente.", "error");
     } finally {
       setIsDeletingOrcamento(false);
     }
@@ -607,8 +612,8 @@ export default function OrcamentosHistoricoPanel({
       cliente_id: blockedDeleteContext.orcamento?.cliente_id || firstAppointment.cliente_id || null,
       created_at: new Date().toISOString(),
       observacoes: [
-        "Orçamento criado para atendimentos já utilizados.",
-        blockedDeleteContext.orcamento?.id ? `Origem: orçamento ${blockedDeleteContext.orcamento.id}.` : "",
+        "OrÃ§amento criado para atendimentos jÃ¡ utilizados.",
+        blockedDeleteContext.orcamento?.id ? `Origem: orÃ§amento ${blockedDeleteContext.orcamento.id}.` : "",
         "Revise valores e datas antes de enviar.",
       ].filter(Boolean).join("\n"),
       appointments: blockedDeleteContext.appointments.map(serializeOperationalAppointmentForPrefill),
@@ -691,7 +696,7 @@ export default function OrcamentosHistoricoPanel({
             }
           }
         } catch (error) {
-          console.error("Erro ao sincronizar agendamentos do orçamento:", error);
+          console.error("Erro ao sincronizar agendamentos do orÃ§amento:", error);
         }
       }
 
@@ -701,15 +706,15 @@ export default function OrcamentosHistoricoPanel({
           data: { novo_status: newStatus },
         });
       } catch (error) {
-        console.log("Notificação de orçamento não enviada");
+        console.log("NotificaÃ§Ã£o de orÃ§amento nÃ£o enviada");
       }
 
       await loadData();
       await onChange?.();
       return true;
     } catch (error) {
-      console.error("Erro ao alterar status do orçamento:", error);
-      showFeedback("Não foi possível alterar o status", "A alteração não foi salva. Tente novamente em alguns instantes.", "error");
+      console.error("Erro ao alterar status do orÃ§amento:", error);
+      showFeedback("NÃ£o foi possÃ­vel alterar o status", "A alteraÃ§Ã£o nÃ£o foi salva. Tente novamente em alguns instantes.", "error");
       return false;
     }
   }
@@ -722,7 +727,7 @@ export default function OrcamentosHistoricoPanel({
     const saved = await handleStatusChange(selectedOrcamento.id, selectedStatusDraft);
     if (saved) {
       setSelectedOrcamento((current) => current ? { ...current, status: selectedStatusDraft } : current);
-      showFeedback("Alterações salvas", "O status do orçamento foi atualizado.", "success");
+      showFeedback("AlteraÃ§Ãµes salvas", "O status do orÃ§amento foi atualizado.", "success");
     }
     setIsSavingStatus(false);
   }
@@ -731,23 +736,6 @@ export default function OrcamentosHistoricoPanel({
     if (!orcamento?.id) return;
     setEditingOrcamento(orcamento);
     setShowAppointmentsEditor(true);
-    setIsLoadingAppointmentEdits(true);
-    try {
-      const appointmentRows = await Appointment.listAll("-created_date", 1000, 10000);
-      const linkedAppointments = getAppointmentsGeneratedFromOrcamento(appointmentRows || [], orcamento.id)
-        .sort((a, b) => {
-          const dateCompare = String(getAppointmentDateKey(a)).localeCompare(String(getAppointmentDateKey(b)));
-          if (dateCompare !== 0) return dateCompare;
-          return String(getAppointmentTimeValue(a, "entrada")).localeCompare(String(getAppointmentTimeValue(b, "entrada")));
-        });
-      setAppointmentEditRows(linkedAppointments.map(buildAppointmentEditRow));
-    } catch (error) {
-      console.error("Erro ao carregar agendamentos do orçamento:", error);
-      setAppointmentEditRows([]);
-      showFeedback("Não foi possível abrir a edição", "Os agendamentos vinculados não foram carregados.", "error");
-    } finally {
-      setIsLoadingAppointmentEdits(false);
-    }
   }
 
   function updateAppointmentEditRow(rowId, patch) {
@@ -779,10 +767,10 @@ export default function OrcamentosHistoricoPanel({
       await onChange?.();
       setShowAppointmentsEditor(false);
       setEditingOrcamento(null);
-      showFeedback("Agendamentos atualizados", "As alterações foram salvas nos agendamentos deste orçamento.", "success");
+      showFeedback("Agendamentos atualizados", "As alteraÃ§Ãµes foram salvas nos agendamentos deste orÃ§amento.", "success");
     } catch (error) {
-      console.error("Erro ao salvar agendamentos do orçamento:", error);
-      showFeedback("Não foi possível salvar", "Revise os dados dos agendamentos e tente novamente.", "error");
+      console.error("Erro ao salvar agendamentos do orÃ§amento:", error);
+      showFeedback("NÃ£o foi possÃ­vel salvar", "Revise os dados dos agendamentos e tente novamente.", "error");
     } finally {
       setIsSavingAppointmentEdits(false);
     }
@@ -850,7 +838,7 @@ export default function OrcamentosHistoricoPanel({
                 <FileText className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Histórico de Orçamentos</h1>
+                <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">HistÃ³rico de OrÃ§amentos</h1>
               </div>
             </div>
           </div>
@@ -892,7 +880,7 @@ export default function OrcamentosHistoricoPanel({
         <CardHeader className={embedded ? "border-b border-gray-100" : undefined}>
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-blue-600" />
-            {embedded ? "Histórico de Orçamentos" : "Orçamentos"}
+            {embedded ? "HistÃ³rico de OrÃ§amentos" : "OrÃ§amentos"}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -900,7 +888,7 @@ export default function OrcamentosHistoricoPanel({
             <SearchFiltersToolbar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
-              searchPlaceholder="Buscar por cão ou ID..."
+              searchPlaceholder="Buscar por cÃ£o ou ID..."
               hasActiveFilters={Boolean(searchTerm || filterStatus !== "all" || filterPeriodo !== "all")}
               onClear={() => {
                 setSearchTerm("");
@@ -915,7 +903,7 @@ export default function OrcamentosHistoricoPanel({
                   active: filterStatus !== "all",
                   content: (
                     <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status do orçamento</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status do orÃ§amento</p>
                       <Select value={filterStatus} onValueChange={setFilterStatus}>
                         <SelectTrigger>
                           <SelectValue />
@@ -934,21 +922,21 @@ export default function OrcamentosHistoricoPanel({
                 },
                 {
                   id: "periodo",
-                  label: "Período",
+                  label: "PerÃ­odo",
                   icon: Calendar,
                   active: filterPeriodo !== "all",
                   content: (
                     <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">PerÃ­odo</p>
                       <Select value={filterPeriodo} onValueChange={setFilterPeriodo}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">Todo período</SelectItem>
-                          <SelectItem value="7dias">Últimos 7 dias</SelectItem>
-                          <SelectItem value="30dias">Últimos 30 dias</SelectItem>
-                          <SelectItem value="90dias">Últimos 90 dias</SelectItem>
+                          <SelectItem value="all">Todo perÃ­odo</SelectItem>
+                          <SelectItem value="7dias">Ãšltimos 7 dias</SelectItem>
+                          <SelectItem value="30dias">Ãšltimos 30 dias</SelectItem>
+                          <SelectItem value="90dias">Ãšltimos 90 dias</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -961,7 +949,7 @@ export default function OrcamentosHistoricoPanel({
           {filtered.length === 0 ? (
             <div className="py-12 text-center">
               <FileText className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-              <p className="text-gray-500">Nenhum orçamento encontrado</p>
+              <p className="text-gray-500">Nenhum orÃ§amento encontrado</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
@@ -975,10 +963,10 @@ export default function OrcamentosHistoricoPanel({
                         </div>
                         <div>
                           <p className="font-medium text-gray-900">
-                            {orcamento.caes?.map((cao) => getDogName(cao.dog_id)).join(", ") || "Sem cães"}
+                            {orcamento.caes?.map((cao) => getDogName(cao.dog_id)).join(", ") || "Sem cÃ£es"}
                           </p>
                           <p className="text-sm text-gray-500">
-                            Criado em {formatDate(orcamento.data_criacao)} • Válido até {formatDate(orcamento.data_validade)}
+                            Criado em {formatDate(orcamento.data_criacao)} â€¢ VÃ¡lido atÃ© {formatDate(orcamento.data_validade)}
                           </p>
                         </div>
                       </div>
@@ -988,7 +976,7 @@ export default function OrcamentosHistoricoPanel({
                           <Badge variant="outline" className="text-xs">Hospedagem</Badge>
                         )}
                         {orcamento.subtotal_servicos > 0 && (
-                          <Badge variant="outline" className="text-xs">Serviços</Badge>
+                          <Badge variant="outline" className="text-xs">ServiÃ§os</Badge>
                         )}
                         {orcamento.subtotal_transporte > 0 && (
                           <Badge variant="outline" className="text-xs">Transporte</Badge>
@@ -1042,9 +1030,9 @@ export default function OrcamentosHistoricoPanel({
       >
         <DialogContent className="max-h-[90vh] w-[95vw] max-w-[600px] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detalhes do Orçamento</DialogTitle>
+            <DialogTitle>Detalhes do OrÃ§amento</DialogTitle>
             <DialogDescription className="sr-only">
-              Visualização detalhada do orçamento com ações de status e edição dos agendamentos.
+              VisualizaÃ§Ã£o detalhada do orÃ§amento com aÃ§Ãµes de status e ediÃ§Ã£o dos agendamentos.
             </DialogDescription>
           </DialogHeader>
           {selectedOrcamento && (
@@ -1058,13 +1046,13 @@ export default function OrcamentosHistoricoPanel({
                 <span>{formatDate(selectedOrcamento.data_criacao)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Válido até:</span>
+                <span className="text-gray-600">VÃ¡lido atÃ©:</span>
                 <span>{formatDate(selectedOrcamento.data_validade)}</span>
               </div>
 
               <hr />
 
-              <h4 className="font-semibold">Cães:</h4>
+              <h4 className="font-semibold">CÃ£es:</h4>
               {selectedOrcamento.caes?.map((cao, index) => (
                 <div key={`${cao.dog_id || "cao"}-${index}`} className="rounded-lg bg-gray-50 p-3">
                   <p className="font-medium">{getDogName(cao.dog_id)}</p>
@@ -1073,7 +1061,7 @@ export default function OrcamentosHistoricoPanel({
 
               {selectedOrcamentoIncludedAppointments.length > 0 && (
                 <div>
-                  <h4 className="mb-3 font-semibold">Agendamentos incluídos</h4>
+                  <h4 className="mb-3 font-semibold">Agendamentos incluÃ­dos</h4>
                   <div className="space-y-3">
                     {selectedOrcamentoIncludedAppointments.map((group) => (
                       <div key={group.dogId} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
@@ -1107,7 +1095,7 @@ export default function OrcamentosHistoricoPanel({
                 )}
                 {selectedOrcamento.subtotal_servicos > 0 && (
                   <div className="flex justify-between">
-                    <span>Serviços:</span>
+                    <span>ServiÃ§os:</span>
                     <span>{formatCurrency(selectedOrcamento.subtotal_servicos)}</span>
                   </div>
                 )}
@@ -1134,7 +1122,7 @@ export default function OrcamentosHistoricoPanel({
                 <>
                   <hr />
                   <div>
-                    <h4 className="mb-2 font-semibold">Observações</h4>
+                    <h4 className="mb-2 font-semibold">ObservaÃ§Ãµes</h4>
                     <p className="rounded bg-yellow-50 p-3 text-gray-600">{selectedOrcamento.observacoes}</p>
                   </div>
                 </>
@@ -1157,7 +1145,7 @@ export default function OrcamentosHistoricoPanel({
                 </div>
                 {selectedStatusDraft !== selectedOrcamento.status && (
                   <p className="mt-2 text-sm text-blue-700">
-                    Alteração pendente. Clique em salvar para aplicar.
+                    AlteraÃ§Ã£o pendente. Clique em salvar para aplicar.
                   </p>
                 )}
               </div>
@@ -1179,289 +1167,36 @@ export default function OrcamentosHistoricoPanel({
               className="bg-blue-600 text-white hover:bg-blue-700"
             >
               <Save className="mr-2 h-4 w-4" />
-              {isSavingStatus ? "Salvando..." : "Salvar alterações"}
+              {isSavingStatus ? "Salvando..." : "Salvar alteraÃ§Ãµes"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <OrcamentoAgendamentoEditorDialog
         open={showAppointmentsEditor}
-        onOpenChange={(open) => {
-          setShowAppointmentsEditor(open);
-          if (!open) {
-            setEditingOrcamento(null);
-            setAppointmentEditRows([]);
-          }
+        orcamento={editingOrcamento}
+        dogs={dogs}
+        carteiras={carteiras}
+        responsaveis={responsaveis}
+        precos={precos}
+        onClose={() => {
+          setShowAppointmentsEditor(false);
+          setEditingOrcamento(null);
+          setAppointmentEditRows([]);
         }}
-      >
-        <DialogContent className="max-h-[92vh] w-[96vw] max-w-[900px] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Editar agendamentos do orçamento</DialogTitle>
-            <DialogDescription>
-              Ajuste individualmente as datas, horários, cães, observações e lembretes dos agendamentos já criados
-              {editingOrcamento?.id ? ` para este orçamento.` : "."}
-            </DialogDescription>
-          </DialogHeader>
-
-          {isLoadingAppointmentEdits ? (
-            <div className="flex items-center justify-center py-10">
-              <div className="h-10 w-10 animate-spin rounded-full border-b-4 border-blue-600" />
-            </div>
-          ) : appointmentEditRows.length === 0 ? (
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 text-center">
-              <Calendar className="mx-auto mb-3 h-10 w-10 text-gray-400" />
-              <p className="font-medium text-gray-900">Nenhum agendamento vinculado encontrado</p>
-              <p className="mt-1 text-sm text-gray-600">
-                Este orçamento ainda não gerou agendamentos ou eles já foram removidos.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {appointmentEditRows.map((row, index) => {
-                const isHospedagem = row.service_type === "hospedagem";
-                const availableKennelDogs = dogs.filter((dog) => dog.id !== row.dog_id);
-
-                return (
-                  <div key={row.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue-600">
-                          Agendamento {index + 1}
-                        </p>
-                        <h4 className="mt-1 text-lg font-bold text-gray-900">
-                          {getServiceLabel(row.service_type)} {row.data_inicio ? formatDate(row.data_inicio) : ""}
-                        </h4>
-                      </div>
-                      <Badge variant="outline">{row.id}</Badge>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Cão incluso</label>
-                        <Select value={row.dog_id} onValueChange={(value) => updateAppointmentEditRow(row.id, { dog_id: value })}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione o cão" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {dogs.map((dog) => (
-                              <SelectItem key={dog.id} value={dog.id}>{dog.nome}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Serviço</label>
-                        <Input value={getServiceLabel(row.service_type)} disabled />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">
-                          {isHospedagem ? "Data de entrada" : "Data agendada"}
-                        </label>
-                        <Input
-                          type="date"
-                          value={row.data_inicio || ""}
-                          onChange={(event) => updateAppointmentEditRow(row.id, { data_inicio: event.target.value })}
-                        />
-                      </div>
-
-                      {isHospedagem && (
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-gray-700">Data de saída</label>
-                          <Input
-                            type="date"
-                            value={row.data_fim || ""}
-                            onChange={(event) => updateAppointmentEditRow(row.id, { data_fim: event.target.value })}
-                          />
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Horário de início</label>
-                        <Input
-                          type="time"
-                          value={row.hora_entrada || ""}
-                          onChange={(event) => updateAppointmentEditRow(row.id, { hora_entrada: event.target.value })}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Horário de término</label>
-                        <Input
-                          type="time"
-                          value={row.hora_saida || ""}
-                          onChange={(event) => updateAppointmentEditRow(row.id, { hora_saida: event.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    {isHospedagem && (
-                      <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
-                        <label className="flex items-center gap-2 text-sm font-medium text-blue-900">
-                          <input
-                            type="checkbox"
-                            checked={row.hosp_dormitorio_compartilhado}
-                            onChange={(event) => updateAppointmentEditRow(row.id, { hosp_dormitorio_compartilhado: event.target.checked })}
-                          />
-                          Divide canil
-                        </label>
-
-                        {row.hosp_dormitorio_compartilhado && (
-                          <div className="mt-3">
-                            <p className="mb-2 text-sm font-medium text-blue-900">Com quais cães?</p>
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              {availableKennelDogs.map((dog) => (
-                                <label key={dog.id} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm text-gray-700">
-                                  <input
-                                    type="checkbox"
-                                    checked={(row.hosp_dormitorio_com || []).includes(dog.id)}
-                                    onChange={() => toggleSharedKennelDog(row.id, dog.id)}
-                                  />
-                                  {dog.nome}
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="mt-4 space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Observações</label>
-                        <Textarea
-                          value={row.observacoes || ""}
-                          onChange={(event) => updateAppointmentEditRow(row.id, { observacoes: event.target.value })}
-                          rows={3}
-                          placeholder="Observações deste agendamento"
-                        />
-                      </div>
-
-                      <div className="rounded-[28px] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-4 shadow-sm">
-                        <div className="flex items-start gap-3">
-                          <div className="rounded-2xl bg-violet-100 p-2 text-violet-700">
-                            <BellRing className="h-5 w-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-500">Lembrete do agendamento</p>
-                            <h5 className="mt-1 text-base font-bold text-slate-900">Defina o disparo e a mensagem</h5>
-                            <p className="mt-2 text-sm leading-6 text-slate-600">
-                              Use este bloco para organizar quando o aviso precisa sair e qual instrução deve acompanhar esse atendimento.
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_280px]">
-                          <div className="space-y-4">
-                            <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(76,29,149,0.45)]">
-                              <div className="flex items-start gap-3">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">1</div>
-                                <div className="flex-1">
-                                  <label className="text-sm font-semibold text-slate-900">Quando o lembrete deve disparar?</label>
-                                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                                    Ajuste a data e o horário do aviso para esse atendimento específico.
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
-                                <div className="space-y-2">
-                                  <label className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Data do lembrete</label>
-                                  <Input
-                                    type="date"
-                                    value={row.lembrete_data || row.data_inicio || ""}
-                                    onChange={(event) => updateAppointmentEditRow(row.id, { lembrete_data: event.target.value })}
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Horário do lembrete</label>
-                                  <Input
-                                    type="time"
-                                    value={row.lembrete_horario || ""}
-                                    onChange={(event) => updateAppointmentEditRow(row.id, { lembrete_horario: event.target.value })}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(15,23,42,0.35)]">
-                              <div className="flex items-start gap-3">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-700">2</div>
-                                <div className="flex-1">
-                                  <label className="text-sm font-semibold text-slate-900">O que precisa ser lembrado?</label>
-                                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                                    Escreva uma instrução curta e objetiva para a equipe agir rápido.
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="mt-4">
-                                <Textarea
-                                  value={row.lembrete_texto || ""}
-                                  onChange={(event) => updateAppointmentEditRow(row.id, { lembrete_texto: event.target.value })}
-                                  rows={3}
-                                  className="border-slate-200 bg-white"
-                                  placeholder="Ex.: confirmar transporte de volta às 17:30."
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-4 text-white shadow-[0_20px_50px_-28px_rgba(15,23,42,0.8)]">
-                            <div className="flex items-center gap-3">
-                              <div className="rounded-2xl bg-white/10 p-2 text-violet-200">
-                                <MessageSquareText className="h-5 w-5" />
-                              </div>
-                              <div>
-                                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-200/90">Prévia</p>
-                                <p className="text-sm text-slate-300">Assim esse lembrete fica mais fácil de revisar.</p>
-                              </div>
-                            </div>
-
-                            <div className="mt-4 space-y-3">
-                              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Acionamento</p>
-                                <p className="mt-2 text-base font-semibold text-white">
-                                  {row.lembrete_horario && (row.lembrete_data || row.data_inicio)
-                                    ? `${formatDate(row.lembrete_data || row.data_inicio || "")} às ${formatTimeValue(row.lembrete_horario)}`
-                                    : "Defina a data e o horário do lembrete"}
-                                </p>
-                              </div>
-
-                              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Mensagem</p>
-                                <p className="mt-2 text-sm leading-6 text-slate-200">
-                                  {row.lembrete_texto || "Descreva aqui a instrução que precisa acompanhar este agendamento."}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowAppointmentsEditor(false)} disabled={isSavingAppointmentEdits}>
-              Fechar
-            </Button>
-            <Button
-              onClick={saveAppointmentEdits}
-              disabled={isLoadingAppointmentEdits || isSavingAppointmentEdits || appointmentEditRows.length === 0}
-              className="bg-blue-600 text-white hover:bg-blue-700"
-            >
-              <Save className="mr-2 h-4 w-4" />
-              {isSavingAppointmentEdits ? "Salvando..." : "Salvar agendamentos"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onSaved={async (updatedOrcamento) => {
+          setSelectedOrcamento(updatedOrcamento);
+          setSelectedStatusDraft(updatedOrcamento?.status || "rascunho");
+          setShowAppointmentsEditor(false);
+          setEditingOrcamento(null);
+          setAppointmentEditRows([]);
+          await loadData();
+          await onChange?.();
+          showFeedback("Agendamentos atualizados", "As alterações foram salvas no orçamento e nos agendamentos vinculados.", "success");
+        }}
+        onFeedback={showFeedback}
+      />
 
       <Dialog open={Boolean(blockedDeleteContext)} onOpenChange={(open) => !open && setBlockedDeleteContext(null)}>
         <DialogContent className="max-h-[92vh] w-[95vw] max-w-[680px] overflow-y-auto">
@@ -1471,9 +1206,9 @@ export default function OrcamentosHistoricoPanel({
                 <AlertTriangle className="h-6 w-6 text-amber-700" />
               </div>
               <div>
-                <DialogTitle>Orçamento com atendimento já registrado</DialogTitle>
+                <DialogTitle>OrÃ§amento com atendimento jÃ¡ registrado</DialogTitle>
                 <DialogDescription className="mt-2 text-sm leading-6">
-                  A exclusão foi bloqueada para proteger o histórico operacional. Já existe check-in ou check-out em agendamentos gerados por este orçamento.
+                  A exclusÃ£o foi bloqueada para proteger o histÃ³rico operacional. JÃ¡ existe check-in ou check-out em agendamentos gerados por este orÃ§amento.
                 </DialogDescription>
               </div>
             </div>
@@ -1481,7 +1216,7 @@ export default function OrcamentosHistoricoPanel({
 
           <div className="space-y-4 py-2">
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <p className="text-sm font-semibold text-amber-900">Atendimentos que serão levados para o novo orçamento</p>
+              <p className="text-sm font-semibold text-amber-900">Atendimentos que serÃ£o levados para o novo orÃ§amento</p>
               <div className="mt-3 space-y-2">
                 {(blockedDeleteContext?.rows || []).map((row) => (
                   <div key={row.id} className="flex flex-col gap-1 rounded-xl bg-white px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
@@ -1489,24 +1224,24 @@ export default function OrcamentosHistoricoPanel({
                       <p className="font-medium text-gray-900">{row.dogName}</p>
                       <p className="text-gray-600">{row.serviceName}</p>
                     </div>
-                    <Badge variant="outline">{row.serviceDate ? formatDate(row.serviceDate) : "Data não informada"}</Badge>
+                    <Badge variant="outline">{row.serviceDate ? formatDate(row.serviceDate) : "Data nÃ£o informada"}</Badge>
                   </div>
                 ))}
               </div>
             </div>
 
             <p className="text-sm leading-6 text-gray-600">
-              Use o botão abaixo para abrir um orçamento já preenchido com os cães, responsável financeiro e serviços que foram utilizados. Depois revise valores e envie normalmente.
+              Use o botÃ£o abaixo para abrir um orÃ§amento jÃ¡ preenchido com os cÃ£es, responsÃ¡vel financeiro e serviÃ§os que foram utilizados. Depois revise valores e envie normalmente.
             </p>
           </div>
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setBlockedDeleteContext(null)}>
-              Manter orçamento atual
+              Manter orÃ§amento atual
             </Button>
             <Button onClick={handleCreateBudgetForUsedAppointments} className="bg-blue-600 text-white hover:bg-blue-700">
               <FileText className="mr-2 h-4 w-4" />
-              Criar orçamento para o que já foi utilizado
+              Criar orÃ§amento para o que jÃ¡ foi utilizado
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1525,9 +1260,9 @@ export default function OrcamentosHistoricoPanel({
                 <Trash2 className="h-6 w-6 text-red-700" />
               </div>
               <div>
-                <DialogTitle>Excluir orçamento?</DialogTitle>
+                <DialogTitle>Excluir orÃ§amento?</DialogTitle>
                 <DialogDescription className="mt-2 text-sm leading-6">
-                  Esta ação remove o orçamento e os registros gerados por ele. Nenhum atendimento com check-in ou check-out foi encontrado neste vínculo.
+                  Esta aÃ§Ã£o remove o orÃ§amento e os registros gerados por ele. Nenhum atendimento com check-in ou check-out foi encontrado neste vÃ­nculo.
                 </DialogDescription>
               </div>
             </div>
@@ -1537,7 +1272,7 @@ export default function OrcamentosHistoricoPanel({
             <div className="grid gap-3 sm:grid-cols-3">
               {[
                 { label: "Agendamentos", value: deleteConfirmContext?.generatedAppointments?.length || 0 },
-                { label: "Reposições", value: deleteConfirmContext?.linkedReplacements?.length || 0 },
+                { label: "ReposiÃ§Ãµes", value: deleteConfirmContext?.linkedReplacements?.length || 0 },
                 { label: "Valores a receber", value: deleteConfirmContext?.linkedReceivables?.length || 0 },
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
@@ -1549,7 +1284,7 @@ export default function OrcamentosHistoricoPanel({
 
             {deleteConfirmRows.length > 0 && (
               <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                <p className="text-sm font-semibold text-gray-900">Registros que serão removidos</p>
+                <p className="text-sm font-semibold text-gray-900">Registros que serÃ£o removidos</p>
                 <div className="mt-3 space-y-2">
                   {deleteConfirmRows.slice(0, 4).map((row) => (
                     <div key={row.id} className="flex flex-col gap-1 rounded-xl bg-gray-50 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
@@ -1557,7 +1292,7 @@ export default function OrcamentosHistoricoPanel({
                         <p className="font-medium text-gray-900">{row.dogName}</p>
                         <p className="text-gray-600">{row.serviceName}</p>
                       </div>
-                      <Badge variant="outline">{row.serviceDate ? formatDate(row.serviceDate) : "Data não informada"}</Badge>
+                      <Badge variant="outline">{row.serviceDate ? formatDate(row.serviceDate) : "Data nÃ£o informada"}</Badge>
                     </div>
                   ))}
                 </div>
@@ -1568,7 +1303,7 @@ export default function OrcamentosHistoricoPanel({
             )}
 
             <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-800">
-              Confirme apenas se deseja remover estes registros gerados automaticamente junto com o orçamento.
+              Confirme apenas se deseja remover estes registros gerados automaticamente junto com o orÃ§amento.
             </div>
           </div>
 
@@ -1578,7 +1313,7 @@ export default function OrcamentosHistoricoPanel({
             </Button>
             <Button onClick={confirmDeleteOrcamento} disabled={isDeletingOrcamento} className="bg-red-600 text-white hover:bg-red-700">
               <Trash2 className="mr-2 h-4 w-4" />
-              {isDeletingOrcamento ? "Excluindo..." : "Excluir orçamento"}
+              {isDeletingOrcamento ? "Excluindo..." : "Excluir orÃ§amento"}
             </Button>
           </DialogFooter>
         </DialogContent>

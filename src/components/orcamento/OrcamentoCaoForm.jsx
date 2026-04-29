@@ -38,6 +38,10 @@ export default function OrcamentoCaoForm({
   onUpdate,
   onRemove,
   canRemove,
+  title = "",
+  description = "",
+  visibleServices = null,
+  hideServiceSelector = false,
 }) {
   const formatCurrency = (value) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -83,6 +87,7 @@ export default function OrcamentoCaoForm({
   }
 
   const selectedDog = dogs.find((dog) => dog.id === cao.dog_id);
+  const shouldShowService = (serviceId) => !Array.isArray(visibleServices) || visibleServices.includes(serviceId);
 
   return (
     <Card className="border-blue-200 bg-white">

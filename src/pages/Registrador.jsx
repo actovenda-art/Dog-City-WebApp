@@ -36,7 +36,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, DateTimePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { BellRing, CalendarClock, Camera, Dog as DogIcon, LogIn, LogOut, Plus, Search, UserRound, UtensilsCrossed } from "lucide-react";
+import { BellRing, Building2, CalendarClock, Camera, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, Search, UserRound, UtensilsCrossed } from "lucide-react";
 import { isCommercialProfile, isManagerialProfile, isOperationalProfile } from "@/lib/access-control";
 
 const TODAY_KEY = new Date().toISOString().slice(0, 10);
@@ -110,6 +110,25 @@ const EMPTY_PROVIDER_CHECKIN_FORM = {
   contest_attachment_url: "",
 };
 
+const REMINDER_SECTOR_OPTIONS = [
+  {
+    value: "administracao",
+    label: "Administração",
+    description: "Avisa a equipe que cuida de alinhamentos, pendências e tratativas.",
+    icon: Building2,
+    activeClassName: "border-blue-300 bg-blue-50 text-blue-900",
+    iconClassName: "bg-blue-100 text-blue-700",
+  },
+  {
+    value: "operacao",
+    label: "Operação",
+    description: "Notifica quem acompanha a rotina do dia e a execução do atendimento.",
+    icon: DogIcon,
+    activeClassName: "border-emerald-300 bg-emerald-50 text-emerald-900",
+    iconClassName: "bg-emerald-100 text-emerald-700",
+  },
+];
+
 function nowDateTimeValue() {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
@@ -129,6 +148,10 @@ function addDays(dateKey, days) {
 function formatDateLabel(value) {
   if (!value) return "";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(`${value}T12:00:00`));
+}
+
+function formatTimeLabel(value) {
+  return value ? String(value).slice(0, 5) : "";
 }
 
 function formatDateTime(value) {
@@ -217,6 +240,14 @@ function getReminderSectorLabel(value) {
   if (value === "administracao") return "Administração";
   if (value === "operacao") return "Operação";
   return "Setor";
+}
+
+function getReminderDatePart(value) {
+  return (value || "").slice(0, 10);
+}
+
+function getReminderTimePart(value) {
+  return (value || "").slice(11, 16);
 }
 
 function getCheckinMeta(checkin) {
@@ -344,6 +375,20 @@ export default function Registrador() {
   const selectedDateTitle = selectedDate === TODAY_KEY ? "Hoje" : formatDateLabel(selectedDate);
   const canAddManualAppointment = selectedDate === TODAY_KEY;
   const selectedAppointmentRequiresReminderDateTime = selectedAppointment?.service_type === "hospedagem";
+  const reminderDateValue = getReminderDatePart(checkinForm.tarefa_lembrete_datetime);
+  const reminderTimeValue = selectedAppointmentRequiresReminderDateTime
+    ? getReminderTimePart(checkinForm.tarefa_lembrete_datetime)
+    : checkinForm.tarefa_lembrete_horario;
+  const reminderHasDraft = Boolean(
+    checkinForm.tarefa_lembrete
+    || checkinForm.tarefa_lembrete_setor
+    || checkinForm.tarefa_lembrete_horario
+    || checkinForm.tarefa_lembrete_datetime
+  );
+  const reminderPreviewDate = selectedAppointmentRequiresReminderDateTime
+    ? formatDateLabel(reminderDateValue)
+    : formatDateLabel((checkinForm.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY);
+  const reminderPreviewTime = formatTimeLabel(reminderTimeValue);
 
   const activePetCheckins = useMemo(
     () => checkins.filter((item) => item.tipo === "pet" && item.status === "presente"),
@@ -599,6 +644,45 @@ export default function Registrador() {
   function openNotify(title, message) {
     setNotifyState({ title, message });
     setShowNotifyDialog(true);
+  }
+
+  function clearReminderDraft() {
+    setCheckinForm((current) => ({
+      ...current,
+      tarefa_lembrete: "",
+      tarefa_lembrete_setor: "",
+      tarefa_lembrete_horario: "",
+      tarefa_lembrete_datetime: "",
+    }));
+  }
+
+  function updateReminderDate(dateValue) {
+    setCheckinForm((current) => {
+      if (!dateValue) return { ...current, tarefa_lembrete_datetime: "" };
+      const fallbackTime = getReminderTimePart(current.tarefa_lembrete_datetime) || "09:00";
+      return {
+        ...current,
+        tarefa_lembrete_datetime: buildDateTimeForDate(dateValue, fallbackTime),
+      };
+    });
+  }
+
+  function updateReminderTime(timeValue) {
+    if (selectedAppointmentRequiresReminderDateTime) {
+      setCheckinForm((current) => {
+        const dateValue = getReminderDatePart(current.tarefa_lembrete_datetime)
+          || (current.checkin_datetime || "").slice(0, 10)
+          || selectedDate
+          || TODAY_KEY;
+        return {
+          ...current,
+          tarefa_lembrete_datetime: timeValue ? buildDateTimeForDate(dateValue, timeValue) : "",
+        };
+      });
+      return;
+    }
+
+    setCheckinForm((current) => ({ ...current, tarefa_lembrete_horario: timeValue }));
   }
 
   function validateMonitorSignature(monitorId, signatureCode) {
@@ -1860,59 +1944,192 @@ export default function Registrador() {
                 </div>
               </div>
 
-              <div className={`grid gap-4 ${selectedAppointmentRequiresReminderDateTime ? "sm:grid-cols-[minmax(0,1fr)_220px_260px]" : "sm:grid-cols-[minmax(0,1fr)_220px_220px]"}`}>
-                <div>
-                  <Label>Lembrete ou tarefa</Label>
-                  <Textarea
-                    value={checkinForm.tarefa_lembrete}
-                    onChange={(event) => setCheckinForm((current) => ({ ...current, tarefa_lembrete: event.target.value }))}
-                    className="mt-2"
-                    rows={3}
-                    placeholder="Ex.: avisar comercial sobre banho extra"
-                  />
-                </div>
-                <div>
-                  <Label>Setor a notificar</Label>
-                  <div className="mt-2">
-                    <Select
-                      value={checkinForm.tarefa_lembrete_setor}
-                      onValueChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_setor: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o setor" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="administracao">Administração</SelectItem>
-                        <SelectItem value="operacao">Operação</SelectItem>
-                      </SelectContent>
-                    </Select>
+              <div className="rounded-[28px] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-5 shadow-sm">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-2xl bg-violet-100 p-2 text-violet-700">
+                        <BellRing className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-violet-500">Lembrete opcional</p>
+                        <h3 className="text-lg font-bold text-slate-900">Organize o aviso antes de finalizar o check-in</h3>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-600">
+                      Defina quem deve ser acionado, quando o aviso precisa chegar e qual instrução deve aparecer na notificação.
+                    </p>
                   </div>
-                  <p className="mt-2 text-xs text-gray-500">
-                    O lembrete será enviado para os usuários com perfis vinculados ao setor selecionado.
-                  </p>
+
+                  {reminderHasDraft ? (
+                    <Button type="button" variant="outline" onClick={clearReminderDraft} className="border-violet-200 bg-white text-violet-700 hover:bg-violet-50">
+                      Limpar lembrete
+                    </Button>
+                  ) : null}
                 </div>
-                <div>
-                  <Label>{selectedAppointmentRequiresReminderDateTime ? "Data e horário do lembrete" : "Horário do lembrete"}</Label>
-                  <div className="mt-2">
-                    {selectedAppointmentRequiresReminderDateTime ? (
-                      <DateTimePickerInput
-                        value={checkinForm.tarefa_lembrete_datetime}
-                        onChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_datetime: value }))}
-                        placeholder="Defina data e horário"
-                      />
-                    ) : (
-                      <TimePickerInput
-                        value={checkinForm.tarefa_lembrete_horario}
-                        onChange={(value) => setCheckinForm((current) => ({ ...current, tarefa_lembrete_horario: value }))}
-                        placeholder="Defina o horário"
-                      />
-                    )}
+
+                <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+                  <div className="space-y-4">
+                    <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(76,29,149,0.55)]">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">1</div>
+                        <div className="flex-1">
+                          <Label className="text-sm font-semibold text-slate-900">Quem deve ser acionado?</Label>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            Escolha o setor que precisa receber esse aviso assim que ele disparar.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {REMINDER_SECTOR_OPTIONS.map((option) => {
+                          const Icon = option.icon;
+                          const isActive = checkinForm.tarefa_lembrete_setor === option.value;
+
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => setCheckinForm((current) => ({ ...current, tarefa_lembrete_setor: option.value }))}
+                              className={`rounded-2xl border px-4 py-4 text-left transition-all ${
+                                isActive
+                                  ? option.activeClassName
+                                  : "border-slate-200 bg-slate-50 text-slate-700 hover:border-violet-200 hover:bg-violet-50/60"
+                              }`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className={`rounded-2xl p-2 ${isActive ? option.iconClassName : "bg-white text-slate-500"}`}>
+                                  <Icon className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <p className="font-semibold">{option.label}</p>
+                                  <p className="mt-1 text-xs leading-5 opacity-80">{option.description}</p>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(14,116,144,0.45)]">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">2</div>
+                        <div className="flex-1">
+                          <Label className="text-sm font-semibold text-slate-900">Quando devemos lembrar?</Label>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            {selectedAppointmentRequiresReminderDateTime
+                              ? "Para hospedagem, você escolhe a data e o horário exatos do disparo."
+                              : "Para os demais serviços, basta informar o horário. O aviso sairá no dia do agendamento."}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className={`mt-4 grid gap-3 ${selectedAppointmentRequiresReminderDateTime ? "sm:grid-cols-[minmax(0,1fr)_200px]" : "sm:grid-cols-[minmax(0,1fr)_220px]"}`}>
+                        {selectedAppointmentRequiresReminderDateTime ? (
+                          <>
+                            <div className="space-y-2">
+                              <Label className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Data do lembrete</Label>
+                              <DatePickerInput
+                                value={reminderDateValue}
+                                onChange={updateReminderDate}
+                                placeholder="Defina a data"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Horário do lembrete</Label>
+                              <TimePickerInput
+                                value={reminderTimeValue}
+                                onChange={updateReminderTime}
+                                placeholder="Defina o horário"
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+                              <p className="text-xs font-medium uppercase tracking-[0.2em] text-sky-600">Disparo automático</p>
+                              <p className="mt-1 text-sm font-semibold text-sky-900">
+                                No dia do atendimento: {formatDateLabel((checkinForm.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY)}
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Horário do lembrete</Label>
+                              <TimePickerInput
+                                value={reminderTimeValue}
+                                onChange={updateReminderTime}
+                                placeholder="Defina o horário"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(15,23,42,0.35)]">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-700">3</div>
+                        <div className="flex-1">
+                          <Label className="text-sm font-semibold text-slate-900">O que deve aparecer no aviso?</Label>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            Escreva a mensagem de forma objetiva para facilitar a ação de quem receber.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <Textarea
+                          value={checkinForm.tarefa_lembrete}
+                          onChange={(event) => setCheckinForm((current) => ({ ...current, tarefa_lembrete: event.target.value }))}
+                          className="min-h-[120px] border-slate-200 bg-white"
+                          rows={4}
+                          placeholder="Ex.: avisar comercial que o tutor pediu banho extra antes da saída."
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <p className="mt-2 text-xs text-gray-500">
-                    {selectedAppointmentRequiresReminderDateTime
-                      ? "Na hospedagem, você escolhe a data e o horário exatos da notificação."
-                      : "Nos demais serviços, o lembrete será enviado no mesmo dia do agendamento, no horário informado."}
-                  </p>
+
+                  <div className="rounded-3xl border border-violet-200 bg-slate-950 p-5 text-white shadow-[0_20px_50px_-28px_rgba(15,23,42,0.8)]">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-2xl bg-white/10 p-2 text-violet-200">
+                        <MessageSquareText className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-200/90">Prévia da notificação</p>
+                        <p className="text-sm text-slate-300">Veja como esse lembrete está sendo montado.</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 space-y-3">
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Setor</p>
+                        <p className="mt-2 text-base font-semibold text-white">
+                          {checkinForm.tarefa_lembrete_setor ? getReminderSectorLabel(checkinForm.tarefa_lembrete_setor) : "Escolha quem deve receber"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Acionamento</p>
+                        <p className="mt-2 text-base font-semibold text-white">
+                          {reminderPreviewTime
+                            ? `${reminderPreviewDate || "Data a definir"} às ${reminderPreviewTime}`
+                            : "Defina data e horário do disparo"}
+                        </p>
+                        {!selectedAppointmentRequiresReminderDateTime ? (
+                          <p className="mt-1 text-xs text-slate-400">
+                            O sistema usa a data do agendamento e aplica apenas o horário informado.
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Mensagem</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-200">
+                          {checkinForm.tarefa_lembrete || "Descreva aqui a instrução que precisa chegar para a equipe."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 

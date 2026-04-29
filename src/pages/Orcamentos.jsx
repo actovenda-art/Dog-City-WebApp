@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { getAppointmentMeta, getManualAppointmentNotice } from "@/lib/attendance";
+import { getAppointmentDateKey, getAppointmentMeta, getAppointmentTimeValue, getManualAppointmentNotice } from "@/lib/attendance";
 import { AlertTriangle, Calculator, Dog as DogIcon, FileText, Plus, Save, Send } from "lucide-react";
 import { differenceInDays } from "date-fns";
 
@@ -114,6 +114,7 @@ const emptyCao = {
 };
 
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
+const ORCAMENTO_PREFILL_STORAGE_PREFIX = "dogcity:orcamento-prefill:";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -138,6 +139,91 @@ function getLinkedDogIds(record) {
   return RELATION_SLOTS
     .map((number) => record?.[`dog_id_${number}`])
     .filter(Boolean);
+}
+
+function getFirstLinkedCarteiraForDogIds(carteiras, dogIds) {
+  return (carteiras || []).find((cliente) =>
+    getLinkedDogIds(cliente).some((dogId) => dogIds.includes(dogId))
+  ) || null;
+}
+
+function buildPrefilledCaoFromAppointment(appointment, dog) {
+  const metadata = getAppointmentMeta(appointment);
+  const snapshot = metadata.snapshot && typeof metadata.snapshot === "object" ? metadata.snapshot : {};
+  const serviceDate = getAppointmentDateKey(appointment) || snapshot.day_care_data || snapshot.banho_data || snapshot.tosa_data || snapshot.adaptacao_data || snapshot.hosp_data_entrada || new Date().toISOString().slice(0, 10);
+  const startTime = getAppointmentTimeValue(appointment, "entrada") || snapshot.hora_entrada || "09:00";
+  const endTime = getAppointmentTimeValue(appointment, "saida") || snapshot.hora_saida || "";
+  const cao = {
+    ...emptyCao,
+    dog_id: appointment.dog_id || "",
+    servicos: { ...emptyCao.servicos },
+  };
+
+  if (appointment.service_type === "day_care") {
+    cao.servicos.day_care = true;
+    cao.day_care_data = serviceDate;
+    cao.day_care_plano_ativo = Boolean(snapshot.day_care_plano_ativo || metadata.day_care_plano_ativo);
+    cao.day_care_horario_entrada = startTime || snapshot.day_care_horario_entrada || "08:00";
+    cao.day_care_horario_saida = endTime || snapshot.day_care_horario_saida || "18:00";
+    cao.day_care_observacoes = appointment.observacoes || snapshot.day_care_observacoes || "";
+  } else if (appointment.service_type === "hospedagem") {
+    const exitDate = (appointment.data_hora_saida || "").slice(0, 10) || snapshot.hosp_data_saida || serviceDate;
+    cao.servicos.hospedagem = true;
+    cao.hosp_data_entrada = serviceDate;
+    cao.hosp_horario_entrada = startTime || snapshot.hosp_horario_entrada || "09:00";
+    cao.hosp_data_saida = exitDate;
+    cao.hosp_horario_saida = endTime || snapshot.hosp_horario_saida || "12:00";
+    cao.hosp_is_mensalista = Boolean(snapshot.hosp_is_mensalista);
+    cao.hosp_dormitório_compartilhado = Boolean(snapshot.hosp_dormitório_compartilhado);
+    cao.hosp_dormitório_com = Array.isArray(snapshot.hosp_dormitório_com) ? snapshot.hosp_dormitório_com : [];
+    cao.hosp_tem_daycare_ativo = Boolean(snapshot.hosp_tem_daycare_ativo);
+    cao.hosp_datas_daycare = Array.isArray(snapshot.hosp_datas_daycare) ? snapshot.hosp_datas_daycare : [];
+  } else if (appointment.service_type === "adaptacao") {
+    cao.servicos.adaptacao = true;
+    cao.adaptacao_data = serviceDate;
+    cao.adaptacao_horario_entrada = startTime || snapshot.adaptacao_horario_entrada || "09:00";
+    cao.adaptacao_horario_saida = endTime || snapshot.adaptacao_horario_saida || "10:00";
+    cao.adaptacao_observacoes = appointment.observacoes || snapshot.adaptacao_observacoes || "";
+  } else if (appointment.service_type === "banho") {
+    cao.servicos.banho = true;
+    cao.banho_data = serviceDate;
+    cao.banho_horario = startTime || snapshot.banho_horario || "";
+    cao.banho_horario_inicio = startTime || snapshot.banho_horario_inicio || snapshot.banho_horario || "09:00";
+    cao.banho_horario_saida = endTime || snapshot.banho_horario_saida || "";
+    cao.banho_raca = snapshot.banho_raca || dog?.raca || "";
+    cao.banho_plano_ativo = Boolean(snapshot.banho_plano_ativo);
+    cao.banho_do_pacote = Boolean(snapshot.banho_do_pacote);
+    cao.banho_observacoes = appointment.observacoes || snapshot.banho_observacoes || "";
+    cao.banho_srd_porte = snapshot.banho_srd_porte || "";
+    cao.banho_srd_pelagem = snapshot.banho_srd_pelagem || "";
+  } else if (appointment.service_type === "tosa") {
+    cao.servicos.tosa = true;
+    cao.tosa_data = serviceDate;
+    cao.tosa_tipo = snapshot.tosa_tipo || "geral";
+    cao.tosa_subtipo_higienica = snapshot.tosa_subtipo_higienica || "";
+    cao.tosa_plano_ativo = Boolean(snapshot.tosa_plano_ativo);
+    cao.tosa_do_pacote = Boolean(snapshot.tosa_do_pacote);
+    cao.tosa_horario_entrada = startTime || snapshot.tosa_horario_entrada || "10:00";
+    cao.tosa_horario_saida = endTime || snapshot.tosa_horario_saida || "";
+    cao.banho_raca = snapshot.banho_raca || dog?.raca || "";
+    cao.tosa_obs = appointment.observacoes || snapshot.tosa_obs || "";
+  } else if (appointment.service_type === "transporte") {
+    const viagem = metadata.viagem && typeof metadata.viagem === "object" ? metadata.viagem : {};
+    cao.servicos.transporte = true;
+    cao.transporte_plano_ativo = Boolean(snapshot.transporte_plano_ativo);
+    cao.transporte_do_pacote = Boolean(snapshot.transporte_do_pacote);
+    cao.transporte_viagens = [{
+      partida: viagem.partida || "",
+      destino: viagem.destino || "",
+      data: serviceDate,
+      horario: startTime || viagem.horario || "",
+      horario_fim: endTime || viagem.horario_fim || "",
+      km: viagem.km || "",
+      observacao: appointment.observacoes || viagem.observacao || "",
+    }];
+  }
+
+  return cao;
 }
 
 function buildPricingConfig(precosRows, empresaId) {
@@ -418,6 +504,57 @@ export default function Orcamentos() {
 
     async function applyPrefill() {
       const params = new URLSearchParams(location.search);
+      const prefillKey = params.get("prefillKey");
+      if (prefillKey) {
+        const storageKey = `${ORCAMENTO_PREFILL_STORAGE_PREFIX}${prefillKey}`;
+        const rawPayload = sessionStorage.getItem(storageKey);
+        if (!rawPayload) {
+          setPrefillApplied(true);
+          return;
+        }
+
+        try {
+          const payload = JSON.parse(rawPayload);
+          const appointments = Array.isArray(payload.appointments) ? payload.appointments : [];
+          const prefilledCaes = appointments
+            .map((appointment) => {
+              const dog = dogs.find((item) => item.id === appointment.dog_id);
+              return buildPrefilledCaoFromAppointment(appointment, dog);
+            })
+            .filter((cao) => cao.dog_id && Object.values(cao.servicos || {}).some(Boolean));
+
+          if (!prefilledCaes.length) {
+            setPrefillApplied(true);
+            return;
+          }
+
+          const selectedDogIds = [...new Set(prefilledCaes.map((cao) => cao.dog_id).filter(Boolean))];
+          const selectedCarteira = (payload.cliente_id
+            ? carteiras.find((cliente) => cliente.id === payload.cliente_id)
+            : null) || getFirstLinkedCarteiraForDogIds(carteiras, selectedDogIds);
+
+          if (cancelled) return;
+
+          sessionStorage.removeItem(storageKey);
+          setClienteSelecionado(selectedCarteira);
+          setCaes(prefilledCaes);
+          setObservacoes(payload.observacoes || "");
+          setPrefillNotice({
+            title: "Orçamento dos atendimentos utilizados",
+            message: `${prefilledCaes.length} atendimento(s) já registrado(s) foram carregados. Revise responsável financeiro, datas e valores antes de enviar.`,
+          });
+          setEtapa("caes");
+          setShowModal(true);
+          setPrefillApplied(true);
+          return;
+        } catch (error) {
+          console.error("Erro ao aplicar pré-preenchimento do orçamento:", error);
+          sessionStorage.removeItem(storageKey);
+          setPrefillApplied(true);
+          return;
+        }
+      }
+
       const dogReference = params.get("dogId");
       const service = params.get("service");
       const date = params.get("date") || new Date().toISOString().slice(0, 10);

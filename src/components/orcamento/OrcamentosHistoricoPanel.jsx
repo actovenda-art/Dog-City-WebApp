@@ -8,7 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { createPageUrl } from "@/utils";
 import {
+  AlertTriangle,
   Search,
   FileText,
   Copy,
@@ -285,9 +287,34 @@ function buildOperationalRecordSuggestion(appointments = [], dogs = []) {
     .map((appointment) => {
       const dogName = dogsById[appointment.dog_id]?.nome || "Cão";
       const serviceDate = getAppointmentDateKey(appointment);
-      return `- ${dogName} - ${getServiceLabel(appointment.service_type)}${serviceDate ? ` - ${formatDate(serviceDate)}` : ""}`;
-    })
-    .join("\n");
+      return {
+        id: appointment.id,
+        dogName,
+        serviceName: getServiceLabel(appointment.service_type),
+        serviceDate,
+      };
+    });
+}
+
+function serializeOperationalAppointmentForPrefill(appointment) {
+  const metadata = getAppointmentMeta(appointment);
+  return {
+    id: appointment.id,
+    empresa_id: appointment.empresa_id || null,
+    cliente_id: appointment.cliente_id || null,
+    dog_id: appointment.dog_id || "",
+    service_type: appointment.service_type || "",
+    charge_type: appointment.charge_type || "",
+    data_referencia: appointment.data_referencia || "",
+    data_hora_entrada: appointment.data_hora_entrada || "",
+    data_hora_saida: appointment.data_hora_saida || "",
+    hora_entrada: appointment.hora_entrada || "",
+    hora_saida: appointment.hora_saida || "",
+    observacoes: appointment.observacoes || "",
+    source_type: appointment.source_type || "",
+    source_key: appointment.source_key || "",
+    metadata,
+  };
 }
 
 function getStatusBadge(status) {
@@ -324,6 +351,7 @@ export default function OrcamentosHistoricoPanel({
   const [filterPeriodo, setFilterPeriodo] = useState("all");
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedOrcamento, setSelectedOrcamento] = useState(null);
+  const [blockedDeleteContext, setBlockedDeleteContext] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -400,15 +428,11 @@ export default function OrcamentosHistoricoPanel({
       );
 
       if (operationalAppointments.length > 0) {
-        const suggestion = buildOperationalRecordSuggestion(operationalAppointments, dogs);
-        alert([
-          "Este orçamento possui check-in ou check-out registrado em agendamentos gerados por ele.",
-          "",
-          "Para proteger o histórico operacional, a exclusão foi bloqueada.",
-          "",
-          "Sugestão: crie um novo orçamento incluindo apenas estes atendimentos já registrados:",
-          suggestion || "- Atendimentos registrados encontrados",
-        ].join("\n"));
+        setBlockedDeleteContext({
+          orcamento: orcamentos.find((item) => item.id === id) || null,
+          appointments: operationalAppointments,
+          rows: buildOperationalRecordSuggestion(operationalAppointments, dogs),
+        });
         return;
       }
 
@@ -440,6 +464,29 @@ export default function OrcamentosHistoricoPanel({
       console.error("Erro ao excluir orçamento:", error);
       alert("Erro ao excluir orçamento.");
     }
+  }
+
+  function handleCreateBudgetForUsedAppointments() {
+    if (!blockedDeleteContext?.appointments?.length) return;
+
+    const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const storageKey = `dogcity:orcamento-prefill:${token}`;
+    const firstAppointment = blockedDeleteContext.appointments[0] || {};
+    const payload = {
+      type: "used_appointments_from_deleted_budget",
+      source_orcamento_id: blockedDeleteContext.orcamento?.id || "",
+      cliente_id: blockedDeleteContext.orcamento?.cliente_id || firstAppointment.cliente_id || null,
+      created_at: new Date().toISOString(),
+      observacoes: [
+        "Orçamento criado para atendimentos já utilizados.",
+        blockedDeleteContext.orcamento?.id ? `Origem: orçamento ${blockedDeleteContext.orcamento.id}.` : "",
+        "Revise valores e datas antes de enviar.",
+      ].filter(Boolean).join("\n"),
+      appointments: blockedDeleteContext.appointments.map(serializeOperationalAppointmentForPrefill),
+    };
+
+    sessionStorage.setItem(storageKey, JSON.stringify(payload));
+    window.location.href = `${createPageUrl("Orcamentos")}?prefillKey=${encodeURIComponent(token)}`;
   }
 
   async function handleStatusChange(id, newStatus) {
@@ -914,6 +961,55 @@ export default function OrcamentosHistoricoPanel({
             >
               <Copy className="mr-2 h-4 w-4" />
               Duplicar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(blockedDeleteContext)} onOpenChange={(open) => !open && setBlockedDeleteContext(null)}>
+        <DialogContent className="max-h-[92vh] w-[95vw] max-w-[680px] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-amber-100 p-3">
+                <AlertTriangle className="h-6 w-6 text-amber-700" />
+              </div>
+              <div>
+                <DialogTitle>Orçamento com atendimento já registrado</DialogTitle>
+                <DialogDescription className="mt-2 text-sm leading-6">
+                  A exclusão foi bloqueada para proteger o histórico operacional. Já existe check-in ou check-out em agendamentos gerados por este orçamento.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-900">Atendimentos que serão levados para o novo orçamento</p>
+              <div className="mt-3 space-y-2">
+                {(blockedDeleteContext?.rows || []).map((row) => (
+                  <div key={row.id} className="flex flex-col gap-1 rounded-xl bg-white px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900">{row.dogName}</p>
+                      <p className="text-gray-600">{row.serviceName}</p>
+                    </div>
+                    <Badge variant="outline">{row.serviceDate ? formatDate(row.serviceDate) : "Data não informada"}</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <p className="text-sm leading-6 text-gray-600">
+              Use o botão abaixo para abrir um orçamento já preenchido com os cães, responsável financeiro e serviços que foram utilizados. Depois revise valores e envie normalmente.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setBlockedDeleteContext(null)}>
+              Manter orçamento atual
+            </Button>
+            <Button onClick={handleCreateBudgetForUsedAppointments} className="bg-blue-600 text-white hover:bg-blue-700">
+              <FileText className="mr-2 h-4 w-4" />
+              Criar orçamento para o que já foi utilizado
             </Button>
           </DialogFooter>
         </DialogContent>

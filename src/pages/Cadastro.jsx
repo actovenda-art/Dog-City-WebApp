@@ -332,7 +332,7 @@ export default function Cadastro() {
 
   function getFieldClassNames(showError, showValid, extraClassName = "") {
     return cn(
-      "h-12 rounded-2xl border px-4 text-[15px] shadow-sm transition-all duration-200",
+      "h-9 rounded-xl border px-2.5 text-[13px] shadow-sm transition-all duration-200 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]",
       "bg-white/90 placeholder:text-slate-400 focus-visible:ring-4 focus-visible:ring-blue-100 focus-visible:ring-offset-0",
       showError
         ? "border-rose-300 bg-rose-50/80 text-rose-900 focus-visible:border-rose-400"
@@ -356,20 +356,20 @@ export default function Cadastro() {
       <div className={className}>
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <Label className="text-[13px] font-semibold text-slate-800">{label}</Label>
+            <Label className="text-[12px] font-semibold text-slate-800 sm:text-[13px]">{label}</Label>
             {optional ? (
-              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 sm:px-2 sm:text-[11px]">
                 {OPTIONAL_TEXT}
               </span>
             ) : null}
           </div>
           {children}
           {message ? (
-            <p className={`text-xs ${messageTone === "error" ? "text-rose-600" : "text-slate-500"}`}>
+            <p className={`text-[11px] sm:text-xs ${messageTone === "error" ? "text-rose-600" : "text-slate-500"}`}>
               {message}
             </p>
           ) : description ? (
-            <p className="text-xs text-slate-500">{description}</p>
+            <p className="text-[11px] text-slate-500 sm:text-xs">{description}</p>
           ) : null}
         </div>
       </div>
@@ -472,7 +472,7 @@ export default function Cadastro() {
             rows={rows}
             disabled={disabled}
             className={cn(
-              "min-h-[108px] rounded-[24px] border px-4 py-3 text-[15px] shadow-sm transition-all duration-200",
+              "min-h-[88px] rounded-xl border px-2.5 py-2 text-[13px] shadow-sm transition-all duration-200 sm:min-h-[108px] sm:rounded-[24px] sm:px-4 sm:py-3 sm:text-[15px]",
               "bg-white/90 placeholder:text-slate-400 focus-visible:ring-4 focus-visible:ring-blue-100 focus-visible:ring-offset-0",
               showError
                 ? "border-rose-300 bg-rose-50/80 pr-11 text-rose-900 focus-visible:border-rose-400"
@@ -523,7 +523,7 @@ export default function Cadastro() {
         <div onBlur={() => touchField(fieldKey)}>
           {children({
             triggerClassName: cn(
-              "h-12 rounded-2xl px-4 text-[15px] shadow-sm transition-all duration-200",
+              "h-9 rounded-xl px-2.5 text-[13px] shadow-sm transition-all duration-200 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]",
               showError
                 ? "border-rose-300 bg-rose-50/80 text-rose-900 focus:ring-rose-100"
                 : showValid
@@ -570,7 +570,7 @@ export default function Cadastro() {
           }}
           placeholder={placeholder}
           className={cn(
-            "h-12 rounded-2xl px-4 text-[15px] shadow-sm transition-all duration-200",
+            "h-9 rounded-xl px-2.5 text-[13px] shadow-sm transition-all duration-200 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]",
             showError
               ? "border-rose-300 bg-rose-50/80 text-rose-900"
               : showValid
@@ -615,7 +615,7 @@ export default function Cadastro() {
           }}
           placeholder={placeholder}
           className={cn(
-            "h-12 rounded-2xl px-4 text-[15px] shadow-sm transition-all duration-200",
+            "h-9 rounded-xl px-2.5 text-[13px] shadow-sm transition-all duration-200 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]",
             showError
               ? "border-rose-300 bg-rose-50/80 text-rose-900"
               : showValid
@@ -1437,14 +1437,14 @@ export default function Cadastro() {
           <TabsContent value="caes">
             <div className="mb-4 grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
               <Card className="border-blue-200 bg-blue-50/70">
-                <CardContent className="p-4">
+                <CardContent className="p-3 sm:p-4">
                   <div className="flex items-start gap-3">
-                    <div className="rounded-2xl bg-blue-100 p-3 text-blue-700">
-                      <HeartPulse className="h-5 w-5" />
+                    <div className="rounded-xl bg-blue-100 p-2.5 text-blue-700 sm:rounded-2xl sm:p-3">
+                      <HeartPulse className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-blue-900">Cadastro do cão</p>
-                      <p className="mt-1 text-sm text-blue-800">
+                      <p className="mt-1 text-xs leading-5 text-blue-800 sm:text-sm sm:leading-6">
                         Separei o preenchimento em blocos para ficar mais fácil revisar saúde, alimentação, medicação e vínculos antes de salvar.
                       </p>
                     </div>
@@ -1452,13 +1452,13 @@ export default function Cadastro() {
                 </CardContent>
               </Card>
               <Card className="border-slate-200 bg-white">
-                <CardContent className="p-4">
+                <CardContent className="p-3 sm:p-4">
                   <p className="text-sm font-semibold text-slate-900">Resumo rápido</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge className="bg-blue-100 text-blue-700">{selectedResponsavelIds.length} responsável(is)</Badge>
-                    <Badge className="bg-orange-100 text-orange-700">{selectedCarteiraIds.length} financeiro(s)</Badge>
-                    <Badge className="bg-purple-100 text-purple-700">{(dogForm.medicamentos_continuos || []).length} medicamento(s)</Badge>
-                    {activeDogRecord ? <Badge className="bg-emerald-100 text-emerald-700">Editando {activeDogRecord.nome}</Badge> : null}
+                  <div className="mt-2 flex flex-wrap gap-1.5 sm:mt-3 sm:gap-2">
+                    <Badge className="bg-blue-100 text-[11px] text-blue-700 sm:text-xs">{selectedResponsavelIds.length} responsável(is)</Badge>
+                    <Badge className="bg-orange-100 text-[11px] text-orange-700 sm:text-xs">{selectedCarteiraIds.length} financeiro(s)</Badge>
+                    <Badge className="bg-purple-100 text-[11px] text-purple-700 sm:text-xs">{(dogForm.medicamentos_continuos || []).length} medicamento(s)</Badge>
+                    {activeDogRecord ? <Badge className="bg-emerald-100 text-[11px] text-emerald-700 sm:text-xs">Editando {activeDogRecord.nome}</Badge> : null}
                   </div>
                 </CardContent>
               </Card>
@@ -1478,6 +1478,7 @@ export default function Cadastro() {
                         resetDogEditor();
                         clearDogEditQuery();
                       }}
+                      className="h-9 rounded-xl px-3 text-xs sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm"
                     >
                       Limpar edição
                     </Button>
@@ -1614,14 +1615,14 @@ export default function Cadastro() {
                       </Select>
                     ),
                   })}
-                  <div className="flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
+                  <div className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 sm:rounded-2xl sm:px-4 sm:py-3">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Castrado</p>
                       <p className="text-xs text-gray-500">Informe se o cão já é castrado.</p>
                     </div>
                     <Switch checked={!!dogForm.castrado} onCheckedChange={(checked) => setDogForm({ ...dogForm, castrado: checked })} />
                   </div>
-                  <div className="flex items-center justify-between rounded-2xl border border-gray-200 px-4 py-3">
+                  <div className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 sm:rounded-2xl sm:px-4 sm:py-3">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Autorizo o uso de imagens do meu Dog</p>
                       <p className="text-xs text-gray-500">Permite fotos e vídeos do cão em registros e comunicação da Dog City.</p>
@@ -2047,7 +2048,7 @@ export default function Cadastro() {
                   </div>
                 </div>
                 <div className="mt-6">
-                  <Button onClick={handleSaveDog} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Cão"}</Button>
+                  <Button onClick={handleSaveDog} disabled={isSaving} className="h-9 w-full rounded-xl bg-blue-600 text-sm text-white hover:bg-blue-700 sm:h-11 sm:rounded-2xl sm:text-base"><Save className="mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />{isSaving ? "Salvando..." : "Cadastrar Cão"}</Button>
                 </div>
               </CardContent>
             </Card>
@@ -2173,7 +2174,7 @@ export default function Cadastro() {
                     </div>
                   </div>
                 </div>
-                <Button onClick={handleSaveResponsavel} disabled={isSaving} className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Responsável"}</Button>
+                <Button onClick={handleSaveResponsavel} disabled={isSaving} className="mt-6 h-9 w-full rounded-xl bg-green-600 text-sm text-white hover:bg-green-700 sm:h-11 sm:rounded-2xl sm:text-base"><Save className="mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />{isSaving ? "Salvando..." : "Cadastrar Responsável"}</Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -2445,7 +2446,7 @@ export default function Cadastro() {
                     </div>
                   </div>
                 </div>
-                <Button onClick={handleSaveCarteira} disabled={isSaving} className="w-full mt-6 bg-orange-600 hover:bg-orange-700 text-white"><Save className="w-4 h-4 mr-2" />{isSaving ? "Salvando..." : "Cadastrar Carteira"}</Button>
+                <Button onClick={handleSaveCarteira} disabled={isSaving} className="mt-6 h-9 w-full rounded-xl bg-orange-600 text-sm text-white hover:bg-orange-700 sm:h-11 sm:rounded-2xl sm:text-base"><Save className="mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />{isSaving ? "Salvando..." : "Cadastrar Carteira"}</Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -2469,11 +2470,11 @@ export default function Cadastro() {
               <Label>Link do cadastro</Label>
               <div className="mt-2 flex gap-2">
                 <Input value={clientLinkValue} readOnly />
-                <Button type="button" variant="outline" onClick={copyClientLink}>
-                  <Copy className="w-4 h-4" />
+                <Button type="button" variant="outline" onClick={copyClientLink} className="h-9 w-9 rounded-xl p-0 sm:h-10 sm:w-10 sm:rounded-2xl">
+                  <Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </Button>
-                <Button type="button" variant="outline" onClick={() => window.open(clientLinkValue, "_blank", "noopener,noreferrer")}>
-                  <ExternalLink className="w-4 h-4" />
+                <Button type="button" variant="outline" onClick={() => window.open(clientLinkValue, "_blank", "noopener,noreferrer")} className="h-9 w-9 rounded-xl p-0 sm:h-10 sm:w-10 sm:rounded-2xl">
+                  <ExternalLink className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </Button>
               </div>
               {hasCopiedClientLink ? (
@@ -2483,9 +2484,9 @@ export default function Cadastro() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowClientLinkFeedback(false)}>Fechar</Button>
-            <Button onClick={copyClientLink} className="bg-blue-600 hover:bg-blue-700 text-white">
-              <Copy className="w-4 h-4 mr-2" />
+            <Button variant="outline" onClick={() => setShowClientLinkFeedback(false)} className="h-9 rounded-xl px-3 text-xs sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm">Fechar</Button>
+            <Button onClick={copyClientLink} className="h-9 rounded-xl bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm">
+              <Copy className="mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
               Copiar link
             </Button>
           </DialogFooter>
@@ -2500,7 +2501,7 @@ export default function Cadastro() {
           </DialogHeader>
           <p className="py-2 text-sm text-gray-700">{notifyMessage}</p>
           <DialogFooter>
-            <Button onClick={() => setNotifyOpen(false)} className="bg-blue-600 hover:bg-blue-700 text-white">OK</Button>
+            <Button onClick={() => setNotifyOpen(false)} className="h-9 rounded-xl bg-blue-600 px-4 text-sm text-white hover:bg-blue-700 sm:h-10 sm:rounded-2xl">OK</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -2450,13 +2450,13 @@ export default function PlanosConfig() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
             <Button
               onClick={() => {
                 resetForm();
                 setShowModal(true);
               }}
-              className="bg-purple-600 text-white hover:bg-purple-700"
+              className="h-9 w-full rounded-full bg-purple-600 px-3 text-xs text-white hover:bg-purple-700 sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
             >
               <Plus className="mr-2 h-4 w-4" />
               Novo plano
@@ -2466,24 +2466,25 @@ export default function PlanosConfig() {
 
         <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
           <Card className="border-blue-200 bg-white">
-            <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-blue-600">{stats.dayCare}</p>
-              <p className="text-sm text-gray-600">Pacotes Day Care</p>
+            <CardContent className="p-2.5 text-center sm:p-4">
+              <p className="text-lg font-bold text-blue-600 sm:text-2xl">{stats.dayCare}</p>
+              <p className="text-[11px] text-gray-600 sm:text-sm">Pacotes Day Care</p>
             </CardContent>
           </Card>
           <Card className="border-amber-200 bg-white">
-            <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-amber-600">{stats.clientes}</p>
-              <p className="text-sm text-gray-600">Responsáveis financeiros</p>
+            <CardContent className="p-2.5 text-center sm:p-4">
+              <p className="text-lg font-bold text-amber-600 sm:text-2xl">{stats.clientes}</p>
+              <p className="text-[11px] text-gray-600 sm:text-sm">Responsáveis financeiros</p>
             </CardContent>
           </Card>
         </div>
 
         <Card className="mb-6 border-gray-200 bg-white">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <SearchFiltersToolbar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
+              searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
               searchPlaceholder="Buscar responsável financeiro ou cão..."
               hasActiveFilters={Boolean(searchTerm)}
               onClear={() => {
@@ -2495,7 +2496,7 @@ export default function PlanosConfig() {
         </Card>
 
         <Card className="mb-6 border-emerald-200 bg-white">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="flex items-center gap-2">
@@ -2516,7 +2517,7 @@ export default function PlanosConfig() {
                 <Button
                   onClick={() => handleSyncPrepaidMonth()}
                   disabled={isSyncingPrepaid}
-                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                  className="h-9 w-full rounded-full bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-700 sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
                 >
                   <RefreshCcw className="mr-2 h-4 w-4" />
                   {isSyncingPrepaid ? "Atualizando..." : "Gerar mês"}
@@ -2540,7 +2541,7 @@ export default function PlanosConfig() {
 
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               {prepaidPackageViews.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500 lg:col-span-2">
+                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-center text-[13px] text-gray-500 sm:rounded-2xl sm:p-6 sm:text-sm lg:col-span-2">
                   Nenhum pacote pré-pago foi criado ainda. Novos planos passam a alimentar esta área automaticamente.
                 </div>
               ) : prepaidPackageViews.map((view) => {
@@ -2550,7 +2551,7 @@ export default function PlanosConfig() {
                     key={view.packageRecord.id}
                     type="button"
                     onClick={() => setSelectedPrepaidPackage(view.packageRecord)}
-                    className="rounded-2xl border border-gray-200 bg-white p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50/40"
+                    className="rounded-xl border border-gray-200 bg-white p-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/40 sm:rounded-2xl sm:p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -2596,7 +2597,7 @@ export default function PlanosConfig() {
             </div>
 
             {filteredPlanGroups.length === 0 ?(
-              <div className="p-12 text-center">
+              <div className="p-8 text-center sm:p-12">
                 <CreditCard className="mx-auto mb-4 h-12 w-12 text-gray-300" />
                 <p className="text-gray-500">Nenhum plano encontrado para os filtros atuais.</p>
               </div>
@@ -2608,7 +2609,7 @@ export default function PlanosConfig() {
                   key={group.id}
                   type="button"
                   onClick={() => setDetailItem(group)}
-                  className="grid w-full gap-3 border-t border-gray-100 px-5 py-4 text-left transition hover:bg-gray-50 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto] md:items-center"
+                  className="grid w-full gap-3 border-t border-gray-100 px-3 py-3 text-left transition hover:bg-gray-50 sm:px-5 sm:py-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto] md:items-center"
                 >
                   <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Responsável financeiro</p>
@@ -2725,7 +2726,7 @@ export default function PlanosConfig() {
           ) : null}
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDetailItem(null)}>
+            <Button variant="outline" onClick={() => setDetailItem(null)} className="w-full sm:w-auto">
               Fechar
             </Button>
             <Button
@@ -2737,13 +2738,14 @@ export default function PlanosConfig() {
                 setPaymentsItem(nextItem);
               }}
               disabled={!detailItem}
+              className="w-full sm:w-auto"
             >
               <Zap className="mr-2 h-4 w-4" />
               Pagamentos
             </Button>
             <Button
               variant="outline"
-              className="text-red-600 hover:text-red-700"
+              className="w-full text-red-600 hover:text-red-700 sm:w-auto"
               onClick={() => {
                 if (!detailItem) return;
                 const nextItem = detailItem;
@@ -2764,7 +2766,7 @@ export default function PlanosConfig() {
                 openEditModal(nextItem);
               }}
               disabled={!detailItem}
-              className="bg-purple-600 text-white hover:bg-purple-700"
+              className="w-full bg-purple-600 text-white hover:bg-purple-700 sm:w-auto"
             >
               <Pencil className="mr-2 h-4 w-4" />
               Editar plano
@@ -2832,7 +2834,7 @@ export default function PlanosConfig() {
                 <Button
                   onClick={() => handleSyncPrepaidMonth(selectedPrepaidView.packageRecord)}
                   disabled={isSyncingPrepaid}
-                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                  className="h-9 w-full rounded-full bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-700 sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
                 >
                   <RefreshCcw className="mr-2 h-4 w-4" />
                   Recalcular mês deste pacote
@@ -2858,19 +2860,19 @@ export default function PlanosConfig() {
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "realizada" })}>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "realizada" })} className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm">
                           Realizada
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "cancelada_com_credito" })}>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "cancelada_com_credito" })} className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm">
                           Cancelar com crédito
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "cancelada_sem_credito" })}>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "cancelada_sem_credito" })} className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm">
                           Cancelar sem crédito
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "falta_cobrada" })}>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "falta_cobrada" })} className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm">
                           Falta cobrada
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "falta_nao_cobrada" })}>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedPrepaidSession({ session, action: "falta_nao_cobrada" })} className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm">
                           Falta não cobrada
                         </Button>
                       </div>
@@ -2881,8 +2883,8 @@ export default function PlanosConfig() {
             </div>
           ) : null}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedPrepaidPackage(null)}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSelectedPrepaidPackage(null)} className="w-full sm:w-auto">
               Fechar
             </Button>
           </DialogFooter>
@@ -2927,10 +2929,11 @@ export default function PlanosConfig() {
                 setManualReason("");
               }}
               disabled={isSaving}
+              className="w-full sm:w-auto"
             >
               Cancelar
             </Button>
-            <Button onClick={handleManualSessionAction} disabled={isSaving} className="bg-emerald-600 text-white hover:bg-emerald-700">
+            <Button onClick={handleManualSessionAction} disabled={isSaving} className="w-full bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto">
               Confirmar ajuste
             </Button>
           </DialogFooter>
@@ -3501,10 +3504,10 @@ export default function PlanosConfig() {
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowModal(false)}>
+            <Button variant="outline" onClick={() => setShowModal(false)} className="w-full sm:w-auto">
               Cancelar
             </Button>
-            <Button onClick={handleSave} disabled={isSaving} className="bg-purple-600 text-white hover:bg-purple-700">
+            <Button onClick={handleSave} disabled={isSaving} className="w-full bg-purple-600 text-white hover:bg-purple-700 sm:w-auto">
               <Save className="mr-2 h-4 w-4" />
               {isSaving ? "Salvando..." : editingItem ? "Salvar plano" : packageDogCount === 1 ? "Criar plano" : `Criar ${packageDogCount} planos`}
             </Button>
@@ -3570,8 +3573,8 @@ export default function PlanosConfig() {
             </div>
           ) : null}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPaymentsItem(null)}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPaymentsItem(null)} className="w-full sm:w-auto">
               Fechar
             </Button>
           </DialogFooter>
@@ -3659,13 +3662,13 @@ export default function PlanosConfig() {
           ) : null}
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteItem(null)} disabled={isDeleting}>
+            <Button variant="outline" onClick={() => setDeleteItem(null)} disabled={isDeleting} className="w-full sm:w-auto">
               Cancelar
             </Button>
             <Button
               onClick={handleDelete}
               disabled={!deletePreview || isDeleting}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="w-full bg-red-600 text-white hover:bg-red-700 sm:w-auto"
             >
               <Trash2 className="mr-2 h-4 w-4" />
               {isDeleting ? "Excluindo..." : "Confirmar exclusão"}
@@ -3713,13 +3716,13 @@ export default function PlanosConfig() {
           ) : null}
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setReplacementItem(null)} disabled={isSchedulingReplacement}>
+            <Button variant="outline" onClick={() => setReplacementItem(null)} disabled={isSchedulingReplacement} className="w-full sm:w-auto">
               Cancelar
             </Button>
             <Button
               onClick={handleScheduleReplacement}
               disabled={!replacementDate || isSchedulingReplacement}
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto"
             >
               <Calendar className="mr-2 h-4 w-4" />
               {isSchedulingReplacement ? "Agendando..." : "Confirmar reposição"}

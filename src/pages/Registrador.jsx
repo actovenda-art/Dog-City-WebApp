@@ -36,7 +36,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, DateTimePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { BellRing, Building2, CalendarClock, Camera, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, RefreshCcw, Search, UserRound, UtensilsCrossed } from "lucide-react";
+import { BellRing, Building2, CalendarClock, Camera, CheckCircle2, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, RefreshCcw, Search, UserRound, UtensilsCrossed, X } from "lucide-react";
 import { isCommercialProfile, isManagerialProfile, isOperationalProfile } from "@/lib/access-control";
 
 const TODAY_KEY = new Date().toISOString().slice(0, 10);
@@ -71,6 +71,8 @@ const EMPTY_CHECKIN_FORM = {
   tarefa_lembrete_setor: "",
   tarefa_lembrete_horario: "",
   tarefa_lembrete_datetime: "",
+  reminders: [],
+  reminder_draft: null,
   tem_refeicao: false,
   refeicao_observacao: "",
   pertences_entrada_foto_url: "",
@@ -249,6 +251,54 @@ function getReminderTimePart(value) {
   return (value || "").slice(11, 16);
 }
 
+function getPersonFirstName(value) {
+  return String(value || "").trim().split(/\s+/).filter(Boolean)[0] || "Responsável";
+}
+
+function createEmptyReminderDraft() {
+  return {
+    id: `reminder-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    setor: "",
+    texto: "",
+    horario: "",
+    notificar_em: "",
+    notified_at: null,
+  };
+}
+
+function normalizeReminderItems(items = []) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => ({
+      id: item?.id || createEmptyReminderDraft().id,
+      setor: item?.setor || "",
+      texto: item?.texto || "",
+      horario: item?.horario || getReminderTimePart(item?.notificar_em),
+      notificar_em: item?.notificar_em || "",
+      notified_at: item?.notified_at || null,
+    }))
+    .filter((item) => item.texto || item.setor || item.horario || item.notificar_em);
+}
+
+function hasReminderDraftContent(draft) {
+  if (!draft) return false;
+  return Boolean(draft.texto || draft.setor || draft.horario || draft.notificar_em);
+}
+
+function getReminderSummary(reminder) {
+  const sector = getReminderSectorLabel(reminder?.setor);
+  const datePart = getReminderDatePart(reminder?.notificar_em);
+  const timePart = reminder?.horario || getReminderTimePart(reminder?.notificar_em);
+  const whenLabel = datePart
+    ? `${formatDateLabel(datePart)} às ${formatTimeLabel(timePart)}`
+    : formatTimeLabel(timePart);
+
+  return {
+    title: `Aviso para ${sector} adicionado ; ))`,
+    subtitle: whenLabel ? `Disparo em ${whenLabel}` : "Disparo a definir",
+  };
+}
+
 function getCheckinMeta(checkin) {
   return safeJsonParse(checkin?.metadata, {}) || {};
 }
@@ -373,16 +423,13 @@ export default function Registrador() {
   const selectedDateTitle = selectedDate === TODAY_KEY ? "Hoje" : formatDateLabel(selectedDate);
   const canAddManualAppointment = selectedDate === TODAY_KEY;
   const selectedAppointmentRequiresReminderDateTime = selectedAppointment?.service_type === "hospedagem";
-  const reminderDateValue = getReminderDatePart(checkinForm.tarefa_lembrete_datetime);
+  const reminderItems = Array.isArray(checkinForm.reminders) ? checkinForm.reminders : [];
+  const activeReminderDraft = checkinForm.reminder_draft;
+  const reminderDateValue = getReminderDatePart(activeReminderDraft?.notificar_em);
   const reminderTimeValue = selectedAppointmentRequiresReminderDateTime
-    ? getReminderTimePart(checkinForm.tarefa_lembrete_datetime)
-    : checkinForm.tarefa_lembrete_horario;
-  const reminderHasDraft = Boolean(
-    checkinForm.tarefa_lembrete
-    || checkinForm.tarefa_lembrete_setor
-    || checkinForm.tarefa_lembrete_horario
-    || checkinForm.tarefa_lembrete_datetime
-  );
+    ? getReminderTimePart(activeReminderDraft?.notificar_em)
+    : (activeReminderDraft?.horario || "");
+  const reminderHasDraft = hasReminderDraftContent(activeReminderDraft);
   const reminderPreviewDate = selectedAppointmentRequiresReminderDateTime
     ? formatDateLabel(reminderDateValue)
     : formatDateLabel((checkinForm.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY);
@@ -590,39 +637,73 @@ export default function Registrador() {
       }
 
       for (const checkin of checkins) {
-        if (!checkin?.tarefa_lembrete || !checkin?.tarefa_lembrete_notificar_em || checkin?.tarefa_lembrete_notificado_em) {
-          continue;
-        }
-        if (new Date(checkin.tarefa_lembrete_notificar_em) > now) continue;
+        const checkinMeta = getCheckinMeta(checkin);
+        const storedReminders = normalizeReminderItems(checkinMeta?.reminders);
+        const reminderQueue = storedReminders.length > 0
+          ? storedReminders
+          : normalizeReminderItems(
+            checkin?.tarefa_lembrete
+              ? [{
+                id: "legacy-reminder",
+                texto: checkin.tarefa_lembrete,
+                setor: checkin.tarefa_lembrete_setor || "operacao",
+                horario: checkin.tarefa_lembrete_horario || "",
+                notificar_em: checkin.tarefa_lembrete_notificar_em || "",
+                notified_at: checkin.tarefa_lembrete_notificado_em || null,
+              }]
+              : []
+          );
+        if (reminderQueue.length === 0) continue;
 
         const appointment = visibleAppointments.find((item) => item.id === checkin.appointment_id);
         if (checkin.appointment_id && !appointment) continue;
         const dog = dogsById[checkin.dog_id];
         const targetDate = getAppointmentDateKey(appointment) || (checkin.checkin_datetime || "").slice(0, 10) || TODAY_KEY;
-        const recipientsCount = await notifySectorUsers({
-          sector: checkin.tarefa_lembrete_setor || "operacao",
-          appointment: appointment || {
-            id: checkin.appointment_id,
-            dog_id: checkin.dog_id,
-            empresa_id: checkin.empresa_id,
-            service_type: checkin.service_type,
-          },
-          dog,
-          tipo: "lembrete_checkin",
-          titulo: `Lembrete para ${getReminderSectorLabel(checkin.tarefa_lembrete_setor || "operacao")}`,
-          mensagem: `${getDogDisplayName(dog)}: ${checkin.tarefa_lembrete}`,
-          link: `${createPageUrl("Registrador")}?date=${encodeURIComponent(targetDate)}&appointmentId=${encodeURIComponent(checkin.appointment_id || "")}`,
-          payload: {
-            checkin_id: checkin.id,
-            reminder_text: checkin.tarefa_lembrete,
-            reminder_sector: checkin.tarefa_lembrete_setor || "operacao",
-          },
-        });
+        const nextReminderState = [...reminderQueue];
+        let hasReminderUpdate = false;
 
-        if (recipientsCount > 0) {
+        for (let index = 0; index < nextReminderState.length; index += 1) {
+          const reminder = nextReminderState[index];
+          if (!reminder?.texto || !reminder?.notificar_em || reminder?.notified_at) continue;
+          if (new Date(reminder.notificar_em) > now) continue;
+
+          const recipientsCount = await notifySectorUsers({
+            sector: reminder.setor || "operacao",
+            appointment: appointment || {
+              id: checkin.appointment_id,
+              dog_id: checkin.dog_id,
+              empresa_id: checkin.empresa_id,
+              service_type: checkin.service_type,
+            },
+            dog,
+            tipo: "lembrete_checkin",
+            titulo: `Lembrete para ${getReminderSectorLabel(reminder.setor || "operacao")}`,
+            mensagem: `${getDogDisplayName(dog)}: ${reminder.texto}`,
+            link: `${createPageUrl("Registrador")}?date=${encodeURIComponent(targetDate)}&appointmentId=${encodeURIComponent(checkin.appointment_id || "")}`,
+            payload: {
+              checkin_id: checkin.id,
+              reminder_text: reminder.texto,
+              reminder_sector: reminder.setor || "operacao",
+            },
+          });
+
+          if (recipientsCount > 0) {
+            nextReminderState[index] = {
+              ...reminder,
+              notified_at: now.toISOString(),
+            };
+            hasReminderUpdate = true;
+          }
+        }
+
+        if (hasReminderUpdate) {
           updates.push(
             Checkin.update(checkin.id, {
-              tarefa_lembrete_notificado_em: now.toISOString(),
+              tarefa_lembrete_notificado_em: nextReminderState[0]?.notified_at || now.toISOString(),
+              metadata: {
+                ...checkinMeta,
+                reminders: nextReminderState,
+              },
             })
           );
         }
@@ -647,20 +728,47 @@ export default function Registrador() {
   function clearReminderDraft() {
     setCheckinForm((current) => ({
       ...current,
-      tarefa_lembrete: "",
-      tarefa_lembrete_setor: "",
-      tarefa_lembrete_horario: "",
-      tarefa_lembrete_datetime: "",
+      reminder_draft: null,
+    }));
+  }
+
+  function openReminderDraft() {
+    setCheckinForm((current) => ({
+      ...current,
+      reminder_draft: current.reminder_draft || createEmptyReminderDraft(),
+    }));
+  }
+
+  function updateReminderDraft(patch) {
+    setCheckinForm((current) => ({
+      ...current,
+      reminder_draft: {
+        ...(current.reminder_draft || createEmptyReminderDraft()),
+        ...patch,
+      },
     }));
   }
 
   function updateReminderDate(dateValue) {
     setCheckinForm((current) => {
-      if (!dateValue) return { ...current, tarefa_lembrete_datetime: "" };
-      const fallbackTime = getReminderTimePart(current.tarefa_lembrete_datetime) || "09:00";
+      const draft = current.reminder_draft || createEmptyReminderDraft();
+      if (!dateValue) {
+        return {
+          ...current,
+          reminder_draft: {
+            ...draft,
+            notificar_em: "",
+          },
+        };
+      }
+      const fallbackTime = getReminderTimePart(draft.notificar_em) || draft.horario || "09:00";
       return {
         ...current,
-        tarefa_lembrete_datetime: buildDateTimeForDate(dateValue, fallbackTime),
+        reminder_draft: {
+          ...draft,
+          horario: fallbackTime,
+          notificar_em: buildDateTimeForDate(dateValue, fallbackTime),
+        },
       };
     });
   }
@@ -668,19 +776,80 @@ export default function Registrador() {
   function updateReminderTime(timeValue) {
     if (selectedAppointmentRequiresReminderDateTime) {
       setCheckinForm((current) => {
-        const dateValue = getReminderDatePart(current.tarefa_lembrete_datetime)
+        const draft = current.reminder_draft || createEmptyReminderDraft();
+        const dateValue = getReminderDatePart(draft.notificar_em)
           || (current.checkin_datetime || "").slice(0, 10)
           || selectedDate
           || TODAY_KEY;
         return {
           ...current,
-          tarefa_lembrete_datetime: timeValue ? buildDateTimeForDate(dateValue, timeValue) : "",
+          reminder_draft: {
+            ...draft,
+            horario: timeValue || "",
+            notificar_em: timeValue ? buildDateTimeForDate(dateValue, timeValue) : "",
+          },
         };
       });
       return;
     }
 
-    setCheckinForm((current) => ({ ...current, tarefa_lembrete_horario: timeValue }));
+    setCheckinForm((current) => ({
+      ...current,
+      reminder_draft: {
+        ...(current.reminder_draft || createEmptyReminderDraft()),
+        horario: timeValue || "",
+        notificar_em: timeValue
+          ? buildDateTimeForDate((current.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY, timeValue)
+          : "",
+      },
+    }));
+  }
+
+  function saveReminderDraft() {
+    const draft = checkinForm.reminder_draft;
+    if (!draft) return;
+    if (!draft.setor || !draft.texto) {
+      openNotify("Campos obrigatórios", "Preencha o setor e a mensagem do aviso.");
+      return;
+    }
+    if (selectedAppointmentRequiresReminderDateTime && !draft.notificar_em) {
+      openNotify("Campos obrigatórios", "Informe a data e o horário do aviso para hospedagem.");
+      return;
+    }
+    if (!selectedAppointmentRequiresReminderDateTime && !draft.horario) {
+      openNotify("Campos obrigatórios", "Informe o horário do aviso.");
+      return;
+    }
+
+    setCheckinForm((current) => {
+      const reminderDate = selectedAppointmentRequiresReminderDateTime
+        ? (draft.notificar_em || "")
+        : buildDateTimeForDate(
+          (current.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY,
+          draft.horario || "09:00"
+        );
+      const normalizedDraft = {
+        ...draft,
+        horario: selectedAppointmentRequiresReminderDateTime
+          ? getReminderTimePart(reminderDate)
+          : (draft.horario || ""),
+        notificar_em: reminderDate,
+        notified_at: null,
+      };
+
+      return {
+        ...current,
+        reminders: [...(current.reminders || []), normalizedDraft],
+        reminder_draft: null,
+      };
+    });
+  }
+
+  function removeReminderItem(reminderId) {
+    setCheckinForm((current) => ({
+      ...current,
+      reminders: (current.reminders || []).filter((item) => item.id !== reminderId),
+    }));
   }
 
   function validateMonitorSignature(monitorId, signatureCode) {
@@ -834,7 +1003,7 @@ export default function Registrador() {
       return;
     }
     if (!validateMonitorSignature(checkinForm.monitor_id, checkinForm.monitor_signature_code)) return;
-    if (checkinForm.tarefa_lembrete && !checkinForm.tarefa_lembrete_setor) {
+    if (hasReminderDraftContent(checkinForm.reminder_draft)) {
       openNotify("Campos obrigatórios", "Selecione o setor que deve receber o lembrete.");
       return;
     }
@@ -1439,7 +1608,7 @@ export default function Registrador() {
             ]}
           />
 
-          <TabsContent value="pets" className="space-y-6">
+          <TabsContent value="pets" className="space-y-4 sm:space-y-6">
             <Card className="border-gray-200 bg-white">
               <CardContent className="p-2.5 sm:p-6">
                 <SearchFiltersToolbar
@@ -1448,10 +1617,10 @@ export default function Registrador() {
                   searchPlaceholder="Buscar por nome do cão, raça ou responsável..."
                   hasActiveFilters={Boolean(searchTerm || selectedDate !== TODAY_KEY)}
                   searchClassName="min-w-0"
-                  searchInputClassName="h-10 pl-10 pr-3 text-sm sm:h-11 sm:pl-11 sm:pr-4 sm:text-base"
+                  searchInputClassName="h-9 pl-9 pr-3 text-[13px] sm:h-11 sm:pl-11 sm:pr-4 sm:text-base"
                   searchIconClassName="left-3.5 h-3.5 w-3.5 sm:left-4 sm:h-4 sm:w-4"
                   filtersClassName="gap-1.5 sm:gap-2"
-                  filterButtonClassName="h-10 w-10 sm:h-11 sm:w-11"
+                  filterButtonClassName="h-9 w-9 sm:h-11 sm:w-11"
                   filterIconClassName="h-3.5 w-3.5 sm:h-4 sm:w-4"
                   onClear={() => {
                     setSearchTerm("");
@@ -1483,7 +1652,7 @@ export default function Registrador() {
                           setSearchTerm("");
                           loadData();
                         }}
-                        className="h-10 w-10 rounded-full p-0 sm:hidden"
+                        className="h-8 w-8 rounded-full p-0 sm:hidden"
                         aria-label="Atualizar agendamentos"
                       >
                         <RefreshCcw className="h-3.5 w-3.5" />
@@ -1494,7 +1663,7 @@ export default function Registrador() {
                           setSearchTerm("");
                           loadData();
                         }}
-                        className="hidden h-11 rounded-full px-5 sm:inline-flex"
+                        className="hidden h-9 rounded-full px-3 text-xs sm:inline-flex sm:h-11 sm:px-5 sm:text-sm"
                       >
                         Atualizar
                       </Button>
@@ -1522,7 +1691,7 @@ export default function Registrador() {
 
                 return (
                   <Card key={appointment.id} className={`bg-white shadow-sm ${highlighted ? "border-blue-300 ring-2 ring-blue-200" : "border-gray-200"}`}>
-                    <CardContent className="p-4 sm:p-5">
+                    <CardContent className="p-3 sm:p-5">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="flex min-w-0 items-start gap-4">
                           {dog?.foto_url ? (
@@ -1627,7 +1796,7 @@ export default function Registrador() {
 
               {!filteredAppointments.length && !!searchTerm.trim() && !!matchedDogsWithoutAppointments.length && canAddManualAppointment && (
                 <Card className="border-dashed border-blue-300 bg-blue-50">
-                  <CardContent className="p-5">
+                  <CardContent className="p-4 sm:p-5">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="font-semibold text-blue-900">Nenhum agendamento encontrado para {selectedDateTitle.toLowerCase()}.</p>
@@ -1653,7 +1822,7 @@ export default function Registrador() {
 
               {!filteredAppointments.length && !searchTerm.trim() && (
                 <Card className="border-gray-200 bg-white">
-                  <CardContent className="p-10 text-center">
+                  <CardContent className="p-6 text-center sm:p-10">
                     <CalendarClock className="mx-auto mb-3 h-10 w-10 text-gray-300" />
                     <p className="text-gray-500">
                       {selectedDate < TODAY_KEY
@@ -1666,7 +1835,7 @@ export default function Registrador() {
             </div>
           </TabsContent>
 
-          <TabsContent value="providers" className="space-y-6">
+          <TabsContent value="providers" className="space-y-4 sm:space-y-6">
             <Card className="border-gray-200 bg-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -1674,15 +1843,15 @@ export default function Registrador() {
                   Registro de funcionários
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-6">
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Input
                     value={providerCpf}
                     onChange={(event) => setProviderCpf(event.target.value)}
                     placeholder="CPF do funcionário"
-                    className="h-12"
+                    className="h-10 text-[13px] sm:h-12 sm:text-sm"
                   />
-                  <Button onClick={handleProviderCheckin} disabled={isSaving} className="h-12 w-full bg-orange-600 text-white hover:bg-orange-700 sm:w-auto">
+                  <Button onClick={handleProviderCheckin} disabled={isSaving} className="h-10 w-full rounded-full bg-orange-600 text-xs text-white hover:bg-orange-700 sm:h-12 sm:w-auto sm:rounded-md sm:text-sm">
                     Registrar entrada
                   </Button>
                 </div>

@@ -752,35 +752,35 @@ export default function Escalacao() {
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Card className="border-blue-100 shadow-sm">
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="rounded-2xl bg-blue-50 p-3 text-blue-600">
-                  <Users className="h-5 w-5" />
+              <CardContent className="flex items-center gap-2.5 p-2.5 sm:gap-3 sm:p-4">
+                <div className="rounded-xl bg-blue-50 p-2.5 text-blue-600 sm:rounded-2xl sm:p-3">
+                  <Users className="h-4 w-4 sm:h-5 sm:w-5" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Funcionários</p>
-                  <p className="text-xl font-bold text-gray-900">{providers.length}</p>
+                  <p className="text-[11px] text-gray-500 sm:text-sm">Funcionários</p>
+                  <p className="text-lg font-bold text-gray-900 sm:text-xl">{providers.length}</p>
                 </div>
               </CardContent>
             </Card>
             <Card className="border-emerald-100 shadow-sm">
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-600">
-                  <Clock3 className="h-5 w-5" />
+              <CardContent className="flex items-center gap-2.5 p-2.5 sm:gap-3 sm:p-4">
+                <div className="rounded-xl bg-emerald-50 p-2.5 text-emerald-600 sm:rounded-2xl sm:p-3">
+                  <Clock3 className="h-4 w-4 sm:h-5 sm:w-5" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Horários ativos</p>
-                  <p className="text-xl font-bold text-gray-900">{schedules.length}</p>
+                  <p className="text-[11px] text-gray-500 sm:text-sm">Horários ativos</p>
+                  <p className="text-lg font-bold text-gray-900 sm:text-xl">{schedules.length}</p>
                 </div>
               </CardContent>
             </Card>
             <Card className="border-amber-100 shadow-sm">
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="rounded-2xl bg-amber-50 p-3 text-amber-600">
-                  <ShieldCheck className="h-5 w-5" />
+              <CardContent className="flex items-center gap-2.5 p-2.5 sm:gap-3 sm:p-4">
+                <div className="rounded-xl bg-amber-50 p-2.5 text-amber-600 sm:rounded-2xl sm:p-3">
+                  <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Automáticos</p>
-                  <p className="text-xl font-bold text-gray-900">{automaticCount}</p>
+                  <p className="text-[11px] text-gray-500 sm:text-sm">Automáticos</p>
+                  <p className="text-lg font-bold text-gray-900 sm:text-xl">{automaticCount}</p>
                 </div>
               </CardContent>
             </Card>
@@ -789,7 +789,7 @@ export default function Escalacao() {
 
         {loadWarnings.length > 0 ? (
           <Card className="border-amber-200 bg-amber-50 shadow-sm">
-            <CardContent className="space-y-1 p-4 text-sm text-amber-900">
+            <CardContent className="space-y-1 p-3 text-[13px] text-amber-900 sm:p-4 sm:text-sm">
               {loadWarnings.map((warning) => (
                 <p key={warning}>{warning}</p>
               ))}
@@ -810,6 +810,7 @@ export default function Escalacao() {
           <SearchFiltersToolbar
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
+            searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
             searchPlaceholder={activeTab === "funcionarios"
               ? "Buscar por nome ou CPF..."
               : activeTab === "horarios"
@@ -821,7 +822,7 @@ export default function Escalacao() {
                   if (activeTab === "funcionarios") openProviderDialog();
                   else openScheduleDialog();
                 }}
-                className="h-11 rounded-full bg-blue-600 px-5 text-white hover:bg-blue-700"
+                className="h-9 w-full rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-11 sm:w-auto sm:px-5 sm:text-sm"
                 disabled={activeTab === "horarios" && providers.length === 0}
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -852,15 +853,15 @@ export default function Escalacao() {
                             <Badge variant="outline">{scheduleCountByProviderId.get(provider.id) || 0} cadastrado(s)</Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button variant="outline" size="sm" onClick={() => copyProviderRegistrationLink(provider)} disabled={isSaving}>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button variant="outline" size="sm" onClick={() => copyProviderRegistrationLink(provider)} disabled={isSaving} className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm">
                                 <Copy className="mr-2 h-3.5 w-3.5" />
                                 Link
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => openProviderDialog(provider)}>
+                              <Button variant="outline" size="sm" onClick={() => openProviderDialog(provider)} className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm">
                                 Editar
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => handleDeleteProvider(provider)}>
+                              <Button variant="outline" size="sm" onClick={() => handleDeleteProvider(provider)} className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm">
                                 Excluir
                               </Button>
                             </div>
@@ -910,11 +911,11 @@ export default function Escalacao() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button variant="outline" size="sm" onClick={() => openScheduleDialog(item)}>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button variant="outline" size="sm" onClick={() => openScheduleDialog(item)} className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm">
                                 Editar
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => handleDeleteSchedule(item)}>
+                              <Button variant="outline" size="sm" onClick={() => handleDeleteSchedule(item)} className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm">
                                 Excluir
                               </Button>
                             </div>
@@ -1060,9 +1061,9 @@ export default function Escalacao() {
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={resetProviderDialog}>Cancelar</Button>
-            <Button onClick={handleSaveProvider} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={resetProviderDialog} className="w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={handleSaveProvider} disabled={isSaving} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
               {editingProvider ? "Salvar e copiar link" : "Gerar link"}
             </Button>
           </DialogFooter>
@@ -1230,9 +1231,9 @@ export default function Escalacao() {
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={resetScheduleDialog}>Cancelar</Button>
-            <Button onClick={handleSaveSchedule} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={resetScheduleDialog} className="w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={handleSaveSchedule} disabled={isSaving} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
               Salvar
             </Button>
           </DialogFooter>
@@ -1269,10 +1270,10 @@ export default function Escalacao() {
             </div>
           ) : null}
 
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button
               onClick={closeFeedbackDialog}
-              className={(FEEDBACK_TONE_STYLES[feedbackDialog.tone] || FEEDBACK_TONE_STYLES.info).buttonClassName}
+              className={`w-full sm:w-auto ${(FEEDBACK_TONE_STYLES[feedbackDialog.tone] || FEEDBACK_TONE_STYLES.info).buttonClassName}`}
             >
               Entendi
             </Button>
@@ -1294,9 +1295,9 @@ export default function Escalacao() {
             </div>
           </DialogHeader>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={closeConfirmDialog}>Cancelar</Button>
-            <Button onClick={handleConfirmDialog} className="bg-red-600 text-white hover:bg-red-700">
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={closeConfirmDialog} className="w-full sm:w-auto">Cancelar</Button>
+            <Button onClick={handleConfirmDialog} className="w-full bg-red-600 text-white hover:bg-red-700 sm:w-auto">
               {confirmDialog.confirmLabel}
             </Button>
           </DialogFooter>

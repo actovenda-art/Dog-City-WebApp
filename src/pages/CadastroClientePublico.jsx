@@ -325,7 +325,7 @@ function validateFinanceiro(form) {
 
 function StepSidebar({ currentStep, steps }) {
   return (
-    <div className="flex gap-1.5 overflow-x-auto pb-1 xl:block xl:space-y-3">
+    <div className="grid grid-cols-3 gap-1.5 xl:block xl:space-y-3">
       {steps.map((step, index) => {
         const Icon = step.icon;
         const isActive = currentStep === index;
@@ -340,11 +340,11 @@ function StepSidebar({ currentStep, steps }) {
                 : isDone
                   ? "border-emerald-200 bg-emerald-50"
                   : "border-slate-200 bg-white"
-            } min-w-[138px] shrink-0 px-3 py-2.5 xl:min-w-0 xl:p-4`}
+            } min-w-0 px-2 py-2 xl:min-w-0 xl:p-4`}
           >
-            <div className="flex items-center gap-2.5 xl:gap-3">
+            <div className="flex items-center gap-2 xl:gap-3">
               <div
-                className={`flex h-8 w-8 items-center justify-center rounded-xl xl:h-10 xl:w-10 xl:rounded-2xl ${
+                className={`flex h-7 w-7 items-center justify-center rounded-xl xl:h-10 xl:w-10 xl:rounded-2xl ${
                   isActive
                     ? "bg-blue-600 text-white"
                     : isDone
@@ -352,13 +352,13 @@ function StepSidebar({ currentStep, steps }) {
                       : "bg-slate-100 text-slate-500"
                 }`}
               >
-                {isDone ? <CheckCircle2 className="h-4 w-4 xl:h-5 xl:w-5" /> : <Icon className="h-4 w-4 xl:h-5 xl:w-5" />}
+                {isDone ? <CheckCircle2 className="h-3.5 w-3.5 xl:h-5 xl:w-5" /> : <Icon className="h-3.5 w-3.5 xl:h-5 xl:w-5" />}
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 xl:text-xs xl:tracking-[0.2em]">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400 xl:text-xs xl:tracking-[0.2em]">
                   Etapa {index + 1}
                 </p>
-                <p className="text-[13px] font-semibold leading-tight text-slate-900 xl:text-sm">{step.label}</p>
+                <p className="text-[11px] font-semibold leading-tight text-slate-900 xl:text-sm">{step.label}</p>
               </div>
             </div>
           </div>
@@ -370,7 +370,7 @@ function StepSidebar({ currentStep, steps }) {
 
 function DogSectionSidebar({ activeSection, onSelect, unlockedIndex = 0 }) {
   return (
-    <div className="flex gap-1.5 overflow-x-auto pb-1 xl:block xl:space-y-2">
+    <div className="grid grid-cols-2 gap-1.5 xl:block xl:space-y-2">
       {DOG_SECTION_DEFINITIONS.map((section, index) => {
         const Icon = section.icon;
         const isActive = activeSection === section.id;
@@ -384,24 +384,24 @@ function DogSectionSidebar({ activeSection, onSelect, unlockedIndex = 0 }) {
               if (isUnlocked) onSelect(section.id);
             }}
             disabled={!isUnlocked}
-            className={`flex w-full items-center gap-2 rounded-2xl border px-3 py-2.5 text-left transition xl:gap-3 xl:px-4 xl:py-3 ${
+            className={`flex w-full items-center gap-1.5 rounded-2xl border px-2.5 py-2 text-left transition xl:gap-3 xl:px-4 xl:py-3 ${
               isActive
                 ? "border-blue-200 bg-blue-50 text-blue-700"
                 : isUnlocked
                   ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300"
-            } min-w-[176px] shrink-0 xl:min-w-0`}
+            } min-w-0 xl:min-w-0`}
           >
             <div
-              className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold xl:h-9 xl:w-9 xl:text-xs ${
+              className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold xl:h-9 xl:w-9 xl:text-xs ${
                 isActive ? "bg-blue-600 text-white" : isUnlocked ? "bg-slate-100 text-slate-500" : "bg-slate-100 text-slate-300"
               }`}
             >
               {index + 1}
             </div>
             <div className="flex min-w-0 items-center gap-2">
-              <Icon className="h-3.5 w-3.5 xl:h-4 xl:w-4" />
-              <span className="text-[13px] font-semibold leading-tight xl:text-sm">{section.label}</span>
+              <Icon className="h-3 w-3 xl:h-4 xl:w-4" />
+              <span className="text-xs font-semibold leading-tight xl:text-sm">{section.label}</span>
             </div>
           </button>
         );
@@ -465,22 +465,22 @@ export default function CadastroClientePublico() {
   function renderFieldShell({ label, optional = false, description = "", message = "", messageTone = "default", className = "", children }) {
     return (
       <div className={className}>
-        <div className="space-y-1.5">
+          <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <Label className="text-[13px] font-semibold text-slate-800">{label}</Label>
+            <Label className="text-xs font-semibold text-slate-800 sm:text-[13px]">{label}</Label>
             {optional ? (
-              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 sm:px-2 sm:text-[11px]">
                 {OPTIONAL_TEXT}
               </span>
             ) : null}
           </div>
           {children}
           {message ? (
-            <p className={`text-xs ${messageTone === "error" ? "text-rose-600" : "text-slate-500"}`}>
+            <p className={`text-[11px] leading-snug sm:text-xs ${messageTone === "error" ? "text-rose-600" : "text-slate-500"}`}>
               {message}
             </p>
           ) : description ? (
-            <p className="text-xs text-slate-500">{description}</p>
+            <p className="text-[11px] leading-snug text-slate-500 sm:text-xs">{description}</p>
           ) : null}
         </div>
       </div>
@@ -532,7 +532,7 @@ export default function CadastroClientePublico() {
             placeholder={placeholder}
             disabled={disabled}
             className={[
-              "h-12 rounded-2xl border px-4 text-[15px] shadow-sm transition-all duration-200",
+              "h-10 rounded-xl border px-3 text-sm shadow-sm transition-all duration-200 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]",
               "bg-white/90 placeholder:text-slate-400 focus-visible:ring-4 focus-visible:ring-blue-100 focus-visible:ring-offset-0",
               showError
                 ? "border-rose-300 bg-rose-50/80 pr-11 text-rose-900 focus-visible:border-rose-400"
@@ -550,7 +550,7 @@ export default function CadastroClientePublico() {
                 showError ? "text-rose-500" : "text-emerald-500"
               }`}
             >
-              <StatusIcon className="h-4.5 w-4.5" />
+              <StatusIcon className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
             </span>
           ) : null}
         </div>
@@ -597,7 +597,7 @@ export default function CadastroClientePublico() {
             rows={rows}
             disabled={disabled}
             className={[
-              "min-h-[108px] rounded-[24px] border px-4 py-3 text-[15px] shadow-sm transition-all duration-200",
+              "min-h-[92px] rounded-2xl border px-3 py-2.5 text-sm shadow-sm transition-all duration-200 sm:min-h-[108px] sm:rounded-[24px] sm:px-4 sm:py-3 sm:text-[15px]",
               "bg-white/90 placeholder:text-slate-400 focus-visible:ring-4 focus-visible:ring-blue-100 focus-visible:ring-offset-0",
               showError
                 ? "border-rose-300 bg-rose-50/80 pr-11 text-rose-900 focus-visible:border-rose-400"
@@ -613,7 +613,7 @@ export default function CadastroClientePublico() {
                 showError ? "text-rose-500" : "text-emerald-500"
               }`}
             >
-              <StatusIcon className="h-4.5 w-4.5" />
+              <StatusIcon className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
             </span>
           ) : null}
         </div>
@@ -1077,7 +1077,7 @@ export default function CadastroClientePublico() {
           label: "Raça",
           children: (
             <Select value={dog.raca || ""} onValueChange={(value) => updateDog(dogIndex, { raca: value })}>
-              <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white/90 px-4 text-[15px] shadow-sm transition focus:ring-4 focus:ring-blue-100">
+              <SelectTrigger className="h-9 rounded-xl border-slate-200 bg-white/90 px-2.5 text-[13px] shadow-sm transition focus:ring-4 focus:ring-blue-100 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]">
                 <SelectValue placeholder="Selecione a raça" />
               </SelectTrigger>
               <SelectContent>
@@ -1112,7 +1112,7 @@ export default function CadastroClientePublico() {
           label: "Sexo",
           children: (
             <Select value={dog.sexo || ""} onValueChange={(value) => updateDog(dogIndex, { sexo: value })}>
-              <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white/90 px-4 text-[15px] shadow-sm transition focus:ring-4 focus:ring-blue-100">
+              <SelectTrigger className="h-9 rounded-xl border-slate-200 bg-white/90 px-2.5 text-[13px] shadow-sm transition focus:ring-4 focus:ring-blue-100 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]">
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
@@ -1126,7 +1126,7 @@ export default function CadastroClientePublico() {
           label: "Porte",
           children: (
             <Select value={dog.porte || ""} onValueChange={(value) => updateDog(dogIndex, { porte: value })}>
-              <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white/90 px-4 text-[15px] shadow-sm transition focus:ring-4 focus:ring-blue-100">
+              <SelectTrigger className="h-9 rounded-xl border-slate-200 bg-white/90 px-2.5 text-[13px] shadow-sm transition focus:ring-4 focus:ring-blue-100 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]">
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
@@ -1232,8 +1232,8 @@ export default function CadastroClientePublico() {
       <div key={`meal-public-${mealIndex}`} className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-slate-900">{mealIndex + 1}ª refeição</p>
-          <Button type="button" variant="outline" size="sm" onClick={() => removeDogMeal(dogIndex, mealIndex)} className="rounded-xl">
-            <Trash2 className="mr-2 h-4 w-4" />
+          <Button type="button" variant="outline" size="sm" onClick={() => removeDogMeal(dogIndex, mealIndex)} className="h-8 rounded-lg px-2.5 text-[11px] sm:h-9 sm:rounded-xl sm:px-3 sm:text-sm">
+            <Trash2 className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
             Remover
           </Button>
         </div>
@@ -1322,8 +1322,8 @@ export default function CadastroClientePublico() {
               <p className="text-sm font-semibold text-slate-900">Refeições</p>
               <p className="text-xs text-slate-500">Comece com uma linha e adicione outras quando necessário.</p>
             </div>
-            <Button type="button" variant="outline" onClick={() => addDogMeal(dogIndex)} disabled={(dog.refeicoes || []).length >= 4} className="rounded-xl">
-              <Plus className="mr-2 h-4 w-4" />
+            <Button type="button" variant="outline" onClick={() => addDogMeal(dogIndex)} disabled={(dog.refeicoes || []).length >= 4} className="h-9 rounded-xl px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
+              <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
               Adicionar
             </Button>
           </div>
@@ -1402,8 +1402,8 @@ export default function CadastroClientePublico() {
                 <p className="text-sm font-semibold text-slate-900">Medicamentos de longo período / vitalício</p>
                 <p className="text-xs text-slate-500">Informe especificações, cuidados, horário e dose.</p>
               </div>
-              <Button type="button" variant="outline" onClick={() => addDogMedication(dogIndex)} className="rounded-xl">
-                <Plus className="mr-2 h-4 w-4" />
+              <Button type="button" variant="outline" onClick={() => addDogMedication(dogIndex)} className="h-9 rounded-xl px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
+                <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                 Adicionar
               </Button>
             </div>
@@ -1412,8 +1412,8 @@ export default function CadastroClientePublico() {
                 <div key={`medicacao-publica-${medicationIndex}`} className="rounded-[24px] border border-blue-100 bg-blue-50/70 p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-slate-900">Medicamento {medicationIndex + 1}</p>
-                    <Button type="button" variant="outline" size="sm" onClick={() => removeDogMedication(dogIndex, medicationIndex)} className="rounded-xl">
-                      <Trash2 className="mr-2 h-4 w-4" />
+                    <Button type="button" variant="outline" size="sm" onClick={() => removeDogMedication(dogIndex, medicationIndex)} className="h-8 rounded-lg px-2.5 text-[11px] sm:h-9 sm:rounded-xl sm:px-3 sm:text-sm">
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                       Remover
                     </Button>
                   </div>
@@ -1503,28 +1503,28 @@ export default function CadastroClientePublico() {
                 <span>{formatDogTitle(dog, index)}</span>
               </button>
             ))}
-            <Button type="button" variant="outline" onClick={addDog} className="rounded-[24px]">
-              <Plus className="mr-2 h-4 w-4" />
+            <Button type="button" variant="outline" onClick={addDog} className="h-9 rounded-[20px] px-3 text-xs sm:h-10 sm:rounded-[24px] sm:px-4 sm:text-sm">
+              <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
               Adicionar dog
             </Button>
             {caesForm.length > 1 ? (
-              <Button type="button" variant="outline" onClick={() => removeDog(activeDogIndex)} className="rounded-[24px] text-rose-600">
-                <Trash2 className="mr-2 h-4 w-4" />
+              <Button type="button" variant="outline" onClick={() => removeDog(activeDogIndex)} className="h-9 rounded-[20px] px-3 text-xs text-rose-600 sm:h-10 sm:rounded-[24px] sm:px-4 sm:text-sm">
+                <Trash2 className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                 Remover atual
               </Button>
             ) : null}
           </div>
 
           <Card className="border-slate-200 bg-white/90 shadow-sm">
-            <CardHeader className="border-b border-slate-100">
+            <CardHeader className="border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-6">
               <div className="space-y-2">
-                <CardTitle className="text-xl">{currentDogTitle}</CardTitle>
-                <p className="text-sm text-slate-500">
+                <CardTitle className="text-base sm:text-xl">{currentDogTitle}</CardTitle>
+                <p className="text-xs leading-snug text-slate-500 sm:text-sm">
                   Etapa guiada do dog: {activeDogIndex + 1} de {caesForm.length} • seção {activeDogSectionIndex + 1} de {DOG_SECTION_DEFINITIONS.length}
                 </p>
               </div>
             </CardHeader>
-            <CardContent className="relative overflow-hidden p-6">
+            <CardContent className="relative overflow-hidden p-3.5 sm:p-6">
               <div className="pointer-events-none absolute inset-y-6 left-4 hidden border-l border-dashed border-slate-200/90 md:block" />
               <div className="relative z-10">
               {activeDogSection === "basico" ? renderDogBasicSection(currentDog, activeDogIndex) : null}
@@ -1642,7 +1642,7 @@ export default function CadastroClientePublico() {
             label: "Vencimento de planos",
             children: (
               <Select value={financeiroForm.vencimento_planos || ""} onValueChange={(value) => setFinanceiroForm((current) => ({ ...current, vencimento_planos: value }))}>
-                <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white/90 px-4 text-[15px] shadow-sm transition focus:ring-4 focus:ring-blue-100">
+                <SelectTrigger className="h-9 rounded-xl border-slate-200 bg-white/90 px-2.5 text-[13px] shadow-sm transition focus:ring-4 focus:ring-blue-100 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]">
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1821,11 +1821,11 @@ export default function CadastroClientePublico() {
           </div>
 
           <div className="space-y-4 sm:space-y-5">
-            <Card className="overflow-hidden border-slate-200 bg-white/90 shadow-sm">
-              <CardHeader className="border-b border-slate-100">
-                <CardTitle className="text-xl text-slate-900 sm:text-2xl">{currentStepDefinition?.label}</CardTitle>
+          <Card className="overflow-hidden border-slate-200 bg-white/90 shadow-sm">
+              <CardHeader className="border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-6">
+                <CardTitle className="text-lg text-slate-900 sm:text-2xl">{currentStepDefinition?.label}</CardTitle>
               </CardHeader>
-              <CardContent className="relative overflow-hidden p-4 sm:p-6">
+              <CardContent className="relative overflow-hidden p-3.5 sm:p-6">
                 <div className="pointer-events-none absolute inset-y-6 left-8 hidden border-l border-dashed border-blue-100 lg:block" />
                 <div className="pointer-events-none absolute inset-y-6 right-8 hidden border-r border-dashed border-blue-100 lg:block" />
                 <div className="relative z-10 space-y-1">
@@ -1852,12 +1852,12 @@ export default function CadastroClientePublico() {
                   : `Etapa ${currentStep + 1} de ${visibleStepDefinitions.length}`}
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
-                <Button type="button" variant="outline" onClick={handlePreviousStep} disabled={currentStep === 0 || isSaving} className="h-10 w-full rounded-xl px-3 text-sm sm:h-11 sm:w-auto">
-                  <ChevronLeft className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+                <Button type="button" variant="outline" onClick={handlePreviousStep} disabled={currentStep === 0 || isSaving} className="h-8.5 w-full rounded-lg px-2.5 text-[12px] sm:h-11 sm:w-auto sm:rounded-xl sm:px-3 sm:text-sm">
+                  <ChevronLeft className="mr-1 h-3 w-3 sm:mr-2 sm:h-4 sm:w-4" />
                   Voltar
                 </Button>
                 {shouldShowContinueButton ? (
-                  <Button type="button" onClick={handleNextStep} className="h-10 w-full rounded-xl px-3 text-sm bg-blue-600 text-white hover:bg-blue-700 sm:h-11 sm:w-auto">
+                  <Button type="button" onClick={handleNextStep} className="h-8.5 w-full rounded-lg px-2.5 text-[12px] bg-blue-600 text-white hover:bg-blue-700 sm:h-11 sm:w-auto sm:rounded-xl sm:px-3 sm:text-sm">
                     {currentStepDefinition?.id === "caes"
                       ? isLastDogSection
                         ? "Continuar para responsável financeiro"
@@ -1867,11 +1867,11 @@ export default function CadastroClientePublico() {
                           ? `Continuar para ${nextDogSectionLabel}`
                         : "Continuar"
                       : "Continuar"}
-                    <ChevronRight className="ml-1.5 h-3.5 w-3.5 sm:ml-2 sm:h-4 sm:w-4" />
+                    <ChevronRight className="ml-1 h-3 w-3 sm:ml-2 sm:h-4 sm:w-4" />
                   </Button>
                 ) : (
-                  <Button type="button" onClick={handleSubmit} disabled={isSaving} className="h-10 w-full rounded-xl px-3 text-sm bg-emerald-600 text-white hover:bg-emerald-700 sm:h-11 sm:w-auto">
-                    {isSaving ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin sm:mr-2 sm:h-4 sm:w-4" /> : <Copy className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />}
+                  <Button type="button" onClick={handleSubmit} disabled={isSaving} className="h-8.5 w-full rounded-lg px-2.5 text-[12px] bg-emerald-600 text-white hover:bg-emerald-700 sm:h-11 sm:w-auto sm:rounded-xl sm:px-3 sm:text-sm">
+                    {isSaving ? <LoaderCircle className="mr-1 h-3 w-3 animate-spin sm:mr-2 sm:h-4 sm:w-4" /> : <Copy className="mr-1 h-3 w-3 sm:mr-2 sm:h-4 sm:w-4" />}
                     {isSaving ? "Enviando..." : "Enviar cadastro"}
                   </Button>
                 )}

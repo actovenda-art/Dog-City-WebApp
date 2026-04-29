@@ -13,7 +13,8 @@ const HOURS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2,
 const MINUTES = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0"));
 
 const pickerTriggerClassName = cn(
-  "flex h-10 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3.5 text-left text-sm font-medium text-slate-900 shadow-sm",
+  "flex h-9 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-2.5 text-left text-[13px] font-medium text-slate-900 shadow-sm",
+  "sm:h-10 sm:rounded-2xl sm:px-3.5 sm:text-sm",
   "hover:bg-slate-50 hover:text-slate-900",
 );
 
@@ -246,10 +247,10 @@ function PickerTextTrigger({
             if (!disabled) onToggle?.();
           }}
           onChange={(event) => onTextChange?.(event.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400"
+          className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-slate-900 outline-none placeholder:text-slate-400 sm:text-sm"
         />
       </div>
-      <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
+      <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform sm:h-4 sm:w-4", open && "rotate-180")} />
     </div>
   );
 }

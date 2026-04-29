@@ -15,7 +15,7 @@ export default function PageSubTabs({
   return (
     <div className={cn("w-full overflow-x-auto pb-1 touch-pan-x", className)}>
       <TabsList
-        className={cn("inline-grid h-auto min-w-max gap-1 rounded-2xl bg-gray-100 p-1 sm:grid sm:min-w-full", listClassName)}
+        className={cn("inline-grid h-auto min-w-max gap-1 rounded-xl bg-gray-100 p-0.5 sm:grid sm:min-w-full sm:rounded-2xl sm:p-1", listClassName)}
         style={{ gridTemplateColumns: columns }}
       >
         {items.map((item) => (
@@ -23,13 +23,13 @@ export default function PageSubTabs({
             key={item.value}
             value={item.value}
             className={cn(
-              "rounded-xl px-3 py-2 text-sm font-medium whitespace-nowrap",
+              "rounded-lg px-2.5 py-1.5 text-[12px] font-medium whitespace-nowrap sm:rounded-xl sm:px-3 sm:py-2 sm:text-sm",
               item.icon || item.content ? "flex items-center gap-2" : "",
               triggerClassName,
               item.triggerClassName,
             )}
           >
-            {item.icon ? <item.icon className="h-4 w-4 shrink-0" /> : null}
+            {item.icon ? <item.icon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" /> : null}
             {item.content ?? <span>{item.label}</span>}
           </TabsTrigger>
         ))}

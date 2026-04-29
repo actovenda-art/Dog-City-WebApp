@@ -849,8 +849,8 @@ export default function Orcamentos() {
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Orçamentos</h1>
             </div>
           </div>
-          <div className="flex gap-2 md:pr-16">
-            <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-blue-600 text-white hover:bg-blue-700">
+          <div className="flex w-full gap-2 md:w-auto md:pr-16">
+            <Button onClick={() => { resetForm(); setShowModal(true); }} className="h-9 w-full rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:w-auto sm:px-4 sm:text-sm">
               <Plus className="mr-2 h-4 w-4" />
               Novo Orçamento
             </Button>
@@ -865,12 +865,12 @@ export default function Orcamentos() {
             { label: "Rascunhos", val: orcamentos.filter((item) => item.status === "rascunho").length, color: "text-gray-600", border: "border-gray-200" },
           ].map((stat) => (
             <Card key={stat.label} className={`bg-white ${stat.border}`}>
-              <CardContent className="flex items-center justify-between p-4">
+              <CardContent className="flex items-center justify-between p-2.5 sm:p-4">
                 <div>
-                  <p className="text-sm text-gray-600">{stat.label}</p>
-                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.val}</p>
+                  <p className="text-[11px] text-gray-600 sm:text-sm">{stat.label}</p>
+                  <p className={`text-lg font-bold sm:text-2xl ${stat.color}`}>{stat.val}</p>
                 </div>
-                <FileText className={`h-10 w-10 ${stat.color} opacity-60`} />
+                <FileText className={`h-7 w-7 sm:h-10 sm:w-10 ${stat.color} opacity-60`} />
               </CardContent>
             </Card>
           ))}
@@ -935,6 +935,7 @@ export default function Orcamentos() {
                 searchPlaceholder="Buscar por responsável financeiro, responsável, cão, CPF/CNPJ ou celular..."
                 hasActiveFilters={Boolean(searchCliente)}
                 onClear={() => setSearchCliente("")}
+                searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
               />
 
               {exigeConfirmacaoDestinatario && (
@@ -1028,13 +1029,13 @@ export default function Orcamentos() {
                     />
                   ))}
 
-                  <Button variant="outline" onClick={addCao} className="w-full border-dashed">
+                  <Button variant="outline" onClick={addCao} className="h-9 w-full rounded-xl border-dashed text-sm sm:h-10 sm:rounded-2xl">
                     <Plus className="mr-2 h-4 w-4" />
                     Adicionar Outro Cão
                   </Button>
 
                   <Card className="border-gray-200 bg-white">
-                    <CardContent className="p-4">
+                    <CardContent className="p-3 sm:p-4">
                       <Label className="text-sm font-medium">Observações Gerais</Label>
                       <Textarea
                         value={observacoes}
@@ -1078,16 +1079,16 @@ export default function Orcamentos() {
           <DialogFooter className="gap-2 border-t pt-4">
             {etapa === "cliente" && (
               <>
-                <Button variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
-                <Button variant="outline" onClick={() => setEtapa("caes")}>Pular (sem cliente)</Button>
-                <Button onClick={() => setEtapa("caes")} className="bg-blue-600 text-white hover:bg-blue-700">
+                <Button variant="outline" onClick={() => setShowModal(false)} className="w-full sm:w-auto">Cancelar</Button>
+                <Button variant="outline" onClick={() => setEtapa("caes")} className="w-full sm:w-auto">Pular (sem cliente)</Button>
+                <Button onClick={() => setEtapa("caes")} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
                   {clienteSelecionado ? "Continuar" : "Continuar sem cliente"}
                 </Button>
               </>
             )}
             {etapa === "caes" && (
               <>
-                <Button variant="outline" onClick={() => setEtapa("cliente")}>Voltar</Button>
+                <Button variant="outline" onClick={() => setEtapa("cliente")} className="w-full sm:w-auto">Voltar</Button>
                 <Button
                   onClick={() => {
                     if (canAdvanceToResumo()) {
@@ -1095,7 +1096,7 @@ export default function Orcamentos() {
                     }
                   }}
                   disabled={!calculo}
-                  className="bg-blue-600 text-white hover:bg-blue-700"
+                  className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto"
                 >
                   Ver Resumo
                 </Button>
@@ -1103,12 +1104,12 @@ export default function Orcamentos() {
             )}
             {etapa === "resumo" && (
               <>
-                <Button variant="outline" onClick={() => setEtapa("caes")}>Voltar</Button>
-                <Button variant="outline" onClick={() => handleSave("rascunho")} disabled={isSaving || !calculo}>
+                <Button variant="outline" onClick={() => setEtapa("caes")} className="w-full sm:w-auto">Voltar</Button>
+                <Button variant="outline" onClick={() => handleSave("rascunho")} disabled={isSaving || !calculo} className="w-full sm:w-auto">
                   <Save className="mr-2 h-4 w-4" />
                   Salvar Rascunho
                 </Button>
-                <Button onClick={() => handleSave("enviado")} disabled={isSaving || !calculo} className="bg-green-600 text-white hover:bg-green-700">
+                <Button onClick={() => handleSave("enviado")} disabled={isSaving || !calculo} className="w-full bg-green-600 text-white hover:bg-green-700 sm:w-auto">
                   <Send className="mr-2 h-4 w-4" />
                   {isSaving ? "Salvando..." : "Enviar Orçamento"}
                 </Button>

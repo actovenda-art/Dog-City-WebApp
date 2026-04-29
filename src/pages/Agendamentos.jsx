@@ -332,8 +332,8 @@ export default function Agendamentos() {
               <h1 className="text-xl font-bold text-gray-900 sm:text-3xl">Agendamentos</h1>
             </div>
           </div>
-          <Button variant="outline" onClick={loadData} className="w-full sm:w-auto">
-            <RefreshCw className="mr-2 h-4 w-4" />
+          <Button variant="outline" onClick={loadData} className="h-9 w-full rounded-full px-3 text-xs sm:h-10 sm:w-auto sm:px-4 sm:text-sm">
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
             Atualizar
           </Button>
         </div>
@@ -346,9 +346,9 @@ export default function Agendamentos() {
             ...(!shouldHideOperationalAlerts ? [{ label: "Pendencias comerciais", value: stats.pendencias, tone: "text-rose-600", border: "border-rose-200" }] : []),
           ].map((item) => (
             <Card key={item.label} className={`${item.border} bg-white`}>
-              <CardContent className="p-3 sm:p-4">
-                <p className="text-xs text-gray-600 sm:text-sm">{item.label}</p>
-                <p className={`mt-1 text-xl font-bold sm:text-2xl ${item.tone}`}>{item.value}</p>
+              <CardContent className="p-2.5 sm:p-4">
+                <p className="text-[11px] text-gray-600 sm:text-sm">{item.label}</p>
+                <p className={`mt-1 text-lg font-bold sm:text-2xl ${item.tone}`}>{item.value}</p>
               </CardContent>
             </Card>
           ))}
@@ -518,6 +518,7 @@ export default function Agendamentos() {
                   ),
                 },
               ]}
+              searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
             />
           </CardContent>
         </Card>
@@ -534,7 +535,7 @@ export default function Agendamentos() {
                   : "border-gray-200 bg-white"}
                 onClick={appointment.charge_type === "avulso" ? () => openAvulsoActionsDialog(appointment) : undefined}
               >
-                <CardContent className="p-3 sm:p-4">
+                <CardContent className="p-2.5 sm:p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">

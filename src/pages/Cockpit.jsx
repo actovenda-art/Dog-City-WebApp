@@ -171,108 +171,108 @@ export default function Cockpit() {
         </div>
 
         {/* KPI Cards - Financeiro */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card className="border-green-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">Entradas</p><p className="text-lg sm:text-2xl font-bold text-green-600">{formatCurrency(totalEntradas)}</p></div>
-                <ArrowUpCircle className="w-8 h-8 sm:w-10 sm:h-10 text-green-500" />
+                <ArrowUpCircle className="h-7 w-7 text-green-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
           <Card className="border-red-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">Saídas</p><p className="text-lg sm:text-2xl font-bold text-red-600">{formatCurrency(totalSaidas)}</p></div>
-                <ArrowDownCircle className="w-8 h-8 sm:w-10 sm:h-10 text-red-500" />
+                <ArrowDownCircle className="h-7 w-7 text-red-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
           <Card className={`border-${saldo >= 0 ? 'blue' : 'orange'}-200 bg-white`}>
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">Saldo</p><p className={`text-lg sm:text-2xl font-bold ${saldo >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>{formatCurrency(saldo)}</p></div>
-                <DollarSign className={`w-8 h-8 sm:w-10 sm:h-10 ${saldo >= 0 ? 'text-blue-500' : 'text-orange-500'}`} />
+                <DollarSign className={`h-7 w-7 sm:h-10 sm:w-10 ${saldo >= 0 ? 'text-blue-500' : 'text-orange-500'}`} />
               </div>
             </CardContent>
           </Card>
           <Card className="border-purple-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">Margem</p><p className="text-lg sm:text-2xl font-bold text-purple-600">{margemLiquida}%</p></div>
-                <Activity className="w-8 h-8 sm:w-10 sm:h-10 text-purple-500" />
+                <Activity className="h-7 w-7 text-purple-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
         </div>
 
         {/* KPI Cards - Operacional */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card className="border-blue-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">Agendamentos Hoje</p><p className="text-lg sm:text-2xl font-bold text-blue-600">{agendamentosHoje}</p></div>
-                <Calendar className="w-8 h-8 sm:w-10 sm:h-10 text-blue-500" />
+                <Calendar className="h-7 w-7 text-blue-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
           <Card className="border-emerald-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">Serviços Hoje</p><p className="text-lg sm:text-2xl font-bold text-emerald-600">{servicosHoje}</p></div>
-                <Clipboard className="w-8 h-8 sm:w-10 sm:h-10 text-emerald-500" />
+                <Clipboard className="h-7 w-7 text-emerald-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
           <Card className="border-orange-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">A Receber</p><p className="text-lg sm:text-2xl font-bold text-orange-600">{formatCurrency(pendentesReceber)}</p></div>
-                <Clock className="w-8 h-8 sm:w-10 sm:h-10 text-orange-500" />
+                <Clock className="h-7 w-7 text-orange-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
           <Card className="border-pink-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">A Pagar</p><p className="text-lg sm:text-2xl font-bold text-pink-600">{formatCurrency(pendentesPagar)}</p></div>
-                <TrendingUp className="w-8 h-8 sm:w-10 sm:h-10 text-pink-500" />
+                <TrendingUp className="h-7 w-7 text-pink-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
         </div>
 
         {/* KPI Cards - Extras */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card className="border-indigo-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">Planos Ativos</p><p className="text-lg sm:text-2xl font-bold text-indigo-600">{planosAtivos}</p></div>
-                <CreditCard className="w-8 h-8 sm:w-10 sm:h-10 text-indigo-500" />
+                <CreditCard className="h-7 w-7 text-indigo-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
           <Card className="border-teal-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">Receita Mensal (Planos)</p><p className="text-lg sm:text-2xl font-bold text-teal-600">{formatCurrency(receitaMensalPlanos)}</p></div>
-                <TrendingUp className="w-8 h-8 sm:w-10 sm:h-10 text-teal-500" />
+                <TrendingUp className="h-7 w-7 text-teal-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
           <Card className="border-amber-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">Reposições Disponíveis</p><p className="text-lg sm:text-2xl font-bold text-amber-600">{totalReposicoes}</p></div>
-                <RefreshCw className="w-8 h-8 sm:w-10 sm:h-10 text-amber-500" />
+                <RefreshCw className="h-7 w-7 text-amber-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
           <Card className="border-cyan-200 bg-white">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs sm:text-sm text-gray-600">Total Agendamentos</p><p className="text-lg sm:text-2xl font-bold text-cyan-600">{totalAgendamentos}</p></div>
-                <Calendar className="w-8 h-8 sm:w-10 sm:h-10 text-cyan-500" />
+                <Calendar className="h-7 w-7 text-cyan-500 sm:h-10 sm:w-10" />
               </div>
             </CardContent>
           </Card>
@@ -280,9 +280,9 @@ export default function Cockpit() {
 
         {/* Menu Seleção */}
         <Card className="mb-6 border-gray-200 bg-white">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <Select value={currentView} onValueChange={setCurrentView}>
-              <SelectTrigger className="w-full sm:w-80">
+              <SelectTrigger className="h-9 w-full text-[13px] sm:h-10 sm:w-80 sm:text-sm">
                 <SelectValue placeholder="Selecione o relatório" />
               </SelectTrigger>
               <SelectContent>

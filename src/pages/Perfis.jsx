@@ -179,12 +179,12 @@ function formatCep(value) {
 function ProfileCountCard({ title, value, icon: Icon, colorClass, borderClass }) {
   return (
     <Card className={`bg-white ${borderClass}`}>
-      <CardContent className="flex items-center justify-between p-4">
+      <CardContent className="flex items-center justify-between p-2.5 sm:p-4">
         <div>
-          <p className="text-sm text-gray-600">{title}</p>
-          <p className={`text-2xl font-bold ${colorClass}`}>{value}</p>
+          <p className="text-[11px] text-gray-600 sm:text-sm">{title}</p>
+          <p className={`text-lg font-bold sm:text-2xl ${colorClass}`}>{value}</p>
         </div>
-        <Icon className={`h-10 w-10 ${colorClass} opacity-60`} />
+        <Icon className={`h-7 w-7 sm:h-10 sm:w-10 ${colorClass} opacity-60`} />
       </CardContent>
     </Card>
   );
@@ -311,15 +311,15 @@ function LinkedDogsSelector({
   const hasReachedLimit = selectedDogIds.length >= RELATION_SLOTS.length;
 
   return (
-    <div className="space-y-3 rounded-2xl border border-gray-200 bg-gray-50/80 p-4">
+    <div className="space-y-2.5 rounded-xl border border-gray-200 bg-gray-50/80 p-3 sm:space-y-3 sm:rounded-2xl sm:p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <Label className="text-sm font-semibold text-gray-900">Cães vinculados</Label>
-          <p className="mt-1 text-xs text-gray-500">
+          <Label className="text-[13px] font-semibold text-gray-900 sm:text-sm">Cães vinculados</Label>
+          <p className="mt-1 text-[11px] text-gray-500 sm:text-xs">
             Selecione até 8 cães para manter esse perfil associado corretamente.
           </p>
         </div>
-        <Badge className={palette.countBadge}>
+        <Badge className={`${palette.countBadge} text-[10px] sm:text-xs`}>
           {selectedDogIds.length}/{RELATION_SLOTS.length} vínculos
         </Badge>
       </div>
@@ -330,9 +330,10 @@ function LinkedDogsSelector({
         searchPlaceholder="Buscar cão por nome, apelido ou raça..."
         hasActiveFilters={Boolean(searchTerm)}
         onClear={() => onSearchChange("")}
+        searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
       />
 
-      <div className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-2">
+      <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 sm:rounded-2xl">
         {filteredDogs.length > 0 ? (
           filteredDogs.map((dog) => {
             const isSelected = selectedDogIds.includes(dog.id);
@@ -344,7 +345,7 @@ function LinkedDogsSelector({
                 type="button"
                 onClick={() => onToggleDog(dog.id)}
                 disabled={isDisabled}
-                className={`flex w-full items-center justify-between rounded-2xl border p-3 text-left transition ${
+                className={`flex w-full items-center justify-between rounded-xl border p-2.5 text-left transition sm:rounded-2xl sm:p-3 ${
                   isSelected
                     ? palette.selectedRow
                     : "border-transparent bg-gray-50 hover:border-gray-200 hover:bg-gray-100"
@@ -352,7 +353,7 @@ function LinkedDogsSelector({
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <div
-                    className={`flex h-10 w-10 items-center justify-center rounded-2xl text-sm font-bold ${palette.iconShell}`}
+                    className={`flex h-8 w-8 items-center justify-center rounded-xl text-xs font-bold sm:h-10 sm:w-10 sm:rounded-2xl sm:text-sm ${palette.iconShell}`}
                   >
                     {String(dog.nome || "?").charAt(0).toUpperCase()}
                   </div>
@@ -1053,17 +1054,17 @@ export default function Perfis() {
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-3">
-            <div className="mt-1 rounded-2xl bg-blue-100 p-3 text-blue-600">
-              <Users className="h-6 w-6" />
+            <div className="mt-1 rounded-xl bg-blue-100 p-2.5 text-blue-600 sm:rounded-2xl sm:p-3">
+              <Users className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Perfis</h1>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <Link to={createPageUrl("Cadastro")}>
-              <Button variant="outline" className="border-blue-200 text-blue-700 hover:bg-blue-50">
+              <Button variant="outline" className="h-9 w-full rounded-full border-blue-200 px-3 text-xs text-blue-700 hover:bg-blue-50 sm:h-10 sm:w-auto sm:px-4 sm:text-sm">
                 <FileText className="mr-2 h-4 w-4" />
                 Ir para Cadastro
               </Button>
@@ -1108,13 +1109,14 @@ export default function Perfis() {
           <CardHeader className="pb-3">
             <CardTitle className="text-lg text-gray-900">Consultar Perfis</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-6">
             <SearchFiltersToolbar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
               searchPlaceholder="Buscar por nome, contato, raça, CPF/CNPJ ou vínculos..."
               hasActiveFilters={Boolean(searchTerm)}
               onClear={() => setSearchTerm("")}
+              searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
             />
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
@@ -1299,10 +1301,10 @@ export default function Perfis() {
               </div>
 
               <DialogFooter className="gap-2">
-                <Button variant="outline" onClick={closeResponsavelDetails}>Fechar</Button>
+                <Button variant="outline" onClick={closeResponsavelDetails} className="w-full sm:w-auto">Fechar</Button>
                 <Button
                   variant="outline"
-                  className="border-violet-200 text-violet-700 hover:bg-violet-50"
+                  className="w-full border-violet-200 text-violet-700 hover:bg-violet-50 sm:w-auto"
                   onClick={() => {
                     closeResponsavelDetails();
                     openLinkDialog(viewingResponsavel.id, "dog_only");
@@ -1313,7 +1315,7 @@ export default function Perfis() {
                 </Button>
                 <Button
                   variant="outline"
-                  className="border-violet-200 text-violet-700 hover:bg-violet-50"
+                  className="w-full border-violet-200 text-violet-700 hover:bg-violet-50 sm:w-auto"
                   onClick={() => {
                     closeResponsavelDetails();
                     openLinkDialog(viewingResponsavel.id, "dog_and_financeiro");
@@ -1323,6 +1325,7 @@ export default function Perfis() {
                   Link: cão + financeiro
                 </Button>
                 <Button
+                  className="w-full sm:w-auto"
                   onClick={() => {
                     closeResponsavelDetails();
                     openResponsavelEditor(viewingResponsavel.id);
@@ -1371,8 +1374,9 @@ export default function Perfis() {
               </div>
 
               <DialogFooter className="gap-2">
-                <Button variant="outline" onClick={closeCarteiraDetails}>Fechar</Button>
+                <Button variant="outline" onClick={closeCarteiraDetails} className="w-full sm:w-auto">Fechar</Button>
                 <Button
+                  className="w-full sm:w-auto"
                   onClick={() => {
                     closeCarteiraDetails();
                     openCarteiraEditor(viewingCarteira.id);
@@ -1492,14 +1496,14 @@ export default function Perfis() {
             />
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={closeResponsavelEditor} disabled={isSaving}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={closeResponsavelEditor} disabled={isSaving} className="w-full sm:w-auto">
               Cancelar
             </Button>
             <Button
               onClick={handleSaveResponsavel}
               disabled={isSaving}
-              className="bg-violet-600 text-white hover:bg-violet-700"
+              className="w-full bg-violet-600 text-white hover:bg-violet-700 sm:w-auto"
             >
               <Save className="mr-2 h-4 w-4" />
               {isSaving ? "Salvando..." : "Salvar responsável"}
@@ -1664,14 +1668,14 @@ export default function Perfis() {
             />
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={closeCarteiraEditor} disabled={isSaving}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={closeCarteiraEditor} disabled={isSaving} className="w-full sm:w-auto">
               Cancelar
             </Button>
             <Button
               onClick={handleSaveCarteira}
               disabled={isSaving}
-              className="bg-orange-600 text-white hover:bg-orange-700"
+              className="w-full bg-orange-600 text-white hover:bg-orange-700 sm:w-auto"
             >
               <Save className="mr-2 h-4 w-4" />
               {isSaving ? "Salvando..." : "Salvar carteira"}
@@ -1819,14 +1823,14 @@ export default function Perfis() {
             ) : null}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={closeLinkDialog} disabled={isGeneratingLink}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={closeLinkDialog} disabled={isGeneratingLink} className="w-full sm:w-auto">
               {linkDialog.generatedLink ? "Fechar" : "Cancelar"}
             </Button>
             <Button
               onClick={linkDialog.generatedLink ? handleCopyGeneratedLink : handleGenerateCadastroLink}
               disabled={isGeneratingLink || (!linkDialog.generatedLink && !selectedLinkResponsavel)}
-              className="bg-violet-600 text-white hover:bg-violet-700"
+              className="w-full bg-violet-600 text-white hover:bg-violet-700 sm:w-auto"
             >
               {isGeneratingLink ? (
                 <>

@@ -56,15 +56,15 @@ const MOVEMENTS_PAGE_SIZE = 50;
 function StatCard({ label, value, className = "", valueClassName = "", icon = null, helper = null, isBlurred = false }) {
   return (
     <Card className={className}>
-      <CardContent className="p-4">
+      <CardContent className="p-2.5 sm:p-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm text-gray-500">{label}</p>
+          <p className="text-[11px] text-gray-500 sm:text-sm">{label}</p>
           {icon}
         </div>
-        <p className={`mt-2 text-2xl font-bold transition ${isBlurred ? "blur-[6px] opacity-50 select-none" : ""} ${valueClassName}`}>
+        <p className={`mt-1.5 text-lg font-bold transition sm:mt-2 sm:text-2xl ${isBlurred ? "blur-[6px] opacity-50 select-none" : ""} ${valueClassName}`}>
           {value}
         </p>
-        {helper ? <p className="mt-2 text-xs text-gray-500">{helper}</p> : null}
+        {helper ? <p className="mt-1.5 text-[11px] text-gray-500 sm:mt-2 sm:text-xs">{helper}</p> : null}
       </CardContent>
     </Card>
   );
@@ -371,12 +371,12 @@ export default function Movimentacoes() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing} className="h-9 rounded-full px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
+              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""} sm:mr-2 sm:h-4 sm:w-4`} />
               {isRefreshing ? "Atualizando..." : "Atualizar extrato"}
             </Button>
-            <Button onClick={() => openModal()} className="bg-blue-600 text-white hover:bg-blue-700">
-              <Plus className="mr-2 h-4 w-4" />
+            <Button onClick={() => openModal()} className="h-9 rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:px-4 sm:text-sm">
+              <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
               Nova movimentação manual
             </Button>
           </div>
@@ -441,7 +441,7 @@ export default function Movimentacoes() {
         </div>
 
         <Card className="mb-6 border-gray-200 bg-white">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <SearchFiltersToolbar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
@@ -493,6 +493,7 @@ export default function Movimentacoes() {
                   ),
                 },
               ]}
+              searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
             />
           </CardContent>
         </Card>
@@ -508,12 +509,12 @@ export default function Movimentacoes() {
             <>
               {visibleMovements.map((movement) => (
               <Card key={movement.id} className="border-gray-200 bg-white">
-                <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center">
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-full ${movement.tipo === "entrada" ? "bg-green-100" : "bg-red-100"}`}>
+                <CardContent className="flex flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:flex-row lg:items-center">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-full sm:h-12 sm:w-12 ${movement.tipo === "entrada" ? "bg-green-100" : "bg-red-100"}`}>
                     {movement.tipo === "entrada" ? (
-                      <ArrowUpCircle className="h-6 w-6 text-green-600" />
+                      <ArrowUpCircle className="h-5 w-5 text-green-600 sm:h-6 sm:w-6" />
                     ) : (
-                      <ArrowDownCircle className="h-6 w-6 text-red-600" />
+                      <ArrowDownCircle className="h-5 w-5 text-red-600 sm:h-6 sm:w-6" />
                     )}
                   </div>
 
@@ -560,14 +561,14 @@ export default function Movimentacoes() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => openModal(movement)}>
-                      <Pencil className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Button variant="outline" size="sm" className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm" onClick={() => openModal(movement)}>
+                      <Pencil className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                       {movement.apiLocked ? "Complementar" : "Editar"}
                     </Button>
                     {!movement.apiLocked && (
-                      <Button variant="outline" size="sm" className="text-red-600" onClick={() => handleDelete(movement)}>
-                        <Trash2 className="mr-2 h-4 w-4" />
+                      <Button variant="outline" size="sm" className="h-8 rounded-full px-3 text-[11px] text-red-600 sm:h-9 sm:text-sm" onClick={() => handleDelete(movement)}>
+                        <Trash2 className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                         Excluir
                       </Button>
                     )}

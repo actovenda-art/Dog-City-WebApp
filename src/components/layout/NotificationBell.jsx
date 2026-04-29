@@ -237,6 +237,23 @@ function formatRelativeTime(date) {
   return format(parsedDate, "dd/MM", { locale: ptBR });
 }
 
+function getNotificationTimestamp(notification) {
+  const candidates = [
+    notification?.created_date,
+    notification?.created_at,
+    notification?.updated_date,
+    notification?.updated_at,
+  ];
+
+  for (const value of candidates) {
+    if (!value) continue;
+    const time = new Date(value).getTime();
+    if (Number.isFinite(time)) return time;
+  }
+
+  return 0;
+}
+
 function getDisplayCopy(notification, appointmentsById = {}) {
   const payload = notification?.parsedPayload || parseNotificationPayload(notification);
   const appointment = appointmentsById[payload?.appointment_id];
@@ -332,13 +349,14 @@ export default function NotificationBell({ userId, user = null }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingPendingContext, setIsLoadingPendingContext] = useState(false);
   const [pendingContextLoaded, setPendingContextLoaded] = useState(false);
+  const [hasLoadedPendingContext, setHasLoadedPendingContext] = useState(false);
   const [appointmentsById, setAppointmentsById] = useState({});
   const dropdownRef = useRef(null);
   const department = useMemo(() => getNotificationDepartment(user), [user]);
 
   useEffect(() => {
     if (userId) {
-      loadNotifications();
+      loadNotifications({ resetPendingContext: true });
     }
   }, [userId]);
 
@@ -354,22 +372,31 @@ export default function NotificationBell({ userId, user = null }) {
   }, []);
 
   useEffect(() => {
-    if (!isOpen || pendingContextLoaded) return;
+    if (!isOpen || pendingContextLoaded || hasLoadedPendingContext) return;
     if (!notifications.some((notification) => isPendingNotification(notification))) {
       setPendingContextLoaded(true);
+      setHasLoadedPendingContext(true);
       return;
     }
 
     loadPendingContext();
-  }, [isOpen, notifications, pendingContextLoaded]);
+  }, [hasLoadedPendingContext, isOpen, notifications, pendingContextLoaded]);
 
-  const loadNotifications = async () => {
+  const loadNotifications = async ({ resetPendingContext = false } = {}) => {
     setIsLoading(true);
     try {
       const data = await Notificacao.filter({ user_id: userId }, "-created_date", 20);
-      setNotifications(data || []);
-      setPendingContextLoaded(false);
-      setAppointmentsById({});
+      const sortedData = [...(data || [])].sort((left, right) => {
+        const timeDiff = getNotificationTimestamp(right) - getNotificationTimestamp(left);
+        if (timeDiff !== 0) return timeDiff;
+        return String(right?.id || "").localeCompare(String(left?.id || ""));
+      });
+      setNotifications(sortedData);
+      if (resetPendingContext) {
+        setPendingContextLoaded(false);
+        setHasLoadedPendingContext(false);
+        setAppointmentsById({});
+      }
     } catch (error) {
       console.error("Erro ao carregar notificações:", error);
     }
@@ -387,6 +414,7 @@ export default function NotificationBell({ userId, user = null }) {
       console.error("Erro ao conferir pendências do sino:", error);
     } finally {
       setPendingContextLoaded(true);
+      setHasLoadedPendingContext(true);
       setIsLoadingPendingContext(false);
     }
   };
@@ -534,7 +562,7 @@ export default function NotificationBell({ userId, user = null }) {
                 ) : null}
                 <button
                   type="button"
-                  onClick={loadNotifications}
+                  onClick={() => loadNotifications({ resetPendingContext: true })}
                   className="rounded-lg p-1 transition-colors hover:bg-slate-100"
                   disabled={isLoading || isLoadingPendingContext}
                 >

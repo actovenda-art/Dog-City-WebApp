@@ -849,7 +849,7 @@ export default function Orcamentos() {
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Orçamentos</h1>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 md:pr-16">
             <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-blue-600 text-white hover:bg-blue-700">
               <Plus className="mr-2 h-4 w-4" />
               Novo Orçamento

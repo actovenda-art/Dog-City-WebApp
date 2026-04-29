@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createPageUrl } from "@/utils";
 import {
   AlertTriangle,
+  BellRing,
   Search,
   FileText,
   Eye,
@@ -23,6 +24,7 @@ import {
   XCircle,
   Clock,
   Send,
+  MessageSquareText,
   Pencil,
   Save,
 } from "lucide-react";
@@ -57,6 +59,10 @@ function formatTimeRange(startTime, endTime) {
   if (startTime) return startTime;
   if (endTime) return endTime;
   return "-";
+}
+
+function formatTimeValue(value) {
+  return value ? String(value).slice(0, 5) : "";
 }
 
 function combineDateTimeLocal(date, time) {
@@ -353,6 +359,7 @@ function buildAppointmentEditRow(appointment) {
     hora_entrada: getAppointmentTimeValue(appointment, "entrada"),
     hora_saida: getAppointmentTimeValue(appointment, "saida"),
     observacoes: appointment.observacoes || "",
+    lembrete_data: metadata.lembrete_data || getAppointmentDateKey(appointment),
     lembrete_texto: metadata.lembrete_texto || metadata.lembrete_orcamento || "",
     lembrete_horario: metadata.lembrete_horario || metadata.lembrete_horario_orcamento || "",
     hosp_dormitorio_compartilhado: !!snapshot.hosp_dormitorio_compartilhado,
@@ -416,6 +423,7 @@ function buildUpdatedAppointmentPayload(row) {
     metadata: {
       ...metadata,
       snapshot,
+      lembrete_data: row.lembrete_data || "",
       lembrete_texto: row.lembrete_texto || "",
       lembrete_horario: row.lembrete_horario || "",
       editado_no_orcamento: true,
@@ -1320,7 +1328,7 @@ export default function OrcamentosHistoricoPanel({
                       </div>
                     )}
 
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="mt-4 space-y-4">
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-gray-700">Observações</label>
                         <Textarea
@@ -1331,19 +1339,106 @@ export default function OrcamentosHistoricoPanel({
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Lembrete</label>
-                        <Textarea
-                          value={row.lembrete_texto || ""}
-                          onChange={(event) => updateAppointmentEditRow(row.id, { lembrete_texto: event.target.value })}
-                          rows={2}
-                          placeholder="Lembrete relacionado a este agendamento"
-                        />
-                        <Input
-                          type="time"
-                          value={row.lembrete_horario || ""}
-                          onChange={(event) => updateAppointmentEditRow(row.id, { lembrete_horario: event.target.value })}
-                        />
+                      <div className="rounded-[28px] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-4 shadow-sm">
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-2xl bg-violet-100 p-2 text-violet-700">
+                            <BellRing className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-500">Lembrete do agendamento</p>
+                            <h5 className="mt-1 text-base font-bold text-slate-900">Defina o disparo e a mensagem</h5>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">
+                              Use este bloco para organizar quando o aviso precisa sair e qual instrução deve acompanhar esse atendimento.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_280px]">
+                          <div className="space-y-4">
+                            <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(76,29,149,0.45)]">
+                              <div className="flex items-start gap-3">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">1</div>
+                                <div className="flex-1">
+                                  <label className="text-sm font-semibold text-slate-900">Quando o lembrete deve disparar?</label>
+                                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                                    Ajuste a data e o horário do aviso para esse atendimento específico.
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+                                <div className="space-y-2">
+                                  <label className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Data do lembrete</label>
+                                  <Input
+                                    type="date"
+                                    value={row.lembrete_data || row.data_inicio || ""}
+                                    onChange={(event) => updateAppointmentEditRow(row.id, { lembrete_data: event.target.value })}
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Horário do lembrete</label>
+                                  <Input
+                                    type="time"
+                                    value={row.lembrete_horario || ""}
+                                    onChange={(event) => updateAppointmentEditRow(row.id, { lembrete_horario: event.target.value })}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(15,23,42,0.35)]">
+                              <div className="flex items-start gap-3">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-700">2</div>
+                                <div className="flex-1">
+                                  <label className="text-sm font-semibold text-slate-900">O que precisa ser lembrado?</label>
+                                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                                    Escreva uma instrução curta e objetiva para a equipe agir rápido.
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="mt-4">
+                                <Textarea
+                                  value={row.lembrete_texto || ""}
+                                  onChange={(event) => updateAppointmentEditRow(row.id, { lembrete_texto: event.target.value })}
+                                  rows={3}
+                                  className="border-slate-200 bg-white"
+                                  placeholder="Ex.: confirmar transporte de volta às 17:30."
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-4 text-white shadow-[0_20px_50px_-28px_rgba(15,23,42,0.8)]">
+                            <div className="flex items-center gap-3">
+                              <div className="rounded-2xl bg-white/10 p-2 text-violet-200">
+                                <MessageSquareText className="h-5 w-5" />
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-200/90">Prévia</p>
+                                <p className="text-sm text-slate-300">Assim esse lembrete fica mais fácil de revisar.</p>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 space-y-3">
+                              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                                <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Acionamento</p>
+                                <p className="mt-2 text-base font-semibold text-white">
+                                  {row.lembrete_horario && (row.lembrete_data || row.data_inicio)
+                                    ? `${formatDate(row.lembrete_data || row.data_inicio || "")} às ${formatTimeValue(row.lembrete_horario)}`
+                                    : "Defina a data e o horário do lembrete"}
+                                </p>
+                              </div>
+
+                              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                                <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Mensagem</p>
+                                <p className="mt-2 text-sm leading-6 text-slate-200">
+                                  {row.lembrete_texto || "Descreva aqui a instrução que precisa acompanhar este agendamento."}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

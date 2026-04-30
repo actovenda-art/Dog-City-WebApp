@@ -90,6 +90,8 @@ const emptyCao = {
   hosp_dormitório_com: [],
   hosp_tem_daycare_ativo: false,
   hosp_datas_daycare: [],
+  hosp_origem_pernoite_daycare: false,
+  hosp_pernoite_appointment_id: "",
   banho_plano_ativo: false,
   banho_do_pacote: false,
   banho_data: "",
@@ -147,6 +149,12 @@ function getFirstLinkedCarteiraForDogIds(carteiras, dogIds) {
   ) || null;
 }
 
+function addDays(dateKey, days) {
+  const baseDate = new Date(`${dateKey}T12:00:00`);
+  baseDate.setDate(baseDate.getDate() + days);
+  return baseDate.toISOString().slice(0, 10);
+}
+
 function buildPrefilledCaoFromAppointment(appointment, dog) {
   const metadata = getAppointmentMeta(appointment);
   const snapshot = metadata.snapshot && typeof metadata.snapshot === "object" ? metadata.snapshot : {};
@@ -166,6 +174,18 @@ function buildPrefilledCaoFromAppointment(appointment, dog) {
     cao.day_care_horario_entrada = startTime || snapshot.day_care_horario_entrada || "08:00";
     cao.day_care_horario_saida = endTime || snapshot.day_care_horario_saida || "18:00";
     cao.day_care_observacoes = appointment.observacoes || snapshot.day_care_observacoes || "";
+  } else if (appointment.service_type === "pernoite") {
+    const exitDate = (appointment.data_hora_saida || "").slice(0, 10) || addDays(serviceDate, 1);
+    cao.servicos.hospedagem = true;
+    cao.hosp_data_entrada = serviceDate;
+    cao.hosp_horario_entrada = startTime || "19:00";
+    cao.hosp_data_saida = exitDate;
+    cao.hosp_horario_saida = "11:59";
+    cao.hosp_tem_daycare_ativo = true;
+    cao.hosp_datas_daycare = [serviceDate];
+    cao.hosp_origem_pernoite_daycare = true;
+    cao.hosp_pernoite_appointment_id = appointment.id || "";
+    cao.day_care_observacoes = appointment.observacoes || "Pernoite gerado a partir do Day Care sem check-out até 19h.";
   } else if (appointment.service_type === "hospedagem") {
     const exitDate = (appointment.data_hora_saida || "").slice(0, 10) || snapshot.hosp_data_saida || serviceDate;
     cao.servicos.hospedagem = true;
@@ -594,6 +614,16 @@ export default function Orcamentos() {
         prefilledCao.day_care_data = date;
         prefilledCao.day_care_horario_entrada = "08:00";
         prefilledCao.day_care_horario_saida = "18:00";
+      } else if (service === "pernoite") {
+        prefilledCao.servicos.hospedagem = true;
+        prefilledCao.hosp_data_entrada = date;
+        prefilledCao.hosp_horario_entrada = "19:00";
+        prefilledCao.hosp_data_saida = addDays(date, 1);
+        prefilledCao.hosp_horario_saida = "11:59";
+        prefilledCao.hosp_tem_daycare_ativo = true;
+        prefilledCao.hosp_datas_daycare = [date];
+        prefilledCao.hosp_origem_pernoite_daycare = true;
+        prefilledCao.hosp_pernoite_appointment_id = appointmentId || "";
       } else if (service === "adaptacao") {
         prefilledCao.servicos.adaptacao = true;
         prefilledCao.adaptacao_data = date;
@@ -804,7 +834,7 @@ export default function Orcamentos() {
 
     setIsSaving(true);
     try {
-      await Orcamento.create({
+      const createdOrcamento = await Orcamento.create({
         empresa_id: currentUser?.empresa_id || null,
         cliente_id: clienteSelecionado?.id || null,
         data_criacao: new Date().toISOString().split("T")[0],
@@ -818,6 +848,29 @@ export default function Orcamentos() {
         status,
         observacoes,
       });
+
+      const linkedExternalAppointmentIds = (caes || [])
+        .map((cao) => cao?.hosp_pernoite_appointment_id)
+        .filter(Boolean);
+
+      if (createdOrcamento?.id && linkedExternalAppointmentIds.length > 0) {
+        await Promise.all(linkedExternalAppointmentIds.map(async (appointmentId) => {
+          const appointmentRows = await Appointment.filter({ id: appointmentId }, "-created_date", 1);
+          const appointment = Array.isArray(appointmentRows) ? appointmentRows[0] : appointmentRows;
+          const metadata = getAppointmentMeta(appointment);
+          await Appointment.update(appointmentId, {
+            orcamento_id: createdOrcamento.id,
+            charge_type: status === "aprovado" ? "orcamento" : "pendente_comercial",
+            metadata: {
+              ...metadata,
+              commercial_review_pending: false,
+              overnight_budget_pending: false,
+              overnight_orcamento_id: createdOrcamento.id,
+            },
+          });
+        }));
+      }
+
       await loadData();
       setHistoryRefreshKey((current) => current + 1);
       setShowModal(false);

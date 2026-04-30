@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, Notificacao, Orcamento, PerfilAcesso, Responsavel, ServiceProvided, ServiceProvider, ServiceProviderSchedule, User } from "@/api/entities";
+import { Appointment, AuditLog, Carteira, Checkin, ContaReceber, Dog, Notificacao, Orcamento, PerfilAcesso, Responsavel, ServiceProvided, ServiceProvider, ServiceProviderSchedule, TabelaPrecos, User } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import {
   buildDogOwnerIndex,
@@ -21,6 +21,7 @@ import {
   safeJsonParse,
 } from "@/lib/attendance";
 import { normalizeCpfDigits } from "@/lib/cpf-validation";
+import { getInternalEntityReference } from "@/lib/entity-identifiers";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -339,6 +340,72 @@ function buildAppointmentSourceKey({ dogId, serviceType, dateKey, mode }) {
   return ["registrador", mode, dogId, serviceType, dateKey, Date.now()].filter(Boolean).join("|");
 }
 
+const OVERNIGHT_DEFAULT_PRICE = 60;
+
+function isDayCareAppointment(appointment) {
+  return appointment?.service_type === "day_care";
+}
+
+function isCancelledAppointment(appointment) {
+  return ["cancelado", "desconsiderado", "faltou"].includes(String(appointment?.status || ""));
+}
+
+function resolveOvernightPrice(pricingRows = [], empresaId = null) {
+  const scopedRows = (pricingRows || []).filter((row) => row?.ativo !== false && (!row?.empresa_id || row.empresa_id === empresaId));
+  const matchingRow = scopedRows.find((row) => {
+    const key = String(row?.config_key || row?.tipo || "").trim().toLowerCase();
+    return key === "pernoite" || key === "pernoite_daycare";
+  });
+  return Number(matchingRow?.valor || 0) || OVERNIGHT_DEFAULT_PRICE;
+}
+
+function hasOvernightGenerated(appointment) {
+  const metadata = getAppointmentMeta(appointment);
+  return Boolean(
+    metadata?.overnight_generated_appointment_id
+    || metadata?.overnight_requested_at
+    || metadata?.overnight_link_source_appointment_id
+  );
+}
+
+function getOvernightLinkedSourceAppointmentId(appointment) {
+  const metadata = getAppointmentMeta(appointment);
+  return metadata?.overnight_link_source_appointment_id || "";
+}
+
+function getOvernightLinkedCheckinId(appointment) {
+  const metadata = getAppointmentMeta(appointment);
+  return metadata?.overnight_link_checkin_id || "";
+}
+
+function getOvernightDeadline(appointment) {
+  const metadata = getAppointmentMeta(appointment);
+  return metadata?.overnight_deadline || metadata?.overnight_until || "";
+}
+
+function isEligibleForOvernightAction({ appointment, checkin, now = new Date(), selectedDate }) {
+  if (!appointment || !checkin) return false;
+  if (!isDayCareAppointment(appointment)) return false;
+  if (selectedDate !== TODAY_KEY) return false;
+  if (isCancelledAppointment(appointment)) return false;
+  if (checkin.checkout_datetime || checkin.data_checkout || checkin.status === "finalizado") return false;
+  if (hasOvernightGenerated(appointment)) return false;
+
+  const appointmentDate = getAppointmentDateKey(appointment);
+  if (appointmentDate !== TODAY_KEY) return false;
+
+  const threshold = new Date(`${appointmentDate}T19:00:00`);
+  return now >= threshold;
+}
+
+function isOvernightExceeded({ appointment, checkin, now = new Date() }) {
+  if (!appointment || !checkin) return false;
+  if (checkin.checkout_datetime || checkin.data_checkout || checkin.status === "finalizado") return false;
+  const deadline = getOvernightDeadline(appointment);
+  if (!deadline) return false;
+  return now >= new Date(deadline);
+}
+
 export default function Registrador() {
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
@@ -354,6 +421,7 @@ export default function Registrador() {
   const [users, setUsers] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [pricingRows, setPricingRows] = useState([]);
   const requestedDate = sanitizeDateKey(searchParams.get("date"));
   const highlightedAppointmentId = searchParams.get("appointmentId") || "";
   const [searchTerm, setSearchTerm] = useState("");
@@ -372,6 +440,7 @@ export default function Registrador() {
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [showProviderCheckinDialog, setShowProviderCheckinDialog] = useState(false);
   const [showProviderContestDialog, setShowProviderContestDialog] = useState(false);
+  const [showOvernightDialog, setShowOvernightDialog] = useState(false);
   const [showNotifyDialog, setShowNotifyDialog] = useState(false);
   const [checkinDialogTab, setCheckinDialogTab] = useState("geral");
 
@@ -390,6 +459,7 @@ export default function Registrador() {
   });
   const [notifyState, setNotifyState] = useState({ title: "", message: "" });
   const [checkinSharedSource, setCheckinSharedSource] = useState(null);
+  const [overnightDraft, setOvernightDraft] = useState(null);
 
   const checkinPhotoInputRef = useRef(null);
   const checkoutPhotoInputRef = useRef(null);
@@ -406,9 +476,25 @@ export default function Registrador() {
     [appointments, orcamentosById]
   );
   const profilesById = useMemo(() => Object.fromEntries(profiles.map((profile) => [profile.id, profile])), [profiles]);
+  const currentUserAccess = useMemo(
+    () => hydrateUserAccessProfile(currentUser || {}, profilesById),
+    [currentUser, profilesById]
+  );
   const serviceProvidersById = useMemo(
     () => Object.fromEntries(serviceProviders.map((provider) => [provider.id, provider])),
     [serviceProviders]
+  );
+  const appointmentsById = useMemo(
+    () => Object.fromEntries(appointments.map((appointment) => [appointment.id, appointment])),
+    [appointments]
+  );
+  const checkinsById = useMemo(
+    () => Object.fromEntries(checkins.map((checkin) => [checkin.id, checkin])),
+    [checkins]
+  );
+  const overnightPrice = useMemo(
+    () => resolveOvernightPrice(pricingRows, currentUser?.empresa_id || null),
+    [pricingRows, currentUser]
   );
   const monitorProviderIds = useMemo(() => new Set(
     serviceProviderSchedules
@@ -447,10 +533,27 @@ export default function Registrador() {
     () => new Set(activeProviderCheckins.map((checkin) => checkin.user_id).filter(Boolean)),
     [activeProviderCheckins]
   );
-  const activeCheckinByAppointmentId = useMemo(
+  const directActiveCheckinByAppointmentId = useMemo(
     () => Object.fromEntries(activePetCheckins.filter((item) => item.appointment_id).map((item) => [item.appointment_id, item])),
     [activePetCheckins]
   );
+  const activeCheckinByAppointmentId = useMemo(() => {
+    const result = { ...directActiveCheckinByAppointmentId };
+    appointments.forEach((appointment) => {
+      if (!appointment?.id || result[appointment.id]) return;
+      const linkedCheckinId = getOvernightLinkedCheckinId(appointment);
+      const linkedCheckin = linkedCheckinId ? checkinsById[linkedCheckinId] : null;
+      if (linkedCheckin?.status === "presente") {
+        result[appointment.id] = linkedCheckin;
+        return;
+      }
+      const sourceAppointmentId = getOvernightLinkedSourceAppointmentId(appointment);
+      if (sourceAppointmentId && directActiveCheckinByAppointmentId[sourceAppointmentId]) {
+        result[appointment.id] = directActiveCheckinByAppointmentId[sourceAppointmentId];
+      }
+    });
+    return result;
+  }, [appointments, checkinsById, directActiveCheckinByAppointmentId]);
   const finalizedCheckinByAppointmentId = useMemo(
     () => Object.fromEntries(
       checkins
@@ -554,7 +657,7 @@ export default function Registrador() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [dogRows, carteiraRows, responsávelRows, appointmentRows, checkinRows, providerRows, scheduleRows, userRows, profileRows, me] = await Promise.all([
+      const [dogRows, carteiraRows, responsavelRows, appointmentRows, checkinRows, providerRows, scheduleRows, userRows, profileRows, pricingRowsResult, me] = await Promise.all([
         Dog.list("-created_date", 1000),
         Carteira.list("-created_date", 500),
         Responsavel.list("-created_date", 500),
@@ -564,13 +667,14 @@ export default function Registrador() {
         ServiceProviderSchedule.listAll ? ServiceProviderSchedule.listAll("-created_date", 1000, 5000) : ServiceProviderSchedule.list("-created_date", 1000),
         User.list("-created_date", 500),
         PerfilAcesso.list("-created_date", 200),
+        TabelaPrecos.list("-created_date", 1000),
         User.me(),
       ]);
       const orcamentoRows = await Orcamento.list("-created_date", 500);
 
       setDogs((dogRows || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteiraRows || []).filter((item) => item.ativo !== false));
-      setResponsaveis((responsávelRows || []).filter((item) => item.ativo !== false));
+      setResponsaveis((responsavelRows || []).filter((item) => item.ativo !== false));
       setAppointments(appointmentRows || []);
       setOrcamentos(orcamentoRows || []);
       setCheckins(checkinRows || []);
@@ -578,6 +682,7 @@ export default function Registrador() {
       setServiceProviderSchedules((scheduleRows || []).filter((item) => item.ativo !== false));
       setUsers(userRows || []);
       setProfiles(profileRows || []);
+      setPricingRows(pricingRowsResult || []);
       setCurrentUser(me || null);
     } catch (error) {
       console.error("Erro ao carregar registrador:", error);
@@ -604,6 +709,7 @@ export default function Registrador() {
         if (finalizedAttendance) continue;
 
         const meta = getAppointmentMeta(appointment);
+        if (meta?.overnight_requested_at && !finalizedAttendance) continue;
         if (meta.absence_notified_at) continue;
 
         const dog = dogsById[appointment.dog_id];
@@ -634,6 +740,87 @@ export default function Registrador() {
             },
           })
         );
+      }
+
+      for (const appointment of visibleAppointments) {
+        const activeCheckin = activeCheckinByAppointmentId[appointment.id];
+        if (!isEligibleForOvernightAction({ appointment, checkin: activeCheckin, now, selectedDate: TODAY_KEY })) continue;
+
+        const metadata = getAppointmentMeta(appointment);
+        if (!metadata?.overnight_alert_sent_at) {
+          const dog = dogsById[appointment.dog_id];
+          const dogProfileLink = dog ? `${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dog))}` : createPageUrl("Registrador");
+          const recipientCount = await notifyAllUnitUsers({
+            appointment,
+            tipo: "daycare_pernoite_pendente",
+            titulo: "Day Care ainda sem check-out",
+            mensagem: `${getDogDisplayName(dog)} segue presente após 19h. Avalie se o atendimento deve pernoitar.`,
+            link: `${createPageUrl("Registrador")}?date=${encodeURIComponent(getAppointmentDateKey(appointment) || TODAY_KEY)}&appointmentId=${encodeURIComponent(appointment.id)}`,
+            payload: {
+              dog_profile_link: dogProfileLink,
+              action: "pernoitar",
+            },
+          });
+
+          updates.push(
+            Appointment.update(appointment.id, {
+              metadata: {
+                ...metadata,
+                overnight_alert_sent_at: now.toISOString(),
+                overnight_alert_recipient_count: recipientCount,
+              },
+            })
+          );
+
+          await writeAuditLog({
+            action: "daycare_pernoite_alerta_19h",
+            entityType: "appointment",
+            entityId: appointment.id,
+            newValue: {
+              overnight_alert_sent_at: now.toISOString(),
+              recipient_count: recipientCount,
+            },
+            reason: "Cão presente após 19h sem check-out registrado.",
+          });
+        }
+
+        if (!hasOvernightGenerated(appointment)) continue;
+        if (!isOvernightExceeded({ appointment, checkin: activeCheckin, now })) continue;
+        if (metadata?.overnight_exceeded_notified_at) continue;
+
+        const dog = dogsById[appointment.dog_id];
+        await notifyCommercialUsers({
+          appointment,
+          dog,
+          tipo: "daycare_pernoite_excedido",
+          titulo: "Pernoite excedeu 12h",
+          mensagem: `${getDogDisplayName(dog)} ainda está presente após 12h do dia seguinte. Revise a cobrança adicional ou finalize o check-out.`,
+          link: `${createPageUrl("Registrador")}?date=${encodeURIComponent(addDays(getAppointmentDateKey(appointment) || TODAY_KEY, 1))}&appointmentId=${encodeURIComponent(appointment.id)}`,
+          payload: {
+            overnight_exceeded: true,
+            overnight_generated_appointment_id: metadata?.overnight_generated_appointment_id || null,
+          },
+        });
+
+        updates.push(
+          Appointment.update(appointment.id, {
+            metadata: {
+              ...metadata,
+              overnight_exceeded_notified_at: now.toISOString(),
+              overnight_exceeded_pending: true,
+            },
+          })
+        );
+
+        await writeAuditLog({
+          action: "daycare_pernoite_alerta_12h",
+          entityType: "appointment",
+          entityId: appointment.id,
+          newValue: {
+            overnight_exceeded_notified_at: now.toISOString(),
+          },
+          reason: "Cão permaneceu presente após 12h do dia seguinte ao pernoite.",
+        });
       }
 
       for (const checkin of checkins) {
@@ -723,6 +910,181 @@ export default function Registrador() {
   function openNotify(title, message) {
     setNotifyState({ title, message });
     setShowNotifyDialog(true);
+  }
+
+  function findNextDayDayCareAppointment(sourceAppointment) {
+    if (!sourceAppointment?.dog_id) return null;
+    const nextDate = addDays(getAppointmentDateKey(sourceAppointment) || TODAY_KEY, 1);
+    return visibleAppointments.find((appointment) => {
+      if (appointment.id === sourceAppointment.id) return false;
+      if (appointment.dog_id !== sourceAppointment.dog_id) return false;
+      if (appointment.service_type !== "day_care") return false;
+      if (isCancelledAppointment(appointment)) return false;
+      return getAppointmentDateKey(appointment) === nextDate;
+    }) || null;
+  }
+
+  function openOvernightDialogForAppointment(appointment) {
+    const activeCheckin = activeCheckinByAppointmentId[appointment?.id];
+    if (!appointment || !activeCheckin) return;
+    const nextDayAppointment = findNextDayDayCareAppointment(appointment);
+    setOvernightDraft({
+      appointment_id: appointment.id,
+      checkin_id: activeCheckin.id,
+      link_next_day_appointment_id: nextDayAppointment?.id || "",
+      link_to_next_day: Boolean(nextDayAppointment),
+      next_day_appointment: nextDayAppointment,
+      overnight_deadline: `${addDays(getAppointmentDateKey(appointment) || TODAY_KEY, 1)}T12:00:00`,
+    });
+    setShowOvernightDialog(true);
+  }
+
+  async function confirmOvernightForAppointment() {
+    const appointment = appointmentsById[overnightDraft?.appointment_id];
+    const checkin = checkinsById[overnightDraft?.checkin_id];
+    if (!appointment || !checkin) {
+      setShowOvernightDialog(false);
+      setOvernightDraft(null);
+      openNotify("Pernoite indisponível", "Não foi possível localizar o atendimento ativo para registrar o pernoite.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const nextDayAppointment = overnightDraft?.link_to_next_day
+        ? appointmentsById[overnightDraft?.link_next_day_appointment_id]
+        : null;
+      const dog = dogsById[appointment.dog_id];
+      const owner = ownerByDogId[appointment.dog_id] || {};
+      const appointmentMeta = getAppointmentMeta(appointment);
+      const checkinMeta = getCheckinMeta(checkin);
+      const overnightDate = getAppointmentDateKey(appointment) || TODAY_KEY;
+      const nextDate = addDays(overnightDate, 1);
+      const overnightDeadline = overnightDraft?.overnight_deadline || `${nextDate}T12:00:00`;
+      const overnightAppointmentPayload = {
+        empresa_id: appointment.empresa_id || currentUser?.empresa_id || null,
+        cliente_id: appointment.cliente_id || owner.cliente_id || null,
+        dog_id: appointment.dog_id,
+        service_type: "pernoite",
+        status: "agendado",
+        charge_type: "pendente_comercial",
+        source_type: "daycare_pernoite",
+        valor_previsto: overnightPrice,
+        data_referencia: overnightDate,
+        data_hora_entrada: `${overnightDate}T19:00:00`,
+        data_hora_saida: `${nextDate}T12:00:00`,
+        hora_entrada: "19:00",
+        hora_saida: "12:00",
+        observacoes: "Pernoite gerado automaticamente a partir do Day Care sem check-out até 19h.",
+        source_key: `pernoite|${appointment.id}|${overnightDate}`,
+        metadata: {
+          overnight_source_appointment_id: appointment.id,
+          overnight_source_checkin_id: checkin.id,
+          overnight_linked_next_day_appointment_id: nextDayAppointment?.id || null,
+          overnight_deadline: overnightDeadline,
+          commercial_review_pending: true,
+          owner_nome: owner.nome || "",
+          owner_celular: owner.celular || "",
+        },
+      };
+
+      const createdOvernightAppointment = await Appointment.create(overnightAppointmentPayload);
+
+      await Appointment.update(appointment.id, {
+        metadata: {
+          ...appointmentMeta,
+          overnight_requested_at: new Date().toISOString(),
+          overnight_requested_by_user_id: currentUser?.id || null,
+          overnight_until: overnightDeadline,
+          overnight_price: overnightPrice,
+          overnight_generated_appointment_id: createdOvernightAppointment?.id || null,
+          overnight_linked_next_day_appointment_id: nextDayAppointment?.id || null,
+          overnight_budget_pending: true,
+        },
+      });
+
+      await Checkin.update(checkin.id, {
+        metadata: {
+          ...checkinMeta,
+          overnight_requested_at: new Date().toISOString(),
+          overnight_deadline: overnightDeadline,
+          overnight_generated_appointment_id: createdOvernightAppointment?.id || null,
+          overnight_linked_next_day_appointment_id: nextDayAppointment?.id || null,
+        },
+      });
+
+      if (nextDayAppointment?.id) {
+        await Appointment.update(nextDayAppointment.id, {
+          metadata: {
+            ...getAppointmentMeta(nextDayAppointment),
+            overnight_link_source_appointment_id: appointment.id,
+            overnight_link_checkin_id: checkin.id,
+            overnight_generated_appointment_id: createdOvernightAppointment?.id || null,
+            overnight_deadline: overnightDeadline,
+          },
+        });
+      }
+
+      const dogReference = dog ? getInternalEntityReference(dog) : appointment.dog_id;
+      const dogProfileLink = `${createPageUrl("PerfilCao")}?id=${encodeURIComponent(dogReference)}`;
+      const registradorLink = `${createPageUrl("Registrador")}?date=${encodeURIComponent(overnightDate)}&appointmentId=${encodeURIComponent(appointment.id)}`;
+      await notifyCommercialUsers({
+        appointment: createdOvernightAppointment,
+        dog,
+        tipo: "orcamento_pernoite_pendente",
+        titulo: "Orçamento pendente de pernoite",
+        mensagem: `${getDogDisplayName(dog)} entrou em pernoite. Revise o orçamento do atendimento e envie para aprovação do responsável.`,
+        link: `${createPageUrl("Orcamentos")}?dogId=${encodeURIComponent(appointment.dog_id)}&service=pernoite&date=${encodeURIComponent(overnightDate)}&appointmentId=${encodeURIComponent(createdOvernightAppointment.id)}`,
+        payload: {
+          overnight_source_appointment_id: appointment.id,
+          overnight_generated_appointment_id: createdOvernightAppointment?.id || null,
+          dog_profile_link: dogProfileLink,
+        },
+      });
+
+      await writeAuditLog({
+        action: "daycare_pernoite_registrado",
+        entityType: "appointment",
+        entityId: appointment.id,
+        oldValue: { metadata: appointmentMeta },
+        newValue: {
+          overnight_generated_appointment_id: createdOvernightAppointment?.id || null,
+          overnight_linked_next_day_appointment_id: nextDayAppointment?.id || null,
+          overnight_deadline: overnightDeadline,
+          overnight_price: overnightPrice,
+        },
+        reason: nextDayAppointment?.id
+          ? "Pernoite registrado com vínculo ao Day Care do dia seguinte."
+          : "Pernoite registrado sem vínculo ao Day Care do dia seguinte.",
+      });
+
+      await writeAuditLog({
+        action: "daycare_pernoite_orcamento_pendente",
+        entityType: "appointment",
+        entityId: createdOvernightAppointment?.id || appointment.id,
+        newValue: {
+          overnight_source_appointment_id: appointment.id,
+          overnight_price: overnightPrice,
+          overnight_deadline: overnightDeadline,
+        },
+        reason: "Orçamento pendente criado a partir do pernoite automático.",
+      });
+
+      await loadData();
+      setShowOvernightDialog(false);
+      setOvernightDraft(null);
+      openNotify(
+        "Pernoite registrado",
+        nextDayAppointment?.id
+          ? `${getDogDisplayName(dog)} seguirá presente até 12h e o Day Care de amanhã foi vinculado automaticamente.`
+          : `${getDogDisplayName(dog)} seguirá presente até 12h. O comercial já recebeu a pendência de orçamento.`
+      );
+    } catch (error) {
+      console.error("Erro ao registrar pernoite:", error);
+      openNotify("Erro", error?.message || "Não foi possível registrar o pernoite.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function clearReminderDraft() {
@@ -1004,21 +1366,7 @@ export default function Registrador() {
     }
     if (!validateMonitorSignature(checkinForm.monitor_id, checkinForm.monitor_signature_code)) return;
     if (hasReminderDraftContent(checkinForm.reminder_draft)) {
-      openNotify("Campos obrigatórios", "Selecione o setor que deve receber o lembrete.");
-      return;
-    }
-    if (checkinForm.tarefa_lembrete) {
-      if (selectedAppointmentRequiresReminderDateTime && !checkinForm.tarefa_lembrete_datetime) {
-        openNotify("Campos obrigatórios", "Informe a data e o horário do lembrete para hospedagem.");
-        return;
-      }
-      if (!selectedAppointmentRequiresReminderDateTime && !checkinForm.tarefa_lembrete_horario) {
-        openNotify("Campos obrigatórios", "Informe o horário para notificar o lembrete.");
-        return;
-      }
-    }
-    if ((checkinForm.tarefa_lembrete_horario || checkinForm.tarefa_lembrete_datetime || checkinForm.tarefa_lembrete_setor) && !checkinForm.tarefa_lembrete) {
-      openNotify("Campos obrigatórios", "Escreva o lembrete antes de definir data, horário ou setor.");
+      openNotify("Aviso em edição", "Salve ou descarte o lembrete aberto antes de confirmar o check-in.");
       return;
     }
 
@@ -1028,23 +1376,10 @@ export default function Registrador() {
       const owner = ownerByDogId[selectedAppointment.dog_id] || {};
       const monitor = serviceProvidersById[checkinForm.monitor_id];
       const appointmentMeta = getAppointmentMeta(selectedAppointment);
-      const reminderBaseDate = (checkinForm.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY;
-      const reminderNotificationAt = checkinForm.tarefa_lembrete
-        ? (
-          selectedAppointmentRequiresReminderDateTime
-            ? (checkinForm.tarefa_lembrete_datetime || null)
-            : (checkinForm.tarefa_lembrete_horario
-              ? buildDateTimeForDate(reminderBaseDate, checkinForm.tarefa_lembrete_horario)
-              : null)
-        )
-        : null;
-      const reminderHour = checkinForm.tarefa_lembrete
-        ? (
-          selectedAppointmentRequiresReminderDateTime
-            ? (checkinForm.tarefa_lembrete_datetime || "").slice(11, 16)
-            : (checkinForm.tarefa_lembrete_horario || "")
-        )
-        : "";
+      const normalizedReminders = normalizeReminderItems(checkinForm.reminders);
+      const firstReminder = normalizedReminders[0] || null;
+      const reminderNotificationAt = firstReminder?.notificar_em || null;
+      const reminderHour = firstReminder?.horario || getReminderTimePart(firstReminder?.notificar_em);
 
       const createdCheckin = await Checkin.create({
         empresa_id: selectedAppointment.empresa_id || currentUser?.empresa_id || null,
@@ -1065,8 +1400,8 @@ export default function Registrador() {
         data_checkin: checkinForm.checkin_datetime,
         tem_refeicao: checkinForm.tem_refeicao,
         refeicao_observacao: checkinForm.refeicao_observacao || "",
-        tarefa_lembrete: checkinForm.tarefa_lembrete || "",
-        tarefa_lembrete_setor: checkinForm.tarefa_lembrete_setor || "",
+        tarefa_lembrete: firstReminder?.texto || "",
+        tarefa_lembrete_setor: firstReminder?.setor || "",
         tarefa_lembrete_horario: reminderHour,
         tarefa_lembrete_notificar_em: reminderNotificationAt,
         tarefa_lembrete_notificado_em: null,
@@ -1078,6 +1413,7 @@ export default function Registrador() {
           checkin_signature_verified_at: new Date().toISOString(),
           body_checkup: checkinForm.body_checkup || createEmptyBodyCheckup(),
           body_checkup_observacao: checkinForm.body_checkup_observacao || "",
+          reminders: normalizedReminders,
         },
       });
 
@@ -1159,6 +1495,20 @@ export default function Registrador() {
       const monitor = serviceProvidersById[checkoutForm.monitor_id];
       const mergedObservacoes = [selectedCheckin.observacoes, checkoutForm.observacoes].filter(Boolean).join("\n");
       const currentMeta = getCheckinMeta(selectedCheckin);
+      const selectedMeta = getAppointmentMeta(selectedAppointment);
+      const relatedAppointmentIds = new Set([selectedAppointment.id]);
+      const overnightSourceAppointmentId = selectedMeta?.overnight_link_source_appointment_id || currentMeta?.overnight_source_appointment_id;
+      const overnightGeneratedAppointmentId = selectedMeta?.overnight_generated_appointment_id || currentMeta?.overnight_generated_appointment_id;
+
+      if (overnightSourceAppointmentId) relatedAppointmentIds.add(overnightSourceAppointmentId);
+      if (overnightGeneratedAppointmentId) relatedAppointmentIds.add(overnightGeneratedAppointmentId);
+
+      if (selectedMeta?.overnight_linked_next_day_appointment_id) {
+        relatedAppointmentIds.add(selectedMeta.overnight_linked_next_day_appointment_id);
+      }
+      if (currentMeta?.overnight_linked_next_day_appointment_id) {
+        relatedAppointmentIds.add(currentMeta.overnight_linked_next_day_appointment_id);
+      }
 
       await Checkin.update(selectedCheckin.id, {
         checkout_datetime: checkoutForm.checkout_datetime,
@@ -1175,14 +1525,32 @@ export default function Registrador() {
         },
       });
 
-      await Appointment.update(selectedAppointment.id, {
-        status: "finalizado",
-      });
+      await Promise.all([...relatedAppointmentIds].filter(Boolean).map((appointmentId) =>
+        Appointment.update(appointmentId, {
+          status: "finalizado",
+          metadata: {
+            ...getAppointmentMeta(appointmentsById[appointmentId]),
+            overnight_exceeded_pending: false,
+            overnight_checkout_completed_at: checkoutForm.checkout_datetime,
+          },
+        })
+      ));
 
       await ensureUsageAndReceivable(selectedAppointment, {
         ...selectedCheckin,
         checkout_datetime: checkoutForm.checkout_datetime,
         observacoes: mergedObservacoes,
+      });
+
+      await writeAuditLog({
+        action: "daycare_checkout_finalizado",
+        entityType: "checkin",
+        entityId: selectedCheckin.id,
+        newValue: {
+          checkout_datetime: checkoutForm.checkout_datetime,
+          related_appointments: [...relatedAppointmentIds],
+        },
+        reason: "Check-out finalizado no Registrador.",
       });
 
       await loadData();
@@ -1299,6 +1667,53 @@ export default function Registrador() {
           ...payload,
         },
       });
+    }
+  }
+
+  async function notifyAllUnitUsers({ appointment, tipo, titulo, mensagem, link, payload = {} }) {
+    const recipients = users.filter((user) => user.active !== false);
+    if (!recipients.length) return 0;
+
+    await Promise.all(recipients.map((user) => Notificacao.create({
+      empresa_id: appointment?.empresa_id || currentUser?.empresa_id || null,
+      user_id: user.id,
+      tipo,
+      titulo,
+      mensagem,
+      link,
+      lido: false,
+      payload: {
+        appointment_id: appointment?.id || null,
+        dog_id: appointment?.dog_id || null,
+        ...payload,
+      },
+    })));
+
+    return recipients.length;
+  }
+
+  async function writeAuditLog({
+    action,
+    entityType,
+    entityId,
+    oldValue = null,
+    newValue = null,
+    reason = "",
+  }) {
+    if (!action || !entityType || !entityId) return;
+    try {
+      await AuditLog.create({
+        empresa_id: currentUser?.empresa_id || null,
+        user_id: currentUser?.id || null,
+        action,
+        entity_type: entityType,
+        entity_id: entityId,
+        old_value: oldValue,
+        new_value: newValue,
+        reason: reason || null,
+      });
+    } catch (error) {
+      console.error("Erro ao registrar auditoria do registrador:", error);
     }
   }
 
@@ -1616,11 +2031,11 @@ export default function Registrador() {
                   onSearchChange={setSearchTerm}
                   searchPlaceholder="Buscar por nome do cão, raça ou responsável..."
                   hasActiveFilters={Boolean(searchTerm || selectedDate !== TODAY_KEY)}
-                  searchClassName="min-w-0"
-                  searchInputClassName="h-9 pl-9 pr-3 text-[13px] sm:h-11 sm:pl-11 sm:pr-4 sm:text-base"
-                  searchIconClassName="left-3.5 h-3.5 w-3.5 sm:left-4 sm:h-4 sm:w-4"
+                  searchClassName="min-w-0 max-w-[218px] sm:max-w-none"
+                  searchInputClassName="h-[30px] pl-8 pr-2 text-[11px] sm:h-11 sm:pl-11 sm:pr-4 sm:text-base"
+                  searchIconClassName="left-2.5 h-3.5 w-3.5 sm:left-4 sm:h-4 sm:w-4"
                   filtersClassName="gap-1.5 sm:gap-2"
-                  filterButtonClassName="h-9 w-9 sm:h-11 sm:w-11"
+                  filterButtonClassName="h-8 w-8 sm:h-11 sm:w-11"
                   filterIconClassName="h-3.5 w-3.5 sm:h-4 sm:w-4"
                   onClear={() => {
                     setSearchTerm("");
@@ -1670,8 +2085,9 @@ export default function Registrador() {
                     </>
                   )}
                 />
-                <p className="mt-2 px-1 text-[11px] text-gray-500 sm:mt-3 sm:px-0 sm:text-xs">
-                  {selectedDateTitle} • {filteredAppointments.length} agendamento(s) para esta busca.
+                <p className="mt-2 px-1 text-[10px] text-gray-500 sm:mt-3 sm:px-0 sm:text-xs">
+                  <span className="sm:hidden">{selectedDateTitle}: {filteredAppointments.length} encontrado(s).</span>
+                  <span className="hidden sm:inline">{selectedDateTitle} • {filteredAppointments.length} agendamento(s) para esta busca.</span>
                 </p>
               </CardContent>
             </Card>
@@ -1688,21 +2104,92 @@ export default function Registrador() {
                 const mealCount = getCheckinMealRecords(activeCheckin).length;
                 const adaptacaoRegistros = getAdaptacaoProgressRecords(attendanceRecord);
                 const highlighted = highlightedAppointmentId === appointment.id;
+                const canRegisterOvernight = isEligibleForOvernightAction({
+                  appointment,
+                  checkin: activeCheckin,
+                  now: new Date(),
+                  selectedDate,
+                });
+                const overnightExceeded = isOvernightExceeded({
+                  appointment,
+                  checkin: activeCheckin,
+                  now: new Date(),
+                });
 
                 return (
                   <Card key={appointment.id} className={`bg-white shadow-sm ${highlighted ? "border-blue-300 ring-2 ring-blue-200" : "border-gray-200"}`}>
                     <CardContent className="p-3 sm:p-5">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="sm:hidden">
+                        <div className="flex items-start gap-2.5">
+                          {dog?.foto_url ? (
+                            <img
+                              src={dog.foto_url}
+                              alt={getDogDisplayName(dog)}
+                              className="h-10 w-10 rounded-2xl object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gray-100">
+                              <DogIcon className="h-4.5 w-4.5 text-gray-400" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-600">{getServiceLabel(appointment.service_type)}</p>
+                            <p className="mt-0.5 truncate text-[15px] font-semibold leading-5 text-gray-900">{getDogDisplayName(dog)}</p>
+                            <p className="mt-0.5 truncate text-[11px] text-gray-600">{getDogBreed(dog)} • {getPersonFirstName(owner.nome)}</p>
+                            <p className="mt-1 text-[10px] font-medium text-gray-500">{getAppointmentDisplayTime(appointment)}</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-2.5 flex flex-col gap-1.5">
+                          {!activeCheckin ? (
+                            <Button onClick={() => openCheckinDialogForAppointment(appointment)} className="h-8.5 w-full bg-green-600 px-3 text-[11px] text-white hover:bg-green-700">
+                              <LogIn className="mr-1.5 h-3.5 w-3.5" />
+                              Check-in
+                            </Button>
+                          ) : (
+                            <>
+                              {canRegisterOvernight && (
+                                <Button variant="outline" onClick={() => openOvernightDialogForAppointment(appointment)} className="h-8.5 w-full border-amber-200 bg-amber-50 px-3 text-[11px] text-amber-800 hover:bg-amber-100">
+                                  Pernoitar
+                                </Button>
+                              )}
+                              {appointment.service_type === "adaptacao" && (
+                                <Button variant="outline" onClick={() => openAdaptacaoDialogForCheckin(appointment, activeCheckin)} className="h-8.5 w-full px-3 text-[11px]">
+                                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                                  Adicionar registro{adaptacaoRegistros.length > 0 ? ` (${adaptacaoRegistros.length})` : ""}
+                                </Button>
+                              )}
+                              {mealEnabled && (
+                                <Button variant="outline" onClick={() => openMealDialogForCheckin(appointment, activeCheckin)} className="h-8.5 w-full px-3 text-[11px]">
+                                  <UtensilsCrossed className="mr-1.5 h-3.5 w-3.5" />
+                                  Refeição {mealCount > 0 ? `(${mealCount})` : ""}
+                                </Button>
+                              )}
+                              <Button onClick={() => openCheckoutDialogForCheckin(appointment, activeCheckin)} className="h-8.5 w-full bg-slate-900 px-3 text-[11px] text-white hover:bg-slate-800">
+                                <LogOut className="mr-1.5 h-3.5 w-3.5" />
+                                Check-out
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                        {overnightExceeded ? (
+                          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                            Presente após 12h do dia seguinte. O comercial precisa revisar a cobrança antes do fechamento do atendimento.
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="hidden sm:flex sm:flex-col sm:gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="flex min-w-0 items-start gap-4">
                           {dog?.foto_url ? (
                             <img
                               src={dog.foto_url}
                               alt={getDogDisplayName(dog)}
-                              className="h-14 w-14 rounded-2xl object-cover sm:h-16 sm:w-16"
+                              className="h-16 w-16 rounded-2xl object-cover"
                             />
                           ) : (
-                            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 sm:h-16 sm:w-16">
-                              <DogIcon className="h-6 w-6 text-gray-400 sm:h-7 sm:w-7" />
+                            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
+                              <DogIcon className="h-7 w-7 text-gray-400" />
                             </div>
                           )}
                           <div className="min-w-0">
@@ -1731,6 +2218,11 @@ export default function Registrador() {
                                 {appointment.observacoes}
                               </p>
                             )}
+                            {overnightExceeded ? (
+                              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                Este atendimento está em pernoite excedido após 12h. Revise a cobrança adicional antes do check-out.
+                              </div>
+                            ) : null}
                             {appointment.service_type === "adaptacao" && Boolean(getAppointmentTimeValue(appointment, "saida")) && (
                               <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
                                 Término previsto da adaptação: <strong>{getAppointmentTimeValue(appointment, "saida")}</strong>
@@ -1769,6 +2261,11 @@ export default function Registrador() {
                             </Button>
                           ) : (
                             <>
+                              {canRegisterOvernight && (
+                                <Button variant="outline" onClick={() => openOvernightDialogForAppointment(appointment)} className="w-full border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 sm:w-auto">
+                                  Pernoitar
+                                </Button>
+                              )}
                               {appointment.service_type === "adaptacao" && (
                                 <Button variant="outline" onClick={() => openAdaptacaoDialogForCheckin(appointment, activeCheckin)} className="w-full sm:w-auto">
                                   <Plus className="mr-2 h-4 w-4" />
@@ -1778,7 +2275,7 @@ export default function Registrador() {
                               {mealEnabled && (
                                 <Button variant="outline" onClick={() => openMealDialogForCheckin(appointment, activeCheckin)} className="w-full sm:w-auto">
                                   <UtensilsCrossed className="mr-2 h-4 w-4" />
-                  Refeição {mealCount > 0 ? `(${mealCount})` : ""}
+                                  Refeição {mealCount > 0 ? `(${mealCount})` : ""}
                                 </Button>
                               )}
                               <Button onClick={() => openCheckoutDialogForCheckin(appointment, activeCheckin)} className="w-full bg-slate-900 text-white hover:bg-slate-800 sm:w-auto">
@@ -2028,7 +2525,7 @@ export default function Registrador() {
           <DialogHeader>
             <DialogTitle>Confirmar check-in</DialogTitle>
             <DialogDescription>
-              Confirme horário, monitor, pertences e observações do atendimento.
+              Confirme horário, monitor, pertences e observaçàµes do atendimento.
             </DialogDescription>
           </DialogHeader>
           <Tabs value={checkinDialogTab} onValueChange={setCheckinDialogTab} className="py-2">
@@ -2050,7 +2547,7 @@ export default function Registrador() {
 
               {selectedAppointment?.service_type === "adaptacao" && getAppointmentTimeValue(selectedAppointment, "saida") && (
                 <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-                  Esta adaptação foi planejada para terminar às <strong>{getAppointmentTimeValue(selectedAppointment, "saida")}</strong>.
+                  Esta adaptação foi planejada para terminar à s <strong>{getAppointmentTimeValue(selectedAppointment, "saida")}</strong>.
                 </div>
               )}
 
@@ -2127,197 +2624,164 @@ export default function Registrador() {
                 </div>
               </div>
 
-              <div className="rounded-[28px] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-4 shadow-sm sm:p-5">
+              <div className="rounded-[24px] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-3.5 shadow-sm sm:p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="max-w-2xl">
                     <div className="flex items-center gap-2">
-                      <div className="rounded-2xl bg-violet-100 p-2 text-violet-700">
-                        <BellRing className="h-5 w-5" />
+                      <div className="rounded-2xl bg-violet-100 p-1.5 text-violet-700 sm:p-2">
+                        <BellRing className="h-4 w-4 sm:h-5 sm:w-5" />
                       </div>
                       <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-violet-500">Lembrete opcional</p>
-                        <h3 className="text-lg font-bold text-slate-900">Organize o aviso antes de finalizar o check-in</h3>
+                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-500">Lembretes e avisos</p>
+                        <h3 className="text-sm font-bold text-slate-900 sm:text-lg">Adicione avisos quando precisar</h3>
                       </div>
                     </div>
-                    <p className="mt-3 text-sm leading-6 text-slate-600">
-                      Defina quem deve ser acionado, quando o aviso precisa chegar e qual instrução deve aparecer na notificação.
+                    <p className="mt-2 text-xs leading-5 text-slate-600 sm:mt-3 sm:text-sm sm:leading-6">
+                      Ative só quando precisar. Depois de salvar, o aviso fica compacto e você pode incluir outro abaixo.
                     </p>
                   </div>
 
-                  {reminderHasDraft ? (
-                    <Button type="button" variant="outline" onClick={clearReminderDraft} className="border-violet-200 bg-white text-violet-700 hover:bg-violet-50">
-                      Limpar lembrete
+                  {!activeReminderDraft ? (
+                    <Button type="button" variant="outline" onClick={openReminderDraft} className="h-9 border-violet-200 bg-white px-3 text-xs text-violet-700 hover:bg-violet-50 sm:h-10 sm:px-4 sm:text-sm">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Adicionar lembrete / aviso
                     </Button>
                   ) : null}
                 </div>
 
-                <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-                  <div className="space-y-4">
-                    <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(76,29,149,0.55)]">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">1</div>
-                        <div className="flex-1">
-                          <Label className="text-sm font-semibold text-slate-900">Quem deve ser acionado?</Label>
-                          <p className="mt-1 text-xs leading-5 text-slate-500">
-                            Escolha o setor que precisa receber esse aviso assim que ele disparar.
-                          </p>
+                {reminderItems.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    {reminderItems.map((reminder, reminderIndex) => {
+                      const summary = getReminderSummary(reminder);
+                      return (
+                        <div key={reminder.id || reminderIndex} className="flex items-start justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 text-emerald-700">
+                              <CheckCircle2 className="h-4 w-4 shrink-0" />
+                              <p className="truncate text-xs font-semibold sm:text-sm">{summary.title}</p>
+                            </div>
+                            <p className="mt-1 text-[11px] text-emerald-800 sm:text-xs">{summary.subtitle}</p>
+                            <p className="mt-1 line-clamp-2 text-[11px] text-emerald-900 sm:text-xs">{reminder.texto}</p>
+                          </div>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => removeReminderItem(reminder.id)} className="h-8 w-8 shrink-0 rounded-full text-emerald-700 hover:bg-emerald-100 hover:text-emerald-900">
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                {activeReminderDraft ? (
+                  <div className="mt-4 rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(76,29,149,0.45)]">
+                    <div className="grid gap-4">
+                      <div>
+                        <Label className="text-sm font-semibold text-slate-900">Quem deve ser acionado?</Label>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          {REMINDER_SECTOR_OPTIONS.map((option) => {
+                            const Icon = option.icon;
+                            const isActive = activeReminderDraft?.setor === option.value;
+
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => updateReminderDraft({ setor: option.value })}
+                                className={`rounded-2xl border px-4 py-3 text-left transition-all ${
+                                  isActive
+                                    ? option.activeClassName
+                                    : "border-slate-200 bg-slate-50 text-slate-700 hover:border-violet-200 hover:bg-violet-50/60"
+                                }`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div className={`rounded-2xl p-2 ${isActive ? option.iconClassName : "bg-white text-slate-500"}`}>
+                                    <Icon className="h-4 w-4" />
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold">{option.label}</p>
+                                    <p className="mt-1 text-xs leading-5 opacity-80">{option.description}</p>
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        {REMINDER_SECTOR_OPTIONS.map((option) => {
-                          const Icon = option.icon;
-                          const isActive = checkinForm.tarefa_lembrete_setor === option.value;
-
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => setCheckinForm((current) => ({ ...current, tarefa_lembrete_setor: option.value }))}
-                              className={`rounded-2xl border px-4 py-4 text-left transition-all ${
-                                isActive
-                                  ? option.activeClassName
-                                  : "border-slate-200 bg-slate-50 text-slate-700 hover:border-violet-200 hover:bg-violet-50/60"
-                              }`}
-                            >
-                              <div className="flex items-start gap-3">
-                                <div className={`rounded-2xl p-2 ${isActive ? option.iconClassName : "bg-white text-slate-500"}`}>
-                                  <Icon className="h-5 w-5" />
-                                </div>
-                                <div>
-                                  <p className="font-semibold">{option.label}</p>
-                                  <p className="mt-1 text-xs leading-5 opacity-80">{option.description}</p>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(14,116,144,0.45)]">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">2</div>
-                        <div className="flex-1">
-                          <Label className="text-sm font-semibold text-slate-900">Quando devemos lembrar?</Label>
-                          <p className="mt-1 text-xs leading-5 text-slate-500">
-                            {selectedAppointmentRequiresReminderDateTime
-                              ? "Para hospedagem, você escolhe a data e o horário exatos do disparo."
-                              : "Para os demais serviços, basta informar o horário. O aviso sairá no dia do agendamento."}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className={`mt-4 grid gap-3 ${selectedAppointmentRequiresReminderDateTime ? "sm:grid-cols-[minmax(0,1fr)_200px]" : "sm:grid-cols-[minmax(0,1fr)_220px]"}`}>
+                      <div className={`grid gap-3 ${selectedAppointmentRequiresReminderDateTime ? "sm:grid-cols-[minmax(0,1fr)_180px]" : "sm:grid-cols-[minmax(0,1fr)_200px]"}`}>
                         {selectedAppointmentRequiresReminderDateTime ? (
                           <>
                             <div className="space-y-2">
                               <Label className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Data do lembrete</Label>
-                              <DatePickerInput
-                                value={reminderDateValue}
-                                onChange={updateReminderDate}
-                                placeholder="Defina a data"
-                              />
+                              <DatePickerInput value={reminderDateValue} onChange={updateReminderDate} placeholder="Defina a data" />
                             </div>
                             <div className="space-y-2">
                               <Label className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Horário do lembrete</Label>
-                              <TimePickerInput
-                                value={reminderTimeValue}
-                                onChange={updateReminderTime}
-                                placeholder="Defina o horário"
-                              />
+                              <TimePickerInput value={reminderTimeValue} onChange={updateReminderTime} placeholder="Defina o horário" />
                             </div>
                           </>
                         ) : (
                           <>
                             <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
                               <p className="text-xs font-medium uppercase tracking-[0.2em] text-sky-600">Disparo automático</p>
-                              <p className="mt-1 text-sm font-semibold text-sky-900">
-                                No dia do atendimento: {formatDateLabel((checkinForm.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY)}
-                              </p>
+                              <p className="mt-1 text-sm font-semibold text-sky-900">No dia do atendimento: {formatDateLabel((checkinForm.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY)}</p>
                             </div>
                             <div className="space-y-2">
                               <Label className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Horário do lembrete</Label>
-                              <TimePickerInput
-                                value={reminderTimeValue}
-                                onChange={updateReminderTime}
-                                placeholder="Defina o horário"
-                              />
+                              <TimePickerInput value={reminderTimeValue} onChange={updateReminderTime} placeholder="Defina o horário" />
                             </div>
                           </>
                         )}
                       </div>
-                    </div>
 
-                    <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_38px_-30px_rgba(15,23,42,0.35)]">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-700">3</div>
-                        <div className="flex-1">
-                          <Label className="text-sm font-semibold text-slate-900">O que deve aparecer no aviso?</Label>
-                          <p className="mt-1 text-xs leading-5 text-slate-500">
-                            Escreva a mensagem de forma objetiva para facilitar a ação de quem receber.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4">
+                      <div>
+                        <Label className="text-sm font-semibold text-slate-900">O que deve aparecer no aviso?</Label>
                         <Textarea
-                          value={checkinForm.tarefa_lembrete}
-                          onChange={(event) => setCheckinForm((current) => ({ ...current, tarefa_lembrete: event.target.value }))}
-                          className="min-h-[120px] border-slate-200 bg-white"
+                          value={activeReminderDraft?.texto || ""}
+                          onChange={(event) => updateReminderDraft({ texto: event.target.value })}
+                          className="mt-2 min-h-[110px] border-slate-200 bg-white"
                           rows={4}
                           placeholder="Ex.: avisar comercial que o tutor pediu banho extra antes da saída."
                         />
                       </div>
-                    </div>
-                  </div>
 
-                  <div className="rounded-3xl border border-violet-200 bg-slate-950 p-5 text-white shadow-[0_20px_50px_-28px_rgba(15,23,42,0.8)]">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-2xl bg-white/10 p-2 text-violet-200">
-                        <MessageSquareText className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-200/90">Prévia da notificação</p>
-                        <p className="text-sm text-slate-300">Veja como esse lembrete está sendo montado.</p>
-                      </div>
-                    </div>
+                      <div className="rounded-3xl border border-violet-200 bg-slate-950 p-4 text-white shadow-[0_20px_50px_-28px_rgba(15,23,42,0.8)]">
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-2xl bg-white/10 p-2 text-violet-200">
+                            <MessageSquareText className="h-4 w-4 sm:h-5 sm:w-5" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-violet-200/90">Prévia do aviso</p>
+                            <p className="text-sm text-slate-300">Confira o resumo antes de salvar.</p>
+                          </div>
+                        </div>
 
-                    <div className="mt-5 space-y-3">
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Setor</p>
-                        <p className="mt-2 text-base font-semibold text-white">
-                          {checkinForm.tarefa_lembrete_setor ? getReminderSectorLabel(checkinForm.tarefa_lembrete_setor) : "Escolha quem deve receber"}
-                        </p>
+                        <div className="mt-4 space-y-2 text-sm">
+                          <p><span className="text-slate-400">Setor:</span> {activeReminderDraft?.setor ? getReminderSectorLabel(activeReminderDraft.setor) : "Escolha quem deve receber"}</p>
+                          <p><span className="text-slate-400">Acionamento:</span> {reminderPreviewTime ? `${reminderPreviewDate || "Data a definir"} às ${reminderPreviewTime}` : "Defina data e horário do disparo"}</p>
+                          <p className="text-slate-200">{activeReminderDraft?.texto || "Descreva aqui a instrução que precisa chegar para a equipe."}</p>
+                        </div>
                       </div>
 
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Acionamento</p>
-                        <p className="mt-2 text-base font-semibold text-white">
-                          {reminderPreviewTime
-                            ? `${reminderPreviewDate || "Data a definir"} às ${reminderPreviewTime}`
-                            : "Defina data e horário do disparo"}
-                        </p>
-                        {!selectedAppointmentRequiresReminderDateTime ? (
-                          <p className="mt-1 text-xs text-slate-400">
-                            O sistema usa a data do agendamento e aplica apenas o horário informado.
-                          </p>
-                        ) : null}
-                      </div>
-
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Mensagem</p>
-                        <p className="mt-2 text-sm leading-6 text-slate-200">
-                          {checkinForm.tarefa_lembrete || "Descreva aqui a instrução que precisa chegar para a equipe."}
-                        </p>
+                      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <Button type="button" variant="outline" onClick={clearReminderDraft} className="w-full sm:w-auto">
+                          Cancelar aviso
+                        </Button>
+                        <Button type="button" onClick={saveReminderDraft} className="w-full bg-violet-600 text-white hover:bg-violet-700 sm:w-auto">
+                          Salvar aviso
+                        </Button>
                       </div>
                     </div>
                   </div>
-                </div>
+                ) : reminderItems.length > 0 ? (
+                  <Button type="button" variant="outline" onClick={openReminderDraft} className="mt-3 w-full border-dashed border-violet-200 text-violet-700 hover:bg-violet-50 sm:w-auto">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Adicionar outro lembrete
+                  </Button>
+                ) : null}
               </div>
-
               <div>
-                <Label>Observações gerais</Label>
+                <Label>Observaçàµes gerais</Label>
                 <Textarea value={checkinForm.observacoes} onChange={(event) => setCheckinForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
               </div>
             </TabsContent>
@@ -2388,7 +2852,7 @@ export default function Registrador() {
               </div>
 
               <div>
-                <Label>Observações do check-up</Label>
+                <Label>Observaçàµes do check-up</Label>
                 <Textarea
                   value={checkinForm.body_checkup_observacao}
                   onChange={(event) => setCheckinForm((current) => ({ ...current, body_checkup_observacao: event.target.value }))}
@@ -2478,7 +2942,7 @@ export default function Registrador() {
             </div>
 
             <div>
-              <Label>Observações</Label>
+              <Label>Observaçàµes</Label>
               <Textarea value={checkoutForm.observacoes} onChange={(event) => setCheckoutForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
             </div>
           </div>
@@ -2562,7 +3026,7 @@ export default function Registrador() {
             </div>
 
             <div>
-              <Label>Observações</Label>
+              <Label>Observaçàµes</Label>
               <Textarea value={mealForm.observacoes} onChange={(event) => setMealForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
             </div>
           </div>
@@ -2700,7 +3164,7 @@ export default function Registrador() {
             </div>
 
             <div>
-              <Label>Observações</Label>
+              <Label>Observaçàµes</Label>
               <Textarea value={manualForm.observacoes} onChange={(event) => setManualForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
             </div>
 
@@ -2713,6 +3177,66 @@ export default function Registrador() {
             <Button onClick={submitManualAppointment} disabled={isSaving} className="w-full bg-green-600 text-white hover:bg-green-700 sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
               {isSaving ? "Agendando..." : "Agendar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showOvernightDialog}
+        onOpenChange={(open) => {
+          setShowOvernightDialog(open);
+          if (!open) setOvernightDraft(null);
+        }}
+      >
+        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Registrar pernoite</DialogTitle>
+            <DialogDescription>
+              O cão seguirá presente até 12h do dia seguinte e o Comercial receberá a pendência de orçamento.
+            </DialogDescription>
+          </DialogHeader>
+
+          {overnightDraft ? (
+            <div className="grid gap-4 py-2">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <p className="font-semibold text-amber-950">
+                  Valor previsto: {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(overnightPrice || 0)}
+                </p>
+                <p className="mt-1 text-sm text-amber-800">
+                  Saída automática prevista para {formatDateTime(overnightDraft.overnight_deadline)}.
+                </p>
+              </div>
+
+              {overnightDraft.next_day_appointment ? (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-semibold text-blue-950">Existe Day Care para o dia seguinte</p>
+                      <p className="mt-1 text-sm text-blue-800">
+                        Se vincular, o cão continuará presente e não precisará de um novo check-in amanhã.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={Boolean(overnightDraft.link_to_next_day)}
+                      onCheckedChange={(checked) => setOvernightDraft((current) => current ? { ...current, link_to_next_day: checked } : current)}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                  Não encontramos um Day Care agendado para amanhã. O pernoite será registrado sem vínculo automático.
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setShowOvernightDialog(false)} className="w-full sm:w-auto">
+              Cancelar
+            </Button>
+            <Button onClick={confirmOvernightForAppointment} disabled={isSaving} className="w-full bg-amber-600 text-white hover:bg-amber-700 sm:w-auto">
+              {isSaving ? "Salvando..." : "Confirmar pernoite"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2735,3 +3259,5 @@ export default function Registrador() {
     </div>
   );
 }
+
+

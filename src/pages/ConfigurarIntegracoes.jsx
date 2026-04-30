@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { format, subDays } from "date-fns";
 import { IntegracaoConfig, User } from "@/api/entities";
-import { bancoInter } from "@/api/functions";
+import { bancoInter, whatsappBridge } from "@/api/functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,8 +18,13 @@ import {
   CheckCircle,
   Download,
   Edit2,
+  MessageCircle,
+  Power,
+  QrCode,
+  RefreshCcw,
   Save,
   Settings,
+  Smartphone,
   XCircle,
 } from "lucide-react";
 
@@ -33,6 +38,12 @@ const DEFAULT_FORM = {
   token_url: "https://cdpj.partners.bancointer.com.br/oauth/v2/token",
   api_base_url: "https://cdpj.partners.bancointer.com.br",
 };
+
+const DEFAULT_WHATSAPP_SLOTS = [
+  { slot_key: "1", connection_name: "Comercial" },
+  { slot_key: "2", connection_name: "Operação" },
+  { slot_key: "3", connection_name: "Monitoria" },
+];
 
 const STATUS_META = {
   idle: {
@@ -83,6 +94,25 @@ function buildFormData(config) {
   };
 }
 
+function buildWhatsappConnections(configs, empresaId) {
+  return DEFAULT_WHATSAPP_SLOTS.map((slot) => {
+    const config = (configs || []).find((item) =>
+      (item.provider || item.nome) === "whatsapp_web"
+      && String(item?.config?.slot_key || "") === slot.slot_key
+      && ((item.empresa_id || null) === (empresaId || null))
+    );
+
+    return {
+      id: config?.id || "",
+      slot_key: slot.slot_key,
+      connection_name: config?.config?.connection_name || slot.connection_name,
+      status: config?.config?.status || "desconectado",
+      qr_code: config?.config?.last_qr_code || "",
+      last_sent_at: config?.config?.last_sent_at || "",
+    };
+  });
+}
+
 export default function ConfigurarIntegracoes() {
   const [currentUser, setCurrentUser] = useState(null);
   const [config, setConfig] = useState(null);
@@ -101,6 +131,14 @@ export default function ConfigurarIntegracoes() {
     crt: null,
     key: null,
   });
+  const [whatsappConnections, setWhatsappConnections] = useState(
+    DEFAULT_WHATSAPP_SLOTS.map((slot) => ({ ...slot, status: "desconectado", qr_code: "", last_sent_at: "" })),
+  );
+  const [whatsappLoadingSlot, setWhatsappLoadingSlot] = useState("");
+  const [whatsappFeedback, setWhatsappFeedback] = useState(null);
+  const [whatsappTestPhone, setWhatsappTestPhone] = useState("");
+  const [whatsappTestMessage, setWhatsappTestMessage] = useState("Olá! Esta é uma validação das conexões WhatsApp da Dog City.");
+  const [whatsappTestSlot, setWhatsappTestSlot] = useState("1");
   const [unitSelection, setUnitSelectionState] = useState(() => getStoredUnitSelection());
 
   useEffect(() => {
@@ -136,6 +174,7 @@ export default function ConfigurarIntegracoes() {
       setConfig(resolvedConfig);
       setConfigSource(companyConfig ? "empresa" : globalConfig ? "global" : "none");
       setFormData(buildFormData(resolvedConfig));
+      setWhatsappConnections(buildWhatsappConnections(configs || [], companyId));
     } catch (error) {
       console.error("Erro ao carregar configuração Banco Inter:", error);
     } finally {
@@ -326,6 +365,94 @@ export default function ConfigurarIntegracoes() {
       primaryUnitId,
       selectedUnitIds: [primaryUnitId],
     });
+  };
+
+  const syncWhatsappSlot = async (slot, action) => {
+    setWhatsappLoadingSlot(slot.slot_key);
+    setWhatsappFeedback(null);
+
+    try {
+      const companyId = currentUser?.empresa_id || null;
+      const existingConfigs = await IntegracaoConfig.list("-created_date", 200);
+      const currentConfig = (existingConfigs || []).find((item) =>
+        (item.provider || item.nome) === "whatsapp_web"
+        && String(item?.config?.slot_key || "") === slot.slot_key
+        && ((item.empresa_id || null) === (companyId || null))
+      );
+
+      const bridgeResult = await whatsappBridge({
+        action,
+        slot_key: slot.slot_key,
+        connection_name: slot.connection_name,
+      });
+
+      const mergedConnection = {
+        ...slot,
+        status: bridgeResult?.connection?.status || slot.status,
+        qr_code: bridgeResult?.connection?.last_qr_code || slot.qr_code,
+        last_sent_at: bridgeResult?.connection?.last_sent_at || slot.last_sent_at,
+      };
+
+      const finalPayload = {
+        provider: "whatsapp_web",
+        nome: "whatsapp_web",
+        empresa_id: companyId,
+        ativo: true,
+        config: {
+          slot_key: slot.slot_key,
+          connection_name: mergedConnection.connection_name,
+          status: mergedConnection.status,
+          last_qr_code: mergedConnection.qr_code,
+          last_sent_at: mergedConnection.last_sent_at,
+        },
+      };
+
+      if (currentConfig?.id) {
+        await IntegracaoConfig.update(currentConfig.id, finalPayload);
+      } else {
+        await IntegracaoConfig.create(finalPayload);
+      }
+
+      await loadConfig();
+      setWhatsappFeedback({
+        success: true,
+        message: action === "disconnect"
+          ? `Conexão ${slot.connection_name} desconectada.`
+          : `Conexão ${slot.connection_name} atualizada com sucesso.`,
+      });
+    } catch (error) {
+      setWhatsappFeedback({
+        success: false,
+        message: error?.message || "Não foi possível atualizar a conexão do WhatsApp.",
+      });
+    } finally {
+      setWhatsappLoadingSlot("");
+    }
+  };
+
+  const sendWhatsappTest = async () => {
+    setWhatsappLoadingSlot(`test-${whatsappTestSlot}`);
+    setWhatsappFeedback(null);
+    try {
+      const result = await whatsappBridge({
+        action: "send_message",
+        slot_key: whatsappTestSlot,
+        to: whatsappTestPhone,
+        text: whatsappTestMessage,
+      });
+      await loadConfig();
+      setWhatsappFeedback({
+        success: true,
+        message: `Mensagem de teste enviada pela conexão ${result?.connection?.connection_name || whatsappTestSlot}.`,
+      });
+    } catch (error) {
+      setWhatsappFeedback({
+        success: false,
+        message: error?.message || "Não foi possível enviar a mensagem de teste.",
+      });
+    } finally {
+      setWhatsappLoadingSlot("");
+    }
   };
 
   if (isLoading) {
@@ -800,12 +927,166 @@ export default function ConfigurarIntegracoes() {
           </CardContent>
         </Card>
 
-        <Card className="border-gray-200 bg-white opacity-60">
-          <CardHeader className="border-b bg-gray-50">
-            <CardTitle className="text-lg text-gray-500">Outras integraes</CardTitle>
+        <Card className="border-gray-200 bg-white">
+          <CardHeader className="border-b bg-gradient-to-r from-emerald-50 to-emerald-100">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white shadow-sm">
+                <MessageCircle className="h-6 w-6 text-emerald-600" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">WhatsApp Web</CardTitle>
+                <p className="text-sm text-gray-600">Até 3 conexões com QR Code, status e envio por conexão.</p>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="p-6 text-center">
-            <p className="text-gray-500">Mais integraes em breve...</p>
+          <CardContent className="space-y-6 p-6">
+            <div className="grid gap-4 lg:grid-cols-3">
+              {whatsappConnections.map((slot) => (
+                <Card key={slot.slot_key} className="border-gray-200">
+                  <CardContent className="space-y-4 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                          <Smartphone className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">{slot.connection_name}</p>
+                          <p className="text-xs text-gray-500">Slot {slot.slot_key}</p>
+                        </div>
+                      </div>
+                      <Badge className={
+                        slot.status === "connected"
+                          ? "bg-green-100 text-green-700"
+                          : slot.status === "qr_pending"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-gray-100 text-gray-700"
+                      }>
+                        {slot.status === "connected" ? "Conectado" : slot.status === "qr_pending" ? "QR pendente" : "Desconectado"}
+                      </Badge>
+                    </div>
+
+                    <div>
+                      <Label>Nome da conexão</Label>
+                      <Input
+                        value={slot.connection_name}
+                        onChange={(event) => setWhatsappConnections((current) =>
+                          current.map((item) => item.slot_key === slot.slot_key ? { ...item, connection_name: event.target.value } : item)
+                        )}
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-3 text-center">
+                      {slot.qr_code ? (
+                        <img src={slot.qr_code} alt={`QR ${slot.connection_name}`} className="mx-auto h-40 w-40 rounded-xl border bg-white object-contain p-2" />
+                      ) : (
+                        <div className="space-y-2 py-4 text-gray-500">
+                          <QrCode className="mx-auto h-8 w-8" />
+                          <p className="text-sm">QR aguardando geração</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => syncWhatsappSlot(slot, "connect")}
+                        disabled={Boolean(whatsappLoadingSlot)}
+                      >
+                        <QrCode className="mr-2 h-4 w-4" />
+                        {whatsappLoadingSlot === slot.slot_key ? "Gerando..." : "Gerar QR"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => syncWhatsappSlot(slot, "disconnect")}
+                        disabled={Boolean(whatsappLoadingSlot)}
+                      >
+                        <Power className="mr-2 h-4 w-4" />
+                        Desconectar
+                      </Button>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => syncWhatsappSlot(slot, "refresh_qr")}
+                      disabled={Boolean(whatsappLoadingSlot)}
+                      className="w-full"
+                    >
+                      <RefreshCcw className="mr-2 h-4 w-4" />
+                      Atualizar status
+                    </Button>
+
+                    <p className="text-xs text-gray-500">
+                      Último envio: {slot.last_sent_at ? formatDateTime(slot.last_sent_at) : "-"}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3">
+              <div>
+                <h3 className="font-semibold text-gray-900">Teste de envio</h3>
+                <p className="text-sm text-gray-500">Escolha qual conexão deve enviar a mensagem de validação.</p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <Label>Conexão</Label>
+                  <select
+                    value={whatsappTestSlot}
+                    onChange={(event) => setWhatsappTestSlot(event.target.value)}
+                    className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                  >
+                    {whatsappConnections.map((slot) => (
+                      <option key={slot.slot_key} value={slot.slot_key}>
+                        {slot.connection_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <Label>Destino</Label>
+                  <Input
+                    value={whatsappTestPhone}
+                    onChange={(event) => setWhatsappTestPhone(event.target.value)}
+                    placeholder="5511999999999"
+                    className="mt-1"
+                  />
+                </div>
+
+                <div className="sm:col-span-3">
+                  <Label>Mensagem</Label>
+                  <Input
+                    value={whatsappTestMessage}
+                    onChange={(event) => setWhatsappTestMessage(event.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <Button
+                onClick={sendWhatsappTest}
+                disabled={!whatsappTestPhone || !whatsappTestMessage || Boolean(whatsappLoadingSlot)}
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                <MessageCircle className="mr-2 h-4 w-4" />
+                {whatsappLoadingSlot === `test-${whatsappTestSlot}` ? "Enviando..." : "Enviar mensagem de teste"}
+              </Button>
+
+              {whatsappFeedback ? (
+                <div className={`rounded-2xl border px-4 py-3 text-sm ${whatsappFeedback.success ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>
+                  {whatsappFeedback.message}
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                O envio real depende do gateway persistente do WhatsApp Web. Configure a Edge Function <strong>whatsapp-bridge</strong> com o endereço do gateway para operar as três conexões.
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

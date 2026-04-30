@@ -4,6 +4,7 @@ export const PAGE_ROUTES: Record<string, string> = {
     CompletarCadastro: "completar-cadastro",
     CadastroClientePublico: "cadastro-cliente",
     CadastroMonitorPublico: "cadastro-funcionario",
+    AprovacaoResponsavelPublica: "aprovacao-responsavel",
     DefinirPin: "definir-pin",
     ValidarPin: "validar-pin",
     Dev_Dashboard: "dashboard",

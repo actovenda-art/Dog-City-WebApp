@@ -37,3 +37,19 @@ export const monitorRegistration = async (...args) => {
 	}
 	return f.monitorRegistration(...args);
 };
+
+export const responsavelApproval = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.responsavelApproval !== 'function') {
+		return Promise.reject(new Error('appClient.functions.responsavelApproval is not available'));
+	}
+	return f.responsavelApproval(...args);
+};
+
+export const whatsappBridge = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.whatsappBridge !== 'function') {
+		return Promise.reject(new Error('appClient.functions.whatsappBridge is not available'));
+	}
+	return f.whatsappBridge(...args);
+};

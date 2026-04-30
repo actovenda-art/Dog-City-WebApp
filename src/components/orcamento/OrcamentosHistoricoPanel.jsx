@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
-import { notificacoesOrcamento } from "@/api/functions";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, IntegracaoConfig, Orcamento, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
+import { notificacoesOrcamento, responsavelApproval, whatsappBridge } from "@/api/functions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +28,7 @@ import {
   MessageSquareText,
   Pencil,
   Save,
+  Link2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -323,6 +324,15 @@ function buildOperationalRecordSuggestion(appointments = [], dogs = []) {
     });
 }
 
+function getLinkedResponsaveisForDogIds(responsaveis = [], dogIds = []) {
+  const targetIds = new Set((dogIds || []).filter(Boolean));
+  if (!targetIds.size) return [];
+
+  return (responsaveis || []).filter((responsavel) =>
+    [1, 2, 3, 4, 5, 6, 7, 8].some((slot) => targetIds.has(responsavel?.[`dog_id_${slot}`]))
+  );
+}
+
 function serializeOperationalAppointmentForPrefill(appointment) {
   const metadata = getAppointmentMeta(appointment);
   return {
@@ -461,6 +471,7 @@ export default function OrcamentosHistoricoPanel({
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [precos, setPrecos] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -479,6 +490,12 @@ export default function OrcamentosHistoricoPanel({
   const [isLoadingAppointmentEdits, setIsLoadingAppointmentEdits] = useState(false);
   const [isSavingAppointmentEdits, setIsSavingAppointmentEdits] = useState(false);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
+  const [whatsappConfigs, setWhatsappConfigs] = useState([]);
+  const [approvalDialog, setApprovalDialog] = useState(null);
+  const [approvalPhone, setApprovalPhone] = useState("");
+  const [approvalNote, setApprovalNote] = useState("");
+  const [approvalWhatsappSlot, setApprovalWhatsappSlot] = useState("manual");
+  const [isSendingApproval, setIsSendingApproval] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -494,19 +511,22 @@ export default function OrcamentosHistoricoPanel({
   async function loadData() {
     setIsLoading(true);
     try {
-      const [orcData, dogsData, carteirasData, responsaveisData, precosData, currentUser] = await Promise.all([
+      const [orcData, dogsData, carteirasData, responsaveisData, precosData, currentUser, integracoesData] = await Promise.all([
         Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
         Responsavel.list("-created_date", 500),
         TabelaPrecos.list("-created_date", 1000),
         User.me(),
+        IntegracaoConfig.list("-created_date", 100),
       ]);
       setOrcamentos(orcData || []);
       setDogs(dogsData || []);
       setCarteiras(carteirasData || []);
       setResponsaveis(responsaveisData || []);
+      setCurrentUser(currentUser || null);
       setPrecos(buildPricingConfig(precosData || [], currentUser?.empresa_id || null));
+      setWhatsappConfigs((integracoesData || []).filter((item) => (item.provider || item.nome) === "whatsapp_web"));
     } catch (error) {
       console.error("Erro ao carregar histÃ³rico de orÃ§amentos:", error);
     }
@@ -520,6 +540,84 @@ export default function OrcamentosHistoricoPanel({
 
   function showFeedback(title, description, tone = "info") {
     setFeedbackDialog({ title, description, tone });
+  }
+
+  function openApprovalDialog(orcamento) {
+    const dogIds = (orcamento?.caes || []).map((cao) => cao?.dog_id).filter(Boolean);
+    const linkedResponsaveis = getLinkedResponsaveisForDogIds(responsaveis, dogIds);
+    if (!linkedResponsaveis.length) {
+      showFeedback("Responsável não localizado", "Vincule ao menos um responsável aos cães deste orçamento antes de solicitar uma aprovação autenticada.", "warning");
+      return;
+    }
+
+    const firstResponsavel = linkedResponsaveis[0];
+    const scopedWhatsappConfigs = whatsappConfigs.filter((item) => {
+      const companyId = currentUser?.empresa_id || null;
+      return (item.empresa_id || null) === companyId && String(item?.config?.slot_key || "");
+    });
+
+    setApprovalDialog({
+      orcamento,
+      responsaveis: linkedResponsaveis,
+      whatsappOptions: scopedWhatsappConfigs,
+      selectedResponsavelId: firstResponsavel.id,
+    });
+    setApprovalPhone(firstResponsavel.celular || "");
+    setApprovalNote("");
+    setApprovalWhatsappSlot(scopedWhatsappConfigs[0]?.config?.slot_key || "manual");
+  }
+
+  async function submitApprovalRequest() {
+    if (!approvalDialog?.orcamento?.id || !approvalDialog?.selectedResponsavelId) return;
+    setIsSendingApproval(true);
+    try {
+      const selectedResponsavel = approvalDialog.responsaveis.find((item) => item.id === approvalDialog.selectedResponsavelId);
+      const dogIds = (approvalDialog.orcamento?.caes || []).map((cao) => cao?.dog_id).filter(Boolean);
+      const requestResult = await responsavelApproval({
+        action: "create_request",
+        orcamento_id: approvalDialog.orcamento.id,
+        responsavel_id: approvalDialog.selectedResponsavelId,
+        dog_ids: dogIds,
+        requested_channel: approvalWhatsappSlot === "manual" ? "manual" : "whatsapp",
+        requester_note: approvalNote,
+      });
+
+      let whatsappMessageResult = null;
+      if (approvalWhatsappSlot !== "manual" && approvalPhone) {
+        const dogNames = dogIds.map((dogId) => getDogName(dogId)).filter(Boolean).join(", ");
+        const messageLines = [
+          `Olá, ${selectedResponsavel?.nome_completo || "responsável"}!`,
+          "A Dog City precisa da sua confirmação autenticada para este orçamento.",
+          dogNames ? `Dogs: ${dogNames}` : "",
+          `Valor: ${formatCurrency(approvalDialog.orcamento?.valor_total || 0)}`,
+          requestResult?.approval_url || "",
+        ].filter(Boolean);
+
+        whatsappMessageResult = await whatsappBridge({
+          action: "send_message",
+          slot_key: approvalWhatsappSlot,
+          to: approvalPhone,
+          text: messageLines.join("\n"),
+        });
+      }
+
+      if (requestResult?.approval_url && navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(requestResult.approval_url);
+      }
+
+      setApprovalDialog(null);
+      showFeedback(
+        "Solicitação pronta",
+        whatsappMessageResult
+          ? "O link autenticado foi gerado, copiado e enviado pelo WhatsApp selecionado."
+          : "O link autenticado foi gerado e copiado. Se preferir, você pode enviá-lo manualmente.",
+        "success",
+      );
+    } catch (error) {
+      showFeedback("Não foi possível solicitar a aprovação", error?.message || "Falha ao preparar a aprovação autenticada do responsável.", "error");
+    } finally {
+      setIsSendingApproval(false);
+    }
   }
 
   function openOrcamentoDetail(orcamento) {
@@ -675,6 +773,27 @@ export default function OrcamentosHistoricoPanel({
             );
 
             for (const appointment of plannedAppointments) {
+              const externalAppointmentId = getAppointmentMeta(appointment).external_appointment_id;
+              if (externalAppointmentId) {
+                const externalAppointment = (existingAppointments || []).find((item) => item.id === externalAppointmentId);
+                if (externalAppointment?.id) {
+                  await Appointment.update(externalAppointment.id, {
+                    orcamento_id: id,
+                    charge_type: "orcamento",
+                    valor_previsto: appointment.valor_previsto,
+                    observacoes: appointment.observacoes,
+                    metadata: {
+                      ...getAppointmentMeta(externalAppointment),
+                      ...appointment.metadata,
+                      commercial_review_pending: false,
+                      overnight_budget_pending: false,
+                      overnight_orcamento_id: id,
+                    },
+                  });
+                  continue;
+                }
+              }
+
               const existing = appointment.source_key ? existingBySourceKey.get(appointment.source_key) : null;
               if (!existing) {
                 await Appointment.create(appointment);
@@ -1153,6 +1272,14 @@ export default function OrcamentosHistoricoPanel({
           )}
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowDetailModal(false)}>Fechar</Button>
+            <Button
+              variant="outline"
+              onClick={() => openApprovalDialog(selectedOrcamento)}
+              disabled={!selectedOrcamento?.id}
+            >
+              <Link2 className="mr-2 h-4 w-4" />
+              Solicitar aprovação
+            </Button>
             <Button
               variant="outline"
               onClick={() => openAppointmentsEditor(selectedOrcamento)}

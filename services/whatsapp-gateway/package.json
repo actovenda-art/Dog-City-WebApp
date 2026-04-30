@@ -1,0 +1,14 @@
+{
+  "name": "dogcity-whatsapp-gateway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "whatsapp-web.js": "^1.29.0"
+  }
+}

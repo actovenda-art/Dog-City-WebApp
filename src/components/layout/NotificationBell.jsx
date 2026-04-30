@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -21,6 +21,9 @@ import { createPageUrl } from "@/utils";
 const PENDING_TYPES = new Set([
   "agendamento_sem_presenca",
   "agendamento_manual_pendente",
+  "orcamento_pernoite_pendente",
+  "daycare_pernoite_pendente",
+  "daycare_pernoite_excedido",
 ]);
 
 const REMINDER_TYPES = new Set([
@@ -36,6 +39,44 @@ const COMMUNICATION_SCOPES = {
   comunicado_operacional: "operacao",
   comunicado_comercial: "comercial",
 };
+
+const MOJIBAKE_REPLACEMENTS = [
+  ["Ã¡", "á"],
+  ["Ã¢", "â"],
+  ["Ã£", "ã"],
+  ["Ã©", "é"],
+  ["Ãª", "ê"],
+  ["Ã­", "í"],
+  ["Ã³", "ó"],
+  ["Ã´", "ô"],
+  ["Ãµ", "õ"],
+  ["Ãº", "ú"],
+  ["Ã§", "ç"],
+  ["Ã€", "À"],
+  ["Ã", "Á"],
+  ["Ã‡", "Ç"],
+  ["Ã‰", "É"],
+  ["Ã“", "Ó"],
+  ["Ãš", "Ú"],
+  ["à ", "à "],
+  ["â€¢", "•"],
+  ["â€“", "–"],
+  ["â€”", "—"],
+  ["â€˜", "‘"],
+  ["â€™", "’"],
+  ["â€œ", "“"],
+  ["â€", "”"],
+  ["â€¦", "…"],
+  ["�", ""],
+];
+
+function normalizeNotificationCopy(value) {
+  if (typeof value !== "string") return value || "";
+  return MOJIBAKE_REPLACEMENTS.reduce(
+    (result, [search, replacement]) => result.split(search).join(replacement),
+    value
+  );
+}
 
 function parseNotificationPayload(notification) {
   if (!notification?.payload) return {};
@@ -92,6 +133,13 @@ function getDepartmentLabel(department) {
 
 function shouldShowPendingForDepartment(notification, department) {
   if (!isPendingNotification(notification)) return false;
+  if (notification?.tipo === "daycare_pernoite_pendente") return true;
+  if (notification?.tipo === "orcamento_pernoite_pendente") {
+    return department === "comercial" || department === "gerencial";
+  }
+  if (notification?.tipo === "daycare_pernoite_excedido") {
+    return department === "comercial" || department === "gerencial";
+  }
   return department === "comercial" || department === "gerencial";
 }
 
@@ -125,7 +173,10 @@ function resolveNotificationLink(notification) {
   switch (notification?.tipo) {
     case "agendamento_sem_presenca":
     case "agendamento_manual_pendente":
+    case "orcamento_pernoite_pendente":
+    case "daycare_pernoite_excedido":
       return createPageUrl("Agendamentos");
+    case "daycare_pernoite_pendente":
     case "lembrete_checkin":
       return createPageUrl("Registrador");
     case "cadastro_concluido":
@@ -145,6 +196,10 @@ function getNotificationIcon(type) {
       return AlertTriangle;
     case "agendamento_manual_pendente":
       return ClipboardList;
+    case "orcamento_pernoite_pendente":
+      return FileText;
+    case "daycare_pernoite_pendente":
+    case "daycare_pernoite_excedido":
     case "lembrete_checkin":
       return BellRing;
     case "cadastro_concluido":
@@ -260,14 +315,35 @@ function getDisplayCopy(notification, appointmentsById = {}) {
 
   if (notification?.tipo === "agendamento_manual_pendente") {
     return {
-      title: "Agendamento manual",
-      message: getManualAppointmentClassificationMessage(appointment),
+      title: normalizeNotificationCopy("Agendamento manual"),
+      message: normalizeNotificationCopy(getManualAppointmentClassificationMessage(appointment)),
+    };
+  }
+
+  if (notification?.tipo === "daycare_pernoite_pendente") {
+    return {
+      title: normalizeNotificationCopy("Day Care sem check-out"),
+      message: normalizeNotificationCopy(notification?.mensagem),
+    };
+  }
+
+  if (notification?.tipo === "orcamento_pernoite_pendente") {
+    return {
+      title: normalizeNotificationCopy("Orçamento pendente de pernoite"),
+      message: normalizeNotificationCopy(notification?.mensagem),
+    };
+  }
+
+  if (notification?.tipo === "daycare_pernoite_excedido") {
+    return {
+      title: normalizeNotificationCopy("Pernoite excedeu 12h"),
+      message: normalizeNotificationCopy(notification?.mensagem),
     };
   }
 
   return {
-    title: notification?.titulo,
-    message: notification?.mensagem,
+    title: normalizeNotificationCopy(notification?.titulo),
+    message: normalizeNotificationCopy(notification?.mensagem),
   };
 }
 
@@ -276,12 +352,12 @@ function NotificationSection({ title, items, onOpenItem, pendingContextLoaded })
 
   return (
     <div className="border-b border-slate-100 last:border-b-0">
-      <div className="sticky top-0 z-10 bg-white px-4 py-2.5">
+      <div className="sticky top-0 z-10 bg-white px-3 py-2 sm:px-4 sm:py-2.5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
           {title}
         </p>
         {title === "Pendências do departamento" && !pendingContextLoaded ? (
-          <p className="mt-1 text-xs text-slate-400">Conferindo pendências em aberto...</p>
+          <p className="mt-1 text-[11px] text-slate-400 sm:text-xs">Conferindo pendências em aberto...</p>
         ) : null}
       </div>
 
@@ -297,21 +373,21 @@ function NotificationSection({ title, items, onOpenItem, pendingContextLoaded })
               key={notification.id}
               to={resolveNotificationLink(notification)}
               onClick={() => onOpenItem(notification)}
-              className={`flex items-start gap-3 px-4 py-3 transition-colors hover:bg-slate-50 ${
+              className={`flex items-start gap-2.5 px-3 py-2.5 transition-colors hover:bg-slate-50 sm:gap-3 sm:px-4 sm:py-3 ${
                 !read && !isPendingNotification(notification) ? "bg-blue-50/40" : ""
               }`}
             >
               <div
-                className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl ${
+                className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:h-9 sm:w-9 sm:rounded-2xl ${
                   !read || isPendingNotification(notification) ? tones.active : tones.idle
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </div>
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className={`truncate text-sm ${!read ? "font-semibold text-slate-800" : "text-slate-700"}`}>
+                  <p className={`truncate text-[13px] sm:text-sm ${!read ? "font-semibold text-slate-800" : "text-slate-700"}`}>
                     {notification.displayTitle}
                   </p>
                   <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${badge.className}`}>
@@ -320,7 +396,7 @@ function NotificationSection({ title, items, onOpenItem, pendingContextLoaded })
                 </div>
 
                 {notification.displayMessage ? (
-                  <p className="mt-1 line-clamp-2 text-xs text-slate-500">{notification.displayMessage}</p>
+                  <p className="mt-1 line-clamp-2 text-[11px] text-slate-500 sm:text-xs">{notification.displayMessage}</p>
                 ) : null}
 
                 {isRegistrationNotification(notification) ? (
@@ -329,7 +405,7 @@ function NotificationSection({ title, items, onOpenItem, pendingContextLoaded })
                   </span>
                 ) : null}
 
-                <p className="mt-1 text-xs text-slate-400">{formatRelativeTime(notification.created_date)}</p>
+                <p className="mt-1 text-[11px] text-slate-400 sm:text-xs">{formatRelativeTime(notification.created_date)}</p>
               </div>
 
               {!read && !isPendingNotification(notification) ? (
@@ -372,7 +448,7 @@ export default function NotificationBell({ userId, user = null }) {
   }, []);
 
   useEffect(() => {
-    if (!isOpen || pendingContextLoaded || hasLoadedPendingContext) return;
+    if (!userId || pendingContextLoaded || hasLoadedPendingContext) return;
     if (!notifications.some((notification) => isPendingNotification(notification))) {
       setPendingContextLoaded(true);
       setHasLoadedPendingContext(true);
@@ -380,7 +456,7 @@ export default function NotificationBell({ userId, user = null }) {
     }
 
     loadPendingContext();
-  }, [hasLoadedPendingContext, isOpen, notifications, pendingContextLoaded]);
+  }, [hasLoadedPendingContext, notifications, pendingContextLoaded, userId]);
 
   const loadNotifications = async ({ resetPendingContext = false } = {}) => {
     setIsLoading(true);
@@ -398,7 +474,7 @@ export default function NotificationBell({ userId, user = null }) {
         setAppointmentsById({});
       }
     } catch (error) {
-      console.error("Erro ao carregar notificações:", error);
+      console.error("Erro ao carregar notificaçàµes:", error);
     }
     setIsLoading(false);
   };
@@ -440,7 +516,7 @@ export default function NotificationBell({ userId, user = null }) {
 
     const appointmentId = notification?.parsedPayload?.appointment_id;
     const appointment = appointmentsById[appointmentId];
-    if (!appointment) return false;
+    if (!appointment) return true;
 
     const metadata = getAppointmentMeta(appointment);
     if (notification.tipo === "agendamento_sem_presenca") {
@@ -450,6 +526,18 @@ export default function NotificationBell({ userId, user = null }) {
     if (notification.tipo === "agendamento_manual_pendente") {
       return appointment.source_type === "manual_registrador"
         && (appointment.charge_type === "pendente_comercial" || metadata.commercial_review_pending === true);
+    }
+
+    if (notification.tipo === "daycare_pernoite_pendente") {
+      return Boolean(metadata.overnight_alert_sent_at) && !metadata.overnight_requested_at;
+    }
+
+    if (notification.tipo === "orcamento_pernoite_pendente") {
+      return metadata.overnight_budget_pending === true;
+    }
+
+    if (notification.tipo === "daycare_pernoite_excedido") {
+      return metadata.overnight_exceeded_pending === true;
     }
 
     return false;
@@ -540,21 +628,21 @@ export default function NotificationBell({ userId, user = null }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:w-96"
+            className="fixed right-3 top-[4.75rem] z-50 w-[min(calc(100vw-1.75rem),18rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 sm:rounded-2xl"
           >
-            <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-4 py-3">
+            <div className="flex items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-3 py-2 sm:items-center sm:gap-3 sm:px-4 sm:py-3">
               <div>
-                <h3 className="font-semibold text-slate-800">Pendências e avisos</h3>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <h3 className="text-sm font-semibold text-slate-800 sm:text-base">Pendências e avisos</h3>
+                <p className="mt-0.5 text-[11px] text-slate-500 sm:text-xs">
                   Sino do departamento {getDepartmentLabel(department)}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                 {unreadNoticeCount > 0 ? (
                   <button
                     type="button"
                     onClick={markAllAsRead}
-                    className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                    className="hidden items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 sm:flex"
                   >
                     <Check className="h-3 w-3" />
                     Marcar avisos como lidos
@@ -563,7 +651,7 @@ export default function NotificationBell({ userId, user = null }) {
                 <button
                   type="button"
                   onClick={() => loadNotifications({ resetPendingContext: true })}
-                  className="rounded-lg p-1 transition-colors hover:bg-slate-100"
+                  className="rounded-full p-1.5 transition-colors hover:bg-slate-100 sm:rounded-lg sm:p-1"
                   disabled={isLoading || isLoadingPendingContext}
                 >
                   <RefreshCw className={`h-4 w-4 text-slate-500 ${(isLoading || isLoadingPendingContext) ? "animate-spin" : ""}`} />
@@ -571,7 +659,7 @@ export default function NotificationBell({ userId, user = null }) {
               </div>
             </div>
 
-            <div className="max-h-[28rem] overflow-y-auto">
+            <div className="max-h-[min(60vh,24rem)] overflow-y-auto sm:max-h-[min(68vh,30rem)]">
               {!hasAnyItems ? (
                 <div className="py-12 text-center">
                   <Bell className="mx-auto mb-3 h-10 w-10 text-slate-200" />
@@ -600,3 +688,4 @@ export default function NotificationBell({ userId, user = null }) {
     </div>
   );
 }
+

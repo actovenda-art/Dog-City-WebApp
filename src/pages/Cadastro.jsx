@@ -3,7 +3,7 @@ import { Dog } from "@/api/entities";
 import { Responsavel } from "@/api/entities";
 import { Carteira } from "@/api/entities";
 import { User } from "@/api/entities";
-import { clientRegistration } from "@/api/functions";
+import { clientRegistration, responsavelApproval } from "@/api/functions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -273,7 +273,24 @@ export default function Cadastro() {
   const [dogForm, setDogForm] = useState(emptyDog);
 
   // Responsavel Form
-  const emptyResponsavel = { nome_completo: "", cpf: "", celular: "", celular_alternativo: "", email: "", dog_id_1: "", dog_id_2: "", dog_id_3: "", dog_id_4: "", dog_id_5: "", dog_id_6: "", dog_id_7: "", dog_id_8: "" };
+  const emptyResponsavel = {
+    nome_completo: "",
+    cpf: "",
+    celular: "",
+    celular_alternativo: "",
+    email: "",
+    login_portal: "",
+    senha_portal: "",
+    confirmar_senha_portal: "",
+    dog_id_1: "",
+    dog_id_2: "",
+    dog_id_3: "",
+    dog_id_4: "",
+    dog_id_5: "",
+    dog_id_6: "",
+    dog_id_7: "",
+    dog_id_8: "",
+  };
   const [responsavelForm, setResponsavelForm] = useState(emptyResponsavel);
   const [searchDogResp, setSearchDogResp] = useState("");
 
@@ -1019,6 +1036,26 @@ export default function Cadastro() {
     }
     setIsSaving(true);
     try {
+      const portalLogin = String(responsavelForm.login_portal || responsavelForm.email || "").trim().toLowerCase();
+      const portalPassword = String(responsavelForm.senha_portal || "").trim();
+      const portalConfirmPassword = String(responsavelForm.confirmar_senha_portal || "").trim();
+      if (portalLogin || portalPassword || portalConfirmPassword) {
+        if (!portalLogin || !portalPassword || !portalConfirmPassword) {
+          setNotifyTitle("Acesso do responsável");
+          setNotifyMessage("Preencha login, senha e confirmação para liberar o acesso do responsável.");
+          setNotifyOpen(true);
+          setIsSaving(false);
+          return;
+        }
+        if (portalPassword !== portalConfirmPassword) {
+          setNotifyTitle("Acesso do responsável");
+          setNotifyMessage("A confirmação da senha do responsável não confere.");
+          setNotifyOpen(true);
+          setIsSaving(false);
+          return;
+        }
+      }
+
       const responsavelCpfDigits = normalizeDocumentDigits(responsavelForm.cpf, 11);
       const hasDuplicateCpf = responsaveis.some((item) => normalizeDocumentDigits(item.cpf, 11) === responsavelCpfDigits);
       if (responsavelCpfDigits && hasDuplicateCpf) {
@@ -1041,7 +1078,7 @@ export default function Cadastro() {
         return;
       }
 
-      await Responsavel.create({
+      const savedResponsavel = await Responsavel.create({
         empresa_id: currentUser?.empresa_id || null,
         nome_completo: formatDisplayName(responsavelForm.nome_completo),
         cpf: optional(responsavelForm.cpf),
@@ -1057,7 +1094,20 @@ export default function Cadastro() {
         dog_id_7: optional(responsavelForm.dog_id_7),
         dog_id_8: optional(responsavelForm.dog_id_8),
       });
-      setNotifyTitle("Sucesso"); setNotifyMessage("Responsável cadastrado!"); setNotifyOpen(true);
+
+      if (portalLogin && portalPassword && savedResponsavel?.id) {
+        await responsavelApproval({
+          action: "upsert_access",
+          responsavel_id: savedResponsavel.id,
+          empresa_id: currentUser?.empresa_id || null,
+          login: portalLogin,
+          password: portalPassword,
+        });
+      }
+
+      setNotifyTitle("Sucesso");
+      setNotifyMessage(portalLogin ? "Responsável cadastrado com acesso liberado!" : "Responsável cadastrado!");
+      setNotifyOpen(true);
       setResponsavelForm(emptyResponsavel);
       await loadData();
     } catch (error) { setNotifyTitle("Erro"); setNotifyMessage(error?.message || "Erro ao cadastrar."); setNotifyOpen(true); }
@@ -2125,6 +2175,42 @@ export default function Cadastro() {
                     requiredMessage: "Informe o email.",
                     className: "sm:col-span-2",
                   })}
+                  <div className="sm:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+                    <div className="mb-3">
+                      <p className="text-sm font-semibold text-blue-900">Acesso do responsável</p>
+                      <p className="mt-1 text-xs leading-6 text-blue-800">
+                        Se quiser, já deixe o login e a senha preparados para aprovações autenticadas de orçamento.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      {renderTextField({
+                        fieldKey: "responsavel.login_portal",
+                        label: "Login",
+                        value: responsavelForm.login_portal,
+                        onChange: (e) => setResponsavelForm({ ...responsavelForm, login_portal: e.target.value.toLowerCase() }),
+                        placeholder: "email ou login",
+                        optional: true,
+                      })}
+                      {renderTextField({
+                        fieldKey: "responsavel.senha_portal",
+                        label: "Senha",
+                        value: responsavelForm.senha_portal,
+                        onChange: (e) => setResponsavelForm({ ...responsavelForm, senha_portal: e.target.value }),
+                        type: "password",
+                        placeholder: "Senha do responsável",
+                        optional: true,
+                      })}
+                      {renderTextField({
+                        fieldKey: "responsavel.confirmar_senha_portal",
+                        label: "Confirmar senha",
+                        value: responsavelForm.confirmar_senha_portal,
+                        onChange: (e) => setResponsavelForm({ ...responsavelForm, confirmar_senha_portal: e.target.value }),
+                        type: "password",
+                        placeholder: "Repita a senha",
+                        optional: true,
+                      })}
+                    </div>
+                  </div>
                   <div className="sm:col-span-2 rounded-2xl border border-emerald-100 bg-emerald-50/40 p-3 sm:p-4">
                     <Label>Vincular Cães (até 8)</Label>
                     <div className="mt-2">

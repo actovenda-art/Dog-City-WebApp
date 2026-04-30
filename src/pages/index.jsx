@@ -21,6 +21,7 @@ import AuthCallback from "./AuthCallback.jsx";
 import CompletarCadastro from "./CompletarCadastro.jsx";
 import CadastroClientePublico from "./CadastroClientePublico.jsx";
 import CadastroMonitorPublico from "./CadastroMonitorPublico.jsx";
+import AprovacaoResponsavelPublica from "./AprovacaoResponsavelPublica.jsx";
 import DefinirPin from "./DefinirPin.jsx";
 import ValidarPin from "./ValidarPin.jsx";
 import Dev_Dashboard from "./Dev_Dashboard";
@@ -56,6 +57,7 @@ const PAGES = {
   CompletarCadastro,
   CadastroClientePublico,
   CadastroMonitorPublico,
+  AprovacaoResponsavelPublica,
   DefinirPin,
   ValidarPin,
   Dev_Dashboard,
@@ -86,8 +88,8 @@ const PAGES = {
   VisualizadorImagem,
 };
 
-const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
-const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "VisualizadorImagem"]);
+const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "AprovacaoResponsavelPublica", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
+const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "AprovacaoResponsavelPublica", "VisualizadorImagem"]);
 
 function FullScreenAuthLoader() {
   return (
@@ -338,6 +340,10 @@ function PagesContent() {
 
       {PUBLIC_PAGES.has("CadastroMonitorPublico") ? (
         <Route path={createPageUrl("CadastroMonitorPublico")} element={<StandalonePage pageName="CadastroMonitorPublico" />} />
+      ) : null}
+
+      {PUBLIC_PAGES.has("AprovacaoResponsavelPublica") ? (
+        <Route path={createPageUrl("AprovacaoResponsavelPublica")} element={<StandalonePage pageName="AprovacaoResponsavelPublica" />} />
       ) : null}
 
       {PUBLIC_PAGES.has("VisualizadorImagem") ? (

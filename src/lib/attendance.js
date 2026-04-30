@@ -97,6 +97,7 @@ const DEFAULT_TOSA_DETALHADA = {
 
 export const ATTENDANCE_SERVICES = [
   { id: "day_care", label: "Day Care" },
+  { id: "pernoite", label: "Pernoite" },
   { id: "hospedagem", label: "Hospedagem" },
   { id: "adaptacao", label: "Adaptação" },
   { id: "banho", label: "Banho" },
@@ -219,6 +220,7 @@ export function getAppointmentSourceLabel(appointment) {
     orcamento_aprovado: "Agendamento do orçamento",
     plano_recorrente: "Plano recorrente",
     reposicao_pacote: "Reposição do pacote",
+    daycare_pernoite: "Pernoite do Day Care",
   };
 
   return sourceLabels[appointment.source_type] || "Agendamento";
@@ -507,6 +509,38 @@ export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, o
     };
 
     if (cao.servicos?.hospedagem && cao.hosp_data_entrada && cao.hosp_data_saida) {
+      if (cao.hosp_origem_pernoite_daycare) {
+        appointments.push({
+          empresa_id: orcamento.empresa_id || null,
+          cliente_id: orcamento.cliente_id || owner.cliente_id || null,
+          dog_id: cao.dog_id,
+          orcamento_id: orcamento.id,
+          service_type: "pernoite",
+          status: "agendado",
+          charge_type: "orcamento",
+          source_type: "orcamento_aprovado",
+          valor_previsto: precos.pernoite || 0,
+          data_referencia: cao.hosp_data_entrada,
+          data_hora_entrada: combineDateTime(cao.hosp_data_entrada, cao.hosp_horario_entrada || "19:00"),
+          data_hora_saida: combineDateTime(cao.hosp_data_saida, cao.hosp_horario_saida || "11:59"),
+          observacoes: orcamento.observacoes || "",
+          source_key: buildSourceKey([
+            "orcamento",
+            orcamento.id,
+            cao.dog_id,
+            "pernoite",
+            cao.hosp_data_entrada,
+          ]),
+          metadata: {
+            ...baseMeta,
+            servico: "pernoite",
+            external_appointment_id: cao.hosp_pernoite_appointment_id || null,
+            snapshot: cao,
+          },
+        });
+        return;
+      }
+
       const hospCharges = calculateHospedagemCharges(cao, precos);
       if (hospCharges?.totalHospedagem > 0) {
         appointments.push({

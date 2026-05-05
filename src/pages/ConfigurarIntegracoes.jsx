@@ -113,6 +113,20 @@ function buildWhatsappConnections(configs, empresaId) {
   });
 }
 
+function mergeWhatsappConnections(baseConnections, liveConnections = []) {
+  return (baseConnections || []).map((slot) => {
+    const live = (liveConnections || []).find((item) => String(item?.slot_key || "") === String(slot.slot_key));
+    if (!live) return slot;
+    return {
+      ...slot,
+      connection_name: live.connection_name || slot.connection_name,
+      status: live.status || slot.status,
+      qr_code: live.last_qr_code || slot.qr_code || "",
+      last_sent_at: live.last_sent_at || slot.last_sent_at || "",
+    };
+  });
+}
+
 export default function ConfigurarIntegracoes() {
   const [currentUser, setCurrentUser] = useState(null);
   const [config, setConfig] = useState(null);
@@ -146,6 +160,17 @@ export default function ConfigurarIntegracoes() {
   }, []);
 
   useEffect(() => {
+    const needsLiveRefresh = whatsappConnections.some((slot) => ["starting", "authenticated", "qr_pending"].includes(slot.status));
+    if (!needsLiveRefresh) return undefined;
+
+    const timer = window.setInterval(() => {
+      refreshWhatsappConnections();
+    }, 3500);
+
+    return () => window.clearInterval(timer);
+  }, [whatsappConnections]);
+
+  useEffect(() => {
     const handleSelectionChanged = (event) => {
       setUnitSelectionState(event?.detail || getStoredUnitSelection());
     };
@@ -174,11 +199,53 @@ export default function ConfigurarIntegracoes() {
       setConfig(resolvedConfig);
       setConfigSource(companyConfig ? "empresa" : globalConfig ? "global" : "none");
       setFormData(buildFormData(resolvedConfig));
-      setWhatsappConnections(buildWhatsappConnections(configs || [], companyId));
+      const baseConnections = buildWhatsappConnections(configs || [], companyId);
+      setWhatsappConnections(baseConnections);
+      await refreshWhatsappConnections(baseConnections);
     } catch (error) {
       console.error("Erro ao carregar configuração Banco Inter:", error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const refreshWhatsappConnections = async (baseConnectionsOverride = null) => {
+    try {
+      const bridgeResult = await whatsappBridge({ action: "list_connections" });
+      setWhatsappConnections((current) =>
+        mergeWhatsappConnections(baseConnectionsOverride || current, bridgeResult?.connections || []),
+      );
+    } catch (error) {
+      console.error("Erro ao consultar conexÃµes ativas do WhatsApp:", error);
+    }
+  };
+
+  const persistWhatsappConnection = async (slot, companyId) => {
+    const existingConfigs = await IntegracaoConfig.list("-created_date", 200);
+    const currentConfig = (existingConfigs || []).find((item) =>
+      (item.provider || item.nome) === "whatsapp_web"
+      && String(item?.config?.slot_key || "") === String(slot.slot_key)
+      && ((item.empresa_id || null) === (companyId || null))
+    );
+
+    const finalPayload = {
+      provider: "whatsapp_web",
+      nome: "whatsapp_web",
+      empresa_id: companyId,
+      ativo: true,
+      config: {
+        slot_key: String(slot.slot_key),
+        connection_name: slot.connection_name,
+        status: slot.status,
+        last_qr_code: slot.qr_code || "",
+        last_sent_at: slot.last_sent_at || "",
+      },
+    };
+
+    if (currentConfig?.id) {
+      await IntegracaoConfig.update(currentConfig.id, finalPayload);
+    } else {
+      await IntegracaoConfig.create(finalPayload);
     }
   };
 
@@ -373,13 +440,6 @@ export default function ConfigurarIntegracoes() {
 
     try {
       const companyId = currentUser?.empresa_id || null;
-      const existingConfigs = await IntegracaoConfig.list("-created_date", 200);
-      const currentConfig = (existingConfigs || []).find((item) =>
-        (item.provider || item.nome) === "whatsapp_web"
-        && String(item?.config?.slot_key || "") === slot.slot_key
-        && ((item.empresa_id || null) === (companyId || null))
-      );
-
       const bridgeResult = await whatsappBridge({
         action,
         slot_key: slot.slot_key,
@@ -393,27 +453,11 @@ export default function ConfigurarIntegracoes() {
         last_sent_at: bridgeResult?.connection?.last_sent_at || slot.last_sent_at,
       };
 
-      const finalPayload = {
-        provider: "whatsapp_web",
-        nome: "whatsapp_web",
-        empresa_id: companyId,
-        ativo: true,
-        config: {
-          slot_key: slot.slot_key,
-          connection_name: mergedConnection.connection_name,
-          status: mergedConnection.status,
-          last_qr_code: mergedConnection.qr_code,
-          last_sent_at: mergedConnection.last_sent_at,
-        },
-      };
-
-      if (currentConfig?.id) {
-        await IntegracaoConfig.update(currentConfig.id, finalPayload);
-      } else {
-        await IntegracaoConfig.create(finalPayload);
-      }
-
-      await loadConfig();
+      setWhatsappConnections((current) =>
+        current.map((item) => item.slot_key === slot.slot_key ? mergedConnection : item),
+      );
+      await persistWhatsappConnection(mergedConnection, companyId);
+      await refreshWhatsappConnections();
       setWhatsappFeedback({
         success: true,
         message: action === "disconnect"
@@ -989,6 +1033,7 @@ export default function ConfigurarIntegracoes() {
 
                     <div className="grid grid-cols-2 gap-2">
                       <Button
+                        type="button"
                         variant="outline"
                         onClick={() => syncWhatsappSlot(slot, "connect")}
                         disabled={Boolean(whatsappLoadingSlot)}
@@ -997,6 +1042,7 @@ export default function ConfigurarIntegracoes() {
                         {whatsappLoadingSlot === slot.slot_key ? "Gerando..." : "Gerar QR"}
                       </Button>
                       <Button
+                        type="button"
                         variant="outline"
                         onClick={() => syncWhatsappSlot(slot, "disconnect")}
                         disabled={Boolean(whatsappLoadingSlot)}
@@ -1007,6 +1053,7 @@ export default function ConfigurarIntegracoes() {
                     </div>
 
                     <Button
+                      type="button"
                       variant="outline"
                       onClick={() => syncWhatsappSlot(slot, "refresh_qr")}
                       disabled={Boolean(whatsappLoadingSlot)}
@@ -1069,6 +1116,7 @@ export default function ConfigurarIntegracoes() {
               </div>
 
               <Button
+                type="button"
                 onClick={sendWhatsappTest}
                 disabled={!whatsappTestPhone || !whatsappTestMessage || Boolean(whatsappLoadingSlot)}
                 className="bg-emerald-600 text-white hover:bg-emerald-700"
@@ -1083,8 +1131,8 @@ export default function ConfigurarIntegracoes() {
                 </div>
               ) : null}
 
-              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-                O envio real depende do gateway persistente do WhatsApp Web. Configure a Edge Function <strong>whatsapp-bridge</strong> com o endereço do gateway para operar as três conexões.
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                As conexões usam o gateway WhatsApp já vinculado à unidade. Gere o QR, conecte a conta e use o teste de envio para validar cada slot.
               </div>
             </div>
           </CardContent>

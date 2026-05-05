@@ -16,6 +16,28 @@ const port = Number(process.env.PORT || 3033);
 const sessionBaseDir = process.env.WHATSAPP_SESSION_DIR || path.resolve("/data/whatsapp-sessions");
 const chromiumPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
 const clients = new Map();
+const chromiumArgs = [
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  "--disable-software-rasterizer",
+  "--disable-extensions",
+  "--disable-background-networking",
+  "--disable-background-timer-throttling",
+  "--disable-breakpad",
+  "--disable-component-update",
+  "--disable-default-apps",
+  "--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter",
+  "--disable-sync",
+  "--metrics-recording-only",
+  "--mute-audio",
+  "--no-first-run",
+  "--no-zygote",
+  "--password-store=basic",
+  "--use-mock-keychain",
+  "--remote-debugging-port=0",
+];
 
 fs.mkdirSync(sessionBaseDir, { recursive: true });
 
@@ -57,8 +79,10 @@ async function getOrCreateClient(slotKey, connectionName = "") {
       dataPath: sessionBaseDir,
     }),
     puppeteer: {
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      headless: "new",
+      dumpio: true,
+      timeout: 120000,
+      args: chromiumArgs,
       ...(chromiumPath ? { executablePath: chromiumPath } : {}),
     },
   });
@@ -76,6 +100,14 @@ async function getOrCreateClient(slotKey, connectionName = "") {
 
   client.on("authenticated", () => {
     state.status = "authenticated";
+  });
+
+  client.on("loading_screen", (percent, message) => {
+    state.info = `Carregando WhatsApp (${percent || 0}%): ${message || "aguarde"}`;
+  });
+
+  client.on("change_state", (waState) => {
+    state.info = waState || null;
   });
 
   client.on("auth_failure", (message) => {

@@ -534,8 +534,6 @@ const mockFunctions = {
 
     throw new Error('Ação de cadastro do funcionário inválida.');
   },
-};
-
   responsavelApproval: async (payload = {}) => {
     const action = String(payload?.action || '').trim();
     const accesses = readStorage('responsavel_portal_access');

@@ -567,6 +567,19 @@ export default function OrcamentosHistoricoPanel({
     setApprovalWhatsappSlot(scopedWhatsappConfigs[0]?.config?.slot_key || "manual");
   }
 
+  function handleApprovalResponsavelChange(responsavelId) {
+    setApprovalDialog((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        selectedResponsavelId: responsavelId,
+      };
+    });
+
+    const selectedResponsavel = approvalDialog?.responsaveis?.find((item) => item.id === responsavelId);
+    setApprovalPhone(selectedResponsavel?.celular || "");
+  }
+
   async function submitApprovalRequest() {
     if (!approvalDialog?.orcamento?.id || !approvalDialog?.selectedResponsavelId) return;
     setIsSendingApproval(true);
@@ -931,6 +944,9 @@ export default function OrcamentosHistoricoPanel({
   const selectedOrcamentoIncludedAppointments = selectedOrcamento
     ? buildIncludedAppointments(selectedOrcamento, dogs)
     : [];
+  const selectedApprovalResponsavel = approvalDialog?.responsaveis?.find(
+    (item) => item.id === approvalDialog?.selectedResponsavelId,
+  ) || null;
   const deleteConfirmRows = deleteConfirmContext?.rows || [];
   const FeedbackIcon = feedbackDialog?.tone === "success" ? CheckCircle : AlertTriangle;
   const feedbackToneClasses = feedbackDialog?.tone === "error"
@@ -1324,6 +1340,167 @@ export default function OrcamentosHistoricoPanel({
         }}
         onFeedback={showFeedback}
       />
+
+      <Dialog
+        open={Boolean(approvalDialog)}
+        onOpenChange={(open) => {
+          if (!open && !isSendingApproval) {
+            setApprovalDialog(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[92vh] w-[95vw] max-w-[640px] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-blue-100 p-3">
+                <Link2 className="h-6 w-6 text-blue-700" />
+              </div>
+              <div>
+                <DialogTitle>Solicitar aprovação autenticada</DialogTitle>
+                <DialogDescription className="mt-2 text-sm leading-6">
+                  Escolha o responsável, gere o link protegido e, se quiser, envie agora pelo WhatsApp conectado.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {approvalDialog?.orcamento ? (
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Orçamento selecionado</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs text-slate-500">Cães</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                      {(approvalDialog.orcamento?.caes || []).map((cao) => getDogName(cao?.dog_id)).filter(Boolean).join(", ") || "Sem cães vinculados"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Valor</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                      {formatCurrency(approvalDialog.orcamento?.valor_total || 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Validade</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                      {formatDate(approvalDialog.orcamento?.data_validade)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-900">Responsável que vai aprovar</p>
+                  <Select
+                    value={approvalDialog.selectedResponsavelId || ""}
+                    onValueChange={handleApprovalResponsavelChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o responsável" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(approvalDialog.responsaveis || []).map((responsavel) => (
+                        <SelectItem key={responsavel.id} value={responsavel.id}>
+                          {responsavel.nome_completo || "Responsável"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs leading-5 text-slate-500">
+                    Só aparecem responsáveis já vinculados aos cães presentes neste orçamento.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-900">Número para envio</p>
+                  <Input
+                    value={approvalPhone}
+                    onChange={(event) => setApprovalPhone(event.target.value)}
+                    placeholder="DDD + número"
+                  />
+                  <p className="text-xs leading-5 text-slate-500">
+                    Você pode ajustar o telefone antes do envio. O link também será copiado para envio manual.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-900">Canal de entrega</p>
+                  <Select value={approvalWhatsappSlot} onValueChange={setApprovalWhatsappSlot}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Escolha como enviar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manual">Só copiar o link</SelectItem>
+                      {(approvalDialog.whatsappOptions || []).map((item) => (
+                        <SelectItem key={item.id || item.config?.slot_key} value={String(item.config?.slot_key || "")}>
+                          {item.config?.connection_name || `WhatsApp ${item.config?.slot_key || ""}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs leading-5 text-slate-500">
+                    {approvalDialog.whatsappOptions?.length
+                      ? "Escolha uma conexão ativa ou deixe em modo manual para apenas copiar o link."
+                      : "Nenhum WhatsApp conectado para esta unidade. O sistema vai gerar e copiar o link manualmente."}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-900">Observação para a equipe</p>
+                  <Textarea
+                    value={approvalNote}
+                    onChange={(event) => setApprovalNote(event.target.value)}
+                    placeholder="Ex.: confirmar apenas a extensão da estadia até amanhã às 12h."
+                    rows={4}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">Resumo do envio</p>
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  <p>
+                    <span className="font-semibold text-slate-900">Responsável:</span>{" "}
+                    {selectedApprovalResponsavel?.nome_completo || "Selecione um responsável"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">Canal:</span>{" "}
+                    {approvalWhatsappSlot === "manual"
+                      ? "Link copiado para envio manual"
+                      : `WhatsApp ${approvalDialog.whatsappOptions?.find((item) => String(item.config?.slot_key || "") === approvalWhatsappSlot)?.config?.connection_name || approvalWhatsappSlot}`}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">Telefone:</span>{" "}
+                    {approvalPhone || "Não informado"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setApprovalDialog(null)}
+              disabled={isSendingApproval}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={submitApprovalRequest}
+              disabled={!approvalDialog?.selectedResponsavelId || isSendingApproval || (approvalWhatsappSlot !== "manual" && !approvalPhone)}
+              className="bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <Send className="mr-2 h-4 w-4" />
+              {isSendingApproval ? "Preparando..." : "Gerar link protegido"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(blockedDeleteContext)} onOpenChange={(open) => !open && setBlockedDeleteContext(null)}>
         <DialogContent className="max-h-[92vh] w-[95vw] max-w-[680px] overflow-y-auto">

@@ -638,14 +638,14 @@ export default function Dev_Dashboard() {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <Card className="bg-white border-gray-200">
-            <CardHeader className="flex flex-row items-center justify-between gap-3">
-              <CardTitle className="flex items-center gap-2">
-                <Mail className="w-5 h-5 text-amber-600" />
+            <CardHeader className="flex flex-row items-center justify-between gap-2 p-4 pb-3 sm:gap-3 sm:p-6 sm:pb-4">
+              <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <Mail className="h-4 w-4 text-amber-600 sm:h-5 sm:w-5" />
                 Convites e confirmacoes
               </CardTitle>
-              <Badge variant="outline">{filteredInvites.length} registro(s)</Badge>
+              <Badge variant="outline" className="text-[11px] sm:text-xs">{filteredInvites.length} registro(s)</Badge>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-2.5 p-4 pt-0 sm:space-y-3 sm:p-6 sm:pt-0">
               {filteredInvites.length === 0 && (
                 <div className="rounded-lg border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
                   Nenhum convite localizado para o filtro atual.
@@ -657,12 +657,12 @@ export default function Dev_Dashboard() {
                 const canShareInvite = !["concluido", "cancelado"].includes(invite.status || "pendente");
 
                 return (
-                  <div key={invite.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div key={invite.id} className="space-y-2.5 rounded-xl border border-gray-200 bg-gray-50 p-3 sm:space-y-3 sm:p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div>
-                        <p className="font-semibold text-gray-900">{invite.full_name}</p>
-                        <p className="text-sm text-gray-600">{invite.email}</p>
-                        <div className="flex flex-wrap gap-2 mt-2">
+                        <p className="text-sm font-semibold text-gray-900 sm:text-base">{invite.full_name}</p>
+                        <p className="text-xs text-gray-600 sm:text-sm">{invite.email}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5 sm:gap-2">
                           {!invite.is_platform_admin && <Badge variant="outline">{getUnitName(invite.empresa_id)}</Badge>}
                           {invite.is_platform_admin && <Badge className="bg-slate-900 text-white">ADM Sistema Pet</Badge>}
                           {invite.access_profile_id && (
@@ -673,29 +673,29 @@ export default function Dev_Dashboard() {
                           <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
                         </div>
                       </div>
-                      <div className="text-sm text-gray-500">
+                      <div className="text-xs text-gray-500 sm:text-sm">
                         Criado em {formatDateTime(invite.invited_at || invite.created_date)}
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                       {canShareInvite && (
                         <>
-                          <Button variant="outline" onClick={() => copyInviteLink(invite.token)}>
+                          <Button variant="outline" onClick={() => copyInviteLink(invite.token)} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
                             <Copy className="w-4 h-4 mr-2" />
                             Copiar link
                           </Button>
-                          <Button variant="outline" onClick={() => handleResendInvite(invite)} disabled={isSaving}>
+                          <Button variant="outline" onClick={() => handleResendInvite(invite)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
                             <Mail className="w-4 h-4 mr-2" />
                             Reenviar
                           </Button>
-                          <Button variant="outline" onClick={() => handleCancelInvite(invite)} disabled={isSaving}>
+                          <Button variant="outline" onClick={() => handleCancelInvite(invite)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
                             <UserX className="w-4 h-4 mr-2" />
                             Cancelar acesso
                           </Button>
                         </>
                       )}
-                      <Button variant="outline" onClick={() => handleDeleteInvite(invite)} disabled={isSaving}>
+                      <Button variant="outline" onClick={() => handleDeleteInvite(invite)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
                         <Trash2 className="w-4 h-4 mr-2" />
                         Excluir acesso
                       </Button>
@@ -707,14 +707,14 @@ export default function Dev_Dashboard() {
           </Card>
 
           <Card className="bg-white border-gray-200">
-            <CardHeader className="flex flex-row items-center justify-between gap-3">
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-blue-600" />
+            <CardHeader className="flex flex-row items-center justify-between gap-2 p-4 pb-3 sm:gap-3 sm:p-6 sm:pb-4">
+              <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <Building2 className="h-4 w-4 text-blue-600 sm:h-5 sm:w-5" />
                 Acessos por unidade
               </CardTitle>
               <Badge variant="outline">{filteredUsers.length} usuário(s)</Badge>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3 p-4 pt-0 sm:space-y-4 sm:p-6 sm:pt-0">
               {filteredUsers.length === 0 && (
                 <div className="rounded-lg border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
                   Nenhum usuário localizado para o filtro atual.
@@ -726,23 +726,23 @@ export default function Dev_Dashboard() {
                 const selectedAccessUnits = getDraftUserAccessUnits(user, userUnitAccessMap);
 
                 return (
-                  <div key={user.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div key={user.id} className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-3 sm:space-y-4 sm:p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div>
-                        <p className="font-semibold text-gray-900">{user.full_name || user.email}</p>
-                        <p className="text-sm text-gray-600">{user.email || "Sem email cadastrado"}</p>
-                        <div className="flex flex-wrap gap-2 mt-2">
+                        <p className="text-sm font-semibold text-gray-900 sm:text-base">{user.full_name || user.email}</p>
+                        <p className="text-xs text-gray-600 sm:text-sm">{user.email || "Sem email cadastrado"}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5 sm:gap-2">
                           {!user.is_platform_admin && user.empresa_id && <Badge variant="outline">{getUnitName(user.empresa_id)}</Badge>}
                           {user.is_platform_admin && <Badge className="bg-slate-900 text-white">ADM Sistema Pet</Badge>}
                           <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
                         </div>
                       </div>
-                      <div className="text-sm text-gray-500">
+                      <div className="text-xs text-gray-500 sm:text-sm">
                         Atualizado em {formatDateTime(user.updated_date || user.created_date)}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 md:gap-3">
                       <div>
                         <Label>Unidade</Label>
                         <Select
@@ -759,7 +759,7 @@ export default function Dev_Dashboard() {
                           }}
                           disabled={user.is_platform_admin}
                         >
-                          <SelectTrigger className="mt-2 bg-white">
+                          <SelectTrigger className="mt-1.5 h-9 bg-white text-sm sm:mt-2 sm:h-10">
                             <SelectValue placeholder="Selecionar unidade" />
                           </SelectTrigger>
                           <SelectContent>
@@ -779,7 +779,7 @@ export default function Dev_Dashboard() {
                           value={user.access_profile_id || "__none__"}
                           onValueChange={(value) => patchUserState(user.id, { access_profile_id: value === "__none__" ? null : value })}
                         >
-                          <SelectTrigger className="mt-2 bg-white">
+                          <SelectTrigger className="mt-1.5 h-9 bg-white text-sm sm:mt-2 sm:h-10">
                             <SelectValue placeholder="Selecionar perfil" />
                           </SelectTrigger>
                           <SelectContent>
@@ -795,7 +795,7 @@ export default function Dev_Dashboard() {
                     </div>
 
                     <div className="rounded-lg border border-gray-200 bg-white p-3">
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center justify-between gap-2 sm:gap-3">
                         <div>
                           <p className="text-sm font-medium text-gray-900">ADM do Sistema Pet</p>
                           <p className="text-xs text-gray-500">Acesso transversal para a administração central.</p>
@@ -818,7 +818,7 @@ export default function Dev_Dashboard() {
                       <div className="rounded-lg border border-gray-200 bg-white p-3">
                         <p className="text-sm font-medium text-gray-900">Unidades com acesso</p>
                         <p className="text-xs text-gray-500 mt-1">Usuários transversais continuam vendo uma unidade por vez, mas podem alternar entre as unidades liberadas.</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
+                        <div className="mt-3 flex flex-wrap gap-1.5 sm:gap-2">
                           {units.map((unit) => {
                             const selected = selectedAccessUnits.includes(unit.id);
                             return (
@@ -827,8 +827,8 @@ export default function Dev_Dashboard() {
                                 type="button"
                                 onClick={() => toggleUserUnitAccess(user.id, unit.id)}
                                 className={selected
-                                  ? "rounded-full border border-blue-500 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700"
-                                  : "rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:border-gray-300"}
+                                  ? "rounded-full border border-blue-500 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 sm:px-3 sm:py-1.5 sm:text-sm"
+                                  : "rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:border-gray-300 sm:px-3 sm:py-1.5 sm:text-sm"}
                               >
                                 {unit.nome_fantasia}
                               </button>
@@ -838,23 +838,23 @@ export default function Dev_Dashboard() {
                       </div>
                     )}
 
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Button variant="outline" onClick={() => handleSaveUserAccess(user)} disabled={isSaving}>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                      <Button variant="outline" onClick={() => handleSaveUserAccess(user)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
                         <Save className="w-4 h-4 mr-2" />
                         Salvar acesso
                       </Button>
                       {user.active === false ? (
-                        <Button variant="outline" onClick={() => handleReactivateUserAccess(user)} disabled={isSaving}>
+                        <Button variant="outline" onClick={() => handleReactivateUserAccess(user)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
                           <RotateCcw className="w-4 h-4 mr-2" />
                           Reativar acesso
                         </Button>
                       ) : (
-                        <Button variant="outline" onClick={() => handleCancelUserAccess(user)} disabled={isSaving}>
+                        <Button variant="outline" onClick={() => handleCancelUserAccess(user)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
                           <UserX className="w-4 h-4 mr-2" />
                           Cancelar acesso
                         </Button>
                       )}
-                      <Button variant="outline" onClick={() => handleDeleteUserAccess(user)} disabled={isSaving}>
+                      <Button variant="outline" onClick={() => handleDeleteUserAccess(user)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
                         <Trash2 className="w-4 h-4 mr-2" />
                         Excluir acesso
                       </Button>
@@ -868,14 +868,14 @@ export default function Dev_Dashboard() {
       </div>
 
       <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
-        <DialogContent className="max-w-[640px]">
+        <DialogContent className="w-[95vw] max-w-[640px] p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>Convidar usuário</DialogTitle>
             <DialogDescription>
               Convide um usuário para uma unidade da Dog City Brasil ou para a administração central.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-3 py-3 sm:gap-4 sm:py-4">
             <div>
               <Label>Nome completo</Label>
               <Input
@@ -952,13 +952,13 @@ export default function Dev_Dashboard() {
               </Select>
             </div>
 
-            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-700 sm:text-sm sm:leading-6">
               O convite envia o link de acesso e o usuário conclui a ficha cadastral com nome, CPF, nascimento, endereço, PIX, contato de emergência e foto de perfil.
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInviteModal(false)}>Cancelar</Button>
-            <Button onClick={handleSendInvite} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white">
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowInviteModal(false)} className="h-9 w-full text-sm sm:h-10 sm:w-auto">Cancelar</Button>
+            <Button onClick={handleSendInvite} disabled={isSaving} className="h-9 w-full bg-blue-600 px-3 text-sm text-white hover:bg-blue-700 sm:h-10 sm:w-auto sm:px-4">
               <Mail className="w-4 h-4 mr-2" />
               {isSaving ? "Enviando..." : "Enviar convite"}
             </Button>
@@ -978,54 +978,54 @@ export default function Dev_Dashboard() {
           setFeedbackModal((current) => ({ ...current, open }));
         }}
       >
-        <DialogContent className="max-w-[560px] border-0 bg-white p-0 shadow-2xl">
-          <div className="p-7">
+        <DialogContent className="w-[95vw] max-w-[560px] border-0 bg-white p-0 shadow-2xl">
+          <div className="p-4 sm:p-7">
             <DialogHeader className="space-y-0">
-              <DialogTitle className="flex items-start gap-3 text-3xl font-semibold text-slate-900">
-                <CircleCheckBig className="mt-1 h-7 w-7 text-emerald-500" />
+              <DialogTitle className="flex items-start gap-3 text-xl font-semibold text-slate-900 sm:text-3xl">
+                <CircleCheckBig className="mt-0.5 h-5 w-5 text-emerald-500 sm:mt-1 sm:h-7 sm:w-7" />
                 <span>{feedbackModal.title}</span>
               </DialogTitle>
               <DialogDescription className="sr-only">{feedbackModal.description}</DialogDescription>
             </DialogHeader>
 
-            <p className="mt-5 text-lg text-slate-700">{feedbackModal.description}</p>
+            <p className="mt-4 text-sm text-slate-700 sm:mt-5 sm:text-lg">{feedbackModal.description}</p>
 
-            <div className="mt-6 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4">
+            <div className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 sm:mt-6 sm:px-5 sm:py-4">
               <div className="flex items-start gap-3">
-                <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
-                <p className="text-base leading-7 text-amber-900">
+                <AlertCircle className="mt-0.5 h-4 w-4 text-amber-600 sm:h-5 sm:w-5" />
+                <p className="text-sm leading-6 text-amber-900 sm:text-base sm:leading-7">
                   <span className="font-semibold">Importante:</span> {feedbackModal.note}
                 </p>
               </div>
             </div>
 
-            <div className="mt-7">
-              <Label className="text-2xl font-semibold text-slate-700">{feedbackModal.fieldLabel}</Label>
+            <div className="mt-5 sm:mt-7">
+              <Label className="text-base font-semibold text-slate-700 sm:text-2xl">{feedbackModal.fieldLabel}</Label>
               <div className="relative mt-3">
                 <Input
                   readOnly
                   value={feedbackModal.fieldValue}
-                  className="h-16 rounded-2xl border-slate-400 bg-slate-50 pr-14 font-medium text-slate-800 shadow-none"
+                  className="h-11 rounded-2xl border-slate-400 bg-slate-50 pr-12 text-sm font-medium text-slate-800 shadow-none sm:h-16 sm:pr-14 sm:text-base"
                 />
                 <button
                   type="button"
                   onClick={copyFeedbackValue}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-slate-800"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-slate-800 sm:right-4"
                   aria-label="Copiar conteudo"
                 >
-                  {hasCopiedFeedbackValue ? <Check className="h-5 w-5 text-emerald-600" /> : <Copy className="h-5 w-5" />}
+                  {hasCopiedFeedbackValue ? <Check className="h-4 w-4 text-emerald-600 sm:h-5 sm:w-5" /> : <Copy className="h-4 w-4 sm:h-5 sm:w-5" />}
                 </button>
               </div>
             </div>
 
-            <div className="mt-8 flex justify-end">
+            <div className="mt-6 flex justify-end sm:mt-8">
               <Button
                 type="button"
                 onClick={() => {
                   setFeedbackModal(EMPTY_FEEDBACK_MODAL);
                   setHasCopiedFeedbackValue(false);
                 }}
-                className="h-12 rounded-xl bg-blue-600 px-8 text-base font-semibold text-white hover:bg-blue-700"
+                className="h-9 w-full rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 sm:h-12 sm:w-auto sm:px-8 sm:text-base"
               >
                 Entendi
               </Button>

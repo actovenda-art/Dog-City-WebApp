@@ -81,9 +81,6 @@ async function getOrCreateClient(slotKey, connectionName = "") {
       clientId: `dogcity-slot-${slotKey}`,
       dataPath: sessionBaseDir,
     }),
-    webVersionCache: {
-      type: "remote",
-    },
     puppeteer: {
       headless: true,
       dumpio: true,

@@ -45,6 +45,8 @@ const DEFAULT_WHATSAPP_SLOTS = [
   { slot_key: "3", connection_name: "Monitoria" },
 ];
 
+const WHATSAPP_QR_STATUSES = ["starting", "authenticated", "qr_pending"];
+
 const STATUS_META = {
   idle: {
     label: "Aguardando",
@@ -79,6 +81,53 @@ function getStatusMeta(status) {
   return STATUS_META[status] || STATUS_META.idle;
 }
 
+function normalizeWhatsappStatus(status) {
+  const rawStatus = String(status || "").trim().toLowerCase();
+  if (!rawStatus || rawStatus === "idle" || rawStatus === "disconnected") return "desconectado";
+  if (rawStatus === "connected") return "connected";
+  if (rawStatus === "error") return "error";
+  if (WHATSAPP_QR_STATUSES.includes(rawStatus)) return rawStatus;
+  return rawStatus;
+}
+
+function shouldKeepWhatsappQr(status) {
+  return WHATSAPP_QR_STATUSES.includes(normalizeWhatsappStatus(status));
+}
+
+function getWhatsappStatusView(status) {
+  const normalizedStatus = normalizeWhatsappStatus(status);
+
+  if (normalizedStatus === "connected") {
+    return {
+      key: normalizedStatus,
+      label: "Conectado",
+      badgeClass: "bg-green-100 text-green-700",
+    };
+  }
+
+  if (WHATSAPP_QR_STATUSES.includes(normalizedStatus)) {
+    return {
+      key: normalizedStatus,
+      label: normalizedStatus === "qr_pending" ? "QR pronto" : "Conectando",
+      badgeClass: "bg-amber-100 text-amber-700",
+    };
+  }
+
+  if (normalizedStatus === "error") {
+    return {
+      key: normalizedStatus,
+      label: "Com erro",
+      badgeClass: "bg-red-100 text-red-700",
+    };
+  }
+
+  return {
+    key: "desconectado",
+    label: "Desconectado",
+    badgeClass: "bg-gray-100 text-gray-700",
+  };
+}
+
 function buildFormData(config) {
   if (!config) return { ...DEFAULT_FORM };
 
@@ -103,13 +152,16 @@ function buildWhatsappConnections(configs, empresaId) {
 
   return DEFAULT_WHATSAPP_SLOTS.map((slot) => {
     const storedSlot = storedConnections.find((item) => String(item?.slot_key || "") === String(slot.slot_key));
+    const storedStatus = normalizeWhatsappStatus(storedSlot?.status || config?.config?.status || "desconectado");
 
     return {
       id: config?.id || "",
       slot_key: slot.slot_key,
       connection_name: storedSlot?.connection_name || config?.config?.connection_name || slot.connection_name,
-      status: storedSlot?.status || config?.config?.status || "desconectado",
-      qr_code: storedSlot?.last_qr_code || config?.config?.last_qr_code || "",
+      status: storedStatus,
+      qr_code: shouldKeepWhatsappQr(storedStatus)
+        ? storedSlot?.last_qr_code || config?.config?.last_qr_code || ""
+        : "",
       last_sent_at: storedSlot?.last_sent_at || config?.config?.last_sent_at || "",
     };
   });
@@ -119,12 +171,13 @@ function mergeWhatsappConnections(baseConnections, liveConnections = []) {
   return (baseConnections || []).map((slot) => {
     const live = (liveConnections || []).find((item) => String(item?.slot_key || "") === String(slot.slot_key));
     if (!live) return slot;
+    const liveStatus = normalizeWhatsappStatus(live.status || slot.status);
     return {
       ...slot,
       id: live.id || slot.id || "",
       connection_name: live.connection_name || slot.connection_name,
-      status: live.status || slot.status,
-      qr_code: live.last_qr_code || slot.qr_code || "",
+      status: liveStatus,
+      qr_code: shouldKeepWhatsappQr(liveStatus) ? live.last_qr_code || slot.qr_code || "" : "",
       last_sent_at: live.last_sent_at || slot.last_sent_at || "",
     };
   });
@@ -163,7 +216,7 @@ export default function ConfigurarIntegracoes() {
   }, []);
 
   useEffect(() => {
-    const needsLiveRefresh = whatsappConnections.some((slot) => ["starting", "authenticated", "qr_pending"].includes(slot.status));
+    const needsLiveRefresh = whatsappConnections.some((slot) => WHATSAPP_QR_STATUSES.includes(normalizeWhatsappStatus(slot.status)));
     if (!needsLiveRefresh) return undefined;
 
     const timer = window.setInterval(() => {
@@ -481,11 +534,14 @@ export default function ConfigurarIntegracoes() {
         slot_key: slot.slot_key,
         connection_name: slot.connection_name,
       });
+      const nextStatus = normalizeWhatsappStatus(bridgeResult?.connection?.status || slot.status);
 
       const mergedConnection = {
         ...slot,
-        status: bridgeResult?.connection?.status || slot.status,
-        qr_code: bridgeResult?.connection?.last_qr_code || slot.qr_code,
+        status: nextStatus,
+        qr_code: shouldKeepWhatsappQr(nextStatus)
+          ? bridgeResult?.connection?.last_qr_code || ""
+          : "",
         last_sent_at: bridgeResult?.connection?.last_sent_at || slot.last_sent_at,
       };
 
@@ -1021,7 +1077,10 @@ export default function ConfigurarIntegracoes() {
           </CardHeader>
           <CardContent className="space-y-6 p-6">
             <div className="grid gap-4 lg:grid-cols-3">
-              {whatsappConnections.map((slot) => (
+              {whatsappConnections.map((slot) => {
+                const statusView = getWhatsappStatusView(slot.status);
+
+                return (
                 <Card key={slot.slot_key} className="border-gray-200">
                   <CardContent className="space-y-4 p-4">
                     <div className="flex items-start justify-between gap-3">
@@ -1034,14 +1093,8 @@ export default function ConfigurarIntegracoes() {
                           <p className="text-xs text-gray-500">Slot {slot.slot_key}</p>
                         </div>
                       </div>
-                      <Badge className={
-                        slot.status === "connected"
-                          ? "bg-green-100 text-green-700"
-                          : slot.status === "qr_pending"
-                            ? "bg-amber-100 text-amber-700"
-                            : "bg-gray-100 text-gray-700"
-                      }>
-                        {slot.status === "connected" ? "Conectado" : slot.status === "qr_pending" ? "QR pendente" : "Desconectado"}
+                      <Badge className={statusView.badgeClass}>
+                        {statusView.label}
                       </Badge>
                     </div>
 
@@ -1104,7 +1157,7 @@ export default function ConfigurarIntegracoes() {
                     </p>
                   </CardContent>
                 </Card>
-              ))}
+              )})}
             </div>
 
             <Separator />

@@ -119,6 +119,7 @@ function mergeWhatsappConnections(baseConnections, liveConnections = []) {
     if (!live) return slot;
     return {
       ...slot,
+      id: live.id || slot.id || "",
       connection_name: live.connection_name || slot.connection_name,
       status: live.status || slot.status,
       qr_code: live.last_qr_code || slot.qr_code || "",
@@ -221,12 +222,16 @@ export default function ConfigurarIntegracoes() {
   };
 
   const persistWhatsappConnection = async (slot, companyId) => {
-    const existingConfigs = await IntegracaoConfig.list("-created_date", 200);
-    const currentConfig = (existingConfigs || []).find((item) =>
-      (item.provider || item.nome) === "whatsapp_web"
-      && String(item?.config?.slot_key || "") === String(slot.slot_key)
-      && ((item.empresa_id || null) === (companyId || null))
-    );
+    let currentConfig = slot?.id ? { id: slot.id } : null;
+
+    if (!currentConfig?.id) {
+      const existingConfigs = await IntegracaoConfig.list("-created_date", 200);
+      currentConfig = (existingConfigs || []).find((item) =>
+        (item.provider || item.nome) === "whatsapp_web"
+        && String(item?.config?.slot_key || "") === String(slot.slot_key)
+        && ((item.empresa_id || null) === (companyId || null))
+      );
+    }
 
     const finalPayload = {
       provider: "whatsapp_web",
@@ -244,8 +249,25 @@ export default function ConfigurarIntegracoes() {
 
     if (currentConfig?.id) {
       await IntegracaoConfig.update(currentConfig.id, finalPayload);
-    } else {
+      return;
+    }
+
+    try {
       await IntegracaoConfig.create(finalPayload);
+    } catch (error) {
+      if (String(error?.message || "").includes("409")) {
+        const existingConfigs = await IntegracaoConfig.list("-created_date", 200);
+        const duplicateConfig = (existingConfigs || []).find((item) =>
+          (item.provider || item.nome) === "whatsapp_web"
+          && String(item?.config?.slot_key || "") === String(slot.slot_key)
+          && ((item.empresa_id || null) === (companyId || null))
+        );
+        if (duplicateConfig?.id) {
+          await IntegracaoConfig.update(duplicateConfig.id, finalPayload);
+          return;
+        }
+      }
+      throw error;
     }
   };
 

@@ -41,6 +41,10 @@ const chromiumArgs = [
 
 fs.mkdirSync(sessionBaseDir, { recursive: true });
 
+function getSessionDir(slotKey) {
+  return path.join(sessionBaseDir, `session-dogcity-slot-${slotKey}`);
+}
+
 function ensureAuthorized(req, res, next) {
   if (!gatewayToken) return next();
   const authHeader = String(req.headers.authorization || "");
@@ -159,9 +163,11 @@ app.post("/api/bridge", ensureAuthorized, async (req, res) => {
     if (action === "disconnect") {
       const state = clients.get(slotKey);
       if (state?.client) {
+        await state.client.logout().catch(() => null);
         await state.client.destroy().catch(() => null);
       }
       clients.delete(slotKey);
+      fs.rmSync(getSessionDir(slotKey), { recursive: true, force: true });
       return res.json({ ok: true, connection: serializeConnection(slotKey) });
     }
 

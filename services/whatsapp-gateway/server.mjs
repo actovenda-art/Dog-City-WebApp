@@ -74,12 +74,18 @@ async function getOrCreateClient(slotKey, connectionName = "") {
   };
 
   const client = new Client({
+    authTimeoutMs: 120000,
+    qrMaxRetries: 0,
+    takeoverOnConflict: true,
     authStrategy: new LocalAuth({
       clientId: `dogcity-slot-${slotKey}`,
       dataPath: sessionBaseDir,
     }),
+    webVersionCache: {
+      type: "remote",
+    },
     puppeteer: {
-      headless: "new",
+      headless: true,
       dumpio: true,
       timeout: 120000,
       args: chromiumArgs,

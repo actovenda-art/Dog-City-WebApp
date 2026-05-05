@@ -95,20 +95,22 @@ function buildFormData(config) {
 }
 
 function buildWhatsappConnections(configs, empresaId) {
+  const config = (configs || []).find((item) =>
+    (item.provider || item.nome) === "whatsapp_web"
+    && ((item.empresa_id || null) === (empresaId || null))
+  );
+  const storedConnections = Array.isArray(config?.config?.connections) ? config.config.connections : [];
+
   return DEFAULT_WHATSAPP_SLOTS.map((slot) => {
-    const config = (configs || []).find((item) =>
-      (item.provider || item.nome) === "whatsapp_web"
-      && String(item?.config?.slot_key || "") === slot.slot_key
-      && ((item.empresa_id || null) === (empresaId || null))
-    );
+    const storedSlot = storedConnections.find((item) => String(item?.slot_key || "") === String(slot.slot_key));
 
     return {
       id: config?.id || "",
       slot_key: slot.slot_key,
-      connection_name: config?.config?.connection_name || slot.connection_name,
-      status: config?.config?.status || "desconectado",
-      qr_code: config?.config?.last_qr_code || "",
-      last_sent_at: config?.config?.last_sent_at || "",
+      connection_name: storedSlot?.connection_name || config?.config?.connection_name || slot.connection_name,
+      status: storedSlot?.status || config?.config?.status || "desconectado",
+      qr_code: storedSlot?.last_qr_code || config?.config?.last_qr_code || "",
+      last_sent_at: storedSlot?.last_sent_at || config?.config?.last_sent_at || "",
     };
   });
 }
@@ -228,10 +230,27 @@ export default function ConfigurarIntegracoes() {
       const existingConfigs = await IntegracaoConfig.list("-created_date", 200);
       currentConfig = (existingConfigs || []).find((item) =>
         (item.provider || item.nome) === "whatsapp_web"
-        && String(item?.config?.slot_key || "") === String(slot.slot_key)
         && ((item.empresa_id || null) === (companyId || null))
       );
     }
+
+    const currentConnections = whatsappConnections.map((item) =>
+      String(item.slot_key) === String(slot.slot_key)
+        ? {
+            slot_key: String(slot.slot_key),
+            connection_name: slot.connection_name,
+            status: slot.status,
+            last_qr_code: slot.qr_code || "",
+            last_sent_at: slot.last_sent_at || "",
+          }
+        : {
+            slot_key: String(item.slot_key),
+            connection_name: item.connection_name,
+            status: item.status,
+            last_qr_code: item.qr_code || "",
+            last_sent_at: item.last_sent_at || "",
+          },
+    );
 
     const finalPayload = {
       provider: "whatsapp_web",
@@ -239,11 +258,7 @@ export default function ConfigurarIntegracoes() {
       empresa_id: companyId,
       ativo: true,
       config: {
-        slot_key: String(slot.slot_key),
-        connection_name: slot.connection_name,
-        status: slot.status,
-        last_qr_code: slot.qr_code || "",
-        last_sent_at: slot.last_sent_at || "",
+        connections: currentConnections,
       },
     };
 
@@ -259,7 +274,6 @@ export default function ConfigurarIntegracoes() {
         const existingConfigs = await IntegracaoConfig.list("-created_date", 200);
         const duplicateConfig = (existingConfigs || []).find((item) =>
           (item.provider || item.nome) === "whatsapp_web"
-          && String(item?.config?.slot_key || "") === String(slot.slot_key)
           && ((item.empresa_id || null) === (companyId || null))
         );
         if (duplicateConfig?.id) {

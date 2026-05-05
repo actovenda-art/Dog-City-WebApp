@@ -1,5 +1,7 @@
 import cors from "cors";
 import express from "express";
+import fs from "node:fs";
+import path from "node:path";
 import QRCode from "qrcode";
 import pkg from "whatsapp-web.js";
 
@@ -11,7 +13,11 @@ app.use(express.json({ limit: "1mb" }));
 
 const gatewayToken = process.env.WHATSAPP_GATEWAY_TOKEN || "";
 const port = Number(process.env.PORT || 3033);
+const sessionBaseDir = process.env.WHATSAPP_SESSION_DIR || path.resolve("/data/whatsapp-sessions");
+const chromiumPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
 const clients = new Map();
+
+fs.mkdirSync(sessionBaseDir, { recursive: true });
 
 function ensureAuthorized(req, res, next) {
   if (!gatewayToken) return next();
@@ -46,10 +52,14 @@ async function getOrCreateClient(slotKey, connectionName = "") {
   };
 
   const client = new Client({
-    authStrategy: new LocalAuth({ clientId: `dogcity-slot-${slotKey}` }),
+    authStrategy: new LocalAuth({
+      clientId: `dogcity-slot-${slotKey}`,
+      dataPath: sessionBaseDir,
+    }),
     puppeteer: {
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      ...(chromiumPath ? { executablePath: chromiumPath } : {}),
     },
   });
 

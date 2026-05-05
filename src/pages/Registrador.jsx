@@ -595,7 +595,9 @@ export default function Registrador() {
       .filter((appointment) => {
         if (!doesAppointmentOccurOnDate(appointment, selectedDate)) return false;
         if (appointment.status === "cancelado" || appointment.status === "desconsiderado") return false;
+        const isHighlightedAppointment = highlightedAppointmentId && appointment.id === highlightedAppointmentId;
         if (selectedDate < TODAY_KEY) {
+          if (isHighlightedAppointment) return appointment.status !== "faltou";
           return Boolean(finalizedCheckinByAppointmentId[appointment.id] || appointment.status === "finalizado");
         }
         return appointment.status !== "faltou";
@@ -605,7 +607,7 @@ export default function Registrador() {
         const rightTime = getAppointmentTimeValue(right, "entrada") || "00:00";
         return leftTime.localeCompare(rightTime);
       });
-  }, [finalizedCheckinByAppointmentId, selectedDate, visibleAppointments]);
+  }, [finalizedCheckinByAppointmentId, highlightedAppointmentId, selectedDate, visibleAppointments]);
 
   const matchingDogIds = useMemo(() => {
     if (!searchTerm.trim()) return new Set(dogs.map((dog) => dog.id));

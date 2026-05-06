@@ -275,6 +275,7 @@ export default function Cadastro() {
   // Responsavel Form
   const emptyResponsavel = {
     nome_completo: "",
+    como_gostaria_de_ser_chamado: "",
     cpf: "",
     celular: "",
     celular_alternativo: "",
@@ -1078,9 +1079,10 @@ export default function Cadastro() {
         return;
       }
 
-      const savedResponsavel = await Responsavel.create({
+      const responsavelPayload = {
         empresa_id: currentUser?.empresa_id || null,
         nome_completo: formatDisplayName(responsavelForm.nome_completo),
+        como_gostaria_de_ser_chamado: optional(formatDisplayName(responsavelForm.como_gostaria_de_ser_chamado)),
         cpf: optional(responsavelForm.cpf),
         celular: optional(responsavelForm.celular),
         celular_alternativo: optional(responsavelForm.celular_alternativo),
@@ -1093,7 +1095,18 @@ export default function Cadastro() {
         dog_id_6: optional(responsavelForm.dog_id_6),
         dog_id_7: optional(responsavelForm.dog_id_7),
         dog_id_8: optional(responsavelForm.dog_id_8),
-      });
+      };
+
+      let savedResponsavel;
+      try {
+        savedResponsavel = await Responsavel.create(responsavelPayload);
+      } catch (error) {
+        if (!String(error?.message || "").includes("como_gostaria_de_ser_chamado")) {
+          throw error;
+        }
+        const { como_gostaria_de_ser_chamado, ...fallbackPayload } = responsavelPayload;
+        savedResponsavel = await Responsavel.create(fallbackPayload);
+      }
 
       if (portalLogin && portalPassword && savedResponsavel?.id) {
         await responsavelApproval({
@@ -2133,6 +2146,15 @@ export default function Cadastro() {
                     onBlur: () => setResponsavelForm({ ...responsavelForm, nome_completo: formatDisplayName(responsavelForm.nome_completo) }),
                     placeholder: "Nome completo do responsável",
                     requiredMessage: "Informe o nome completo.",
+                  })}
+                  {renderTextField({
+                    fieldKey: "responsavel.como_gostaria_de_ser_chamado",
+                    label: "Como você gostaria de ser chamado?",
+                    value: responsavelForm.como_gostaria_de_ser_chamado,
+                    onChange: (e) => setResponsavelForm({ ...responsavelForm, como_gostaria_de_ser_chamado: sanitizeDisplayNameInput(e.target.value) }),
+                    onBlur: () => setResponsavelForm({ ...responsavelForm, como_gostaria_de_ser_chamado: formatDisplayName(responsavelForm.como_gostaria_de_ser_chamado) }),
+                    placeholder: "Ex: Otávio",
+                    optional: true,
                   })}
                   {renderTextField({
                     fieldKey: "responsavel.cpf",

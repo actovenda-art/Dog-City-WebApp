@@ -569,12 +569,23 @@ function getLinkedDogIds(record: Record<string, unknown>) {
 }
 
 async function loadResponsavelById(responsavelId: string, empresaId: string) {
-  const { data, error } = await admin
+  let { data, error } = await admin
     .from("responsavel")
-    .select("id, empresa_id, nome_completo, cpf, celular, celular_alternativo, email")
+    .select("id, empresa_id, nome_completo, como_gostaria_de_ser_chamado, cpf, celular, celular_alternativo, email")
     .eq("id", responsavelId)
     .eq("empresa_id", empresaId)
     .maybeSingle();
+
+  if (error?.message?.includes("como_gostaria_de_ser_chamado")) {
+    const fallbackResult = await admin
+      .from("responsavel")
+      .select("id, empresa_id, nome_completo, cpf, celular, celular_alternativo, email")
+      .eq("id", responsavelId)
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+    data = fallbackResult.data;
+    error = fallbackResult.error;
+  }
 
   if (error || !data) {
     throw new Error("Não foi possível localizar o responsável selecionado para este link.");
@@ -778,6 +789,7 @@ async function handleCreateLink(request: Request, payload: Record<string, unknow
       metadata.prefill = {
         responsavel: {
           nome_completo: responsavel.nome_completo || "",
+          como_gostaria_de_ser_chamado: responsavel.como_gostaria_de_ser_chamado || "",
           cpf: responsavel.cpf || "",
           celular: responsavel.celular || "",
           celular_alternativo: responsavel.celular_alternativo || "",
@@ -1010,22 +1022,36 @@ async function handleSubmit(payload: Record<string, unknown>) {
     let responsavelId = sanitizeText(metadata.existing_responsavel_id);
 
     if (registrationMode === "full") {
-      const { data: responsavelRow, error: responsavelError } = await admin
+      const responsavelInsertPayload = {
+        empresa_id: link.empresa_id,
+        nome_completo: formatDisplayName(responsavel.nome_completo),
+        como_gostaria_de_ser_chamado: nullableText(formatDisplayName(responsavel.como_gostaria_de_ser_chamado)),
+        cpf: nullableText(responsavel.cpf),
+        celular: nullableText(responsavel.celular),
+        celular_alternativo: nullableText(responsavel.celular_alternativo),
+        email: nullableText(responsavel.email)?.toLowerCase() || null,
+        ativo: true,
+        created_date: now,
+        updated_date: now,
+        ...dogSlots,
+      };
+
+      let { data: responsavelRow, error: responsavelError } = await admin
         .from("responsavel")
-        .insert([{
-          empresa_id: link.empresa_id,
-          nome_completo: formatDisplayName(responsavel.nome_completo),
-          cpf: nullableText(responsavel.cpf),
-          celular: nullableText(responsavel.celular),
-          celular_alternativo: nullableText(responsavel.celular_alternativo),
-          email: nullableText(responsavel.email)?.toLowerCase() || null,
-          ativo: true,
-          created_date: now,
-          updated_date: now,
-          ...dogSlots,
-        }])
+        .insert([responsavelInsertPayload])
         .select("id")
         .maybeSingle();
+
+      if (responsavelError?.message?.includes("como_gostaria_de_ser_chamado")) {
+        const { como_gostaria_de_ser_chamado, ...fallbackPayload } = responsavelInsertPayload;
+        const fallbackInsert = await admin
+          .from("responsavel")
+          .insert([fallbackPayload])
+          .select("id")
+          .maybeSingle();
+        responsavelRow = fallbackInsert.data;
+        responsavelError = fallbackInsert.error;
+      }
 
       if (responsavelError || !responsavelRow?.id) {
         return jsonResponse({ error: withSchemaHint(responsavelError, "Nao foi possivel criar o responsavel.") }, 500);

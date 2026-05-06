@@ -122,6 +122,7 @@ function getVisibleStepDefinitions(mode) {
 
 const EMPTY_RESPONSAVEL = {
   nome_completo: "",
+  como_gostaria_de_ser_chamado: "",
   cpf: "",
   celular: "",
   celular_alternativo: "",
@@ -725,6 +726,7 @@ export default function CadastroClientePublico() {
         ...current,
         ...prefillResponsavel,
         nome_completo: prefillResponsavel?.nome_completo || data?.link?.responsavel_nome || current.nome_completo,
+        como_gostaria_de_ser_chamado: prefillResponsavel?.como_gostaria_de_ser_chamado || current.como_gostaria_de_ser_chamado,
         email: prefillResponsavel?.email || data?.link?.responsavel_email || current.email,
       }));
       setFinanceiroForm((current) => ({
@@ -905,6 +907,7 @@ export default function CadastroClientePublico() {
           responsavel: {
             ...responsavelForm,
             nome_completo: formatDisplayName(responsavelForm.nome_completo),
+            como_gostaria_de_ser_chamado: formatDisplayName(responsavelForm.como_gostaria_de_ser_chamado),
           },
           caes: caesForm.map((dog) => ({
             ...dog,
@@ -1008,6 +1011,16 @@ export default function CadastroClientePublico() {
           onBlur: () => setResponsavelForm((current) => ({ ...current, nome_completo: formatDisplayName(current.nome_completo) })),
           placeholder: "Como devemos chamar o responsável",
           requiredMessage: "Informe o nome completo do responsável.",
+          className: "md:col-span-2",
+        })}
+        {renderTextField({
+          fieldKey: "responsavel.como_gostaria_de_ser_chamado",
+          label: "Como você gostaria de ser chamado?",
+          value: responsavelForm.como_gostaria_de_ser_chamado,
+          onChange: (event) => setResponsavelForm((current) => ({ ...current, como_gostaria_de_ser_chamado: sanitizeDisplayNameInput(event.target.value) })),
+          onBlur: () => setResponsavelForm((current) => ({ ...current, como_gostaria_de_ser_chamado: formatDisplayName(current.como_gostaria_de_ser_chamado) })),
+          placeholder: "Ex: Otávio",
+          optional: true,
           className: "md:col-span-2",
         })}
         {renderTextField({

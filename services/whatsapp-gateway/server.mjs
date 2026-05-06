@@ -15,6 +15,7 @@ const gatewayToken = process.env.WHATSAPP_GATEWAY_TOKEN || "";
 const port = Number(process.env.PORT || 3033);
 const sessionBaseDir = process.env.WHATSAPP_SESSION_DIR || path.resolve("/data/whatsapp-sessions");
 const chromiumPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+const whatsappWebVersion = process.env.WHATSAPP_WEB_VERSION || "2.3000.1038839325-alpha";
 const clients = new Map();
 const ACTIVE_STATUSES = new Set(["starting", "qr_pending", "authenticated", "connected"]);
 const chromiumArgs = [
@@ -101,9 +102,18 @@ async function getOrCreateClient(slotKey, connectionName = "") {
   };
 
   const client = new Client({
+    webVersion: whatsappWebVersion,
+    webVersionCache: {
+      type: "remote",
+      remotePath: "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html",
+      strict: false,
+    },
     authTimeoutMs: 120000,
     qrMaxRetries: 0,
     takeoverOnConflict: true,
+    takeoverTimeoutMs: 10000,
+    userAgent:
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
     authStrategy: new LocalAuth({
       clientId: `dogcity-slot-${slotKey}`,
       dataPath: sessionBaseDir,
@@ -120,7 +130,7 @@ async function getOrCreateClient(slotKey, connectionName = "") {
   client.on("qr", async (qr) => {
     state.status = "qr_pending";
     state.lastQrCode = await QRCode.toDataURL(qr);
-    state.info = "QR Code pronto para leitura.";
+    state.info = `QR Code pronto para leitura. Web ${whatsappWebVersion}`;
   });
 
   client.on("ready", async () => {

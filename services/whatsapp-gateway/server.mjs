@@ -16,6 +16,7 @@ const port = Number(process.env.PORT || 3033);
 const sessionBaseDir = process.env.WHATSAPP_SESSION_DIR || path.resolve("/data/whatsapp-sessions");
 const chromiumPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
 const clients = new Map();
+const ACTIVE_STATUSES = new Set(["starting", "qr_pending", "authenticated", "connected"]);
 const chromiumArgs = [
   "--no-sandbox",
   "--disable-setuid-sandbox",
@@ -45,6 +46,24 @@ function getSessionDir(slotKey) {
   return path.join(sessionBaseDir, `session-dogcity-slot-${slotKey}`);
 }
 
+function isStaleState(state) {
+  if (!state?.startedAt || state.status === "connected") return false;
+  return Date.now() - new Date(state.startedAt).getTime() > 120000;
+}
+
+async function resetSlot(slotKey, { clearSession = false } = {}) {
+  const state = clients.get(slotKey);
+  if (state?.client) {
+    await state.client.destroy().catch(() => null);
+  }
+
+  clients.delete(slotKey);
+
+  if (clearSession) {
+    fs.rmSync(getSessionDir(slotKey), { recursive: true, force: true });
+  }
+}
+
 function ensureAuthorized(req, res, next) {
   if (!gatewayToken) return next();
   const authHeader = String(req.headers.authorization || "");
@@ -66,7 +85,10 @@ function serializeConnection(slotKey) {
 
 async function getOrCreateClient(slotKey, connectionName = "") {
   const existing = clients.get(slotKey);
-  if (existing?.client) return existing;
+  if (existing?.client && ACTIVE_STATUSES.has(existing.status) && !isStaleState(existing)) return existing;
+  if (existing?.client || existing?.status === "error" || existing?.status === "disconnected") {
+    await resetSlot(slotKey, { clearSession: true });
+  }
 
   const state = {
     slotKey,
@@ -75,6 +97,7 @@ async function getOrCreateClient(slotKey, connectionName = "") {
     lastQrCode: "",
     info: null,
     lastSentAt: null,
+    startedAt: new Date().toISOString(),
   };
 
   const client = new Client({
@@ -97,6 +120,7 @@ async function getOrCreateClient(slotKey, connectionName = "") {
   client.on("qr", async (qr) => {
     state.status = "qr_pending";
     state.lastQrCode = await QRCode.toDataURL(qr);
+    state.info = "QR Code pronto para leitura.";
   });
 
   client.on("ready", async () => {
@@ -119,11 +143,15 @@ async function getOrCreateClient(slotKey, connectionName = "") {
 
   client.on("auth_failure", (message) => {
     state.status = "error";
+    state.lastQrCode = "";
+    state.client = null;
     state.info = message || "Falha de autenticação.";
   });
 
   client.on("disconnected", (reason) => {
     state.status = "disconnected";
+    state.lastQrCode = "";
+    state.client = null;
     state.info = reason || "Desconectado";
   });
 
@@ -131,6 +159,8 @@ async function getOrCreateClient(slotKey, connectionName = "") {
   clients.set(slotKey, state);
   client.initialize().catch((error) => {
     state.status = "error";
+    state.lastQrCode = "";
+    state.client = null;
     state.info = error?.message || "Falha ao iniciar a conexão.";
   });
 
@@ -156,6 +186,9 @@ app.post("/api/bridge", ensureAuthorized, async (req, res) => {
     }
 
     if (action === "connect" || action === "refresh_qr") {
+      if (action === "refresh_qr") {
+        await resetSlot(slotKey, { clearSession: true });
+      }
       const state = await getOrCreateClient(slotKey, String(req.body?.connection_name || ""));
       return res.json({ ok: true, connection: serializeConnection(slotKey), status: state.status });
     }
@@ -164,10 +197,8 @@ app.post("/api/bridge", ensureAuthorized, async (req, res) => {
       const state = clients.get(slotKey);
       if (state?.client) {
         await state.client.logout().catch(() => null);
-        await state.client.destroy().catch(() => null);
       }
-      clients.delete(slotKey);
-      fs.rmSync(getSessionDir(slotKey), { recursive: true, force: true });
+      await resetSlot(slotKey, { clearSession: true });
       return res.json({ ok: true, connection: serializeConnection(slotKey) });
     }
 

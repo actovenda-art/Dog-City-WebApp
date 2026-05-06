@@ -90,6 +90,20 @@ function parseNotificationPayload(notification) {
   }
 }
 
+function getNotificationActionLabel(notification) {
+  const payload = notification?.parsedPayload || parseNotificationPayload(notification);
+  const explicitLabel = normalizeNotificationCopy(payload?.action_label);
+  if (explicitLabel) return explicitLabel;
+
+  const entityType = String(payload?.entity_type || "").trim().toLowerCase();
+  if (entityType === "funcionario") return "Ver funcionário";
+  if (entityType === "usuario") return "Ver usuário";
+  if (entityType === "responsavel") return "Ver responsável";
+  if (entityType === "dog") return "Ver cão";
+  if (entityType === "carteira") return "Ver financeiro";
+  return "Ver perfil";
+}
+
 function isRead(notification) {
   return notification?.lida ?? notification?.lido ?? false;
 }
@@ -311,6 +325,19 @@ function getNotificationTimestamp(notification) {
   return 0;
 }
 
+function getPendingNotificationKey(notification) {
+  if (!isPendingNotification(notification)) return "";
+
+  const payload = notification?.parsedPayload || parseNotificationPayload(notification);
+  const appointmentId = String(payload?.appointment_id || "").trim();
+  if (appointmentId) return `${notification?.tipo || "pendencia"}:${appointmentId}`;
+
+  const link = String(notification?.link || "").trim();
+  if (link) return `${notification?.tipo || "pendencia"}:${link}`;
+
+  return "";
+}
+
 function getDisplayCopy(notification, appointmentsById = {}) {
   const payload = notification?.parsedPayload || parseNotificationPayload(notification);
   const appointment = appointmentsById[payload?.appointment_id];
@@ -436,7 +463,7 @@ function NotificationSection({ title, items, onOpenItem, pendingContextLoaded })
 
                 {isRegistrationNotification(notification) ? (
                   <span className="mt-2 inline-flex rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white">
-                    Ver perfil
+                    {getNotificationActionLabel(notification)}
                   </span>
                 ) : null}
 
@@ -509,6 +536,38 @@ export default function NotificationBell({ userId, user = null }) {
     }
   };
 
+  const pruneDuplicatePendingNotifications = async (sourceNotifications) => {
+    const duplicateGroups = new Map();
+
+    for (const notification of sourceNotifications || []) {
+      const key = getPendingNotificationKey(notification);
+      if (!key) continue;
+      const currentGroup = duplicateGroups.get(key) || [];
+      currentGroup.push(notification);
+      duplicateGroups.set(key, currentGroup);
+    }
+
+    const duplicatedItems = [];
+    duplicateGroups.forEach((group) => {
+      if (group.length <= 1) return;
+      const sortedGroup = [...group].sort((left, right) => getNotificationTimestamp(right) - getNotificationTimestamp(left));
+      duplicatedItems.push(...sortedGroup.slice(1));
+    });
+
+    if (!duplicatedItems.length) return sourceNotifications;
+
+    const duplicateIds = new Set(duplicatedItems.map((notification) => notification.id));
+    try {
+      await Promise.allSettled(duplicatedItems.map((notification) => Notificacao.delete(notification.id)));
+    } catch (error) {
+      console.error("Erro ao remover notificações duplicadas:", error);
+    }
+
+    const nextNotifications = (sourceNotifications || []).filter((item) => !duplicateIds.has(item.id));
+    setNotifications(nextNotifications);
+    return nextNotifications;
+  };
+
   const loadPendingContext = async (notificationsSnapshot = notificationsRef.current) => {
     setIsLoadingPendingContext(true);
     try {
@@ -536,13 +595,14 @@ export default function NotificationBell({ userId, user = null }) {
         if (timeDiff !== 0) return timeDiff;
         return String(right?.id || "").localeCompare(String(left?.id || ""));
       });
-      setNotifications(sortedData);
+      const dedupedData = await pruneDuplicatePendingNotifications(sortedData);
+      setNotifications(dedupedData);
       if (resetPendingContext) {
         setPendingContextLoaded(false);
         setHasLoadedPendingContext(false);
         setAppointmentsById({});
-        if (sortedData.some((notification) => isPendingNotification(notification))) {
-          await loadPendingContext(sortedData);
+        if (dedupedData.some((notification) => isPendingNotification(notification))) {
+          await loadPendingContext(dedupedData);
         } else {
           setPendingContextLoaded(true);
           setHasLoadedPendingContext(true);

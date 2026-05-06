@@ -1130,6 +1130,7 @@ async function handleSubmit(payload: Record<string, unknown>) {
         dog_ids: createdDogIds,
         responsavel_nome: responsavelName,
         dog_names: dogNames,
+        action_label: firstDogId ? "Ver cão" : "Ver responsável",
       },
     });
 

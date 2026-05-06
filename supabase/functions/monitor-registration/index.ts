@@ -437,6 +437,7 @@ Deno.serve(async (request) => {
       payload: {
         provider_id: updated.id,
         funcionario_nome: formatDisplayName(updated.nome || profile.nome),
+        action_label: "Ver funcionário",
       },
     });
 

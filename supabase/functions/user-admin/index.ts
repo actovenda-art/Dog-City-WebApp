@@ -1526,6 +1526,7 @@ async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) 
       user_id: savedUser?.id || resolvedAuthUserId,
       user_email: normalizedEmail,
       user_name: sanitizeText(savedUser?.full_name || fullName),
+      action_label: "Ver usuário",
     },
   });
 

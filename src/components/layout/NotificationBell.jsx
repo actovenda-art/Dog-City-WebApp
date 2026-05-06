@@ -40,6 +40,8 @@ const COMMUNICATION_SCOPES = {
   comunicado_comercial: "comercial",
 };
 
+const NOTIFICATION_REFRESH_INTERVAL_MS = 15000;
+
 const MOJIBAKE_REPLACEMENTS = [
   ["Ã¡", "á"],
   ["Ã¢", "â"],
@@ -347,6 +349,39 @@ function getDisplayCopy(notification, appointmentsById = {}) {
   };
 }
 
+function isPendingStillActiveForContext(notification, appointmentsById = {}) {
+  if (!isPendingNotification(notification)) return false;
+
+  const payload = notification?.parsedPayload || parseNotificationPayload(notification);
+  const appointmentId = payload?.appointment_id;
+  const appointment = appointmentsById[appointmentId];
+  if (!appointment) return true;
+
+  const metadata = getAppointmentMeta(appointment);
+  if (notification.tipo === "agendamento_sem_presenca") {
+    return metadata.absence_review_pending === true;
+  }
+
+  if (notification.tipo === "agendamento_manual_pendente") {
+    return appointment.source_type === "manual_registrador"
+      && (appointment.charge_type === "pendente_comercial" || metadata.commercial_review_pending === true);
+  }
+
+  if (notification.tipo === "daycare_pernoite_pendente") {
+    return Boolean(metadata.overnight_alert_sent_at) && !metadata.overnight_requested_at;
+  }
+
+  if (notification.tipo === "orcamento_pernoite_pendente") {
+    return metadata.overnight_budget_pending === true;
+  }
+
+  if (notification.tipo === "daycare_pernoite_excedido") {
+    return metadata.overnight_exceeded_pending === true;
+  }
+
+  return false;
+}
+
 function NotificationSection({ title, items, onOpenItem, pendingContextLoaded }) {
   if (items.length === 0) return null;
 
@@ -428,13 +463,13 @@ export default function NotificationBell({ userId, user = null }) {
   const [hasLoadedPendingContext, setHasLoadedPendingContext] = useState(false);
   const [appointmentsById, setAppointmentsById] = useState({});
   const dropdownRef = useRef(null);
+  const notificationsRef = useRef([]);
+  const refreshInFlightRef = useRef(false);
   const department = useMemo(() => getNotificationDepartment(user), [user]);
 
   useEffect(() => {
-    if (userId) {
-      loadNotifications({ resetPendingContext: true });
-    }
-  }, [userId]);
+    notificationsRef.current = notifications;
+  }, [notifications]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -458,7 +493,41 @@ export default function NotificationBell({ userId, user = null }) {
     loadPendingContext();
   }, [hasLoadedPendingContext, notifications, pendingContextLoaded, userId]);
 
+  const pruneResolvedPendingNotifications = async (sourceNotifications, appointmentMap) => {
+    const stalePending = (sourceNotifications || []).filter((notification) =>
+      isPendingNotification(notification) && !isPendingStillActiveForContext(notification, appointmentMap)
+    );
+    if (!stalePending.length) return;
+
+    const staleIds = new Set(stalePending.map((notification) => notification.id));
+    try {
+      await Promise.allSettled(stalePending.map((notification) => Notificacao.delete(notification.id)));
+    } catch (error) {
+      console.error("Erro ao remover notificações resolvidas:", error);
+    } finally {
+      setNotifications((current) => current.filter((item) => !staleIds.has(item.id)));
+    }
+  };
+
+  const loadPendingContext = async (notificationsSnapshot = notificationsRef.current) => {
+    setIsLoadingPendingContext(true);
+    try {
+      const appointments = await Appointment.listAll("-created_date", 1000, 5000);
+      const appointmentMap = Object.fromEntries((appointments || []).map((appointment) => [appointment.id, appointment]));
+      setAppointmentsById(appointmentMap);
+      await pruneResolvedPendingNotifications(notificationsSnapshot, appointmentMap);
+    } catch (error) {
+      console.error("Erro ao conferir pendências do sino:", error);
+    } finally {
+      setPendingContextLoaded(true);
+      setHasLoadedPendingContext(true);
+      setIsLoadingPendingContext(false);
+    }
+  };
+
   const loadNotifications = async ({ resetPendingContext = false } = {}) => {
+    if (!userId || refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     setIsLoading(true);
     try {
       const data = await Notificacao.filter({ user_id: userId }, "-created_date", 20);
@@ -472,28 +541,59 @@ export default function NotificationBell({ userId, user = null }) {
         setPendingContextLoaded(false);
         setHasLoadedPendingContext(false);
         setAppointmentsById({});
+        if (sortedData.some((notification) => isPendingNotification(notification))) {
+          await loadPendingContext(sortedData);
+        } else {
+          setPendingContextLoaded(true);
+          setHasLoadedPendingContext(true);
+        }
       }
     } catch (error) {
       console.error("Erro ao carregar notificaçàµes:", error);
+    } finally {
+      refreshInFlightRef.current = false;
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
-  const loadPendingContext = async () => {
-    setIsLoadingPendingContext(true);
-    try {
-      const appointments = await Appointment.listAll("-created_date", 1000, 5000);
-      setAppointmentsById(
-        Object.fromEntries((appointments || []).map((appointment) => [appointment.id, appointment]))
-      );
-    } catch (error) {
-      console.error("Erro ao conferir pendências do sino:", error);
-    } finally {
-      setPendingContextLoaded(true);
-      setHasLoadedPendingContext(true);
-      setIsLoadingPendingContext(false);
+  useEffect(() => {
+    if (userId) {
+      loadNotifications({ resetPendingContext: true });
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return undefined;
+
+    const handleFocusRefresh = () => {
+      loadNotifications({ resetPendingContext: true });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadNotifications({ resetPendingContext: true });
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      loadNotifications({ resetPendingContext: true });
+    }, NOTIFICATION_REFRESH_INTERVAL_MS);
+
+    window.addEventListener("focus", handleFocusRefresh);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", handleFocusRefresh);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (isOpen && userId) {
+      loadNotifications({ resetPendingContext: true });
+    }
+  }, [isOpen, userId]);
 
   const notificationsWithDisplay = useMemo(
     () =>
@@ -510,55 +610,27 @@ export default function NotificationBell({ userId, user = null }) {
     [notifications, appointmentsById]
   );
 
-  const isPendingStillActive = (notification) => {
-    if (!isPendingNotification(notification)) return false;
-    if (!pendingContextLoaded) return true;
-
-    const appointmentId = notification?.parsedPayload?.appointment_id;
-    const appointment = appointmentsById[appointmentId];
-    if (!appointment) return true;
-
-    const metadata = getAppointmentMeta(appointment);
-    if (notification.tipo === "agendamento_sem_presenca") {
-      return metadata.absence_review_pending === true;
-    }
-
-    if (notification.tipo === "agendamento_manual_pendente") {
-      return appointment.source_type === "manual_registrador"
-        && (appointment.charge_type === "pendente_comercial" || metadata.commercial_review_pending === true);
-    }
-
-    if (notification.tipo === "daycare_pernoite_pendente") {
-      return Boolean(metadata.overnight_alert_sent_at) && !metadata.overnight_requested_at;
-    }
-
-    if (notification.tipo === "orcamento_pernoite_pendente") {
-      return metadata.overnight_budget_pending === true;
-    }
-
-    if (notification.tipo === "daycare_pernoite_excedido") {
-      return metadata.overnight_exceeded_pending === true;
-    }
-
-    return false;
-  };
-
   const activePendingNotifications = useMemo(
     () =>
       notificationsWithDisplay.filter((notification) =>
-        shouldShowPendingForDepartment(notification, department) && isPendingStillActive(notification)
+        shouldShowPendingForDepartment(notification, department)
+        && (!pendingContextLoaded || isPendingStillActiveForContext(notification, appointmentsById))
       ),
-    [department, notificationsWithDisplay, pendingContextLoaded, appointmentsById]
+    [appointmentsById, department, notificationsWithDisplay, pendingContextLoaded]
   );
 
   const hiddenStalePendingIds = useMemo(
     () =>
-      new Set(
-        notificationsWithDisplay
-          .filter((notification) => isPendingNotification(notification) && pendingContextLoaded && !isPendingStillActive(notification))
+        new Set(
+          notificationsWithDisplay
+          .filter((notification) =>
+            isPendingNotification(notification)
+            && pendingContextLoaded
+            && !isPendingStillActiveForContext(notification, appointmentsById)
+          )
           .map((notification) => notification.id)
       ),
-    [notificationsWithDisplay, pendingContextLoaded, appointmentsById]
+    [appointmentsById, notificationsWithDisplay, pendingContextLoaded]
   );
 
   const visibleNoticeNotifications = useMemo(

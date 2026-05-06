@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
+import DogColorMultiSelect, { DOG_COAT_OPTIONS } from "@/components/common/DogColorMultiSelect";
 import { normalizeCpfDigits, validateCpfWithGov } from "@/lib/cpf-validation";
 import { createEmptyDogMeal } from "@/lib/dog-form-utils";
 import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
@@ -1019,7 +1020,7 @@ export default function CadastroClientePublico() {
           value: responsavelForm.como_gostaria_de_ser_chamado,
           onChange: (event) => setResponsavelForm((current) => ({ ...current, como_gostaria_de_ser_chamado: sanitizeDisplayNameInput(event.target.value) })),
           onBlur: () => setResponsavelForm((current) => ({ ...current, como_gostaria_de_ser_chamado: formatDisplayName(current.como_gostaria_de_ser_chamado) })),
-          placeholder: "Ex: Otávio",
+          placeholder: "Ex: Ju",
           optional: true,
           className: "md:col-span-2",
         })}
@@ -1150,20 +1151,53 @@ export default function CadastroClientePublico() {
             </Select>
           ),
         })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.cores_pelagem`,
+        {renderFieldShell({
           label: "Cores da pelagem",
-          value: dog.cores_pelagem,
-          onChange: (event) => updateDog(dogIndex, { cores_pelagem: event.target.value }),
-          requiredMessage: "Informe as cores da pelagem.",
+          message: getFieldFeedback(`caes.${dogIndex}.cores_pelagem`, {
+            value: dog.cores_pelagem,
+            requiredMessage: "Selecione as cores da pelagem.",
+          }).error,
+          messageTone: getFieldFeedback(`caes.${dogIndex}.cores_pelagem`, {
+            value: dog.cores_pelagem,
+            requiredMessage: "Selecione as cores da pelagem.",
+          }).showError ? "error" : "default",
+          children: (
+            <DogColorMultiSelect
+              value={dog.cores_pelagem}
+              onChange={(value) => {
+                updateDog(dogIndex, { cores_pelagem: value });
+                touchField(`caes.${dogIndex}.cores_pelagem`);
+              }}
+              placeholder="Selecione até 5 cores"
+              triggerClassName={getFieldClassNames(
+                getFieldFeedback(`caes.${dogIndex}.cores_pelagem`, {
+                  value: dog.cores_pelagem,
+                  requiredMessage: "Selecione as cores da pelagem.",
+                }).showError,
+                getFieldFeedback(`caes.${dogIndex}.cores_pelagem`, {
+                  value: dog.cores_pelagem,
+                  requiredMessage: "Selecione as cores da pelagem.",
+                }).showValid
+              )}
+            />
+          ),
         })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.pelagem`,
+        {renderSelectField({
           label: "Pelagem",
-          value: dog.pelagem,
-          onChange: (event) => updateDog(dogIndex, { pelagem: event.target.value }),
-          placeholder: "Ex: curta, média ou longa",
-          requiredMessage: "Informe o tipo de pelagem.",
+          children: (
+            <Select value={dog.pelagem || ""} onValueChange={(value) => updateDog(dogIndex, { pelagem: value })}>
+              <SelectTrigger className="h-9 rounded-xl border-slate-200 bg-white/90 px-2.5 text-[13px] shadow-sm transition focus:ring-4 focus:ring-blue-100 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]">
+                <SelectValue placeholder="Selecione a pelagem" />
+              </SelectTrigger>
+              <SelectContent>
+                {DOG_COAT_OPTIONS.map((coat) => (
+                  <SelectItem key={coat} value={coat}>
+                    {coat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ),
         })}
         <div className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
           <div>

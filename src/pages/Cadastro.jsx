@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
+import DogColorMultiSelect, { DOG_COAT_OPTIONS } from "@/components/common/DogColorMultiSelect";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
@@ -29,7 +30,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "Médio", "Grande", "Gigante"];
-const DOG_COAT_OPTIONS = ["Curto", "Médio", "Longo"];
 const DOG_BREED_OPTIONS = [
   "SRD",
   "Akita",
@@ -1610,13 +1610,36 @@ export default function Cadastro() {
                       </Select>
                     ),
                   })}
-                  {renderTextField({
-                    fieldKey: "dog.cores_pelagem",
+                  {renderFieldShell({
                     label: "Cores da pelagem",
-                    value: dogForm.cores_pelagem,
-                    onChange: (e) => setDogForm({ ...dogForm, cores_pelagem: e.target.value }),
-                    placeholder: "Ex: caramelo com branco",
-                    requiredMessage: "Informe as cores da pelagem.",
+                    message: getFieldFeedback("dog.cores_pelagem", {
+                      value: dogForm.cores_pelagem,
+                      requiredMessage: "Selecione as cores da pelagem.",
+                    }).error,
+                    messageTone: getFieldFeedback("dog.cores_pelagem", {
+                      value: dogForm.cores_pelagem,
+                      requiredMessage: "Selecione as cores da pelagem.",
+                    }).showError ? "error" : "default",
+                    children: (
+                      <DogColorMultiSelect
+                        value={dogForm.cores_pelagem}
+                        onChange={(value) => {
+                          setDogForm({ ...dogForm, cores_pelagem: value });
+                          touchField("dog.cores_pelagem");
+                        }}
+                        placeholder="Selecione até 5 cores"
+                        triggerClassName={getFieldClassNames(
+                          getFieldFeedback("dog.cores_pelagem", {
+                            value: dogForm.cores_pelagem,
+                            requiredMessage: "Selecione as cores da pelagem.",
+                          }).showError,
+                          getFieldFeedback("dog.cores_pelagem", {
+                            value: dogForm.cores_pelagem,
+                            requiredMessage: "Selecione as cores da pelagem.",
+                          }).showValid
+                        )}
+                      />
+                    ),
                   })}
                   {renderSelectField({
                     fieldKey: "dog.pelagem",
@@ -2153,7 +2176,7 @@ export default function Cadastro() {
                     value: responsavelForm.como_gostaria_de_ser_chamado,
                     onChange: (e) => setResponsavelForm({ ...responsavelForm, como_gostaria_de_ser_chamado: sanitizeDisplayNameInput(e.target.value) }),
                     onBlur: () => setResponsavelForm({ ...responsavelForm, como_gostaria_de_ser_chamado: formatDisplayName(responsavelForm.como_gostaria_de_ser_chamado) }),
-                    placeholder: "Ex: Otávio",
+                    placeholder: "Ex: Ju",
                     optional: true,
                   })}
                   {renderTextField({

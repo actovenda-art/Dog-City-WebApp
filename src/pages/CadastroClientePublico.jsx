@@ -14,7 +14,7 @@ import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeIn
 import DogColorMultiSelect, { DOG_COAT_OPTIONS } from "@/components/common/DogColorMultiSelect";
 import { normalizeCpfDigits, validateCpfWithGov } from "@/lib/cpf-validation";
 import { createEmptyDogMeal } from "@/lib/dog-form-utils";
-import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
+import { formatDisplayName, isCompletePersonName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import {
   AlertTriangle,
   CircleAlert,
@@ -264,6 +264,8 @@ function getTextFieldError({
       return trimmedValue.length === 2 ? "" : "Use a sigla do estado com 2 letras.";
     case "weight":
       return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas números, vírgula ou ponto.";
+    case "full_name":
+      return isCompletePersonName(trimmedValue) ? "" : "Informe nome e sobrenome.";
     default:
       return "";
   }
@@ -272,6 +274,9 @@ function getTextFieldError({
 function validateResponsavel(form) {
   if (!form.nome_completo || !form.cpf || !form.celular || !form.email) {
     return "Preencha nome completo, CPF, celular e email do responsável.";
+  }
+  if (!isCompletePersonName(form.nome_completo)) {
+    return "Informe o nome completo do responsável com nome e sobrenome.";
   }
   return "";
 }
@@ -1010,7 +1015,8 @@ export default function CadastroClientePublico() {
           value: responsavelForm.nome_completo,
           onChange: (event) => setResponsavelForm((current) => ({ ...current, nome_completo: sanitizeDisplayNameInput(event.target.value) })),
           onBlur: () => setResponsavelForm((current) => ({ ...current, nome_completo: formatDisplayName(current.nome_completo) })),
-          placeholder: "Como devemos chamar o responsável",
+          placeholder: "Informe seu nome completo",
+          kind: "full_name",
           requiredMessage: "Informe o nome completo do responsável.",
           className: "md:col-span-2",
         })}
@@ -1772,7 +1778,11 @@ export default function CadastroClientePublico() {
     );
   }
 
-  const progressValue = ((currentStep + 1) / visibleStepDefinitions.length) * 100;
+  const currentDogFlowProgress = currentStepDefinition?.id === "caes"
+    ? ((activeDogIndex * DOG_SECTION_DEFINITIONS.length) + activeDogSectionIndex + 1)
+      / Math.max(caesForm.length * DOG_SECTION_DEFINITIONS.length, 1)
+    : 1;
+  const progressValue = ((currentStep + currentDogFlowProgress) / visibleStepDefinitions.length) * 100;
   const pageTitle = context?.empresa?.nome_fantasia || companyName;
   const nextDogSectionLabel = currentStepDefinition?.id === "caes" && activeDogSectionIndex < DOG_SECTION_DEFINITIONS.length - 1
     ? DOG_SECTION_DEFINITIONS[activeDogSectionIndex + 1].label

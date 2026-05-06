@@ -23,7 +23,7 @@ import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { createEmptyDogMeal, extractDogMeals, isNaturalFoodType, serializeDogMeals } from "@/lib/dog-form-utils";
 import { findEntityByReference } from "@/lib/entity-identifiers";
-import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
+import { formatDisplayName, isCompletePersonName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import { cn } from "@/lib/utils";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -224,6 +224,8 @@ function getTextFieldError({
       return trimmedValue.length === 2 ? "" : "Use a sigla do estado com 2 letras.";
     case "weight":
       return WEIGHT_REGEX.test(trimmedValue) ? "" : "Use apenas números, vírgula ou ponto.";
+    case "full_name":
+      return isCompletePersonName(trimmedValue) ? "" : "Informe nome e sobrenome.";
     default:
       return "";
   }
@@ -1034,6 +1036,12 @@ export default function Cadastro() {
   const handleSaveResponsavel = async () => {
     if (!responsavelForm.nome_completo || !responsavelForm.cpf || !responsavelForm.celular) {
       setNotifyTitle("Campos obrigatórios"); setNotifyMessage("Preencha nome, CPF e celular."); setNotifyOpen(true); return;
+    }
+    if (!isCompletePersonName(responsavelForm.nome_completo)) {
+      setNotifyTitle("Nome completo obrigatório");
+      setNotifyMessage("Informe o nome completo do responsável com nome e sobrenome.");
+      setNotifyOpen(true);
+      return;
     }
     setIsSaving(true);
     try {
@@ -2168,6 +2176,7 @@ export default function Cadastro() {
                     onChange: (e) => setResponsavelForm({ ...responsavelForm, nome_completo: sanitizeDisplayNameInput(e.target.value) }),
                     onBlur: () => setResponsavelForm({ ...responsavelForm, nome_completo: formatDisplayName(responsavelForm.nome_completo) }),
                     placeholder: "Nome completo do responsável",
+                    kind: "full_name",
                     requiredMessage: "Informe o nome completo.",
                   })}
                   {renderTextField({

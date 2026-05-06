@@ -18,3 +18,20 @@ export function formatDisplayName(value) {
     )
     .join(" ");
 }
+
+export function isCompletePersonName(value) {
+  const words = formatDisplayName(value)
+    .split(" ")
+    .filter(Boolean);
+
+  if (words.length < 2) {
+    return false;
+  }
+
+  const connectiveWords = new Set(["da", "de", "do", "das", "dos", "e"]);
+
+  return words.every((word) => {
+    const normalizedWord = word.replace(/[-']/g, "").trim();
+    return normalizedWord.length >= 2 || connectiveWords.has(normalizedWord.toLowerCase());
+  });
+}

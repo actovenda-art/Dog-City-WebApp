@@ -250,11 +250,20 @@ export default function Movimentacoes() {
         setIsSummaryLoading(false);
       }
 
-      const fullMovements = ExtratoBancario.listAll
-        ? await ExtratoBancario.listAll("-data_movimento", 1000, 20000)
-        : await ExtratoBancario.list("-data_movimento", 5000);
+      const fullMovementsResponse = ExtratoBancario.queryAll
+        ? await ExtratoBancario.queryAll({
+          sort: "-data_movimento",
+          pageSize: 500,
+          maxRows: 50000,
+          count: false,
+        })
+        : (ExtratoBancario.listAll
+          ? await ExtratoBancario.listAll("-data_movimento", 500, 50000)
+          : await ExtratoBancario.list("-data_movimento", 5000));
 
-      const nextMovements = fullMovements || [];
+      const nextMovements = Array.isArray(fullMovementsResponse?.data)
+        ? fullMovementsResponse.data
+        : (fullMovementsResponse || []);
       const derivedSummary = buildSummaryFromMovements(nextMovements);
 
       setMovimentacoes(nextMovements);
@@ -632,7 +641,7 @@ export default function Movimentacoes() {
             value={String(movementCountCardValue)}
             className="border-gray-200"
             valueClassName="text-gray-900"
-            helper={movementPeriodLabel ? `PerÃ­odo: ${movementPeriodLabel}` : "Quantidade exibida"}
+            helper={movementPeriodLabel ? `Período: ${movementPeriodLabel}` : "Quantidade exibida"}
             isBlurred={isSummaryLoading}
           />
         </div>

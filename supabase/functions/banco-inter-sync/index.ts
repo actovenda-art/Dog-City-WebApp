@@ -1519,6 +1519,7 @@ async function importCsvForConfig(
   try {
     const { parsed, normalizedRows } = await normalizeCsvTransactions(empresaId, log.id, csvText, filename || null);
     const persistence = await persistCsvTransactions(empresaId, normalizedRows, { replaceExistingCsv });
+    const movementSummary = await persistMovementSummary(config, empresaId);
 
     await finishSyncLog(log.id, {
       status: "success",
@@ -1535,6 +1536,7 @@ async function importCsvForConfig(
         replaced_existing_count: persistence.replacedExistingCount,
         discarded_existing_count: persistence.discardedExistingCount,
         discarded_in_payload_count: persistence.discardedInPayloadCount,
+        movement_summary: movementSummary,
       },
     });
 
@@ -1549,6 +1551,7 @@ async function importCsvForConfig(
       saldo_final_csv: parsed.closingBalance,
       conta_csv: parsed.accountNumber,
       periodo_csv: parsed.periodLabel,
+      summary: movementSummary,
       imported_at: now,
       message: `CSV importado com sucesso. ${persistence.importedCount} lancamento(s) novo(s).`,
     };
@@ -1666,6 +1669,9 @@ async function runSyncForConfig(
         discardedExistingCount: 0,
         discardedInPayloadCount: 0,
       };
+    const movementSummary = persist && empresaId
+      ? await persistMovementSummary(config, empresaId)
+      : parseStoredMovementSummary(config);
 
     const finishedAt = new Date().toISOString();
     await finishSyncLog(log.id, {
@@ -1690,6 +1696,7 @@ async function runSyncForConfig(
         imported_range_from: fromDate,
         imported_range_to: toDate,
         balance_warning: balanceWarning,
+        movement_summary: movementSummary,
       },
     });
 
@@ -1721,6 +1728,7 @@ async function runSyncForConfig(
       saldo_atualizado_em: currentBalanceAt,
       saldo_atual_referencia: currentBalanceReferenceDate,
       balance_warning: balanceWarning,
+      summary: movementSummary,
       received_count: rawCount,
       windows_processed: processedWindowCount,
       debug_windows: debug ? debugWindows : undefined,
@@ -1749,6 +1757,86 @@ async function runSyncForConfig(
 
     throw error;
   }
+}
+
+type MovementSummary = {
+  movement_count: number;
+  total_entradas: number;
+  total_saidas: number;
+  oldest_movement_date: string | null;
+  newest_movement_date: string | null;
+  generated_at: string;
+};
+
+function parseStoredMovementSummary(config: IntegrationConfig): MovementSummary | null {
+  const rawSummary = getConfigValue<Record<string, unknown> | null>(config, "movement_summary", null);
+  if (!rawSummary || typeof rawSummary !== "object") return null;
+
+  return {
+    movement_count: Number(rawSummary.movement_count) || 0,
+    total_entradas: Number(rawSummary.total_entradas) || 0,
+    total_saidas: Number(rawSummary.total_saidas) || 0,
+    oldest_movement_date: sanitizeText(rawSummary.oldest_movement_date) || null,
+    newest_movement_date: sanitizeText(rawSummary.newest_movement_date) || null,
+    generated_at: sanitizeText(rawSummary.generated_at) || new Date().toISOString(),
+  };
+}
+
+async function computeMovementSummary(empresaId: string): Promise<MovementSummary> {
+  const { data, error } = await supabase
+    .from("extratobancario")
+    .select("tipo, valor, data_movimento")
+    .eq("empresa_id", empresaId);
+
+  if (error) throw error;
+
+  let totalEntradas = 0;
+  let totalSaidas = 0;
+  let oldestMovementDate: string | null = null;
+  let newestMovementDate: string | null = null;
+
+  for (const row of data || []) {
+    const amount = typeof row?.valor === "number" ? row.valor : Number(row?.valor || 0);
+    if ((row?.tipo || "") === "saida") {
+      totalSaidas += Number.isFinite(amount) ? amount : 0;
+    } else {
+      totalEntradas += Number.isFinite(amount) ? amount : 0;
+    }
+
+    const movementDate = sanitizeText(row?.data_movimento);
+    if (!movementDate) continue;
+
+    if (!oldestMovementDate || movementDate < oldestMovementDate) {
+      oldestMovementDate = movementDate;
+    }
+    if (!newestMovementDate || movementDate > newestMovementDate) {
+      newestMovementDate = movementDate;
+    }
+  }
+
+  return {
+    movement_count: (data || []).length,
+    total_entradas: totalEntradas,
+    total_saidas: totalSaidas,
+    oldest_movement_date: oldestMovementDate,
+    newest_movement_date: newestMovementDate,
+    generated_at: new Date().toISOString(),
+  };
+}
+
+async function persistMovementSummary(
+  config: IntegrationConfig,
+  empresaId: string,
+): Promise<MovementSummary> {
+  const summary = await computeMovementSummary(empresaId);
+  const mergedConfig = {
+    ...((config.config && typeof config.config === "object") ? config.config : {}),
+    movement_summary: summary,
+  };
+
+  await updateIntegrationStatus(config.id, { config: mergedConfig });
+  config.config = mergedConfig;
+  return summary;
 }
 
 async function loadConfigs() {
@@ -1795,6 +1883,11 @@ async function loadOverviewForConfig(
   }
 
   const rowLimit = Math.min(Math.max(Number(limit) || 500, 1), 2000);
+  let movementSummary = parseStoredMovementSummary(config);
+  if (!movementSummary) {
+    movementSummary = await persistMovementSummary(config, empresaId);
+  }
+
   const { data: movements, error: movementsError } = await supabase
     .from("extratobancario")
     .select("*")
@@ -1814,6 +1907,7 @@ async function loadOverviewForConfig(
     current_balance_at: config.current_balance_at || null,
     sync_status: config.sync_status || null,
     next_sync_at: config.next_sync_at || null,
+    summary: movementSummary,
     movements: movements || [],
   };
 }
@@ -1894,6 +1988,22 @@ Deno.serve(async (request) => {
         limit: Number(payload.limit) || 500,
       });
       return jsonResponse(data);
+    }
+
+    if (action === "refreshSummary") {
+      const empresaId = sanitizeText(payload.empresa_id) || sanitizeText(config.empresa_id);
+      if (!empresaId) {
+        return jsonResponse({ error: "Informe a empresa para recalcular o resumo do extrato." }, 400);
+      }
+
+      const summary = await persistMovementSummary(config, empresaId);
+      return jsonResponse({
+        success: true,
+        action: "refreshSummary",
+        empresa_id: empresaId,
+        integracao_id: config.id,
+        summary,
+      });
     }
 
     if (action === "buscarExtrato" || action === "syncNow") {

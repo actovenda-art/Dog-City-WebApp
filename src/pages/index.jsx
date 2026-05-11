@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Navigate, Outlet, Route, Routes, useLocation }
 import { LoaderCircle } from "lucide-react";
 import { User } from "@/api/entities";
 import { getSafeNextPathFromSearch, getSafeRedirectTarget, isSameAppLocation } from "@/lib/auth-navigation";
+import { getDefaultHomePage } from "@/lib/access-control";
 import {
   buildRecoveredLoginUrl,
   clearCorruptedBrowserAuthState,
@@ -141,6 +142,15 @@ function LegacyPageRedirect({ pageName }) {
   );
 }
 
+function DefaultHomeRedirect({ authEnabled, authReady, currentUser }) {
+  if (authEnabled && !authReady) {
+    return <FullScreenAuthLoader />;
+  }
+
+  const target = createPageUrl(getDefaultHomePage(currentUser));
+  return <Navigate to={target} replace />;
+}
+
 function RequireAuth({ authEnabled, authReady, currentUser, children }) {
   const location = useLocation();
   const onboardingPath = createPageUrl("CompletarCadastro");
@@ -214,7 +224,10 @@ function RedirectAuthenticatedUser({ authEnabled, authReady, currentUser, childr
       }
       return <Navigate to={target} replace />;
     }
-    const nextTarget = getSafeNextPathFromSearch(location.search);
+    const rawNextTarget = new URLSearchParams(location.search || "").get("next");
+    const nextTarget = rawNextTarget
+      ? getSafeNextPathFromSearch(location.search)
+      : createPageUrl(getDefaultHomePage(currentUser));
     if (isSameAppLocation(nextTarget, location.pathname, location.search, location.hash)) {
       return children;
     }
@@ -315,7 +328,7 @@ function PagesContent() {
 
   return (
     <Routes>
-      <Route path="/" element={<Navigate to={createPageUrl("Dev_Dashboard")} replace />} />
+      <Route path="/" element={<DefaultHomeRedirect authEnabled={authEnabled} authReady={authReady} currentUser={currentUser} />} />
 
       <Route
         path={createPageUrl("Login")}
@@ -395,7 +408,7 @@ function PagesContent() {
         );
       })}
 
-      <Route path="*" element={<Navigate to={createPageUrl("Dev_Dashboard")} replace />} />
+      <Route path="*" element={<DefaultHomeRedirect authEnabled={authEnabled} authReady={authReady} currentUser={currentUser} />} />
     </Routes>
   );
 }

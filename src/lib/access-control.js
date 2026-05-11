@@ -196,6 +196,15 @@ export function getNotificationDepartment(user) {
   return "gerencial";
 }
 
+export function getDefaultHomePage(user) {
+  if (!user) return "Perfis";
+  if (user.is_platform_admin || user.company_role === "platform_admin") return "Cockpit";
+  if (isManagerialProfile(user)) return "Cockpit";
+  if (isCommercialProfile(user)) return "Orcamentos";
+  if (isOperationalProfile(user)) return "Registrador";
+  return "Perfis";
+}
+
 function permissionMatches(granted, required) {
   const normalizedGranted = normalizePermission(granted);
   const normalizedRequired = normalizePermission(required);

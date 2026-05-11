@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { bancoInter } from "@/api/functions";
-import { ExtratoBancario, IntegracaoConfig, User } from "@/api/entities";
+import { ExtratoBancario, User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -77,6 +77,65 @@ function writeMovementsCache(payload) {
   }
 }
 
+function formatPeriodLabel(summary) {
+  if (!summary?.oldest_movement_date && !summary?.newest_movement_date) return null;
+  if (summary?.oldest_movement_date && summary?.newest_movement_date) {
+    return `${formatMovementDateTime(summary.oldest_movement_date)} até ${formatMovementDateTime(summary.newest_movement_date)}`;
+  }
+  return formatMovementDateTime(summary.oldest_movement_date || summary.newest_movement_date);
+}
+
+function normalizeMovementSummary(summary) {
+  if (!summary || typeof summary !== "object") return null;
+
+  return {
+    movement_count: Number(summary.movement_count) || 0,
+    total_entradas: Number(summary.total_entradas) || 0,
+    total_saidas: Number(summary.total_saidas) || 0,
+    oldest_movement_date: summary.oldest_movement_date || null,
+    newest_movement_date: summary.newest_movement_date || null,
+    generated_at: summary.generated_at || null,
+  };
+}
+
+function buildSummaryFromMovements(rows) {
+  const normalizedRows = dedupeOfficialImportedMovements(rows || [])
+    .map((item) => normalizeMovement(item))
+    .sort((a, b) => (b.dataOrdenacao?.getTime() || 0) - (a.dataOrdenacao?.getTime() || 0));
+
+  let totalEntradas = 0;
+  let totalSaidas = 0;
+  let oldestMovementDate = null;
+  let newestMovementDate = null;
+
+  for (const item of normalizedRows) {
+    if (item.tipo === "saida") {
+      totalSaidas += item.valor || 0;
+    } else {
+      totalEntradas += item.valor || 0;
+    }
+
+    const movementDate = item.data_movimento || item.data || null;
+    if (!movementDate) continue;
+
+    if (!oldestMovementDate || movementDate < oldestMovementDate) {
+      oldestMovementDate = movementDate;
+    }
+    if (!newestMovementDate || movementDate > newestMovementDate) {
+      newestMovementDate = movementDate;
+    }
+  }
+
+  return {
+    movement_count: normalizedRows.length,
+    total_entradas: totalEntradas,
+    total_saidas: totalSaidas,
+    oldest_movement_date: oldestMovementDate,
+    newest_movement_date: newestMovementDate,
+    generated_at: new Date().toISOString(),
+  };
+}
+
 function StatCard({ label, value, className = "", valueClassName = "", icon = null, helper = null, isBlurred = false }) {
   return (
     <Card className={className}>
@@ -94,20 +153,12 @@ function StatCard({ label, value, className = "", valueClassName = "", icon = nu
   );
 }
 
-function resolveBankInterConfig(configs, empresaId) {
-  const interConfigs = (configs || []).filter((item) => (item.provider || item.nome) === "banco_inter");
-  const companyConfig = empresaId
-    ? interConfigs.find((item) => (item.empresa_id || null) === empresaId)
-    : null;
-  const globalConfig = interConfigs.find((item) => !item.empresa_id);
-  return companyConfig || globalConfig || null;
-}
-
 export default function Movimentacoes() {
   const [movimentacoes, setMovimentacoes] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [currentBalance, setCurrentBalance] = useState(null);
   const [currentBalanceAt, setCurrentBalanceAt] = useState(null);
+  const [summarySnapshot, setSummarySnapshot] = useState(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isSummaryLoading, setIsSummaryLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -122,6 +173,7 @@ export default function Movimentacoes() {
   const [refreshResult, setRefreshResult] = useState(null);
   const [visibleCount, setVisibleCount] = useState(MOVEMENTS_PAGE_SIZE);
   const [cacheHydrated, setCacheHydrated] = useState(false);
+  const [hasLoadedFullDataset, setHasLoadedFullDataset] = useState(false);
 
   const applyCachedSnapshot = (expectedEmpresaId = null) => {
     const cached = readMovementsCache();
@@ -134,6 +186,8 @@ export default function Movimentacoes() {
     setMovimentacoes(Array.isArray(cached.movements) ? cached.movements : []);
     setCurrentBalance(typeof cached.current_balance === "number" ? cached.current_balance : null);
     setCurrentBalanceAt(cached.current_balance_at || null);
+    setSummarySnapshot(normalizeMovementSummary(cached.summary));
+    setHasLoadedFullDataset(false);
     setCacheHydrated(true);
     setIsInitialLoading(false);
     return true;
@@ -146,52 +200,72 @@ export default function Movimentacoes() {
     setIsSummaryLoading(true);
 
     try {
-      const [movementsData, configs] = await Promise.all([
-        (ExtratoBancario.listAll
-          ? ExtratoBancario.listAll("-data_movimento", 1000, 20000)
-          : ExtratoBancario.list("-data_movimento", 5000)),
-        IntegracaoConfig.list("-created_date", 200).catch(() => []),
-      ]);
+      let overviewEmpresaId = userProfile?.empresa_id || null;
+      let overviewBalance = null;
+      let overviewBalanceAt = null;
+      let overviewSummary = null;
+      let overviewMovements = [];
 
-      const resolvedConfig = resolveBankInterConfig(configs, userProfile?.empresa_id || null);
-      let nextMovements = movementsData || [];
-      let nextBalance = typeof resolvedConfig?.current_balance === "number" ? resolvedConfig.current_balance : null;
-      let nextBalanceAt = resolvedConfig?.current_balance_at || null;
-      let overviewEmpresaId = null;
+      try {
+        const overview = await bancoInter({
+          action: "overview",
+          empresa_id: userProfile?.empresa_id || null,
+          limit: 250,
+        });
 
-      if (!resolvedConfig || nextMovements.length === 0) {
-        try {
-          const overview = await bancoInter({
-            action: "overview",
-            empresa_id: userProfile?.empresa_id || null,
-            limit: 2000,
-          });
-
-          if (Array.isArray(overview?.movements) && overview.movements.length > 0) {
-            nextMovements = overview.movements;
-          }
-          if (overview?.empresa_id) {
-            overviewEmpresaId = overview.empresa_id;
-          }
-          if (typeof overview?.current_balance === "number") {
-            nextBalance = overview.current_balance;
-          }
-          if (overview?.current_balance_at) {
-            nextBalanceAt = overview.current_balance_at;
-          }
-        } catch (overviewError) {
-          console.warn("Nao foi possivel carregar o panorama do Banco Inter:", overviewError);
+        if (overview?.empresa_id) {
+          overviewEmpresaId = overview.empresa_id;
         }
+        if (typeof overview?.current_balance === "number") {
+          overviewBalance = overview.current_balance;
+          setCurrentBalance(overview.current_balance);
+        }
+        if (overview?.current_balance_at) {
+          overviewBalanceAt = overview.current_balance_at;
+          setCurrentBalanceAt(overview.current_balance_at);
+        }
+
+        overviewSummary = normalizeMovementSummary(overview?.summary);
+        if (overviewSummary) {
+          setSummarySnapshot(overviewSummary);
+        }
+
+        if (Array.isArray(overview?.movements)) {
+          overviewMovements = overview.movements;
+          setMovimentacoes(overview.movements);
+        }
+
+        writeMovementsCache({
+          empresa_id: overviewEmpresaId,
+          movements: overviewMovements,
+          current_balance: overviewBalance,
+          current_balance_at: overviewBalanceAt,
+          summary: overviewSummary,
+          cached_at: new Date().toISOString(),
+        });
+      } catch (overviewError) {
+        console.warn("Nao foi possivel carregar o panorama rapido do Banco Inter:", overviewError);
+      } finally {
+        setIsInitialLoading(false);
+        setIsSummaryLoading(false);
       }
 
+      const fullMovements = ExtratoBancario.listAll
+        ? await ExtratoBancario.listAll("-data_movimento", 1000, 20000)
+        : await ExtratoBancario.list("-data_movimento", 5000);
+
+      const nextMovements = fullMovements || [];
+      const derivedSummary = buildSummaryFromMovements(nextMovements);
+
       setMovimentacoes(nextMovements);
-      setCurrentBalance(nextBalance);
-      setCurrentBalanceAt(nextBalanceAt);
+      setSummarySnapshot(derivedSummary);
+      setHasLoadedFullDataset(true);
       writeMovementsCache({
-        empresa_id: userProfile?.empresa_id || overviewEmpresaId || resolvedConfig?.empresa_id || null,
-        movements: nextMovements,
-        current_balance: nextBalance,
-        current_balance_at: nextBalanceAt,
+        empresa_id: overviewEmpresaId,
+        movements: nextMovements.slice(0, 250),
+        current_balance: overviewBalance,
+        current_balance_at: overviewBalanceAt,
+        summary: derivedSummary,
         cached_at: new Date().toISOString(),
       });
     } catch (error) {
@@ -286,6 +360,7 @@ export default function Movimentacoes() {
   );
 
   const hasMoreMovements = visibleMovements.length < filtered.length;
+  const hasActiveFilters = Boolean(searchTerm || tipoFiltro !== "all" || dataInicial || dataFinal);
 
   const totalEntradas = filtered
     .filter((item) => item.tipo === "entrada")
@@ -299,8 +374,42 @@ export default function Movimentacoes() {
   const totalSaidasGeral = normalizedMovements
     .filter((item) => item.tipo === "saida")
     .reduce((sum, item) => sum + (item.valor || 0), 0);
+  const derivedSummaryFromLoadedRows = useMemo(
+    () => buildSummaryFromMovements(movimentacoes),
+    [movimentacoes],
+  );
+  const effectiveSummary = hasLoadedFullDataset
+    ? derivedSummaryFromLoadedRows
+    : (summarySnapshot || derivedSummaryFromLoadedRows);
+  const entradasCardValue = hasActiveFilters ? totalEntradas : effectiveSummary.total_entradas;
+  const saidasCardValue = hasActiveFilters ? totalSaidas : effectiveSummary.total_saidas;
+  const movementCountCardValue = hasActiveFilters ? filtered.length : effectiveSummary.movement_count;
+  const movementPeriodLabel = formatPeriodLabel(effectiveSummary);
 
   const saldoAtual = typeof currentBalance === "number" ? currentBalance : (totalEntradasGeral - totalSaidasGeral);
+  const refreshStoredSummary = async (userProfile = currentUser) => {
+    try {
+      const data = await bancoInter({
+        action: "refreshSummary",
+        empresa_id: userProfile?.empresa_id || null,
+      });
+
+      const refreshedSummary = normalizeMovementSummary(data?.summary);
+      if (refreshedSummary) {
+        setSummarySnapshot(refreshedSummary);
+        writeMovementsCache({
+          empresa_id: userProfile?.empresa_id || null,
+          movements: (movimentacoes || []).slice(0, 250),
+          current_balance: currentBalance,
+          current_balance_at: currentBalanceAt,
+          summary: refreshedSummary,
+          cached_at: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.warn("Nao foi possivel atualizar o resumo persistido do extrato:", error);
+    }
+  };
 
   const openModal = (item = null) => {
     if (item) {
@@ -386,6 +495,7 @@ export default function Movimentacoes() {
       }
 
       await loadData(currentUser, { preserveVisibleData: true });
+      await refreshStoredSummary(currentUser);
       setShowModal(false);
     } catch (error) {
       alert(error?.message || "Erro ao salvar movimentação.");
@@ -401,6 +511,7 @@ export default function Movimentacoes() {
     try {
       await ExtratoBancario.delete(movement.id);
       await loadData(currentUser, { preserveVisibleData: true });
+      await refreshStoredSummary(currentUser);
     } catch (error) {
       alert(error?.message || "Erro ao excluir movimentação.");
     }
@@ -421,6 +532,12 @@ export default function Movimentacoes() {
       if (typeof data?.saldo_atual === "number") {
         setCurrentBalance(data.saldo_atual);
         setCurrentBalanceAt(data?.saldo_atualizado_em || new Date().toISOString());
+      }
+      if (data?.summary) {
+        const refreshedSummary = normalizeMovementSummary(data.summary);
+        if (refreshedSummary) {
+          setSummarySnapshot(refreshedSummary);
+        }
       }
 
       setRefreshResult({
@@ -487,18 +604,18 @@ export default function Movimentacoes() {
         <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
           <StatCard
             label="Entradas"
-            value={formatCurrency(totalEntradas)}
+            value={formatCurrency(entradasCardValue)}
             className="border-green-200"
             valueClassName="text-green-600"
-            helper="Filtro atual"
+            helper={hasActiveFilters ? "Filtro atual" : "Resumo salvo do extrato"}
             isBlurred={isSummaryLoading}
           />
           <StatCard
             label="Saídas"
-            value={formatCurrency(totalSaidas)}
+            value={formatCurrency(saidasCardValue)}
             className="border-red-200"
             valueClassName="text-red-600"
-            helper="Filtro atual"
+            helper={hasActiveFilters ? "Filtro atual" : "Resumo salvo do extrato"}
             isBlurred={isSummaryLoading}
           />
           <StatCard
@@ -512,10 +629,10 @@ export default function Movimentacoes() {
           />
           <StatCard
             label="Movimentações"
-            value={String(filtered.length)}
+            value={String(movementCountCardValue)}
             className="border-gray-200"
             valueClassName="text-gray-900"
-            helper="Quantidade exibida"
+            helper={movementPeriodLabel ? `PerÃ­odo: ${movementPeriodLabel}` : "Quantidade exibida"}
             isBlurred={isSummaryLoading}
           />
         </div>

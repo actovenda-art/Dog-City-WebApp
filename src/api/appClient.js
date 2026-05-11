@@ -1267,6 +1267,67 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       }
       return data;
     },
+    bancoInter: async (payload = {}) => {
+      const functionUrl = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/banco-inter-sync` : '';
+      const parseFunctionError = async (error) => {
+        let details = '';
+        try {
+          if (error?.context) {
+            const cloned = error.context.clone ? error.context.clone() : error.context;
+            const errorPayload = await cloned.json();
+            details = errorPayload?.details || errorPayload?.error || '';
+          }
+        } catch {
+          details = '';
+        }
+        return details || error?.message || 'Falha na integração com Banco Inter.';
+      };
+
+      try {
+        const { data, error } = await supabase.functions.invoke('banco-inter-sync', {
+          body: payload,
+        });
+        if (error) {
+          throw new Error(await parseFunctionError(error));
+        }
+        return data;
+      } catch (invokeError) {
+        if (!functionUrl || !SUPABASE_ANON) {
+          throw invokeError;
+        }
+
+        const headers = {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON,
+          Authorization: `Bearer ${SUPABASE_ANON}`,
+        };
+
+        const activeUnitId = getStoredActiveUnitId();
+        if (activeUnitId) {
+          headers['x-active-unit-id'] = activeUnitId;
+        }
+
+        const response = await fetch(functionUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload || {}),
+        });
+
+        let responsePayload = null;
+        try {
+          responsePayload = await response.json();
+        } catch {
+          responsePayload = null;
+        }
+
+        if (!response.ok) {
+          const fallbackMessage = responsePayload?.details || responsePayload?.error || invokeError?.message || 'Falha na integração com Banco Inter.';
+          throw new Error(fallbackMessage);
+        }
+
+        return responsePayload;
+      }
+    },
     userAdmin: async (payload = {}) => {
       const { data, error } = await supabase.functions.invoke('user-admin', {
         body: payload,

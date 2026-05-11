@@ -52,6 +52,30 @@ const EMPTY_FORM = {
 };
 
 const MOVEMENTS_PAGE_SIZE = 50;
+const MOVEMENT_CACHE_KEY = "movimentacoes:last-overview";
+
+function readMovementsCache() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const rawValue = window.localStorage.getItem(MOVEMENT_CACHE_KEY);
+    if (!rawValue) return null;
+    const parsed = JSON.parse(rawValue);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMovementsCache(payload) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(MOVEMENT_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore cache write failures
+  }
+}
 
 function StatCard({ label, value, className = "", valueClassName = "", icon = null, helper = null, isBlurred = false }) {
   return (
@@ -97,9 +121,26 @@ export default function Movimentacoes() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState(null);
   const [visibleCount, setVisibleCount] = useState(MOVEMENTS_PAGE_SIZE);
+  const [cacheHydrated, setCacheHydrated] = useState(false);
+
+  const applyCachedSnapshot = (expectedEmpresaId = null) => {
+    const cached = readMovementsCache();
+    if (!cached) return false;
+
+    if (expectedEmpresaId && cached.empresa_id && cached.empresa_id !== expectedEmpresaId) {
+      return false;
+    }
+
+    setMovimentacoes(Array.isArray(cached.movements) ? cached.movements : []);
+    setCurrentBalance(typeof cached.current_balance === "number" ? cached.current_balance : null);
+    setCurrentBalanceAt(cached.current_balance_at || null);
+    setCacheHydrated(true);
+    setIsInitialLoading(false);
+    return true;
+  };
 
   const loadData = async (userProfile, { preserveVisibleData = false } = {}) => {
-    if (!preserveVisibleData && movimentacoes.length === 0) {
+    if (!preserveVisibleData && movimentacoes.length === 0 && !cacheHydrated) {
       setIsInitialLoading(true);
     }
     setIsSummaryLoading(true);
@@ -113,10 +154,46 @@ export default function Movimentacoes() {
       ]);
 
       const resolvedConfig = resolveBankInterConfig(configs, userProfile?.empresa_id || null);
+      let nextMovements = movementsData || [];
+      let nextBalance = typeof resolvedConfig?.current_balance === "number" ? resolvedConfig.current_balance : null;
+      let nextBalanceAt = resolvedConfig?.current_balance_at || null;
+      let overviewEmpresaId = null;
 
-      setMovimentacoes(movementsData || []);
-      setCurrentBalance(typeof resolvedConfig?.current_balance === "number" ? resolvedConfig.current_balance : null);
-      setCurrentBalanceAt(resolvedConfig?.current_balance_at || null);
+      if (!resolvedConfig || nextMovements.length === 0) {
+        try {
+          const overview = await bancoInter({
+            action: "overview",
+            empresa_id: userProfile?.empresa_id || null,
+            limit: 2000,
+          });
+
+          if (Array.isArray(overview?.movements) && overview.movements.length > 0) {
+            nextMovements = overview.movements;
+          }
+          if (overview?.empresa_id) {
+            overviewEmpresaId = overview.empresa_id;
+          }
+          if (typeof overview?.current_balance === "number") {
+            nextBalance = overview.current_balance;
+          }
+          if (overview?.current_balance_at) {
+            nextBalanceAt = overview.current_balance_at;
+          }
+        } catch (overviewError) {
+          console.warn("Nao foi possivel carregar o panorama do Banco Inter:", overviewError);
+        }
+      }
+
+      setMovimentacoes(nextMovements);
+      setCurrentBalance(nextBalance);
+      setCurrentBalanceAt(nextBalanceAt);
+      writeMovementsCache({
+        empresa_id: userProfile?.empresa_id || overviewEmpresaId || resolvedConfig?.empresa_id || null,
+        movements: nextMovements,
+        current_balance: nextBalance,
+        current_balance_at: nextBalanceAt,
+        cached_at: new Date().toISOString(),
+      });
     } catch (error) {
       console.error("Erro ao carregar movimentações:", error);
     } finally {
@@ -129,14 +206,17 @@ export default function Movimentacoes() {
     let isMounted = true;
 
     const initializePage = async () => {
+      applyCachedSnapshot();
       try {
         const me = await User.me();
         if (!isMounted) return;
         setCurrentUser(me || null);
+        applyCachedSnapshot(me?.empresa_id || null);
         await loadData(me || null);
       } catch (error) {
         console.warn("Não foi possível carregar o usuário atual:", error);
         if (isMounted) {
+          applyCachedSnapshot();
           await loadData(null);
         }
       }

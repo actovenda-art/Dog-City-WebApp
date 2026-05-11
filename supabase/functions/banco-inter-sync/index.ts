@@ -1771,10 +1771,51 @@ async function findConfig(payload: Record<string, unknown>) {
   }
 
   if (empresaId) {
-    return configs.find((item) => sanitizeText(item.empresa_id) === empresaId) || null;
+    const companyConfig = configs.find((item) => sanitizeText(item.empresa_id) === empresaId) || null;
+    if (companyConfig) return companyConfig;
+    return configs.find((item) => !sanitizeText(item.empresa_id)) || null;
   }
 
   return configs[0] || null;
+}
+
+async function loadOverviewForConfig(
+  config: IntegrationConfig,
+  {
+    empresaIdOverride,
+    limit = 500,
+  }: {
+    empresaIdOverride?: string;
+    limit?: number;
+  } = {},
+) {
+  const empresaId = sanitizeText(firstDefined(empresaIdOverride, config.empresa_id));
+  if (!empresaId) {
+    throw new Error("Informe a empresa da integracao para consultar o extrato.");
+  }
+
+  const rowLimit = Math.min(Math.max(Number(limit) || 500, 1), 2000);
+  const { data: movements, error: movementsError } = await supabase
+    .from("extratobancario")
+    .select("*")
+    .eq("empresa_id", empresaId)
+    .order("data_movimento", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(rowLimit);
+
+  if (movementsError) throw movementsError;
+
+  return {
+    success: true,
+    action: "overview",
+    empresa_id: empresaId,
+    integracao_id: config.id,
+    current_balance: typeof config.current_balance === "number" ? config.current_balance : null,
+    current_balance_at: config.current_balance_at || null,
+    sync_status: config.sync_status || null,
+    next_sync_at: config.next_sync_at || null,
+    movements: movements || [],
+  };
 }
 
 async function handleScheduledSync() {
@@ -1843,6 +1884,14 @@ Deno.serve(async (request) => {
         persist: false,
         empresaIdOverride: sanitizeText(payload.empresa_id),
         debug: Boolean(payload.debug),
+      });
+      return jsonResponse(data);
+    }
+
+    if (action === "overview") {
+      const data = await loadOverviewForConfig(config, {
+        empresaIdOverride: sanitizeText(payload.empresa_id),
+        limit: Number(payload.limit) || 500,
       });
       return jsonResponse(data);
     }

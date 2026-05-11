@@ -93,6 +93,15 @@ type DuplicateReviewRow = {
   existing_snapshot: Record<string, unknown>;
 };
 
+type MovementSummaryRow = {
+  tipo?: string | null;
+  valor?: number | string | null;
+  data_movimento?: string | null;
+  data?: string | null;
+  source_provider?: string | null;
+  raw_data?: Record<string, unknown> | null;
+};
+
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -328,6 +337,56 @@ function stableSerialize(value: unknown): string {
   }
 
   return JSON.stringify(value ?? null);
+}
+
+function buildMovementFingerprint(row: MovementSummaryRow) {
+  if (!row?.raw_data || typeof row.raw_data !== "object") return null;
+
+  return [
+    sanitizeText(row.source_provider),
+    sanitizeText(row.tipo),
+    sanitizeText(firstDefined(row.data_movimento, row.data)),
+    String(firstDefined(row.valor, "")),
+    stableSerialize(row.raw_data),
+  ].join("|");
+}
+
+async function loadMovementRowsPaginated<T extends Record<string, unknown>>(
+  empresaId: string,
+  columns: string,
+  {
+    pageSize = 1000,
+    maxRows = 100000,
+  }: {
+    pageSize?: number;
+    maxRows?: number;
+  } = {},
+): Promise<T[]> {
+  const batchSize = Math.min(Math.max(Number(pageSize) || 1000, 1), 1000);
+  const rowLimit = Math.min(Math.max(Number(maxRows) || 100000, 1), 100000);
+  const rows: T[] = [];
+  let from = 0;
+
+  while (rows.length < rowLimit) {
+    const to = Math.min(from + batchSize - 1, rowLimit - 1);
+    const { data, error } = await supabase
+      .from("extratobancario")
+      .select(columns)
+      .eq("empresa_id", empresaId)
+      .order("data_movimento", { ascending: false })
+      .order("created_date", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+
+    const batch = (data || []) as T[];
+    rows.push(...batch);
+
+    if (batch.length < batchSize) break;
+    from += batchSize;
+  }
+
+  return rows;
 }
 
 function inferTipo(rawTransaction: Record<string, unknown>, amount: number): "entrada" | "saida" {
@@ -745,12 +804,12 @@ function extractBalanceValue(payload: unknown, depth = 0): number | null {
 
   const source = payload as Record<string, unknown>;
   const preferredKeys = [
-    "disponivel",
-    "saldoDisponivel",
-    "availableBalance",
     "saldo",
     "balance",
     "valor",
+    "disponivel",
+    "saldoDisponivel",
+    "availableBalance",
   ];
 
   for (const key of preferredKeys) {
@@ -1783,19 +1842,28 @@ function parseStoredMovementSummary(config: IntegrationConfig): MovementSummary 
 }
 
 async function computeMovementSummary(empresaId: string): Promise<MovementSummary> {
-  const { data, error } = await supabase
-    .from("extratobancario")
-    .select("tipo, valor, data_movimento")
-    .eq("empresa_id", empresaId);
+  const data = await loadMovementRowsPaginated<MovementSummaryRow>(empresaId, "tipo, valor, data_movimento, data, source_provider, raw_data");
 
-  if (error) throw error;
+  const uniqueRowsByFingerprint = new Map<string, MovementSummaryRow>();
+  const uniqueRows: MovementSummaryRow[] = [];
+
+  for (const row of data || []) {
+    const fingerprint = buildMovementFingerprint(row);
+    if (!fingerprint) {
+      uniqueRows.push(row);
+      continue;
+    }
+    if (uniqueRowsByFingerprint.has(fingerprint)) continue;
+    uniqueRowsByFingerprint.set(fingerprint, row);
+    uniqueRows.push(row);
+  }
 
   let totalEntradas = 0;
   let totalSaidas = 0;
   let oldestMovementDate: string | null = null;
   let newestMovementDate: string | null = null;
 
-  for (const row of data || []) {
+  for (const row of uniqueRows) {
     const amount = typeof row?.valor === "number" ? row.valor : Number(row?.valor || 0);
     if ((row?.tipo || "") === "saida") {
       totalSaidas += Number.isFinite(amount) ? amount : 0;
@@ -1815,7 +1883,7 @@ async function computeMovementSummary(empresaId: string): Promise<MovementSummar
   }
 
   return {
-    movement_count: (data || []).length,
+    movement_count: uniqueRows.length,
     total_entradas: totalEntradas,
     total_saidas: totalSaidas,
     oldest_movement_date: oldestMovementDate,
@@ -1893,7 +1961,7 @@ async function loadOverviewForConfig(
     .select("*")
     .eq("empresa_id", empresaId)
     .order("data_movimento", { ascending: false })
-    .order("created_at", { ascending: false })
+    .order("created_date", { ascending: false })
     .limit(rowLimit);
 
   if (movementsError) throw movementsError;
@@ -1930,32 +1998,15 @@ async function loadAllMovementsForConfig(
   }
 
   const maxRows = Math.min(Math.max(Number(limit) || 50000, 1), 100000);
-  const batchSize = Math.min(Math.max(Number(pageSize) || 1000, 1), 5000);
+  const batchSize = Math.min(Math.max(Number(pageSize) || 1000, 1), 1000);
   let movementSummary = parseStoredMovementSummary(config);
   if (!movementSummary) {
     movementSummary = await persistMovementSummary(config, empresaId);
   }
-
-  const movements: Record<string, unknown>[] = [];
-  let from = 0;
-
-  while (movements.length < maxRows) {
-    const to = Math.min(from + batchSize - 1, maxRows - 1);
-    const { data, error } = await supabase
-      .from("extratobancario")
-      .select("*")
-      .eq("empresa_id", empresaId)
-      .order("data_movimento", { ascending: false })
-      .order("created_at", { ascending: false })
-      .range(from, to);
-
-    if (error) throw error;
-
-    const batch = data || [];
-    movements.push(...batch);
-    if (batch.length < batchSize) break;
-    from += batchSize;
-  }
+  const movements = await loadMovementRowsPaginated<Record<string, unknown>>(empresaId, "*", {
+    pageSize: batchSize,
+    maxRows,
+  });
 
   return {
     success: true,
@@ -1992,6 +2043,133 @@ async function loadLiveBalanceForConfig(
     saldo_atual: balanceResult.balance,
     saldo_atualizado_em: new Date().toISOString(),
     saldo_atual_referencia: balanceReferenceDate,
+  };
+}
+
+function normalizeBase64Payload(value: unknown) {
+  const text = sanitizeText(value);
+  if (!text) return null;
+
+  const match = text.match(/^data:application\/pdf;base64,(.+)$/i);
+  return match ? match[1] : text;
+}
+
+async function loadTransactionReceiptForConfig(
+  config: IntegrationConfig,
+  {
+    empresaIdOverride,
+    movementId,
+    externalId,
+  }: {
+    empresaIdOverride?: string;
+    movementId?: string;
+    externalId?: string;
+  } = {},
+) {
+  const empresaId = sanitizeText(firstDefined(empresaIdOverride, config.empresa_id));
+  if (!empresaId) {
+    throw new Error("Informe a empresa para consultar o comprovante.");
+  }
+
+  const resolvedMovementId = sanitizeText(movementId);
+  const resolvedExternalId = sanitizeText(externalId);
+  if (!resolvedMovementId && !resolvedExternalId) {
+    throw new Error("Informe a transação que deve ter o comprovante consultado.");
+  }
+
+  let query = supabase
+    .from("extratobancario")
+    .select("*")
+    .eq("empresa_id", empresaId)
+    .limit(1);
+
+  if (resolvedMovementId) {
+    query = query.eq("id", resolvedMovementId);
+  } else {
+    query = query.eq("external_id", resolvedExternalId);
+  }
+
+  const { data: movement, error: movementError } = await query.maybeSingle();
+  if (movementError) throw movementError;
+  if (!movement) {
+    throw new Error("Transação não encontrada para consultar o comprovante.");
+  }
+
+  const rawData = movement.raw_data && typeof movement.raw_data === "object"
+    ? movement.raw_data as Record<string, unknown>
+    : {};
+
+  const embeddedPdfBase64 = normalizeBase64Payload(firstDefined(
+    rawData.comprovante_pdf_base64,
+    rawData.comprovanteBase64,
+    rawData.pdf_base64,
+    rawData.pdfBase64,
+    rawData.receiptBase64,
+  ));
+
+  if (embeddedPdfBase64) {
+    return {
+      success: true,
+      action: "transactionReceipt",
+      empresa_id: empresaId,
+      integracao_id: config.id,
+      movement_id: movement.id,
+      external_id: movement.external_id || null,
+      file_name: `comprovante-${movement.external_id || movement.id}.pdf`,
+      mime_type: "application/pdf",
+      base64: embeddedPdfBase64,
+      source: "embedded_payload",
+    };
+  }
+
+  const directReceiptUrl = sanitizeText(firstDefined(
+    rawData.comprovante_url,
+    rawData.comprovanteUrl,
+    rawData.receipt_url,
+    rawData.receiptUrl,
+    rawData.pdf_url,
+    rawData.pdfUrl,
+  ));
+
+  if (directReceiptUrl) {
+    return {
+      success: true,
+      action: "transactionReceipt",
+      empresa_id: empresaId,
+      integracao_id: config.id,
+      movement_id: movement.id,
+      external_id: movement.external_id || null,
+      file_name: `comprovante-${movement.external_id || movement.id}.pdf`,
+      mime_type: "application/pdf",
+      url: directReceiptUrl,
+      source: "direct_url",
+    };
+  }
+
+  const providerReference = sanitizeText(firstDefined(
+    rawData.id,
+    rawData.codigoTransacao,
+    rawData.transactionId,
+    rawData.identificador,
+    rawData.nsudoc,
+    rawData.documento,
+    rawData.nsu,
+    rawData.endToEndId,
+    rawData.e2eId,
+  ));
+
+  return {
+    success: false,
+    action: "transactionReceipt",
+    empresa_id: empresaId,
+    integracao_id: config.id,
+    movement_id: movement.id,
+    external_id: movement.external_id || null,
+    receipt_available: false,
+    provider_reference: providerReference || null,
+    message: providerReference
+      ? "A transação possui referência bancária, mas a integração atual ainda não recebeu um PDF de comprovante para esse tipo de lançamento."
+      : "A transação foi sincronizada apenas pelo extrato do Banco Inter, sem um identificador oficial de comprovante. Para esse lançamento, o banco não disponibilizou um PDF reaproveitável no payload atual.",
   };
 }
 
@@ -2073,6 +2251,15 @@ Deno.serve(async (request) => {
       return jsonResponse(data);
     }
 
+    if (action === "fullDataset") {
+      const data = await loadAllMovementsForConfig(config, {
+        empresaIdOverride: sanitizeText(payload.empresa_id),
+        limit: Number(payload.limit) || 50000,
+        pageSize: Number(payload.pageSize) || 1000,
+      });
+      return jsonResponse(data);
+    }
+
     if (action === "liveBalance") {
       const data = await loadLiveBalanceForConfig(config, {
         empresaIdOverride: sanitizeText(payload.empresa_id),
@@ -2094,6 +2281,15 @@ Deno.serve(async (request) => {
         integracao_id: config.id,
         summary,
       });
+    }
+
+    if (action === "transactionReceipt") {
+      const data = await loadTransactionReceiptForConfig(config, {
+        empresaIdOverride: sanitizeText(payload.empresa_id),
+        movementId: sanitizeText(payload.movement_id),
+        externalId: sanitizeText(payload.external_id),
+      });
+      return jsonResponse(data, data.success ? 200 : 404);
     }
 
     if (action === "buscarExtrato" || action === "syncNow") {

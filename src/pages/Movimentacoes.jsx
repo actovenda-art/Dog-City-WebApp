@@ -22,6 +22,7 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Calendar,
+  FileText,
   ListFilter,
   Pencil,
   Plus,
@@ -77,11 +78,24 @@ function writeMovementsCache(payload) {
   }
 }
 
-function formatPeriodLabel(summary) {
+function formatPeriodLabelWithDays(summary) {
   if (!summary?.oldest_movement_date && !summary?.newest_movement_date) return null;
+
+  const calculateDaySpan = (startValue, endValue) => {
+    if (!startValue || !endValue) return null;
+    const start = new Date(`${startValue}T00:00:00`);
+    const end = new Date(`${endValue}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    const diffInDays = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+    return diffInDays > 0 ? diffInDays : null;
+  };
+
   if (summary?.oldest_movement_date && summary?.newest_movement_date) {
-    return `${formatMovementDateTime(summary.oldest_movement_date)} até ${formatMovementDateTime(summary.newest_movement_date)}`;
+    const daySpan = calculateDaySpan(summary.oldest_movement_date, summary.newest_movement_date);
+    const rangeLabel = `${formatMovementDateTime(summary.oldest_movement_date)} até ${formatMovementDateTime(summary.newest_movement_date)}`;
+    return daySpan ? `${rangeLabel} - ${daySpan} dias` : rangeLabel;
   }
+
   return formatMovementDateTime(summary.oldest_movement_date || summary.newest_movement_date);
 }
 
@@ -179,6 +193,7 @@ export default function Movimentacoes() {
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState(null);
+  const [receiptLoadingId, setReceiptLoadingId] = useState(null);
   const [visibleCount, setVisibleCount] = useState(MOVEMENTS_PAGE_SIZE);
   const [cacheHydrated, setCacheHydrated] = useState(false);
   const [hasLoadedFullDataset, setHasLoadedFullDataset] = useState(false);
@@ -422,7 +437,7 @@ export default function Movimentacoes() {
   const entradasCardValue = hasActiveFilters ? totalEntradas : effectiveSummary.total_entradas;
   const saidasCardValue = hasActiveFilters ? totalSaidas : effectiveSummary.total_saidas;
   const movementCountCardValue = hasActiveFilters ? filtered.length : effectiveSummary.movement_count;
-  const movementPeriodLabel = formatPeriodLabel(effectiveSummary);
+  const movementPeriodLabel = formatPeriodLabelWithDays(effectiveSummary);
 
   const hasOfficialBalance = typeof currentBalance === "number";
   const saldoAtual = hasOfficialBalance ? currentBalance : null;
@@ -597,6 +612,51 @@ export default function Movimentacoes() {
       setIsSummaryLoading(false);
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleViewReceipt = async (movement) => {
+    if (!movement?.apiLocked) {
+      alert("Somente transações importadas pela API do banco podem ter comprovante oficial.");
+      return;
+    }
+
+    try {
+      setReceiptLoadingId(movement.id);
+      const data = await bancoInter({
+        action: "transactionReceipt",
+        empresa_id: currentUser?.empresa_id || null,
+        movement_id: movement.id,
+        external_id: movement.external_id || null,
+      });
+
+      if (!data?.success) {
+        throw new Error(data?.message || "Não foi possível localizar um comprovante para esta transação.");
+      }
+
+      if (data?.url) {
+        window.open(data.url, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      if (!data?.base64) {
+        throw new Error("A API do banco não retornou um PDF para este comprovante.");
+      }
+
+      const binary = window.atob(data.base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+
+      const blob = new Blob([bytes], { type: data?.mime_type || "application/pdf" });
+      const objectUrl = window.URL.createObjectURL(blob);
+      window.open(objectUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      alert(error?.message || "Não foi possível abrir o comprovante desta transação.");
+    } finally {
+      setReceiptLoadingId(null);
     }
   };
 
@@ -804,6 +864,16 @@ export default function Movimentacoes() {
                   </div>
 
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm"
+                      onClick={() => handleViewReceipt(movement)}
+                      disabled={!movement.apiLocked || receiptLoadingId === movement.id}
+                    >
+                      <FileText className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+                      {receiptLoadingId === movement.id ? "Carregando..." : "Ver comprovante"}
+                    </Button>
                     <Button variant="outline" size="sm" className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm" onClick={() => openModal(movement)}>
                       <Pencil className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                       {movement.apiLocked ? "Complementar" : "Editar"}

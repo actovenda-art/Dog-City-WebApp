@@ -136,6 +136,13 @@ function buildSummaryFromMovements(rows) {
   };
 }
 
+async function requestLiveBalance(empresaId) {
+  return bancoInter({
+    action: "liveBalance",
+    empresa_id: empresaId || null,
+  });
+}
+
 function StatCard({ label, value, className = "", valueClassName = "", icon = null, helper = null, isBlurred = false }) {
   return (
     <Card className={className}>
@@ -158,6 +165,7 @@ export default function Movimentacoes() {
   const [currentUser, setCurrentUser] = useState(null);
   const [currentBalance, setCurrentBalance] = useState(null);
   const [currentBalanceAt, setCurrentBalanceAt] = useState(null);
+  const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const [summarySnapshot, setSummarySnapshot] = useState(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isSummaryLoading, setIsSummaryLoading] = useState(true);
@@ -184,8 +192,8 @@ export default function Movimentacoes() {
     }
 
     setMovimentacoes(Array.isArray(cached.movements) ? cached.movements : []);
-    setCurrentBalance(typeof cached.current_balance === "number" ? cached.current_balance : null);
-    setCurrentBalanceAt(cached.current_balance_at || null);
+    setCurrentBalance(null);
+    setCurrentBalanceAt(null);
     setSummarySnapshot(normalizeMovementSummary(cached.summary));
     setHasLoadedFullDataset(false);
     setCacheHydrated(true);
@@ -201,8 +209,6 @@ export default function Movimentacoes() {
 
     try {
       let overviewEmpresaId = userProfile?.empresa_id || null;
-      let overviewBalance = null;
-      let overviewBalanceAt = null;
       let overviewSummary = null;
       let overviewMovements = [];
 
@@ -215,14 +221,6 @@ export default function Movimentacoes() {
 
         if (overview?.empresa_id) {
           overviewEmpresaId = overview.empresa_id;
-        }
-        if (typeof overview?.current_balance === "number") {
-          overviewBalance = overview.current_balance;
-          setCurrentBalance(overview.current_balance);
-        }
-        if (overview?.current_balance_at) {
-          overviewBalanceAt = overview.current_balance_at;
-          setCurrentBalanceAt(overview.current_balance_at);
         }
 
         overviewSummary = normalizeMovementSummary(overview?.summary);
@@ -238,8 +236,6 @@ export default function Movimentacoes() {
         writeMovementsCache({
           empresa_id: overviewEmpresaId,
           movements: overviewMovements,
-          current_balance: overviewBalance,
-          current_balance_at: overviewBalanceAt,
           summary: overviewSummary,
           cached_at: new Date().toISOString(),
         });
@@ -272,8 +268,6 @@ export default function Movimentacoes() {
       writeMovementsCache({
         empresa_id: overviewEmpresaId,
         movements: nextMovements.slice(0, 250),
-        current_balance: overviewBalance,
-        current_balance_at: overviewBalanceAt,
         summary: derivedSummary,
         cached_at: new Date().toISOString(),
       });
@@ -311,6 +305,41 @@ export default function Movimentacoes() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLiveBalance() {
+      setIsBalanceLoading(true);
+      try {
+        const data = await requestLiveBalance(currentUser?.empresa_id || null);
+        if (cancelled) return;
+        if (typeof data?.saldo_atual === "number") {
+          setCurrentBalance(data.saldo_atual);
+          setCurrentBalanceAt(data?.saldo_atualizado_em || new Date().toISOString());
+        } else {
+          setCurrentBalance(null);
+          setCurrentBalanceAt(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Não foi possível consultar o saldo ao vivo do Banco Inter:", error);
+          setCurrentBalance(null);
+          setCurrentBalanceAt(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsBalanceLoading(false);
+        }
+      }
+    }
+
+    loadLiveBalance();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.empresa_id]);
 
   const normalizedMovements = useMemo(
     () =>
@@ -395,7 +424,9 @@ export default function Movimentacoes() {
   const movementCountCardValue = hasActiveFilters ? filtered.length : effectiveSummary.movement_count;
   const movementPeriodLabel = formatPeriodLabel(effectiveSummary);
 
-  const saldoAtual = typeof currentBalance === "number" ? currentBalance : (totalEntradasGeral - totalSaidasGeral);
+  const hasOfficialBalance = typeof currentBalance === "number";
+  const saldoAtual = hasOfficialBalance ? currentBalance : null;
+  const saldoAtualDisplay = hasOfficialBalance ? formatCurrency(currentBalance) : "—";
   const refreshStoredSummary = async (userProfile = currentUser) => {
     try {
       const data = await bancoInter({
@@ -409,8 +440,6 @@ export default function Movimentacoes() {
         writeMovementsCache({
           empresa_id: userProfile?.empresa_id || null,
           movements: (movimentacoes || []).slice(0, 250),
-          current_balance: currentBalance,
-          current_balance_at: currentBalanceAt,
           summary: refreshedSummary,
           cached_at: new Date().toISOString(),
         });
@@ -541,6 +570,9 @@ export default function Movimentacoes() {
       if (typeof data?.saldo_atual === "number") {
         setCurrentBalance(data.saldo_atual);
         setCurrentBalanceAt(data?.saldo_atualizado_em || new Date().toISOString());
+      } else {
+        setCurrentBalance(null);
+        setCurrentBalanceAt(null);
       }
       if (data?.summary) {
         const refreshedSummary = normalizeMovementSummary(data.summary);
@@ -629,12 +661,16 @@ export default function Movimentacoes() {
           />
           <StatCard
             label="Saldo atual"
-            value={formatCurrency(saldoAtual)}
-            className={saldoAtual >= 0 ? "border-blue-200" : "border-red-200"}
-            valueClassName={saldoAtual >= 0 ? "text-blue-700" : "text-red-600"}
-            icon={<Wallet className={`h-5 w-5 ${saldoAtual >= 0 ? "text-blue-500" : "text-red-500"}`} />}
-            helper={currentBalanceAt ? `API Banco Inter atualizada em ${new Date(currentBalanceAt).toLocaleString("pt-BR")}` : "Consolidado interno do extrato"}
-            isBlurred={isSummaryLoading}
+            value={saldoAtualDisplay}
+            className={hasOfficialBalance ? (saldoAtual >= 0 ? "border-blue-200" : "border-red-200") : "border-slate-200"}
+            valueClassName={hasOfficialBalance ? (saldoAtual >= 0 ? "text-blue-700" : "text-red-600") : "text-slate-500"}
+            icon={<Wallet className={`h-5 w-5 ${hasOfficialBalance ? (saldoAtual >= 0 ? "text-blue-500" : "text-red-500") : "text-slate-400"}`} />}
+            helper={
+              currentBalanceAt
+                ? `API Banco Inter atualizada em ${new Date(currentBalanceAt).toLocaleString("pt-BR")}`
+                : (isBalanceLoading ? "Consultando saldo ao vivo na API" : "Saldo disponível apenas quando a API responder")
+            }
+            isBlurred={isBalanceLoading}
           />
           <StatCard
             label="Movimentações"

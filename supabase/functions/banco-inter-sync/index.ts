@@ -1912,6 +1912,89 @@ async function loadOverviewForConfig(
   };
 }
 
+async function loadAllMovementsForConfig(
+  config: IntegrationConfig,
+  {
+    empresaIdOverride,
+    limit = 50000,
+    pageSize = 1000,
+  }: {
+    empresaIdOverride?: string;
+    limit?: number;
+    pageSize?: number;
+  } = {},
+) {
+  const empresaId = sanitizeText(firstDefined(empresaIdOverride, config.empresa_id));
+  if (!empresaId) {
+    throw new Error("Informe a empresa da integracao para consultar o extrato completo.");
+  }
+
+  const maxRows = Math.min(Math.max(Number(limit) || 50000, 1), 100000);
+  const batchSize = Math.min(Math.max(Number(pageSize) || 1000, 1), 5000);
+  let movementSummary = parseStoredMovementSummary(config);
+  if (!movementSummary) {
+    movementSummary = await persistMovementSummary(config, empresaId);
+  }
+
+  const movements: Record<string, unknown>[] = [];
+  let from = 0;
+
+  while (movements.length < maxRows) {
+    const to = Math.min(from + batchSize - 1, maxRows - 1);
+    const { data, error } = await supabase
+      .from("extratobancario")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .order("data_movimento", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+
+    const batch = data || [];
+    movements.push(...batch);
+    if (batch.length < batchSize) break;
+    from += batchSize;
+  }
+
+  return {
+    success: true,
+    action: "fullDataset",
+    empresa_id: empresaId,
+    integracao_id: config.id,
+    current_balance: typeof config.current_balance === "number" ? config.current_balance : null,
+    current_balance_at: config.current_balance_at || null,
+    sync_status: config.sync_status || null,
+    next_sync_at: config.next_sync_at || null,
+    summary: movementSummary,
+    movements: movements.slice(0, maxRows),
+  };
+}
+
+async function loadLiveBalanceForConfig(
+  config: IntegrationConfig,
+  {
+    empresaIdOverride,
+  }: {
+    empresaIdOverride?: string;
+  } = {},
+) {
+  const empresaId = sanitizeText(firstDefined(empresaIdOverride, config.empresa_id));
+  const balanceReferenceDate = formatDateOnly(new Date());
+  const { accessToken, httpClient } = await getAccessToken(config);
+  const balanceResult = await fetchBalance(config, accessToken, httpClient, balanceReferenceDate);
+
+  return {
+    success: true,
+    action: "liveBalance",
+    empresa_id: empresaId || null,
+    integracao_id: config.id,
+    saldo_atual: balanceResult.balance,
+    saldo_atualizado_em: new Date().toISOString(),
+    saldo_atual_referencia: balanceReferenceDate,
+  };
+}
+
 async function handleScheduledSync() {
   const configs = await loadConfigs();
   const now = new Date();
@@ -1986,6 +2069,13 @@ Deno.serve(async (request) => {
       const data = await loadOverviewForConfig(config, {
         empresaIdOverride: sanitizeText(payload.empresa_id),
         limit: Number(payload.limit) || 500,
+      });
+      return jsonResponse(data);
+    }
+
+    if (action === "liveBalance") {
+      const data = await loadLiveBalanceForConfig(config, {
+        empresaIdOverride: sanitizeText(payload.empresa_id),
       });
       return jsonResponse(data);
     }

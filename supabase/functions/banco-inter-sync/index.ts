@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+﻿import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,6 +9,11 @@ const corsHeaders = {
 const DEFAULT_TOKEN_URL = "https://cdpj.partners.bancointer.com.br/oauth/v2/token";
 const DEFAULT_API_BASE_URL = "https://cdpj.partners.bancointer.com.br";
 const DEFAULT_EXTRATO_PATH = "/banking/v2/extrato";
+const DEFAULT_EXTRATO_PDF_PATHS = [
+  "/banking/v2/extrato",
+  "/banking/v2/extrato/exportar",
+  "/banking/v2/extrato/arquivo",
+];
 const DEFAULT_BALANCE_PATHS = ["/banking/v2/saldo", "/banking/v1/saldo"];
 const DEFAULT_SCOPE = "extrato.read saldo.read";
 
@@ -44,6 +49,7 @@ type IntegrationConfig = {
 };
 
 type NormalizedTransaction = {
+  id: string;
   empresa_id: string;
   descricao: string;
   tipo: "entrada" | "saida";
@@ -65,10 +71,8 @@ type NormalizedTransaction = {
   conciliado: boolean;
   status: string;
   source_provider: string;
-  external_id: string;
   conta_origem: string | null;
   conta_destino: string | null;
-  lancamento_id: string;
   saldo: number | null;
   raw_data: Record<string, unknown>;
   imported_at: string;
@@ -81,7 +85,7 @@ type DuplicateReviewRow = {
   source_provider: string;
   duplicate_reason: string;
   status: string;
-  external_id: string;
+  transaction_id: string;
   duplicate_count: number;
   imported_tipo: string;
   imported_valor: number;
@@ -230,6 +234,64 @@ function hasTimeFragment(value: unknown) {
   return typeof value === "string" && /\d{2}:\d{2}/.test(value);
 }
 
+function normalizeInterDate(value: unknown) {
+  const text = sanitizeText(value);
+  if (!text) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+
+  const brMatch = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brMatch) {
+    const [, day, month, year] = brMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+
+function normalizeInterTime(value: unknown) {
+  const text = sanitizeText(value);
+  if (!text) return null;
+
+  const match = text.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+
+  const [, hours, minutes, seconds] = match;
+  return `${hours}:${minutes}:${seconds || "00"}`;
+}
+
+function buildInterDateTime(
+  dateValue: unknown,
+  timeValue: unknown,
+) {
+  const dateOnly = normalizeInterDate(dateValue);
+  if (!dateOnly) return null;
+
+  const normalizedTime = normalizeInterTime(timeValue);
+  return normalizedTime ? `${dateOnly}T${normalizedTime}` : `${dateOnly}T00:00:00`;
+}
+
+function getRawInterTransactionDateTime(transaction: Record<string, unknown>) {
+  return firstDefined(
+    buildInterDateTime(transaction.dataLancamento, transaction.horaLancamento),
+    buildInterDateTime(transaction.dataMovimento, transaction.horaLancamento),
+    buildInterDateTime(transaction.dataEntrada, transaction.horaLancamento),
+    transaction.dataHora,
+    transaction.dataTransacao,
+    transaction.transactionDateTime,
+    transaction.dataMovimento,
+    transaction.dataLancamento,
+    transaction.dataEntrada,
+    transaction.data,
+    transaction.bookingDate,
+    transaction.createdAt,
+  );
+}
+
 function toNumber(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
@@ -351,6 +413,39 @@ function buildMovementFingerprint(row: MovementSummaryRow) {
   ].join("|");
 }
 
+function getMovementDateValue(row: Record<string, unknown>) {
+  return sanitizeText(firstDefined(
+    row.data_movimento,
+    row.data,
+    row.raw_data && typeof row.raw_data === "object" ? (row.raw_data as Record<string, unknown>).dataEntrada : null,
+    row.raw_data && typeof row.raw_data === "object" ? (row.raw_data as Record<string, unknown>).dataLancamento : null,
+  )) || null;
+}
+
+function removeOverlappingApiRows<T extends Record<string, unknown>>(rows: T[]) {
+  const csvRows = rows.filter((row) => sanitizeText(row.source_provider) === "banco_inter_csv");
+  if (!csvRows.length) return rows;
+
+  let oldestCsvDate: string | null = null;
+  let newestCsvDate: string | null = null;
+
+  for (const row of csvRows) {
+    const movementDate = getMovementDateValue(row);
+    if (!movementDate) continue;
+    if (!oldestCsvDate || movementDate < oldestCsvDate) oldestCsvDate = movementDate;
+    if (!newestCsvDate || movementDate > newestCsvDate) newestCsvDate = movementDate;
+  }
+
+  if (!oldestCsvDate || !newestCsvDate) return rows;
+
+  return rows.filter((row) => {
+    if (sanitizeText(row.source_provider) !== "banco_inter") return true;
+    const movementDate = getMovementDateValue(row);
+    if (!movementDate) return true;
+    return movementDate < oldestCsvDate || movementDate > newestCsvDate;
+  });
+}
+
 async function loadMovementRowsPaginated<T extends Record<string, unknown>>(
   empresaId: string,
   columns: string,
@@ -374,7 +469,9 @@ async function loadMovementRowsPaginated<T extends Record<string, unknown>>(
       .select(columns)
       .eq("empresa_id", empresaId)
       .order("data_movimento", { ascending: false })
+      .order("data_hora_transacao", { ascending: false })
       .order("created_date", { ascending: false })
+      .order("id", { ascending: false })
       .range(from, to);
 
     if (error) throw error;
@@ -558,6 +655,7 @@ function buildStableTransactionFingerprintPayload(transaction: Record<string, un
       transaction.transactionAmount,
     )),
     dataHora: sanitizeText(firstDefined(
+      buildInterDateTime(transaction.dataLancamento, transaction.horaLancamento),
       transaction.dataHora,
       transaction.dataTransacao,
       transaction.transactionDateTime,
@@ -926,7 +1024,23 @@ async function normalizeTransactions(
     throw new Error("A integracao Banco Inter precisa estar vinculada a uma empresa.");
   }
 
-  const transactions = getTransactionArray(rawPayload);
+  const transactions = getTransactionArray(rawPayload)
+    .slice()
+    .sort((left, right) => {
+      const leftDateTime = sanitizeText(getRawInterTransactionDateTime(left), "");
+      const rightDateTime = sanitizeText(getRawInterTransactionDateTime(right), "");
+
+      const leftTimestamp = leftDateTime ? new Date(leftDateTime).getTime() : 0;
+      const rightTimestamp = rightDateTime ? new Date(rightDateTime).getTime() : 0;
+
+      if (leftTimestamp !== rightTimestamp) {
+        return leftTimestamp - rightTimestamp;
+      }
+
+      const leftId = sanitizeText(firstDefined(left.id, left.codigoTransacao, left.transactionId, left.nsudoc, left.documento, left.nsu), "");
+      const rightId = sanitizeText(firstDefined(right.id, right.codigoTransacao, right.transactionId, right.nsudoc, right.documento, right.nsu), "");
+      return leftId.localeCompare(rightId);
+    });
   const normalizedRows: NormalizedTransaction[] = [];
 
   for (const transaction of transactions) {
@@ -940,17 +1054,10 @@ async function normalizeTransactions(
 
     const normalizedType = inferTipo(transaction, amount);
     const positiveAmount = Math.abs(amount);
-    const rawDate = sanitizeText(firstDefined(
-      transaction.dataHora,
-      transaction.dataTransacao,
-      transaction.transactionDateTime,
-      transaction.dataMovimento,
-      transaction.dataLancamento,
-      transaction.dataEntrada,
-      transaction.data,
-      transaction.bookingDate,
-      transaction.createdAt,
-    ), new Date().toISOString());
+    const rawDate = sanitizeText(
+      getRawInterTransactionDateTime(transaction),
+      new Date().toISOString(),
+    );
     const movementDate = formatDateOnly(rawDate);
     const movementDateTime = hasTimeFragment(rawDate) ? formatDateTime(rawDate) : null;
     const rawDescription = sanitizeText(firstDefined(
@@ -989,9 +1096,9 @@ async function normalizeTransactions(
     ));
     const stableFingerprintPayload = buildStableTransactionFingerprintPayload(transaction);
     const fallbackKey = await sha256Hex(`${empresaId}|${stableSerialize(stableFingerprintPayload)}`);
-    const externalId = sourceId || fallbackKey;
+    const transactionId = sourceId || `api_synthetic_${fallbackKey}`;
     const counterpartyBank = inferCounterpartyBank(transaction);
-    const reference = inferReference(transaction, externalId);
+    const reference = inferReference(transaction, transactionId);
     const notes = sanitizeText(firstDefined(
       transaction.observacoes,
       transaction.complemento,
@@ -1000,6 +1107,7 @@ async function normalizeTransactions(
     )) || null;
 
     normalizedRows.push({
+      id: transactionId,
       empresa_id: empresaId,
       descricao: friendlyDescription,
       tipo: normalizedType,
@@ -1021,7 +1129,7 @@ async function normalizeTransactions(
         provider: "banco_inter",
         imported_via: "edge_function",
         api_locked: true,
-        external_id_source: sourceId ? "api" : "raw_payload_hash",
+        transaction_id_source: sourceId ? "api" : "synthetic_fingerprint",
         synthetic_occurrence: null,
         raw_description: rawDescription,
         counterparty_code: parsedDescription.counterpartyCode,
@@ -1030,10 +1138,8 @@ async function normalizeTransactions(
       conciliado: false,
       status: "importado",
       source_provider: "banco_inter",
-      external_id: externalId,
       conta_origem: sanitizeText(firstDefined(transaction.contaOrigem, transaction.accountOrigin), "") || null,
       conta_destino: sanitizeText(firstDefined(transaction.contaDestino, transaction.accountDestination), "") || null,
-      lancamento_id: externalId,
       saldo: firstDefined(transaction.saldo, transaction.balance) !== null
         ? toNumber(firstDefined(transaction.saldo, transaction.balance))
         : null,
@@ -1051,11 +1157,13 @@ function buildDateDebugSample(rawPayload: unknown, normalizedRows: NormalizedTra
   return transactions.slice(0, 5).map((transaction, index) => ({
     index,
     raw_candidates: {
+      dataLancamentoHoraLancamento: firstDefined(buildInterDateTime(transaction.dataLancamento, transaction.horaLancamento), null),
       dataHora: firstDefined(transaction.dataHora, null),
       dataTransacao: firstDefined(transaction.dataTransacao, null),
       transactionDateTime: firstDefined(transaction.transactionDateTime, null),
       dataMovimento: firstDefined(transaction.dataMovimento, null),
       dataLancamento: firstDefined(transaction.dataLancamento, null),
+      horaLancamento: firstDefined(transaction.horaLancamento, null),
       dataEntrada: firstDefined(transaction.dataEntrada, null),
       data: firstDefined(transaction.data, null),
       bookingDate: firstDefined(transaction.bookingDate, null),
@@ -1071,7 +1179,7 @@ function buildDateDebugSample(rawPayload: unknown, normalizedRows: NormalizedTra
         data_movimento: normalizedRows[index].data_movimento,
         data_hora_transacao: normalizedRows[index].data_hora_transacao,
         descricao: normalizedRows[index].descricao,
-        external_id: normalizedRows[index].external_id,
+        transaction_id: normalizedRows[index].id,
       }
       : null,
   }));
@@ -1200,19 +1308,19 @@ async function persistTransactions(
   },
 ) {
   const today = formatDateOnly(new Date());
-  const uniqueRowsByExternalId = new Map<string, NormalizedTransaction>();
+  const uniqueRowsByTransactionId = new Map<string, NormalizedTransaction>();
   let discardedInPayloadCount = 0;
 
   for (const row of rows) {
-    if (!row.external_id) continue;
-    if (uniqueRowsByExternalId.has(row.external_id)) {
+    if (!row.id) continue;
+    if (uniqueRowsByTransactionId.has(row.id)) {
       discardedInPayloadCount += 1;
       continue;
     }
-    uniqueRowsByExternalId.set(row.external_id, row);
+    uniqueRowsByTransactionId.set(row.id, row);
   }
 
-  const uniqueRows = Array.from(uniqueRowsByExternalId.values());
+  const uniqueRows = Array.from(uniqueRowsByTransactionId.values());
   const todayRows = refreshToday
     ? uniqueRows.filter((row) => row.data_movimento === today)
     : [];
@@ -1220,29 +1328,29 @@ async function persistTransactions(
 
   const historicalExistingIds = new Set<string>();
   if (historicalRows.length) {
-    for (const externalIdChunk of chunkArray(historicalRows.map((row) => row.external_id), 100)) {
+    for (const transactionIdChunk of chunkArray(historicalRows.map((row) => row.id), 100)) {
       const { data, error } = await supabase
         .from("extratobancario")
-        .select("external_id")
+        .select("id")
         .eq("empresa_id", empresaId)
         .eq("source_provider", "banco_inter")
-        .in("external_id", externalIdChunk);
+        .in("id", transactionIdChunk);
 
       if (error) throw error;
 
       for (const item of data || []) {
-        if (item?.external_id) historicalExistingIds.add(item.external_id);
+        if (item?.id) historicalExistingIds.add(item.id);
       }
     }
   }
 
-  const historicalRowsToInsert = historicalRows.filter((row) => !historicalExistingIds.has(row.external_id));
+  const historicalRowsToInsert = historicalRows.filter((row) => !historicalExistingIds.has(row.id));
 
   let refreshedTodayCount = 0;
   if (refreshToday) {
     const { data: existingTodayRows, error: existingTodayError } = await supabase
       .from("extratobancario")
-      .select("external_id, carteira_nome, observacoes, rateio, metadata_financeira, conciliado, status")
+      .select("id, carteira_nome, observacoes, rateio, metadata_financeira, conciliado, status")
       .eq("empresa_id", empresaId)
       .eq("source_provider", "banco_inter")
       .eq("data_movimento", today);
@@ -1251,10 +1359,10 @@ async function persistTransactions(
 
     const existingTodayMap = new Map<string, Record<string, unknown>>();
     for (const row of existingTodayRows || []) {
-      if (row?.external_id) existingTodayMap.set(row.external_id, row);
+      if (row?.id) existingTodayMap.set(row.id, row);
     }
 
-    const mergedTodayRows = todayRows.map((row) => mergeManualComplements(row, existingTodayMap.get(row.external_id) || null));
+    const mergedTodayRows = todayRows.map((row) => mergeManualComplements(row, existingTodayMap.get(row.id) || null));
 
     const { error: deleteTodayError } = await supabase
       .from("extratobancario")
@@ -1302,7 +1410,60 @@ function parseBrazilianCsvNumber(value: unknown) {
 function normalizeCsvCell(value: string) {
   return sanitizeText(value)
     .replace(/\uFEFF/g, "")
-    .replace(/\r/g, "");
+    .replace(/\r/g, "")
+    .replace(/\n/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function parseSemicolonCsvRows(csvText: string) {
+  const text = String(csvText || "");
+  const rows: string[][] = [];
+  let currentField = "";
+  let currentRow: string[] = [];
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        currentField += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ";" && !inQuotes) {
+      currentRow.push(currentField);
+      currentField = "";
+      continue;
+    }
+
+    if (char === "\n" && !inQuotes) {
+      currentRow.push(currentField);
+      if (currentRow.some((field) => String(field || "").trim().length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentField = "";
+      continue;
+    }
+
+    if (char === "\r") continue;
+    currentField += char;
+  }
+
+  if (currentField.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentField);
+    if (currentRow.some((field) => String(field || "").trim().length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows.map((row) => row.map((field) => normalizeCsvCell(field)));
 }
 
 function parseCsvDateToIso(value: string) {
@@ -1312,15 +1473,12 @@ function parseCsvDateToIso(value: string) {
   return `${year}-${month}-${day}`;
 }
 
-function splitSemicolonLine(line: string) {
-  return String(line || "").split(";").map((item) => normalizeCsvCell(item));
-}
-
 type ParsedCsvImport = {
   accountNumber: string | null;
   periodLabel: string | null;
   closingBalance: number | null;
   rows: Array<{
+    rowIndex: number;
     date: string;
     history: string;
     description: string;
@@ -1330,12 +1488,9 @@ type ParsedCsvImport = {
 };
 
 function parseBancoInterCsv(csvText: string): ParsedCsvImport {
-  const lines = String(csvText || "")
-    .split(/\n/)
-    .map((line) => line.replace(/\r$/, ""))
-    .filter((line) => line.trim().length > 0);
+  const rows = parseSemicolonCsvRows(csvText);
 
-  if (!lines.length) {
+  if (!rows.length) {
     throw new Error("Arquivo CSV vazio.");
   }
 
@@ -1344,9 +1499,8 @@ function parseBancoInterCsv(csvText: string): ParsedCsvImport {
   let closingBalance: number | null = null;
   let headerIndex = -1;
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const columns = splitSemicolonLine(line);
+  for (let index = 0; index < rows.length; index += 1) {
+    const columns = rows[index];
     const normalizedLabel = columns[0]
       ?.normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
@@ -1377,20 +1531,34 @@ function parseBancoInterCsv(csvText: string): ParsedCsvImport {
     throw new Error("Cabecalho de lancamentos nao encontrado no CSV.");
   }
 
-  const rows = lines
+  const deriveHistoryFromDescription = (description: string) => {
+    const normalized = normalizeCsvCell(description);
+    if (!normalized) return "Lançamento CSV";
+
+    const colonIndex = normalized.indexOf(":");
+    if (colonIndex > 0) {
+      return normalized.slice(0, colonIndex).trim() || normalized;
+    }
+
+    return normalized;
+  };
+
+  const movementRows = rows
     .slice(headerIndex + 1)
-    .map((line) => splitSemicolonLine(line))
-    .filter((columns) => columns.length >= 5 && columns[0] && columns[3])
-    .map((columns) => {
+    .filter((columns) => columns.length >= 4 && columns[0] && columns[2])
+    .map((columns, rowIndex) => {
       const date = parseCsvDateToIso(columns[0]);
       if (!date) return null;
 
+      const description = columns[1] || "Sem descrição";
+
       return {
+        rowIndex: rowIndex + 1,
         date,
-        history: columns[1] || "Lancamento manual CSV",
-        description: columns[2] || columns[1] || "Sem descricao",
-        amount: parseBrazilianCsvNumber(columns[3]),
-        balance: columns[4] ? parseBrazilianCsvNumber(columns[4]) : null,
+        history: deriveHistoryFromDescription(description),
+        description,
+        amount: parseBrazilianCsvNumber(columns[2]),
+        balance: columns[3] ? parseBrazilianCsvNumber(columns[3]) : null,
       };
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
@@ -1399,7 +1567,7 @@ function parseBancoInterCsv(csvText: string): ParsedCsvImport {
     accountNumber,
     periodLabel,
     closingBalance,
-    rows,
+    rows: movementRows,
   };
 }
 
@@ -1413,17 +1581,20 @@ async function normalizeCsvTransactions(
   const normalizedRows = await Promise.all(parsed.rows.map(async (row) => {
     const normalizedType: "entrada" | "saida" = row.amount < 0 ? "saida" : "entrada";
     const absoluteAmount = Math.abs(row.amount);
-    const externalId = await sha256Hex([
+    const legacyHash = await sha256Hex([
       "banco_inter_csv",
       empresaId,
+      String(row.rowIndex),
       row.date,
       row.history,
       row.description,
       absoluteAmount.toFixed(2),
       row.balance === null ? "" : row.balance.toFixed(2),
     ].join("|"));
+    const transactionId = `csv_${legacyHash}`;
 
     return {
+      id: transactionId,
       empresa_id: empresaId,
       descricao: row.description,
       tipo: normalizedType,
@@ -1437,7 +1608,7 @@ async function normalizeCsvTransactions(
       forma_pagamento: normalizeDisplayLabel(row.history) || "Extrato CSV",
       categoria: null,
       tipo_transacao_detalhado: normalizeDisplayLabel(row.history) || null,
-      referencia: externalId,
+      referencia: transactionId,
       carteira_nome: null,
       observacoes: null,
       rateio: {},
@@ -1453,13 +1624,12 @@ async function normalizeCsvTransactions(
       conciliado: false,
       status: "importado",
       source_provider: "banco_inter_csv",
-      external_id: externalId,
       conta_origem: parsed.accountNumber,
       conta_destino: null,
-      lancamento_id: externalId,
       saldo: row.balance,
       raw_data: {
         source: "csv_manual",
+        rowIndex: row.rowIndex,
         filename: filename || null,
         conta: parsed.accountNumber,
         periodo: parsed.periodLabel,
@@ -1489,19 +1659,19 @@ async function persistCsvTransactions(
     replaceExistingCsv?: boolean;
   } = {},
 ) {
-  const uniqueRowsByExternalId = new Map<string, NormalizedTransaction>();
+  const uniqueRowsByTransactionId = new Map<string, NormalizedTransaction>();
   let discardedInPayloadCount = 0;
 
   for (const row of rows) {
-    if (!row.external_id) continue;
-    if (uniqueRowsByExternalId.has(row.external_id)) {
+    if (!row.id) continue;
+    if (uniqueRowsByTransactionId.has(row.id)) {
       discardedInPayloadCount += 1;
       continue;
     }
-    uniqueRowsByExternalId.set(row.external_id, row);
+    uniqueRowsByTransactionId.set(row.id, row);
   }
 
-  const uniqueRows = Array.from(uniqueRowsByExternalId.values());
+  const uniqueRows = Array.from(uniqueRowsByTransactionId.values());
   let replacedExistingCount: number | null = 0;
 
   if (replaceExistingCsv) {
@@ -1518,22 +1688,22 @@ async function persistCsvTransactions(
   const existingIds = new Set<string>();
 
   if (!replaceExistingCsv) {
-    for (const externalIdChunk of chunkArray(uniqueRows.map((row) => row.external_id), 100)) {
+    for (const transactionIdChunk of chunkArray(uniqueRows.map((row) => row.id), 100)) {
       const { data, error } = await supabase
         .from("extratobancario")
-        .select("external_id")
+        .select("id")
         .eq("empresa_id", empresaId)
         .eq("source_provider", "banco_inter_csv")
-        .in("external_id", externalIdChunk);
+        .in("id", transactionIdChunk);
 
       if (error) throw error;
       for (const item of data || []) {
-        if (item?.external_id) existingIds.add(item.external_id);
+        if (item?.id) existingIds.add(item.id);
       }
     }
   }
 
-  const rowsToInsert = uniqueRows.filter((row) => !existingIds.has(row.external_id));
+  const rowsToInsert = uniqueRows.filter((row) => !existingIds.has(row.id));
 
   for (const chunk of chunkArray(rowsToInsert, 500)) {
     if (!chunk.length) continue;
@@ -1842,7 +2012,9 @@ function parseStoredMovementSummary(config: IntegrationConfig): MovementSummary 
 }
 
 async function computeMovementSummary(empresaId: string): Promise<MovementSummary> {
-  const data = await loadMovementRowsPaginated<MovementSummaryRow>(empresaId, "tipo, valor, data_movimento, data, source_provider, raw_data");
+  const data = removeOverlappingApiRows(
+    await loadMovementRowsPaginated<MovementSummaryRow>(empresaId, "tipo, valor, data_movimento, data, source_provider, raw_data"),
+  );
 
   const uniqueRowsByFingerprint = new Map<string, MovementSummaryRow>();
   const uniqueRows: MovementSummaryRow[] = [];
@@ -1956,15 +2128,12 @@ async function loadOverviewForConfig(
     movementSummary = await persistMovementSummary(config, empresaId);
   }
 
-  const { data: movements, error: movementsError } = await supabase
-    .from("extratobancario")
-    .select("*")
-    .eq("empresa_id", empresaId)
-    .order("data_movimento", { ascending: false })
-    .order("created_date", { ascending: false })
-    .limit(rowLimit);
-
-  if (movementsError) throw movementsError;
+  const movements = removeOverlappingApiRows(
+    await loadMovementRowsPaginated<Record<string, unknown>>(empresaId, "*", {
+      pageSize: Math.min(rowLimit, 1000),
+      maxRows: rowLimit,
+    }),
+  );
 
   return {
     success: true,
@@ -2003,10 +2172,12 @@ async function loadAllMovementsForConfig(
   if (!movementSummary) {
     movementSummary = await persistMovementSummary(config, empresaId);
   }
-  const movements = await loadMovementRowsPaginated<Record<string, unknown>>(empresaId, "*", {
-    pageSize: batchSize,
-    maxRows,
-  });
+  const movements = removeOverlappingApiRows(
+    await loadMovementRowsPaginated<Record<string, unknown>>(empresaId, "*", {
+      pageSize: batchSize,
+      maxRows,
+    }),
+  );
 
   return {
     success: true,
@@ -2054,16 +2225,127 @@ function normalizeBase64Payload(value: unknown) {
   return match ? match[1] : text;
 }
 
+function encodeBase64(bytes: Uint8Array) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, Math.min(index + chunkSize, bytes.length));
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+async function fetchStatementPdfForRange(
+  config: IntegrationConfig,
+  accessToken: string,
+  httpClient: Deno.HttpClient,
+  fromDate: string,
+  toDate: string,
+) {
+  const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
+  const configuredExtratoPath = sanitizeText(getConfigValue(config, "extrato_path"), DEFAULT_EXTRATO_PATH);
+  const pathCandidates = Array.from(new Set([configuredExtratoPath, ...DEFAULT_EXTRATO_PDF_PATHS].filter(Boolean)));
+  const extraHeaders = (config.extra_headers || getConfigValue<Record<string, unknown>>(config, "extra_headers") || {}) as Record<string, unknown>;
+  const queryBuilders = [
+    (url: URL) => {
+      url.searchParams.set("dataInicio", fromDate);
+      url.searchParams.set("dataFim", toDate);
+      url.searchParams.set("tipoArquivo", "PDF");
+    },
+    (url: URL) => {
+      url.searchParams.set("dataInicio", fromDate);
+      url.searchParams.set("dataFim", toDate);
+      url.searchParams.set("formatoArquivo", "PDF");
+    },
+    (url: URL) => {
+      url.searchParams.set("dataInicio", fromDate);
+      url.searchParams.set("dataFim", toDate);
+      url.searchParams.set("fileFormat", "PDF");
+    },
+  ];
+  const errors: string[] = [];
+
+  for (const path of pathCandidates) {
+    for (const applyQuery of queryBuilders) {
+      const url = new URL(path, apiBaseUrl);
+      applyQuery(url);
+
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/pdf, application/json",
+      };
+
+      Object.entries(extraHeaders).forEach(([key, value]) => {
+        if (value !== null && value !== undefined) {
+          headers[key] = String(value);
+        }
+      });
+
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers,
+        client: httpClient,
+      });
+
+      const contentType = sanitizeText(response.headers.get("content-type"), "").toLowerCase();
+      const bytes = new Uint8Array(await response.arrayBuffer());
+
+      if (!response.ok) {
+        const preview = new TextDecoder().decode(bytes).slice(0, 500);
+        errors.push(`${path}:${response.status}:${preview}`);
+        continue;
+      }
+
+      if (contentType.includes("application/pdf")) {
+        return {
+          base64: encodeBase64(bytes),
+          mimeType: "application/pdf",
+          source: "statement_pdf_api",
+          path,
+        };
+      }
+
+      const rawText = new TextDecoder().decode(bytes);
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        parsed = { raw: rawText };
+      }
+
+      const embeddedPdfBase64 = normalizeBase64Payload(firstDefined(
+        parsed.base64,
+        parsed.pdf,
+        parsed.arquivo,
+        parsed.file,
+        parsed.documento,
+        parsed.comprovante_pdf_base64,
+      ));
+
+      if (embeddedPdfBase64) {
+        return {
+          base64: embeddedPdfBase64,
+          mimeType: "application/pdf",
+          source: "statement_pdf_json",
+          path,
+        };
+      }
+
+      errors.push(`${path}:${response.status}:sem_pdf:${JSON.stringify(parsed).slice(0, 500)}`);
+    }
+  }
+
+  throw new Error(`Falha ao exportar PDF do extrato no Banco Inter: ${errors.join(" | ")}`);
+}
+
 async function loadTransactionReceiptForConfig(
   config: IntegrationConfig,
   {
     empresaIdOverride,
     movementId,
-    externalId,
   }: {
     empresaIdOverride?: string;
     movementId?: string;
-    externalId?: string;
   } = {},
 ) {
   const empresaId = sanitizeText(firstDefined(empresaIdOverride, config.empresa_id));
@@ -2072,8 +2354,7 @@ async function loadTransactionReceiptForConfig(
   }
 
   const resolvedMovementId = sanitizeText(movementId);
-  const resolvedExternalId = sanitizeText(externalId);
-  if (!resolvedMovementId && !resolvedExternalId) {
+  if (!resolvedMovementId) {
     throw new Error("Informe a transação que deve ter o comprovante consultado.");
   }
 
@@ -2083,16 +2364,20 @@ async function loadTransactionReceiptForConfig(
     .eq("empresa_id", empresaId)
     .limit(1);
 
-  if (resolvedMovementId) {
-    query = query.eq("id", resolvedMovementId);
-  } else {
-    query = query.eq("external_id", resolvedExternalId);
-  }
+  query = query.eq("id", resolvedMovementId);
 
   const { data: movement, error: movementError } = await query.maybeSingle();
   if (movementError) throw movementError;
   if (!movement) {
-    throw new Error("Transação não encontrada para consultar o comprovante.");
+    return {
+      success: false,
+      action: "transactionReceipt",
+      empresa_id: empresaId,
+      integracao_id: config.id,
+      movement_id: resolvedMovementId,
+      receipt_available: false,
+      message: "Transação não encontrada para consultar o comprovante.",
+    };
   }
 
   const rawData = movement.raw_data && typeof movement.raw_data === "object"
@@ -2114,8 +2399,8 @@ async function loadTransactionReceiptForConfig(
       empresa_id: empresaId,
       integracao_id: config.id,
       movement_id: movement.id,
-      external_id: movement.external_id || null,
-      file_name: `comprovante-${movement.external_id || movement.id}.pdf`,
+      transaction_id: movement.id,
+      file_name: `comprovante-${movement.id}.pdf`,
       mime_type: "application/pdf",
       base64: embeddedPdfBase64,
       source: "embedded_payload",
@@ -2138,12 +2423,52 @@ async function loadTransactionReceiptForConfig(
       empresa_id: empresaId,
       integracao_id: config.id,
       movement_id: movement.id,
-      external_id: movement.external_id || null,
-      file_name: `comprovante-${movement.external_id || movement.id}.pdf`,
+      transaction_id: movement.id,
+      file_name: `comprovante-${movement.id}.pdf`,
       mime_type: "application/pdf",
       url: directReceiptUrl,
       source: "direct_url",
     };
+  }
+
+  try {
+    const statementDate = sanitizeText(firstDefined(
+      movement.data_movimento,
+      movement.data,
+      rawData.dataMovimento,
+      rawData.dataLancamento,
+      rawData.dataEntrada,
+    ));
+
+    if (statementDate) {
+      const { accessToken, httpClient } = await getAccessToken(config);
+      const statementPdf = await fetchStatementPdfForRange(
+        config,
+        accessToken,
+        httpClient,
+        statementDate,
+        statementDate,
+      );
+
+      return {
+        success: true,
+        action: "transactionReceipt",
+        empresa_id: empresaId,
+        integracao_id: config.id,
+        movement_id: movement.id,
+        transaction_id: movement.id,
+        file_name: `extrato-${statementDate}.pdf`,
+        mime_type: statementPdf.mimeType,
+        base64: statementPdf.base64,
+        source: statementPdf.source,
+        statement_range: {
+          from: statementDate,
+          to: statementDate,
+        },
+      };
+    }
+  } catch (statementError) {
+    console.warn("Nao foi possivel exportar o PDF do extrato para a transacao:", serializeError(statementError));
   }
 
   const providerReference = sanitizeText(firstDefined(
@@ -2164,7 +2489,7 @@ async function loadTransactionReceiptForConfig(
     empresa_id: empresaId,
     integracao_id: config.id,
     movement_id: movement.id,
-    external_id: movement.external_id || null,
+    transaction_id: movement.id,
     receipt_available: false,
     provider_reference: providerReference || null,
     message: providerReference
@@ -2283,14 +2608,13 @@ Deno.serve(async (request) => {
       });
     }
 
-    if (action === "transactionReceipt") {
-      const data = await loadTransactionReceiptForConfig(config, {
-        empresaIdOverride: sanitizeText(payload.empresa_id),
-        movementId: sanitizeText(payload.movement_id),
-        externalId: sanitizeText(payload.external_id),
-      });
-      return jsonResponse(data, data.success ? 200 : 404);
-    }
+      if (action === "transactionReceipt") {
+        const data = await loadTransactionReceiptForConfig(config, {
+          empresaIdOverride: sanitizeText(payload.empresa_id),
+          movementId: sanitizeText(payload.movement_id),
+        });
+        return jsonResponse(data, 200);
+      }
 
     if (action === "buscarExtrato" || action === "syncNow") {
       const data = await runSyncForConfig(config, {
@@ -2327,3 +2651,5 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: "Falha na integracao com Banco Inter.", details: message }, 500);
   }
 });
+
+

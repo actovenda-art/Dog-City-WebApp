@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { bancoInter } from "@/api/functions";
 import { ExtratoBancario, User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
@@ -261,20 +261,32 @@ export default function Movimentacoes() {
         setIsSummaryLoading(false);
       }
 
-      const fullMovementsResponse = ExtratoBancario.queryAll
-        ? await ExtratoBancario.queryAll({
-          sort: "-data_movimento",
-          pageSize: 500,
-          maxRows: 50000,
-          count: false,
-        })
-        : (ExtratoBancario.listAll
-          ? await ExtratoBancario.listAll("-data_movimento", 500, 50000)
-          : await ExtratoBancario.list("-data_movimento", 5000));
+      let nextMovements = [];
+      try {
+        const fullDataset = await bancoInter({
+          action: "fullDataset",
+          empresa_id: userProfile?.empresa_id || null,
+          limit: 50000,
+          pageSize: 1000,
+        });
+        nextMovements = Array.isArray(fullDataset?.movements) ? fullDataset.movements : [];
+      } catch (fullDatasetError) {
+        console.warn("Não foi possível carregar o dataset consolidado do Banco Inter, usando leitura direta da tabela:", fullDatasetError);
+        const fullMovementsResponse = ExtratoBancario.queryAll
+          ? await ExtratoBancario.queryAll({
+            sort: "-data_movimento",
+            pageSize: 500,
+            maxRows: 50000,
+            count: false,
+          })
+          : (ExtratoBancario.listAll
+            ? await ExtratoBancario.listAll("-data_movimento", 500, 50000)
+            : await ExtratoBancario.list("-data_movimento", 5000));
 
-      const nextMovements = Array.isArray(fullMovementsResponse?.data)
-        ? fullMovementsResponse.data
-        : (fullMovementsResponse || []);
+        nextMovements = Array.isArray(fullMovementsResponse?.data)
+          ? fullMovementsResponse.data
+          : (fullMovementsResponse || []);
+      }
       const derivedSummary = buildSummaryFromMovements(nextMovements);
 
       setMovimentacoes(nextMovements);
@@ -526,7 +538,9 @@ export default function Movimentacoes() {
         }
       } else {
         const dateOnly = fromDateInputValue(formData.data_hora_transacao);
+        const manualTransactionId = `manual_${crypto.randomUUID()}`;
         await ExtratoBancario.create({
+          id: manualTransactionId,
           descricao: formData.nome_contraparte.trim(),
           tipo: formData.tipo,
           valor: parseFloat(String(formData.valor).replace(",", ".")) || 0,
@@ -543,6 +557,7 @@ export default function Movimentacoes() {
           source_provider: "manual",
           metadata_financeira: {
             api_locked: false,
+            transaction_id_source: "manual_uuid",
           },
         });
       }
@@ -627,7 +642,6 @@ export default function Movimentacoes() {
         action: "transactionReceipt",
         empresa_id: currentUser?.empresa_id || null,
         movement_id: movement.id,
-        external_id: movement.external_id || null,
       });
 
       if (!data?.success) {
@@ -1024,3 +1038,5 @@ export default function Movimentacoes() {
     </div>
   );
 }
+
+

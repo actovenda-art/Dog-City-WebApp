@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useRef } from "react";
 import { appClient } from "@/api/appClient";
 import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User, UserInvite, UserProfile, UserUnitAccess } from "@/api/entities";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
@@ -19,6 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { Building2, FileText, Image, KeyRound, Palette, Pencil, Plus, Save, Settings, Tags, Trash2 } from "lucide-react";
+import { Download, Upload } from "lucide-react";
 
 const EMPTY_PROFILE = {
   codigo: "",
@@ -187,6 +189,50 @@ function splitProfilePermissions(values) {
   return {
     selected: normalizedPermissions.filter((permission) => KNOWN_PERMISSION_IDS.includes(permission)),
   };
+}
+
+function buildProfileExportPayload(profile) {
+  return {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    profile: {
+      codigo: String(profile?.codigo || "").trim().toLowerCase(),
+      nome: String(profile?.nome || "").trim(),
+      descricao: String(profile?.descricao || ""),
+      escopo: profile?.escopo === "plataforma" ? "plataforma" : "empresa",
+      ativo: profile?.ativo !== false,
+      permissoes: parsePermissions(profile?.permissoes || []),
+    },
+  };
+}
+
+function buildProfilesExportBundle(profiles) {
+  return {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    profiles: (profiles || []).map((profile) => buildProfileExportPayload(profile).profile),
+  };
+}
+
+function normalizeImportedProfiles(parsedPayload) {
+  const profiles = Array.isArray(parsedPayload?.profiles)
+    ? parsedPayload.profiles
+    : parsedPayload?.profile
+      ? [parsedPayload.profile]
+      : Array.isArray(parsedPayload)
+        ? parsedPayload
+        : [];
+
+  return profiles
+    .map((profile) => ({
+      codigo: String(profile?.codigo || "").trim().toLowerCase(),
+      nome: String(profile?.nome || "").trim(),
+      descricao: String(profile?.descricao || ""),
+      escopo: profile?.escopo === "plataforma" ? "plataforma" : "empresa",
+      ativo: profile?.ativo !== false,
+      permissoes: parsePermissions(profile?.permissoes || []),
+    }))
+    .filter((profile) => profile.codigo && profile.nome && profile.permissoes.length > 0);
 }
 
 function slugify(value) {
@@ -381,6 +427,7 @@ export default function AdministracaoSistema() {
   const [isUploadingUnitAsset, setIsUploadingUnitAsset] = useState(false);
   const [unitAddressLoading, setUnitAddressLoading] = useState(false);
   const [unitSelectionDialog, setUnitSelectionDialog] = useState({ open: false, unit: null });
+  const profileImportInputRef = useRef(null);
 
   useEffect(() => {
     loadData();
@@ -641,6 +688,84 @@ export default function AdministracaoSistema() {
         permissoesSelecionadas: Array.from(currentPermissions).sort(),
       };
     });
+  }
+
+  function downloadJsonFile(filename, payload) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportProfile(profile) {
+    if (!profile) return;
+    const payload = buildProfileExportPayload(profile);
+    const safeCode = String(profile.codigo || "perfil").trim().toLowerCase() || "perfil";
+    downloadJsonFile(`perfil-acesso-${safeCode}.json`, payload);
+  }
+
+  function handleExportAllProfiles() {
+    if (!profiles.length) {
+      alert("Não há perfis cadastrados para exportar.");
+      return;
+    }
+    downloadJsonFile("perfis-de-acesso.json", buildProfilesExportBundle(profiles));
+  }
+
+  function openProfileImportPicker() {
+    profileImportInputRef.current?.click();
+  }
+
+  async function handleImportProfilesFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setIsSaving(true);
+    try {
+      const rawText = await file.text();
+      const parsed = JSON.parse(rawText);
+      const importedProfiles = normalizeImportedProfiles(parsed);
+
+      if (importedProfiles.length === 0) {
+        throw new Error("Nenhum perfil válido foi encontrado no arquivo.");
+      }
+
+      const profilesByCode = Object.fromEntries(
+        (profiles || []).map((profile) => [String(profile.codigo || "").trim().toLowerCase(), profile]),
+      );
+
+      for (const importedProfile of importedProfiles) {
+        const existingProfile = profilesByCode[importedProfile.codigo];
+        await appClient.functions.userAdmin({
+          action: "save_access_profile",
+          profile_id: existingProfile?.id || null,
+          codigo: importedProfile.codigo,
+          nome: importedProfile.nome,
+          descricao: importedProfile.descricao,
+          escopo: importedProfile.escopo,
+          permissoes: importedProfile.permissoes,
+          ativo: importedProfile.ativo,
+        });
+      }
+
+      await loadData();
+      alert(
+        importedProfiles.length === 1
+          ? "Perfil importado com sucesso."
+          : `${importedProfiles.length} perfis importados com sucesso.`,
+      );
+    } catch (error) {
+      console.error("Erro ao importar perfis:", error);
+      alert(formatApiError(error, "Não foi possível importar os perfis de acesso."));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function toggleUnitService(serviceName) {
@@ -1339,9 +1464,26 @@ export default function AdministracaoSistema() {
                   <KeyRound className="w-5 h-5 text-emerald-600" />
                   Tipos de acesso
                 </CardTitle>
-                <Button onClick={() => openProfileModal()} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  Novo perfil
-                </Button>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    ref={profileImportInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={handleImportProfilesFile}
+                  />
+                  <Button type="button" variant="outline" onClick={openProfileImportPicker} disabled={isSaving}>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Importar perfis
+                  </Button>
+                  <Button type="button" variant="outline" onClick={handleExportAllProfiles} disabled={!profiles.length}>
+                    <Download className="w-4 h-4 mr-2" />
+                    Exportar perfis
+                  </Button>
+                  <Button onClick={() => openProfileModal()} className="bg-blue-600 hover:bg-blue-700 text-white">
+                    Novo perfil
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 {profiles.map((profile) => (
@@ -1359,6 +1501,10 @@ export default function AdministracaoSistema() {
                       <p className="text-xs text-gray-500 mt-1">Permissões: {Array.isArray(profile.permissoes) ? profile.permissoes.length : 0}</p>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button type="button" variant="outline" onClick={() => handleExportProfile(profile)}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Exportar
+                      </Button>
                       <Button variant="outline" onClick={() => openProfileModal(profile)}>
                         Editar
                       </Button>

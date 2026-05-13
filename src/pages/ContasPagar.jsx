@@ -198,8 +198,7 @@ export default function ContasPagar() {
       const inputId = transactionIdInput.trim();
       if (!inputId) return;
       
-      // Buscar em ExtratoBancario onde lancamento_id = inputId
-      const extratoItems = await ExtratoBancario.filter({ lancamento_id: inputId });
+      const extratoItems = await ExtratoBancario.filter({ id: inputId });
       
       if (extratoItems && extratoItems.length > 0) {
         const extrato = extratoItems[0];
@@ -207,7 +206,7 @@ export default function ContasPagar() {
         // Verificar se é saída
         if (extrato.tipo !== "saida") {
           setLoadedTransaction({
-            id: extrato.lancamento_id,
+            id: extrato.id,
             tipo: extrato.tipo,
             isReceita: true
           });
@@ -216,7 +215,7 @@ export default function ContasPagar() {
         }
         
         setLoadedTransaction({
-          id: extrato.lancamento_id,
+          id: extrato.id,
           value: Math.abs(extrato.valor), // Garantir valor positivo
           date: extrato.data,
           payment_method: extrato.forma_pagamento,
@@ -238,7 +237,7 @@ export default function ContasPagar() {
 
   const getValorDisponivelTransacao = (transactionId) => {
     // Buscar no extrato
-    const extrato = transactions.find(t => t.lancamento_id === transactionId);
+    const extrato = transactions.find(t => t.id === transactionId);
     if (!extrato) return 0;
     
     let totalVinculado = 0;
@@ -632,7 +631,7 @@ export default function ContasPagar() {
                           <div className="space-y-2">
                             <h4 className="text-sm font-semibold text-gray-700">Vinculações de Pagamento:</h4>
                             {l.vinculacoes.map((v, idx) => {
-                              const extrato = transactions.find(t => t.lancamento_id === v.transaction_id);
+                              const extrato = transactions.find(t => t.id === v.transaction_id);
                               return (
                                 <div key={idx} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
                                   <div className="flex-1">
@@ -853,7 +852,7 @@ export default function ContasPagar() {
                       <div className="px-4 pb-4 space-y-2 border-t pt-3">
                         <h4 className="text-sm font-semibold text-gray-700">Vinculações de Pagamento:</h4>
                         {l.vinculacoes.map((v, idx) => {
-                          const extrato = transactions.find(t => t.lancamento_id === v.transaction_id);
+                          const extrato = transactions.find(t => t.id === v.transaction_id);
                           return (
                             <div key={idx} className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
                               <div className="flex-1">

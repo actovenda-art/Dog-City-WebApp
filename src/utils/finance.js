@@ -1,4 +1,4 @@
-import { format } from "date-fns";
+﻿import { format } from "date-fns";
 
 export const FINANCE_RATEIO_FIELDS = [
   { key: "taxas", label: "Taxas" },
@@ -248,8 +248,49 @@ function hasTimeFragment(value) {
   return typeof value === "string" && /\d{2}:\d{2}/.test(value);
 }
 
+function normalizeInterDate(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+
+  const brMatch = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brMatch) {
+    const [, day, month, year] = brMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+
+function normalizeInterTime(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+
+  const match = text.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+
+  const [, hours, minutes, seconds] = match;
+  return `${hours}:${minutes}:${seconds || "00"}`;
+}
+
+function buildInterDateTime(dateValue, timeValue) {
+  const dateOnly = normalizeInterDate(dateValue);
+  if (!dateOnly) return null;
+
+  const normalizedTime = normalizeInterTime(timeValue);
+  return normalizedTime ? `${dateOnly}T${normalizedTime}` : `${dateOnly}T00:00:00`;
+}
+
 function getRawMovementDateTime(record) {
   return (
+    buildInterDateTime(record?.raw_data?.dataLancamento, record?.raw_data?.horaLancamento) ||
+    buildInterDateTime(record?.raw_data?.dataMovimento, record?.raw_data?.horaLancamento) ||
+    buildInterDateTime(record?.raw_data?.dataEntrada, record?.raw_data?.horaLancamento) ||
     record?.raw_data?.dataHora ||
     record?.raw_data?.transactionDateTime ||
     record?.raw_data?.dataTransacao ||
@@ -415,7 +456,7 @@ export function getMovementTransactionType(record) {
 }
 
 export function getMovementReference(record) {
-  return record?.referencia || record?.external_id || record?.lancamento_id || "-";
+  return record?.id || record?.referencia || record?.external_id || record?.lancamento_id || "-";
 }
 
 export function getMovementWallet(record) {
@@ -451,3 +492,4 @@ export function normalizeMovement(record) {
     apiLocked: isApiMovement(record),
   };
 }
+

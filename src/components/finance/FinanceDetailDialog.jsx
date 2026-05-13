@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -40,7 +40,6 @@ export default function FinanceDetailDialog({
     banco_contraparte: "",
     tipo_transacao_detalhado: "",
     referencia: "",
-    centro_custo_nome: "",
     observacoes: "",
   });
   const [rateio, setRateio] = useState(() => normalizeRateio({}));
@@ -55,7 +54,6 @@ export default function FinanceDetailDialog({
       banco_contraparte: movement?.banco_contraparte || "",
       tipo_transacao_detalhado: movement?.tipo_transacao_detalhado || "",
       referencia: movement?.referencia || "",
-      centro_custo_nome: movement?.centro_custo_nome || movement?.metadata_financeira?.centro_custo_nome || "",
       observacoes: movement?.observacoes || "",
     });
     setRateio(normalizeRateio(movement?.rateio));
@@ -81,7 +79,6 @@ export default function FinanceDetailDialog({
     if (baseFieldsLocked) {
       await onSave(movement.id, {
         carteira_nome: isReceita ? formData.carteira_nome.trim() || null : movement?.carteira_nome || null,
-        centro_custo_nome: !isReceita ? formData.centro_custo_nome.trim() || null : movement?.centro_custo_nome || null,
         observacoes: formData.observacoes.trim() || null,
         rateio: isReceita ? rateio : movement?.rateio || {},
       });
@@ -97,7 +94,6 @@ export default function FinanceDetailDialog({
       banco_contraparte: formData.banco_contraparte.trim() || null,
       tipo_transacao_detalhado: formData.tipo_transacao_detalhado.trim() || null,
       referencia: formData.referencia.trim() || null,
-      centro_custo_nome: !isReceita ? formData.centro_custo_nome.trim() || null : null,
       observacoes: formData.observacoes.trim() || null,
       rateio: isReceita ? rateio : {},
     });
@@ -118,7 +114,7 @@ export default function FinanceDetailDialog({
         <div className="space-y-6 py-2">
           {baseFieldsLocked && (
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-              Este lançamento veio da API oficial do banco. Os dados-base ficam bloqueados e aqui você complementa apenas carteira, centro de custo, rateio e observações.
+              Este lançamento veio da API oficial do banco. Os dados-base ficam bloqueados e aqui você complementa apenas carteira, rateio e observações.
             </div>
           )}
 
@@ -197,24 +193,6 @@ export default function FinanceDetailDialog({
               />
             </div>
 
-            {!isReceita && (
-              <div>
-                <Label>Centro de custo</Label>
-                <Input
-                  list="centros-custo-financeiro"
-                  className="mt-2"
-                  value={formData.centro_custo_nome}
-                  onChange={(event) => setFormData((prev) => ({ ...prev, centro_custo_nome: event.target.value }))}
-                  placeholder="Ex: Operação, Administrativo"
-                />
-                <datalist id="centros-custo-financeiro">
-                  {costCenters.map((centro) => (
-                    <option key={centro.id || centro.nome} value={centro.nome} />
-                  ))}
-                </datalist>
-              </div>
-            )}
-
             <div>
               <Label>Transação ID</Label>
               <Input
@@ -287,3 +265,5 @@ export default function FinanceDetailDialog({
     </Dialog>
   );
 }
+
+

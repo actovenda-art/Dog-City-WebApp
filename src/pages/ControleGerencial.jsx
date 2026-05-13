@@ -352,7 +352,7 @@ export default function ControleGerencial() {
         id: item.id,
         despesa: item.contraparte || item.descricao || "Saída sem descrição",
         valor: Math.abs(Number(item.valor || 0)),
-        centro: item.centro_custo_nome || item.metadata_financeira?.centro_custo_nome || "Sem centro de custo",
+        centro: "Sem centro de custo",
         dataSaida: formatMovementDateTime(item),
         vencimento: "-",
       }));
@@ -375,7 +375,7 @@ export default function ControleGerencial() {
 
   const expensesByCostCenter = useMemo(() => {
     const grouped = {};
-    expenseRows.forEach((row) => {
+    expenseRows.filter((row) => row.centro && row.centro !== "Sem centro de custo").forEach((row) => {
       grouped[row.centro] ||= { centro: row.centro, valor: 0, quantidade: 0 };
       grouped[row.centro].valor += row.valor || 0;
       grouped[row.centro].quantidade += 1;

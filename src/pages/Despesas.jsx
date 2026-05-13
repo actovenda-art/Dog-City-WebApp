@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CentroCusto, ExtratoBancario } from "@/api/entities";
+import { ExtratoBancario } from "@/api/entities";
 import FinanceDetailDialog from "@/components/finance/FinanceDetailDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { ArrowDownCircle, Calendar, Landmark, Search } from "lucide-react";
+import { ArrowDownCircle, Calendar, Landmark } from "lucide-react";
 import {
   dedupeOfficialImportedMovements,
   formatCurrency,
@@ -22,7 +21,6 @@ import {
 
 export default function Despesas() {
   const [despesas, setDespesas] = useState([]);
-  const [centrosCusto, setCentrosCusto] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [dateStart, setDateStart] = useState("");
@@ -38,12 +36,8 @@ export default function Despesas() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [data, centrosData] = await Promise.all([
-        ExtratoBancario.filter({ tipo: "saida" }, "-data_movimento", 1000),
-        CentroCusto.list("nome", 500).catch(() => []),
-      ]);
+      const data = await ExtratoBancario.filter({ tipo: "saida" }, "-data_movimento", 1000);
       setDespesas(data || []);
-      setCentrosCusto(centrosData || []);
     } catch (error) {
       console.error("Erro ao carregar despesas:", error);
     } finally {
@@ -64,7 +58,6 @@ export default function Despesas() {
       item.contraparte,
       item.bancoContraparte,
       item.referenciaFinanceira,
-      item.centro_custo_nome,
       item.observacoesFinanceiras,
     ]
       .filter(Boolean)
@@ -88,7 +81,9 @@ export default function Despesas() {
 
   const totalPago = filtered.reduce((sum, item) => sum + (item.valor || 0), 0);
   const comObservacoes = filtered.filter((item) => item.observacoesFinanceiras).length;
-  const bancosIdentificados = new Set(filtered.map((item) => getMovementBank(item)).filter((value) => value && value !== "-")).size;
+  const bancosIdentificados = new Set(
+    filtered.map((item) => getMovementBank(item)).filter((value) => value && value !== "-"),
+  ).size;
 
   const openDetails = (movement) => {
     setSelectedMovement(movement);
@@ -170,7 +165,9 @@ export default function Despesas() {
                   active: Boolean(dateStart || dateEnd),
                   content: (
                     <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período da despesa</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                        Período da despesa
+                      </p>
                       <DateRangePickerInput
                         startValue={dateStart}
                         endValue={dateEnd}
@@ -208,9 +205,9 @@ export default function Despesas() {
                       </div>
 
                       <div>
-                          <p className="text-xs uppercase tracking-wide text-gray-500">Data</p>
-                          <p className="mt-1 font-medium text-gray-900">{formatMovementDateTime(item)}</p>
-                        </div>
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Data</p>
+                        <p className="mt-1 font-medium text-gray-900">{formatMovementDateTime(item)}</p>
+                      </div>
 
                       <div>
                         <p className="text-xs uppercase tracking-wide text-gray-500">Banco</p>
@@ -234,9 +231,6 @@ export default function Despesas() {
                       <Landmark className="w-3 h-3 mr-1" />
                       {getMovementReference(item)}
                     </Badge>
-                    <Badge className="bg-orange-100 text-orange-700">
-                      {item.centro_custo_nome || "Sem centro de custo"}
-                    </Badge>
                     {item.observacoesFinanceiras && <Badge variant="outline">Com observações</Badge>}
                   </div>
                 </CardContent>
@@ -251,10 +245,9 @@ export default function Despesas() {
         onOpenChange={setDetailOpen}
         movement={selectedMovement}
         mode="despesa"
-      onSave={handleSaveDetails}
-      isSaving={isSavingDetails}
-      costCenters={centrosCusto}
-    />
+        onSave={handleSaveDetails}
+        isSaving={isSavingDetails}
+      />
     </div>
   );
 }

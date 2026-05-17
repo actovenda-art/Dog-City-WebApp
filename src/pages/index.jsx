@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { BrowserRouter as Router, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
-import { LoaderCircle } from "lucide-react";
 import { User } from "@/api/entities";
 import { getSafeNextPathFromSearch, getSafeRedirectTarget, isSameAppLocation } from "@/lib/auth-navigation";
 import { getDefaultHomePage } from "@/lib/access-control";
@@ -16,6 +15,7 @@ import { createPageUrl, getPageNameFromPath } from "@/utils";
 
 import Layout from "./Layout.jsx";
 import AccessGuard from "@/components/layout/AccessGuard";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import UnitModeGuard from "@/components/layout/UnitModeGuard";
 import Login from "./Login.jsx";
 import AuthCallback from "./AuthCallback.jsx";
@@ -93,14 +93,7 @@ const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", 
 const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "AprovacaoResponsavelPublica", "VisualizadorImagem"]);
 
 function FullScreenAuthLoader() {
-  return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-      <div className="text-center text-white">
-        <LoaderCircle className="w-10 h-10 mx-auto animate-spin text-orange-400" />
-        <p className="mt-4 text-sm text-slate-300">Carregando sessao...</p>
-      </div>
-    </div>
-  );
+  return <LoadingScreen />;
 }
 
 function StandalonePage({ pageName }) {

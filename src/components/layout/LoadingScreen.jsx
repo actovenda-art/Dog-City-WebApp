@@ -34,6 +34,7 @@ export default function LoadingScreen({ onComplete }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const showLogo = Boolean(isResolved && logoUrl);
+  const shouldAutoComplete = typeof onComplete === "function";
 
   useEffect(() => {
     const totalDuration = LOADING_STEPS.reduce((acc, step) => acc + step.duration, 0);
@@ -51,7 +52,13 @@ export default function LoadingScreen({ onComplete }) {
         }
       }
 
-      if (elapsed >= totalDuration) {
+      if (!shouldAutoComplete && elapsed >= totalDuration) {
+        elapsed = 0;
+        setCurrentStep(0);
+        return;
+      }
+
+      if (shouldAutoComplete && elapsed >= totalDuration) {
         clearInterval(interval);
         setCurrentStep(LOADING_STEPS.length - 1);
         setIsComplete(true);
@@ -62,7 +69,7 @@ export default function LoadingScreen({ onComplete }) {
     }, 50);
 
     return () => clearInterval(interval);
-  }, [onComplete]);
+  }, [onComplete, shouldAutoComplete]);
 
   return (
     <motion.div

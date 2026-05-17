@@ -1,33 +1,49 @@
-import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Check } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { useBranding } from "@/hooks/use-branding";
 
 const LOADING_STEPS = [
   { text: "Carregando agendamentos...", duration: 800 },
   { text: "Organizando informações...", duration: 1000 },
-  { text: "Tudo certo!", duration: 600 }
+  { text: "Tudo certo!", duration: 600 },
 ];
+
+const BAR_VARIANTS = {
+  idle: (index) => ({
+    scaleY: [0.55, 1, 0.65, 0.92, 0.58],
+    opacity: [0.55, 1, 0.8, 1, 0.6],
+    transition: {
+      duration: 1.05,
+      repeat: Infinity,
+      ease: "easeInOut",
+      delay: index * 0.07,
+    },
+  }),
+  complete: (index) => ({
+    scaleY: 0.45 + index * 0.03,
+    opacity: 0.35,
+    transition: {
+      duration: 0.25,
+      ease: "easeOut",
+    },
+  }),
+};
 
 export default function LoadingScreen({ onComplete }) {
   const { companyName, logoUrl, isResolved } = useBranding({ variant: "base", updateDocument: false });
   const [currentStep, setCurrentStep] = useState(0);
-  const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const showLogo = Boolean(isResolved && logoUrl);
 
   useEffect(() => {
-    let totalDuration = LOADING_STEPS.reduce((acc, step) => acc + step.duration, 0);
+    const totalDuration = LOADING_STEPS.reduce((acc, step) => acc + step.duration, 0);
     let elapsed = 0;
 
     const interval = setInterval(() => {
       elapsed += 50;
-      const newProgress = Math.min((elapsed / totalDuration) * 100, 100);
-      setProgress(newProgress);
 
-      // Update step based on elapsed time
       let stepTime = 0;
-      for (let i = 0; i < LOADING_STEPS.length; i++) {
+      for (let i = 0; i < LOADING_STEPS.length; i += 1) {
         stepTime += LOADING_STEPS[i].duration;
         if (elapsed < stepTime) {
           setCurrentStep(i);
@@ -37,10 +53,11 @@ export default function LoadingScreen({ onComplete }) {
 
       if (elapsed >= totalDuration) {
         clearInterval(interval);
+        setCurrentStep(LOADING_STEPS.length - 1);
         setIsComplete(true);
         setTimeout(() => {
           onComplete?.();
-        }, 800);
+        }, 320);
       }
     }, 50);
 
@@ -48,81 +65,69 @@ export default function LoadingScreen({ onComplete }) {
   }, [onComplete]);
 
   return (
-    <motion.div 
-      className="fixed inset-0 bg-gradient-to-br from-slate-50 via-white to-blue-50 flex items-center justify-center z-[100]"
+    <motion.div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-white"
       initial={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.5 }}
+      transition={{ duration: 0.35 }}
     >
-      <div className="flex flex-col items-center">
-        {/* Logo */}
+      <div className="flex flex-col items-center px-6 text-center">
         {showLogo ? (
           <motion.img
             src={logoUrl}
             alt={companyName}
-            className="w-20 h-20 mb-8"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.5 }}
+            className="mb-8 h-16 w-16 object-contain sm:h-20 sm:w-20"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45 }}
           />
         ) : (
-          <div className="mb-8 h-20 w-20 rounded-3xl border border-slate-200 bg-white/80 shadow-sm" />
+          <motion.div
+            className="mb-8 h-16 w-16 rounded-3xl border border-slate-200 bg-white shadow-sm sm:h-20 sm:w-20"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45 }}
+          />
         )}
 
-        {/* Progress bar container */}
-        <div className="relative w-64 h-1.5 mb-6">
-          <AnimatePresence mode="wait">
-            {!isComplete ? (
-              <motion.div
-                key="progress"
-                className="w-full h-full bg-slate-200 rounded-full overflow-hidden"
-                exit={{ 
-                  width: 0,
-                  x: 128,
-                  opacity: 0
-                }}
-                transition={{ duration: 0.4 }}
-              >
-                <motion.div
-                  className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full"
-                  style={{ width: `${progress}%` }}
-                  transition={{ duration: 0.1 }}
-                />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="check"
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ 
-                  type: "spring",
-                  stiffness: 300,
-                  damping: 20,
-                  delay: 0.2
-                }}
-              >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-                  <Check className="w-5 h-5 text-white" strokeWidth={3} />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        <motion.div
+          className="mb-5 flex h-14 items-end justify-center gap-1.5 sm:h-16 sm:gap-2"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.08 }}
+        >
+          {[0, 1, 2, 3, 4, 5, 6].map((index) => (
+            <motion.span
+              key={index}
+              custom={index}
+              variants={BAR_VARIANTS}
+              animate={isComplete ? "complete" : "idle"}
+              className="block w-1.5 origin-bottom rounded-full bg-gradient-to-t from-fuchsia-500 via-violet-500 to-pink-400 shadow-[0_0_18px_rgba(168,85,247,0.18)] sm:w-2"
+              style={{
+                height: `${24 + (index % 4) * 7 + (index === 3 ? 10 : 0)}px`,
+              }}
+            />
+          ))}
+        </motion.div>
 
-        {/* Loading text */}
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={currentStep}
-            className="text-slate-600 text-sm font-medium"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.3 }}
-          >
-            {LOADING_STEPS[currentStep]?.text}
-          </motion.p>
-        </AnimatePresence>
+        <motion.p
+          className="text-[10px] font-semibold uppercase tracking-[0.38em] text-slate-500 sm:text-[11px]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.35, delay: 0.16 }}
+        >
+          Loading
+        </motion.p>
+
+        <motion.p
+          key={currentStep}
+          className="mt-3 text-sm text-slate-500"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+        >
+          {LOADING_STEPS[currentStep]?.text}
+        </motion.p>
       </div>
     </motion.div>
   );

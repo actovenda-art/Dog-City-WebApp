@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Appointment, Carteira, Dog, Orcamento, Responsavel, ServiceProvided } from "@/api/entities";
+import { useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,11 +10,13 @@ import {
   AlertTriangle,
   ArrowLeft,
   ClipboardList,
+  Download,
   Dog as DogIcon,
   Pencil,
   Phone,
   Syringe,
   Utensils,
+  Upload,
   Wallet,
 } from "lucide-react";
 import { differenceInDays, differenceInMonths, differenceInYears, format } from "date-fns";
@@ -30,9 +33,73 @@ import { findEntityByReference, getInternalEntityReference } from "@/lib/entity-
 import { createPageUrl, openImageViewer } from "@/utils";
 
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
+const DOG_EXPORTABLE_FIELDS = [
+  "codigo",
+  "nome",
+  "apelido",
+  "nascimento",
+  "sexo",
+  "raca",
+  "porte",
+  "peso",
+  "pelagem",
+  "cores_pelagem",
+  "castrado",
+  "foto_url",
+  "foto_carteirinha_vacina_url",
+  "data_revacinacao_1",
+  "nome_vacina_revacinacao_1",
+  "data_revacinacao_2",
+  "nome_vacina_revacinacao_2",
+  "data_revacinacao_3",
+  "nome_vacina_revacinacao_3",
+  "alergias",
+  "restricoes_cuidados",
+  "observacoes_gerais",
+  "veterinario_responsavel",
+  "veterinario_horario_atendimento",
+  "veterinario_telefone",
+  "veterinario_clinica_telefone",
+  "veterinario_endereco",
+  "alimentacao_marca_racao",
+  "alimentacao_sabor",
+  "alimentacao_tipo",
+  "refeicao_1_qnt",
+  "refeicao_1_horario",
+  "refeicao_1_obs",
+  "refeicao_2_qnt",
+  "refeicao_2_horario",
+  "refeicao_2_obs",
+  "refeicao_3_qnt",
+  "refeicao_3_horario",
+  "refeicao_3_obs",
+  "refeicao_4_qnt",
+  "refeicao_4_horario",
+  "refeicao_4_obs",
+  "medicamentos_continuos",
+  "autorizacao_uso_imagem",
+  "ativo",
+];
 
 function getLinkedDogIds(record) {
   return RELATION_SLOTS.map((slot) => record?.[`dog_id_${slot}`]).filter(Boolean);
+}
+
+function buildDogRelationPayload(linkedDogIds) {
+  const payload = {};
+  RELATION_SLOTS.forEach((slot, index) => {
+    payload[`dog_id_${slot}`] = linkedDogIds[index] || null;
+  });
+  return payload;
+}
+
+function pickFields(source, fields) {
+  return fields.reduce((acc, field) => {
+    if (Object.prototype.hasOwnProperty.call(source || {}, field)) {
+      acc[field] = source[field];
+    }
+    return acc;
+  }, {});
 }
 
 function formatDateValue(value) {
@@ -135,12 +202,15 @@ function buildVaccineRows(dog) {
 export default function PerfilCao() {
   const location = useLocation();
   const navigate = useNavigate();
+  const importInputRef = useRef(null);
   const [dog, setDog] = useState(null);
   const [responsaveis, setResponsaveis] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
   const [servicos, setServicos] = useState([]);
   const [faltas, setFaltas] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isImportingProfile, setIsImportingProfile] = useState(false);
+  const [profileFeedback, setProfileFeedback] = useState(null);
   const [dogPhotoUrl, setDogPhotoUrl] = useState("");
   const [vaccineCardUrls, setVaccineCardUrls] = useState([]);
 
@@ -264,6 +334,94 @@ export default function PerfilCao() {
     navigate(-1);
   };
 
+  const handleExportDogProfile = () => {
+    if (!dog) return;
+    const payload = {
+      tipo: "dogcity-perfil",
+      entidade: "cao",
+      versao: 1,
+      exportado_em: new Date().toISOString(),
+      acao: "upsert",
+      id: dog.id,
+      referencia_interna: getInternalEntityReference(dog),
+      ...pickFields(dog, DOG_EXPORTABLE_FIELDS),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `perfil-cao-${String(dog.nome || "cao").trim().replace(/\s+/g, "-").toLowerCase()}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setProfileFeedback({ tone: "success", message: "Perfil do cão exportado com sucesso." });
+  };
+
+  const handleOpenDogImport = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportDogProfile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !dog) return;
+
+    setIsImportingProfile(true);
+    setProfileFeedback(null);
+
+    try {
+      const rawText = await file.text();
+      const parsed = JSON.parse(rawText);
+      const importedDog =
+        parsed?.entidade === "cao"
+          ? {
+              acao: String(parsed?.acao || parsed?.action || "upsert").toLowerCase() === "delete" ? "delete" : "upsert",
+              data: pickFields(parsed, DOG_EXPORTABLE_FIELDS),
+            }
+          : Array.isArray(parsed?.caes) && parsed.caes.length > 0
+            ? {
+                acao: String(parsed.caes[0]?.acao || parsed.caes[0]?.action || "upsert").toLowerCase() === "delete" ? "delete" : "upsert",
+                data: pickFields(parsed.caes[0], DOG_EXPORTABLE_FIELDS),
+              }
+            : null;
+
+      if (!importedDog) {
+        throw new Error("Nenhum perfil de cão válido foi encontrado no arquivo.");
+      }
+
+      if (importedDog.acao === "delete") {
+        for (const responsavel of responsaveis) {
+          const linkedIds = getLinkedDogIds(responsavel).filter((dogId) => dogId !== dog.id);
+          await Responsavel.update(responsavel.id, buildDogRelationPayload(linkedIds));
+        }
+        for (const carteira of carteiras) {
+          const linkedIds = getLinkedDogIds(carteira).filter((dogId) => dogId !== dog.id);
+          await Carteira.update(carteira.id, buildDogRelationPayload(linkedIds));
+        }
+        await Dog.delete(dog.id);
+        setProfileFeedback({ tone: "success", message: "Perfil do cão removido a partir do arquivo importado." });
+        handleGoBack();
+        return;
+      }
+
+      const updatedDog = await Dog.update(dog.id, importedDog.data);
+      setDog((current) => ({ ...current, ...importedDog.data, ...(updatedDog || {}) }));
+      setProfileFeedback({ tone: "success", message: "Perfil do cão atualizado pelo arquivo importado." });
+    } catch (error) {
+      console.error("Erro ao importar perfil do cão:", error);
+      setProfileFeedback({
+        tone: "error",
+        message: error?.message || "Não foi possível importar o perfil do cão agora.",
+      });
+    } finally {
+      setIsImportingProfile(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -283,6 +441,13 @@ export default function PerfilCao() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-6xl">
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={handleImportDogProfile}
+        />
         <div className="mb-6">
           <button
             type="button"
@@ -295,6 +460,15 @@ export default function PerfilCao() {
 
           <Card className="border-blue-200 bg-white">
             <CardContent className="p-6">
+              {profileFeedback ? (
+                <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+                  profileFeedback.tone === "error"
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                }`}>
+                  {profileFeedback.message}
+                </div>
+              ) : null}
               <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
                 {dogPhotoUrl ? (
                   <button type="button" onClick={() => handleOpenImage(dog?.foto_url, dogPhotoUrl, dog.nome)} className="shrink-0">
@@ -321,12 +495,22 @@ export default function PerfilCao() {
                       </div>
                     </div>
 
-                    <Link to={`${createPageUrl("Cadastro")}?editDogId=${encodeURIComponent(getInternalEntityReference(dog))}`}>
-                      <Button type="button" className="bg-blue-600 text-white hover:bg-blue-700">
-                        <Pencil className="mr-2 h-4 w-4" />
-                        Atualizar cadastro
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                      <Button type="button" variant="outline" onClick={handleExportDogProfile}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Exportar perfil
                       </Button>
-                    </Link>
+                      <Button type="button" variant="outline" onClick={handleOpenDogImport} disabled={isImportingProfile}>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Importar perfil
+                      </Button>
+                      <Link to={`${createPageUrl("Cadastro")}?editDogId=${encodeURIComponent(getInternalEntityReference(dog))}`}>
+                        <Button type="button" className="bg-blue-600 text-white hover:bg-blue-700">
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Atualizar cadastro
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -566,6 +750,9 @@ export default function PerfilCao() {
                       {responsaveis.map((item) => (
                         <div key={item.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                           <p className="font-medium text-gray-900">{item.nome_completo}</p>
+                          {item.como_gostaria_de_ser_chamado ? (
+                            <p className="text-sm text-gray-600">Prefere ser chamado de: {item.como_gostaria_de_ser_chamado}</p>
+                          ) : null}
                           <p className="text-sm text-gray-600">{item.celular || "-"}</p>
                           {item.email ? <p className="text-sm text-gray-600">{item.email}</p> : null}
                         </div>

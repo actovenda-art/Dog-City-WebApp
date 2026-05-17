@@ -50,6 +50,7 @@ const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 const EMPTY_RESPONSAVEL_FORM = {
   nome_completo: "",
+  como_gostaria_de_ser_chamado: "",
   cpf: "",
   celular: "",
   celular_alternativo: "",
@@ -266,6 +267,34 @@ function normalizeImportedResponsaveis(payload) {
     dogRefs: Array.isArray(item?.dog_refs) ? item.dog_refs.map((value) => String(value || "").trim()).filter(Boolean) : [],
     data: pickFields(item, RESPONSAVEL_EXPORTABLE_FIELDS),
   }));
+}
+
+function buildSingleDogExport(dog) {
+  return {
+    tipo: "dogcity-perfil",
+    entidade: "cao",
+    versao: 1,
+    exportado_em: new Date().toISOString(),
+    acao: "upsert",
+    id: dog.id,
+    referencia_interna: getInternalEntityReference(dog),
+    ...pickFields(dog, DOG_EXPORTABLE_FIELDS),
+  };
+}
+
+function buildSingleResponsavelExport(responsavel, dogs) {
+  return {
+    tipo: "dogcity-perfil",
+    entidade: "responsavel",
+    versao: 1,
+    exportado_em: new Date().toISOString(),
+    acao: "upsert",
+    id: responsavel.id,
+    ...pickFields(responsavel, RESPONSAVEL_EXPORTABLE_FIELDS),
+    dog_refs: getLinkedDogIds(responsavel).map((dogId) =>
+      getInternalEntityReference(dogs.find((dog) => dog.id === dogId) || { id: dogId }),
+    ),
+  };
 }
 
 function formatCpfCnpj(value) {
@@ -550,6 +579,7 @@ LinkedDogsSelector.propTypes = {
 export default function Perfis() {
   const location = useLocation();
   const importInputRef = useRef(null);
+  const [importProfileTarget, setImportProfileTarget] = useState(null);
   const [dogs, setDogs] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
@@ -831,6 +861,17 @@ export default function Perfis() {
     });
   };
 
+  const handleExportResponsavelProfile = (responsavel) => {
+    if (!responsavel) return;
+    const profileName = normalizeSearchValue(responsavel.nome_completo || "responsavel").replace(/\s+/g, "-") || "responsavel";
+    downloadJsonFile(`perfil-responsavel-${profileName}.json`, buildSingleResponsavelExport(responsavel, dogs));
+    setPageFeedback({
+      tone: "success",
+      title: "Perfil exportado",
+      message: `Os dados de ${responsavel.nome_completo || "este responsável"} foram exportados em JSON.`,
+    });
+  };
+
   const removeDogLinksFromEntities = async (dogId, responsaveisBase, carteirasBase) => {
     const relatedResponsaveis = (responsaveisBase || []).filter((item) => getLinkedDogIds(item).includes(dogId));
     const relatedCarteiras = (carteirasBase || []).filter((item) => getLinkedDogIds(item).includes(dogId));
@@ -848,6 +889,104 @@ export default function Perfis() {
 
   const openImportPicker = () => {
     importInputRef.current?.click();
+  };
+
+  const openProfileImportPicker = (target) => {
+    setImportProfileTarget(target || null);
+    importInputRef.current?.click();
+  };
+
+  const handleImportSingleProfileFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setIsSaving(true);
+    setPageFeedback(null);
+
+    try {
+      if (!importProfileTarget?.type || !importProfileTarget?.id) {
+        throw new Error("Abra a ficha do perfil antes de importar o arquivo.");
+      }
+
+      const rawText = await file.text();
+      const parsed = JSON.parse(rawText);
+
+      if (importProfileTarget.type !== "responsavel") {
+        throw new Error("Use a importação diretamente na ficha do cão para atualizar um perfil canino.");
+      }
+
+      const importedResponsavel =
+        parsed?.entidade === "responsavel"
+          ? {
+              acao: normalizeImportAction(parsed?.acao || parsed?.action),
+              id: String(parsed?.id || "").trim(),
+              cpf: String(parsed?.cpf || "").trim(),
+              dogRefs: Array.isArray(parsed?.dog_refs) ? parsed.dog_refs.map((value) => String(value || "").trim()).filter(Boolean) : [],
+              data: pickFields(parsed, RESPONSAVEL_EXPORTABLE_FIELDS),
+            }
+          : normalizeImportedResponsaveis(parsed)[0];
+
+      if (!importedResponsavel) {
+        throw new Error("Nenhum responsável válido foi encontrado no arquivo.");
+      }
+
+      const existingResponsavel = responsaveis.find((item) => item.id === importProfileTarget.id);
+      if (!existingResponsavel?.id) {
+        throw new Error("Responsável não encontrado para importar os dados.");
+      }
+
+      if (importedResponsavel.acao === "delete") {
+        await Responsavel.delete(existingResponsavel.id);
+        setResponsaveis((current) => current.filter((item) => item.id !== existingResponsavel.id));
+        closeResponsavelDetails();
+        setPageFeedback({
+          tone: "success",
+          title: "Perfil removido",
+          message: "O responsável foi removido a partir do arquivo importado.",
+        });
+        return;
+      }
+
+      const resolvedDogIds = importedResponsavel.dogRefs
+        .map((reference) => findEntityByReference(dogs, reference)?.id || "")
+        .filter(Boolean)
+        .slice(0, RELATION_SLOTS.length);
+
+      const responsavelPayload = {
+        ...importedResponsavel.data,
+        empresa_id: existingResponsavel.empresa_id || currentUser?.empresa_id || null,
+        nome_completo: formatDisplayName(importedResponsavel.data.nome_completo || existingResponsavel.nome_completo || ""),
+        como_gostaria_de_ser_chamado: optional(formatDisplayName(importedResponsavel.data.como_gostaria_de_ser_chamado || "")),
+        cpf: optional(String(importedResponsavel.data.cpf || "").trim()),
+        celular: optional(String(importedResponsavel.data.celular || "").trim()),
+        celular_alternativo: optional(String(importedResponsavel.data.celular_alternativo || "").trim()),
+        email: optional(String(importedResponsavel.data.email || "").trim()),
+        ...buildDogRelationPayload(resolvedDogIds.length ? resolvedDogIds : getLinkedDogIds(existingResponsavel)),
+      };
+
+      const updatedResponsavel = await Responsavel.update(existingResponsavel.id, responsavelPayload);
+      setResponsaveis((current) =>
+        current.map((item) =>
+          item.id === existingResponsavel.id ? { ...item, ...responsavelPayload, ...(updatedResponsavel || {}) } : item,
+        ),
+      );
+      setPageFeedback({
+        tone: "success",
+        title: "Perfil importado",
+        message: `Os dados de ${responsavelPayload.nome_completo || "este responsável"} foram atualizados pelo arquivo.`,
+      });
+    } catch (error) {
+      console.error("Erro ao importar perfil individual:", error);
+      setPageFeedback({
+        tone: "error",
+        title: "Erro ao importar perfil",
+        message: error?.message || "Tente novamente em instantes.",
+      });
+    } finally {
+      setImportProfileTarget(null);
+      setIsSaving(false);
+    }
   };
 
   const handleImportProfilesFile = async (event) => {
@@ -1166,6 +1305,7 @@ export default function Perfis() {
 
       const payload = {
         nome_completo: formattedName,
+        como_gostaria_de_ser_chamado: optional(formatDisplayName(responsavelForm.como_gostaria_de_ser_chamado)),
         cpf: responsavelForm.cpf.trim(),
         celular: responsavelForm.celular.trim(),
         celular_alternativo: optional(responsavelForm.celular_alternativo.trim()),
@@ -1388,26 +1528,6 @@ export default function Perfis() {
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleExportProfiles}
-              disabled={isSaving}
-              className="h-9 w-full rounded-full border-emerald-200 px-3 text-xs text-emerald-700 hover:bg-emerald-50 sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Exportar cães e responsáveis
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={openImportPicker}
-              disabled={isSaving}
-              className="h-9 w-full rounded-full border-violet-200 px-3 text-xs text-violet-700 hover:bg-violet-50 sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
-            >
-              <Upload className="mr-2 h-4 w-4" />
-              Importar arquivo
-            </Button>
             <Link to={createPageUrl("Cadastro")}>
               <Button variant="outline" className="h-9 w-full rounded-full border-blue-200 px-3 text-xs text-blue-700 hover:bg-blue-50 sm:h-10 sm:w-auto sm:px-4 sm:text-sm">
                 <FileText className="mr-2 h-4 w-4" />
@@ -1422,7 +1542,7 @@ export default function Perfis() {
           type="file"
           accept="application/json,.json"
           className="hidden"
-          onChange={handleImportProfilesFile}
+          onChange={handleImportSingleProfileFile}
         />
 
         <FeedbackBanner feedback={pageFeedback} />
@@ -1632,6 +1752,7 @@ export default function Perfis() {
           {viewingResponsavel ? (
             <div className="space-y-5">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <ProfileDetailField label="Como gostaria de ser chamado" value={viewingResponsavel.como_gostaria_de_ser_chamado || "Não informado"} />
                 <ProfileDetailField label="Telefone principal" value={viewingResponsavel.celular || "Não informado"} />
                 <ProfileDetailField label="Telefone alternativo" value={viewingResponsavel.celular_alternativo || "Não informado"} />
                 <ProfileDetailField label="CPF" value={viewingResponsavel.cpf || "Não informado"} />
@@ -1655,6 +1776,23 @@ export default function Perfis() {
 
               <DialogFooter className="gap-2">
                 <Button variant="outline" onClick={closeResponsavelDetails} className="w-full sm:w-auto">Fechar</Button>
+                <Button
+                  variant="outline"
+                  className="w-full border-emerald-200 text-emerald-700 hover:bg-emerald-50 sm:w-auto"
+                  onClick={() => handleExportResponsavelProfile(viewingResponsavel)}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Exportar perfil
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full border-violet-200 text-violet-700 hover:bg-violet-50 sm:w-auto"
+                  onClick={() => openProfileImportPicker({ type: "responsavel", id: viewingResponsavel.id })}
+                  disabled={isSaving}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  Importar perfil
+                </Button>
                 <Button
                   variant="outline"
                   className="w-full border-violet-200 text-violet-700 hover:bg-violet-50 sm:w-auto"
@@ -1774,6 +1912,26 @@ export default function Perfis() {
                     }))
                   }
                   placeholder="Nome completo do responsável"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <Label>Como você gostaria de ser chamado?</Label>
+                <Input
+                  value={responsavelForm.como_gostaria_de_ser_chamado}
+                  onBlur={() =>
+                    setResponsavelForm((current) => ({
+                      ...current,
+                      como_gostaria_de_ser_chamado: formatDisplayName(current.como_gostaria_de_ser_chamado),
+                    }))
+                  }
+                  onChange={(event) =>
+                    setResponsavelForm((current) => ({
+                      ...current,
+                      como_gostaria_de_ser_chamado: sanitizeDisplayNameInput(event.target.value),
+                    }))
+                  }
+                  placeholder="Ex: Ju"
                 />
               </div>
 

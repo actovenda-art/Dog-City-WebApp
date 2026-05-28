@@ -53,3 +53,51 @@ export const whatsappBridge = async (...args) => {
 	}
 	return f.whatsappBridge(...args);
 };
+
+export const financeShadowSync = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeShadowSync !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeShadowSync is not available'));
+	}
+	return f.financeShadowSync(...args);
+};
+
+export const financeWalletAdminReadAccounts = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeWalletAdminReadAccounts !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeWalletAdminReadAccounts is not available'));
+	}
+	return f.financeWalletAdminReadAccounts(...args);
+};
+
+export const financeWalletAdminReadMovements = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeWalletAdminReadMovements !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeWalletAdminReadMovements is not available'));
+	}
+	return f.financeWalletAdminReadMovements(...args);
+};
+
+export const financeWalletAdminAuditAccounts = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeWalletAdminAuditAccounts !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeWalletAdminAuditAccounts is not available'));
+	}
+	return f.financeWalletAdminAuditAccounts(...args);
+};
+
+export const financeWalletAdminApplyOperation = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeWalletAdminApplyOperation !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeWalletAdminApplyOperation is not available'));
+	}
+	return f.financeWalletAdminApplyOperation(...args);
+};
+
+export const financeWalletReconcileAccount = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeWalletReconcileAccount !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeWalletReconcileAccount is not available'));
+	}
+	return f.financeWalletReconcileAccount(...args);
+};

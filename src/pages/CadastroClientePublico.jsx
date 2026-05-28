@@ -128,6 +128,9 @@ const EMPTY_RESPONSAVEL = {
   celular: "",
   celular_alternativo: "",
   email: "",
+  login_portal: "",
+  senha_portal: "",
+  confirmar_senha_portal: "",
 };
 
 const EMPTY_FINANCEIRO = {
@@ -290,6 +293,21 @@ function validateResponsavel(form) {
   }
   if (!isCompletePersonName(form.nome_completo)) {
     return "Informe o nome completo do responsável com nome e sobrenome.";
+  }
+  const portalLogin = String(form.login_portal || "").trim().toLowerCase();
+  const portalPassword = String(form.senha_portal || "").trim();
+  const portalConfirmPassword = String(form.confirmar_senha_portal || "").trim();
+
+  if (portalLogin || portalPassword || portalConfirmPassword) {
+    if (!portalLogin || !portalPassword || !portalConfirmPassword) {
+      return "Se quiser preparar a confirmação autenticada, preencha login, senha e confirmação da senha.";
+    }
+    if (portalPassword.length < 6) {
+      return "A senha para confirmação de orçamentos/agendamentos precisa ter pelo menos 6 caracteres.";
+    }
+    if (portalPassword !== portalConfirmPassword) {
+      return "A confirmação da senha do responsável não confere.";
+    }
   }
   return "";
 }
@@ -747,6 +765,9 @@ export default function CadastroClientePublico() {
         nome_completo: prefillResponsavel?.nome_completo || data?.link?.responsavel_nome || current.nome_completo,
         como_gostaria_de_ser_chamado: prefillResponsavel?.como_gostaria_de_ser_chamado || current.como_gostaria_de_ser_chamado,
         email: prefillResponsavel?.email || data?.link?.responsavel_email || current.email,
+        login_portal: prefillResponsavel?.login_portal || current.login_portal,
+        senha_portal: "",
+        confirmar_senha_portal: "",
       }));
       setFinanceiroForm((current) => ({
         ...current,
@@ -1083,6 +1104,47 @@ export default function CadastroClientePublico() {
           placeholder: "email@exemplo.com",
           requiredMessage: "Informe o email do responsável.",
         })}
+        <div className="md:col-span-2">
+          <div className="rounded-3xl border border-violet-200 bg-violet-50/80 p-4 sm:p-5">
+            <div className="space-y-1.5">
+              <p className="text-sm font-semibold text-violet-950 sm:text-[15px]">
+                Senha para confirmação de orçamentos/agendamentos
+              </p>
+              <p className="text-[11px] leading-snug text-violet-800 sm:text-xs">
+                Compartilhe estas informações apenas com pessoas autorizadas a tomar decisões por você.
+              </p>
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              {renderTextField({
+                fieldKey: "responsavel.login_portal",
+                label: "Login",
+                optional: true,
+                value: responsavelForm.login_portal,
+                onChange: (event) => setResponsavelForm((current) => ({ ...current, login_portal: event.target.value.toLowerCase() })),
+                placeholder: "email ou login",
+                className: "md:col-span-2",
+              })}
+              {renderTextField({
+                fieldKey: "responsavel.senha_portal",
+                label: "Senha",
+                optional: true,
+                value: responsavelForm.senha_portal,
+                onChange: (event) => setResponsavelForm((current) => ({ ...current, senha_portal: event.target.value })),
+                type: "password",
+                placeholder: "Senha do responsável",
+              })}
+              {renderTextField({
+                fieldKey: "responsavel.confirmar_senha_portal",
+                label: "Confirmar senha",
+                optional: true,
+                value: responsavelForm.confirmar_senha_portal,
+                onChange: (event) => setResponsavelForm((current) => ({ ...current, confirmar_senha_portal: event.target.value })),
+                type: "password",
+                placeholder: "Repita a senha",
+              })}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

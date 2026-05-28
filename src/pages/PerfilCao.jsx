@@ -157,10 +157,10 @@ function getAgeLabel(dateValue) {
   const months = differenceInMonths(today, birthDate) % 12;
 
   if (years > 0) {
-    return `${years} ano${years > 1 ? "s" : ""}${months > 0 ? ` e ${months} mês${months > 1 ? "es" : ""}` : ""}`;
+    return `${years} ano${years > 1 ? "s" : ""}${months > 0 ? ` e ${months} ${months > 1 ? "meses" : "mês"}` : ""}`;
   }
 
-  return `${months} mês${months !== 1 ? "es" : ""}`;
+  return `${months} ${months === 1 ? "mês" : "meses"}`;
 }
 
 function buildVaccineRows(dog) {

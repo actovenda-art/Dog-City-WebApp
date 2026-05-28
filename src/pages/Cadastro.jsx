@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Dog } from "@/api/entities";
+import { useRef } from "react";
 import { Responsavel } from "@/api/entities";
 import { Carteira } from "@/api/entities";
 import { User } from "@/api/entities";
@@ -30,6 +31,86 @@ import { useLocation, useNavigate } from "react-router-dom";
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "Médio", "Grande", "Gigante"];
+const DOG_IMPORTABLE_FIELDS = [
+  "codigo",
+  "nome",
+  "apelido",
+  "nascimento",
+  "data_nascimento",
+  "sexo",
+  "raca",
+  "porte",
+  "peso",
+  "pelagem",
+  "cores_pelagem",
+  "castrado",
+  "foto_url",
+  "foto_carteirinha_vacina_url",
+  "data_revacinacao_1",
+  "nome_vacina_revacinacao_1",
+  "data_revacinacao_2",
+  "nome_vacina_revacinacao_2",
+  "data_revacinacao_3",
+  "nome_vacina_revacinacao_3",
+  "alergias",
+  "restricoes_cuidados",
+  "observacoes_gerais",
+  "veterinario_responsavel",
+  "veterinario_horario_atendimento",
+  "veterinario_telefone",
+  "veterinario_clinica_telefone",
+  "veterinario_endereco",
+  "alimentacao_marca_racao",
+  "alimentacao_sabor",
+  "alimentacao_tipo",
+  "refeicoes",
+  "refeicao_1_qnt",
+  "refeicao_1_horario",
+  "refeicao_1_obs",
+  "refeicao_2_qnt",
+  "refeicao_2_horario",
+  "refeicao_2_obs",
+  "refeicao_3_qnt",
+  "refeicao_3_horario",
+  "refeicao_3_obs",
+  "refeicao_4_qnt",
+  "refeicao_4_horario",
+  "refeicao_4_obs",
+  "medicamentos_continuos",
+  "autorizacao_uso_imagem",
+  "ativo",
+];
+
+const RESPONSAVEL_IMPORTABLE_FIELDS = [
+  "codigo",
+  "nome_completo",
+  "como_gostaria_de_ser_chamado",
+  "cpf",
+  "celular",
+  "celular_alternativo",
+  "email",
+  "login_portal",
+];
+
+const CARTEIRA_IMPORTABLE_FIELDS = [
+  "nome_razao_social",
+  "cpf_cnpj",
+  "celular",
+  "email",
+  "cep",
+  "numero_residencia",
+  "street",
+  "neighborhood",
+  "city",
+  "state",
+  "vencimento_planos",
+  "contato_orcamentos_nome",
+  "contato_orcamentos_celular",
+  "contato_orcamentos_email",
+  "contato_alinhamentos_nome",
+  "contato_alinhamentos_celular",
+  "contato_alinhamentos_email",
+];
 const DOG_BREED_OPTIONS = [
   "SRD",
   "Akita",
@@ -255,6 +336,9 @@ export default function Cadastro() {
   const [carteiraIgualResponsavel, setCarteiraIgualResponsavel] = useState(false);
   const [addressLoading, setAddressLoading] = useState(false);
   const [clientLinkValue, setClientLinkValue] = useState("");
+  const dogImportInputRef = useRef(null);
+  const responsavelImportInputRef = useRef(null);
+  const carteiraImportInputRef = useRef(null);
   useEffect(() => { loadData(); }, []);
 
   // Dog Form
@@ -321,6 +405,12 @@ export default function Cadastro() {
   };
   const formatCEP = (v) => v.replace(/\D/g, '').replace(/(\d{5})(\d{3})/, '$1-$2').slice(0, 9);
   const optional = (v) => v === "" ? null : v;
+  const pickFields = (source, fields) => fields.reduce((acc, field) => {
+    if (Object.prototype.hasOwnProperty.call(source || {}, field)) {
+      acc[field] = source[field];
+    }
+    return acc;
+  }, {});
   const normalizeMedications = (items) => (Array.isArray(items) ? items : [])
     .map((item) => ({
       especificacoes: optional(item?.especificacoes),
@@ -731,6 +821,184 @@ export default function Cadastro() {
     } catch (error) {
       setNotifyTitle("Erro");
       setNotifyMessage(error?.message || "Não foi possível carregar os cadastros.");
+      setNotifyOpen(true);
+    }
+  };
+
+  const resolveImportedDogLinks = (payload = {}) => {
+    const dogRefs = Array.isArray(payload?.dog_refs)
+      ? payload.dog_refs
+      : Array.isArray(payload?.dogRefs)
+        ? payload.dogRefs
+        : [];
+
+    const referencedDogIds = dogRefs
+      .map((reference) => findEntityByReference(dogs, reference)?.id || "")
+      .filter(Boolean);
+
+    const directDogIds = RELATION_SLOTS
+      .map((slot) => payload?.[`dog_id_${slot}`])
+      .filter((dogId) => dogs.some((item) => item.id === dogId));
+
+    return [...new Set([...referencedDogIds, ...directDogIds])].slice(0, RELATION_SLOTS.length);
+  };
+
+  const handleImportDogProfileFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const parsed = JSON.parse(await file.text());
+      const dogPayload = parsed?.entidade === "cao"
+        ? pickFields(parsed, DOG_IMPORTABLE_FIELDS)
+        : Array.isArray(parsed?.caes) && parsed.caes.length > 0
+          ? pickFields(parsed.caes[0], DOG_IMPORTABLE_FIELDS)
+          : null;
+
+      if (!dogPayload) {
+        throw new Error("Nenhum perfil de cão válido foi encontrado no arquivo.");
+      }
+
+      const normalizedMeals = Array.isArray(dogPayload.refeicoes) && dogPayload.refeicoes.length > 0
+        ? dogPayload.refeicoes.map((meal) => ({
+            quantidade: meal?.quantidade || meal?.qnt || "",
+            horario: meal?.horario || "",
+            observacao: meal?.observacao || meal?.obs || "",
+          }))
+        : extractDogMeals(dogPayload);
+
+      setDogForm({
+        ...emptyDog,
+        ...dogPayload,
+        nome: formatDisplayName(dogPayload.nome || ""),
+        apelido: formatDisplayName(dogPayload.apelido || ""),
+        data_nascimento: dogPayload.data_nascimento || dogPayload.nascimento || "",
+        porte: normalizeDogSize(dogPayload.porte),
+        pelagem: normalizeDogCoat(dogPayload.pelagem),
+        peso: dogPayload.peso ?? "",
+        refeicoes: normalizedMeals?.length ? normalizedMeals : [createEmptyDogMeal()],
+        medicamentos_continuos:
+          Array.isArray(dogPayload.medicamentos_continuos) && dogPayload.medicamentos_continuos.length > 0
+            ? dogPayload.medicamentos_continuos.map((item) => ({
+                especificacoes: item?.especificacoes || "",
+                cuidados: item?.cuidados || "",
+                horario: item?.horario || "",
+                dose: item?.dose || "",
+              }))
+            : [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
+        foto_carteirinha_vacina_url: parseVaccineCardImages(dogPayload.foto_carteirinha_vacina_url),
+        alimentacao_natural: isNaturalFoodType(dogPayload.alimentacao_tipo),
+        autorizacao_uso_imagem: !!dogPayload.autorizacao_uso_imagem,
+        castrado: !!dogPayload.castrado,
+      });
+      setSelectedResponsavelIds([]);
+      setSelectedCarteiraIds([]);
+      setEditingDogId("");
+      setActiveTab("caes");
+      setNotifyTitle("Perfil importado");
+      setNotifyMessage("O perfil do cão foi importado para o formulário.");
+      setNotifyOpen(true);
+    } catch (error) {
+      setNotifyTitle("Erro");
+      setNotifyMessage(error?.message || "Não foi possível importar o perfil do cão.");
+      setNotifyOpen(true);
+    }
+  };
+
+  const handleImportResponsavelProfileFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const parsed = JSON.parse(await file.text());
+      const responsavelPayload = parsed?.entidade === "responsavel"
+        ? pickFields(parsed, RESPONSAVEL_IMPORTABLE_FIELDS)
+        : Array.isArray(parsed?.responsaveis) && parsed.responsaveis.length > 0
+          ? pickFields(parsed.responsaveis[0], RESPONSAVEL_IMPORTABLE_FIELDS)
+          : null;
+
+      if (!responsavelPayload) {
+        throw new Error("Nenhum perfil de responsável válido foi encontrado no arquivo.");
+      }
+
+      const importedDogIds = resolveImportedDogLinks(parsed?.entidade === "responsavel" ? parsed : parsed?.responsaveis?.[0] || {});
+
+      setResponsavelForm({
+        ...emptyResponsavel,
+        ...responsavelPayload,
+        nome_completo: formatDisplayName(responsavelPayload.nome_completo || ""),
+        como_gostaria_de_ser_chamado: formatDisplayName(responsavelPayload.como_gostaria_de_ser_chamado || ""),
+        cpf: responsavelPayload.cpf || "",
+        celular: responsavelPayload.celular || "",
+        celular_alternativo: responsavelPayload.celular_alternativo || "",
+        email: responsavelPayload.email || "",
+        login_portal: (responsavelPayload.login_portal || responsavelPayload.email || "").toLowerCase(),
+        ...Object.fromEntries(RELATION_SLOTS.map((slot, index) => [`dog_id_${slot}`, importedDogIds[index] || ""])),
+      });
+      setActiveTab("responsaveis");
+      setNotifyTitle("Perfil importado");
+      setNotifyMessage("O perfil do responsável foi importado para o formulário.");
+      setNotifyOpen(true);
+    } catch (error) {
+      setNotifyTitle("Erro");
+      setNotifyMessage(error?.message || "Não foi possível importar o perfil do responsável.");
+      setNotifyOpen(true);
+    }
+  };
+
+  const handleImportCarteiraProfileFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const parsed = JSON.parse(await file.text());
+      const source = parsed?.entidade === "carteira"
+        ? parsed
+        : Array.isArray(parsed?.carteiras) && parsed.carteiras.length > 0
+          ? parsed.carteiras[0]
+          : null;
+
+      const carteiraPayload = source ? pickFields(source, CARTEIRA_IMPORTABLE_FIELDS) : null;
+
+      if (!carteiraPayload) {
+        throw new Error("Nenhum perfil de responsável financeiro válido foi encontrado no arquivo.");
+      }
+
+      const importedDogIds = resolveImportedDogLinks(source || {});
+
+      setCarteiraForm({
+        ...emptyCarteira,
+        ...carteiraPayload,
+        nome_razao_social: formatDisplayName(carteiraPayload.nome_razao_social || ""),
+        cpf_cnpj: carteiraPayload.cpf_cnpj || "",
+        celular: carteiraPayload.celular || "",
+        email: carteiraPayload.email || "",
+        cep: carteiraPayload.cep || "",
+        numero_residencia: carteiraPayload.numero_residencia || "",
+        street: carteiraPayload.street || "",
+        neighborhood: carteiraPayload.neighborhood || "",
+        city: carteiraPayload.city || "",
+        state: String(carteiraPayload.state || "").toUpperCase(),
+        vencimento_planos: carteiraPayload.vencimento_planos || "",
+        contato_orcamentos_nome: formatDisplayName(carteiraPayload.contato_orcamentos_nome || source?.contato_orcamentos?.nome || ""),
+        contato_orcamentos_celular: carteiraPayload.contato_orcamentos_celular || source?.contato_orcamentos?.celular || "",
+        contato_orcamentos_email: carteiraPayload.contato_orcamentos_email || source?.contato_orcamentos?.email || "",
+        contato_alinhamentos_nome: formatDisplayName(carteiraPayload.contato_alinhamentos_nome || source?.contato_alinhamentos?.nome || ""),
+        contato_alinhamentos_celular: carteiraPayload.contato_alinhamentos_celular || source?.contato_alinhamentos?.celular || "",
+        contato_alinhamentos_email: carteiraPayload.contato_alinhamentos_email || source?.contato_alinhamentos?.email || "",
+        ...Object.fromEntries(RELATION_SLOTS.map((slot, index) => [`dog_id_${slot}`, importedDogIds[index] || ""])),
+      });
+      setCarteiraIgualResponsavel(false);
+      setActiveTab("carteiras");
+      setNotifyTitle("Perfil importado");
+      setNotifyMessage("O perfil do responsável financeiro foi importado para o formulário.");
+      setNotifyOpen(true);
+    } catch (error) {
+      setNotifyTitle("Erro");
+      setNotifyMessage(error?.message || "Não foi possível importar o perfil do responsável financeiro.");
       setNotifyOpen(true);
     }
   };
@@ -1391,6 +1659,27 @@ export default function Cadastro() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-7xl">
+        <input
+          ref={dogImportInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={handleImportDogProfileFile}
+        />
+        <input
+          ref={responsavelImportInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={handleImportResponsavelProfileFile}
+        />
+        <input
+          ref={carteiraImportInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={handleImportCarteiraProfileFile}
+        />
         <Card className="mb-6 overflow-hidden border border-gray-200 bg-white shadow-sm">
           <div className="h-1 bg-gradient-to-r from-blue-500 via-emerald-500 to-orange-400" />
           <CardContent className="p-5 sm:p-6">
@@ -1536,7 +1825,18 @@ export default function Cadastro() {
             </div>
             <Card className="border-blue-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2"><DogIcon className="w-5 h-5 text-blue-600" />Cadastrar Cão</h3>
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900"><DogIcon className="w-5 h-5 text-blue-600" />Cadastrar Cão</h3>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => dogImportInputRef.current?.click()}
+                    className="h-9 rounded-xl border-blue-200 px-3 text-xs text-blue-700 hover:bg-blue-50 sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm"
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Importar perfil
+                  </Button>
+                </div>
                 {editingDogId ? (
                   <div className="mb-4 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-blue-700">
@@ -2167,7 +2467,18 @@ export default function Cadastro() {
             </Card>
             <Card className="border-green-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
-                <h3 className="mb-4 flex items-center gap-2 text-base font-semibold text-gray-900 sm:text-lg"><Users className="h-5 w-5 text-green-600" />Cadastrar Responsável</h3>
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900 sm:text-lg"><Users className="h-5 w-5 text-green-600" />Cadastrar Responsável</h3>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => responsavelImportInputRef.current?.click()}
+                    className="h-9 rounded-xl border-green-200 px-3 text-xs text-green-700 hover:bg-green-50 sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm"
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Importar perfil
+                  </Button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {renderTextField({
                     fieldKey: "responsavel.nome_completo",
@@ -2338,7 +2649,18 @@ export default function Cadastro() {
             </Card>
             <Card className="border-orange-200 bg-white shadow-sm">
               <CardContent className="p-4 sm:p-6">
-                <h3 className="mb-4 flex items-center gap-2 text-base font-semibold text-gray-900 sm:text-lg"><Wallet className="h-5 w-5 text-orange-600" />Cadastrar Carteira</h3>
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900 sm:text-lg"><Wallet className="h-5 w-5 text-orange-600" />Cadastrar Carteira</h3>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => carteiraImportInputRef.current?.click()}
+                    className="h-9 rounded-xl border-orange-200 px-3 text-xs text-orange-700 hover:bg-orange-50 sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm"
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Importar perfil
+                  </Button>
+                </div>
                 <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-orange-900">Usar os mesmos dados do responsável</p>

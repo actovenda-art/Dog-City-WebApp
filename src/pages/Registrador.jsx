@@ -2006,7 +2006,7 @@ export default function Registrador() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-gray-900 sm:text-3xl">Registrador</h1>
-              <p className="mt-1 text-sm text-gray-600">
+              <p className="mt-1 hidden text-sm text-gray-600 sm:block">
                 Presenças do dia, check-in, refeição, check-out e inclusões manuais.
               </p>
             </div>

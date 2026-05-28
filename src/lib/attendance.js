@@ -399,7 +399,7 @@ function combineDateTime(date, time) {
   return `${date}T${normalizedTime}:00`;
 }
 
-function calculateHospedagemCharges(cao, precos) {
+export function calculateHospedagemCharges(cao, precos) {
   if (!cao?.hosp_data_entrada || !cao?.hosp_data_saida) {
     return null;
   }
@@ -434,12 +434,12 @@ function calculateHospedagemCharges(cao, precos) {
   };
 }
 
-function calculateBanhoValue(cao, dog, precos) {
+export function calculateBanhoValue(cao, dog, precos) {
   const breed = normalizeBreedName(cao?.banho_raca || dog?.raca || "Outro") || "Outro";
   return precos.banho[breed] || precos.banho.Outro || 0;
 }
 
-function calculateTosaValue(cao, dog, precos) {
+export function calculateTosaValue(cao, dog, precos) {
   if (cao?.tosa_tipo === "higienica") {
     return precos.tosa_higienica[cao.tosa_subtipo_higienica || "pequeno_baixa"] || 50;
   }
@@ -451,11 +451,11 @@ function calculateTosaValue(cao, dog, precos) {
   return precos.tosa_geral[breed] || precos.tosa_geral.Outro || 0;
 }
 
-function calculateAdaptacaoValue(precos) {
+export function calculateAdaptacaoValue(precos) {
   return Number.parseFloat(precos?.adaptacao ?? DEFAULT_PRICING.adaptacao) || 0;
 }
 
-function inferAppointmentDate(cao, orcamento) {
+export function inferAppointmentDate(cao, orcamento) {
   return (
     cao?.day_care_data ||
     cao?.adaptacao_data ||

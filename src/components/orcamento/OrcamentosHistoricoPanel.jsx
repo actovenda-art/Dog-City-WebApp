@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, IntegracaoConfig, Orcamento, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
-import { notificacoesOrcamento, responsavelApproval, whatsappBridge } from "@/api/functions";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, IntegracaoConfig, Orcamento, RecurringPackage, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
+import { financeShadowSync, notificacoesOrcamento, responsavelApproval, whatsappBridge } from "@/api/functions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,7 @@ import {
   getServiceLabel,
   isApprovedOrcamentoStatus,
 } from "@/lib/attendance";
+import { buildShadowFinanceItemsFromOrcamento, resolveShadowChargeDueDate } from "@/lib/finance-shadow";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -333,6 +334,37 @@ function getLinkedResponsaveisForDogIds(responsaveis = [], dogIds = []) {
   );
 }
 
+function normalizePackageFinancialBehavior(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "billable_detailed") return "billable_detailed";
+  if (normalized === "operational_only") return "operational_only";
+  return null;
+}
+
+function getPackageBehaviorCandidateServiceIds(serviceType) {
+  switch (serviceType) {
+    case "banho":
+    case "tosa":
+      return [serviceType, "banho_tosa"];
+    default:
+      return [serviceType];
+  }
+}
+
+function resolveRecurringPackageFinancialBehavior(recurringPackages = [], cao, serviceType) {
+  const dogId = cao?.dog_id;
+  if (!dogId) return null;
+
+  const candidateServiceIds = getPackageBehaviorCandidateServiceIds(serviceType);
+  const matches = (recurringPackages || [])
+    .filter((item) => item?.status === "ativo")
+    .filter((item) => item?.pet_id === dogId)
+    .filter((item) => candidateServiceIds.includes(item?.service_id))
+    .sort((left, right) => getCreatedTimestamp(right) - getCreatedTimestamp(left));
+
+  return normalizePackageFinancialBehavior(matches[0]?.financial_behavior);
+}
+
 function serializeOperationalAppointmentForPrefill(appointment) {
   const metadata = getAppointmentMeta(appointment);
   return {
@@ -470,6 +502,7 @@ export default function OrcamentosHistoricoPanel({
   const [orcamentos, setOrcamentos] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
+  const [recurringPackages, setRecurringPackages] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [precos, setPrecos] = useState({});
@@ -511,10 +544,11 @@ export default function OrcamentosHistoricoPanel({
   async function loadData() {
     setIsLoading(true);
     try {
-      const [orcData, dogsData, carteirasData, responsaveisData, precosData, currentUser, integracoesData] = await Promise.all([
+      const [orcData, dogsData, carteirasData, recurringPackagesData, responsaveisData, precosData, currentUser, integracoesData] = await Promise.all([
         Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
+        RecurringPackage.list("-created_at", 1000),
         Responsavel.list("-created_date", 500),
         TabelaPrecos.list("-created_date", 1000),
         User.me(),
@@ -523,6 +557,7 @@ export default function OrcamentosHistoricoPanel({
       setOrcamentos(orcData || []);
       setDogs(dogsData || []);
       setCarteiras(carteirasData || []);
+      setRecurringPackages(recurringPackagesData || []);
       setResponsaveis(responsaveisData || []);
       setCurrentUser(currentUser || null);
       setPrecos(buildPricingConfig(precosData || [], currentUser?.empresa_id || null));
@@ -829,6 +864,41 @@ export default function OrcamentosHistoricoPanel({
           }
         } catch (error) {
           console.error("Erro ao sincronizar agendamentos do orÃ§amento:", error);
+        }
+
+        try {
+          const shadowEmpresaId = nextOrcamento?.empresa_id || currentUser?.empresa_id || null;
+          if (nextOrcamento?.cliente_id && shadowEmpresaId) {
+            const shadowItems = isApprovedOrcamentoStatus(newStatus)
+              ? buildShadowFinanceItemsFromOrcamento({
+                  orcamento: nextOrcamento,
+                  dogs,
+                  precos,
+                  packageBehaviorResolver: ({ cao, serviceType }) =>
+                    resolveRecurringPackageFinancialBehavior(recurringPackages, cao, serviceType),
+                })
+              : [];
+
+            await financeShadowSync({
+              orcamento_id: nextOrcamento.id,
+              empresa_id: shadowEmpresaId,
+              carteira_id: nextOrcamento.cliente_id,
+              due_date: resolveShadowChargeDueDate({
+                orcamento: nextOrcamento,
+                items: shadowItems,
+              }),
+              status: newStatus,
+              items: shadowItems,
+              payload: {
+                source: "orcamentos_historico_panel",
+                shadow_item_count: shadowItems.length,
+                valor_total_legado: Number(nextOrcamento?.valor_total || 0) || 0,
+              },
+              usuario_id: currentUser?.id || null,
+            });
+          }
+        } catch (error) {
+          console.error("Erro ao sincronizar shadow financeiro do orçamento:", error);
         }
       }
 

@@ -692,6 +692,10 @@ function getSessionUnitPriceFromPlan(plan) {
   return monthlyValue;
 }
 
+function getRecurringPackageFinancialBehavior(serviceId) {
+  return serviceId === "day_care" ? "operational_only" : "billable_detailed";
+}
+
 function buildRecurringPackagePayloadFromPlan(plan) {
   const metadata = parseMetadata(plan?.metadata_gerencial);
   const weekdays = normalizeWeekdays(plan?.weekdays);
@@ -706,6 +710,7 @@ function buildRecurringPackagePayloadFromPlan(plan) {
     weekday: weekdays[0] ?? null,
     weekdays,
     frequency: getRecurringFrequencyFromPlan(plan),
+    financial_behavior: getRecurringPackageFinancialBehavior(serviceId),
     price_per_session: getSessionUnitPriceFromPlan(plan),
     start_date: startDate,
     end_date: metadata.end_date || null,

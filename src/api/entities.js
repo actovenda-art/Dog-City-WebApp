@@ -28,6 +28,14 @@ export const Responsavel = appClient.entities.Responsavel;
 
 export const Carteira = appClient.entities.Carteira;
 
+export const CarteiraConta = appClient.entities.CarteiraConta;
+
+export const CarteiraMovimento = appClient.entities.CarteiraMovimento;
+
+export const CarteiraReconciliacao = appClient.entities.CarteiraReconciliacao;
+
+export const AutorizacaoFinanceira = appClient.entities.AutorizacaoFinanceira;
+
 export const Notificacao = appClient.entities.Notificacao;
 
 export const Orcamento = appClient.entities.Orcamento;

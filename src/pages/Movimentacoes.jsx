@@ -1,6 +1,14 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
-import { bancoInter } from "@/api/functions";
-import { ExtratoBancario, User } from "@/api/entities";
+import {
+  bancoInter,
+  financeWalletAdminApplyOperation,
+  financeWalletAdminAuditAccounts,
+  financeWalletAdminReadAccounts,
+  financeWalletAdminReadMovements,
+  financeWalletReconcileAccount,
+} from "@/api/functions";
+import { AppConfig, ExtratoBancario, User } from "@/api/entities";
+import PropTypes from "prop-types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -27,7 +35,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   Wallet,
 } from "lucide-react";
@@ -40,6 +47,8 @@ import {
   normalizeMovement,
   toDateInputValue,
 } from "@/utils/finance";
+import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
+import { isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
 
 const EMPTY_FORM = {
   data_hora_transacao: "",
@@ -50,6 +59,25 @@ const EMPTY_FORM = {
   tipo_transacao_detalhado: "",
   referencia: "",
   observacoes: "",
+};
+
+const EMPTY_WALLET_OPERATION_FORM = {
+  carteira_conta_id: "",
+  tipo: "credito_manual",
+  natureza: "entrada",
+  valor: "",
+  referencia_amigavel: "",
+  motivo: "",
+  observacao: "",
+  origem: "admin_manual",
+  transacao_id: "",
+};
+
+const WALLET_OPERATION_LABELS = {
+  credito_manual: "Crédito manual",
+  ajuste_manual: "Ajuste manual",
+  estorno_manual: "Estorno manual",
+  entrada_direcionada: "Entrada direcionada",
 };
 
 const MOVEMENTS_PAGE_SIZE = 50;
@@ -76,6 +104,23 @@ function writeMovementsCache(payload) {
   } catch {
     // ignore cache write failures
   }
+}
+
+function parseCurrencyInput(value) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildWalletOperationIdempotency(tipo) {
+  const randomToken = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  return `wallet_admin|${tipo}|${randomToken}`;
 }
 
 function formatPeriodLabelWithDays(summary) {
@@ -174,6 +219,16 @@ function StatCard({ label, value, className = "", valueClassName = "", icon = nu
   );
 }
 
+StatCard.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  className: PropTypes.string,
+  valueClassName: PropTypes.string,
+  icon: PropTypes.node,
+  helper: PropTypes.string,
+  isBlurred: PropTypes.bool,
+};
+
 export default function Movimentacoes() {
   const [movimentacoes, setMovimentacoes] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
@@ -197,6 +252,20 @@ export default function Movimentacoes() {
   const [visibleCount, setVisibleCount] = useState(MOVEMENTS_PAGE_SIZE);
   const [cacheHydrated, setCacheHydrated] = useState(false);
   const [hasLoadedFullDataset, setHasLoadedFullDataset] = useState(false);
+  const [walletFlags, setWalletFlags] = useState({
+    balanceReadEnabled: false,
+    movementsEnabled: false,
+    manualAdjustmentsEnabled: false,
+  });
+  const [walletAccounts, setWalletAccounts] = useState([]);
+  const [walletAuditRows, setWalletAuditRows] = useState([]);
+  const [walletRecentMovements, setWalletRecentMovements] = useState([]);
+  const [selectedWalletAccountId, setSelectedWalletAccountId] = useState("");
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletSaving, setWalletSaving] = useState(false);
+  const [walletActionMessage, setWalletActionMessage] = useState(null);
+  const [showWalletOperationModal, setShowWalletOperationModal] = useState(false);
+  const [walletOperationForm, setWalletOperationForm] = useState({ ...EMPTY_WALLET_OPERATION_FORM });
 
   const applyCachedSnapshot = (expectedEmpresaId = null) => {
     const cached = readMovementsCache();
@@ -368,7 +437,139 @@ export default function Movimentacoes() {
     };
   }, [currentUser?.empresa_id]);
 
-  const normalizedMovements = useMemo(
+  const canManageWalletOperations = Boolean(
+    currentUser?.is_platform_admin
+    || currentUser?.company_role === "platform_admin"
+    || isManagerialProfile(currentUser)
+    || isCommercialProfile(currentUser),
+  );
+
+  const loadWalletFlags = async (userProfile) => {
+    if (!userProfile?.empresa_id) {
+      setWalletFlags({
+        balanceReadEnabled: false,
+        movementsEnabled: false,
+        manualAdjustmentsEnabled: false,
+      });
+      return {
+        balanceReadEnabled: false,
+        movementsEnabled: false,
+        manualAdjustmentsEnabled: false,
+      };
+    }
+
+    const configResponse = AppConfig.queryAll
+      ? await AppConfig.queryAll({ pageSize: 500, maxRows: 1000, count: false })
+      : (AppConfig.listAll
+        ? await AppConfig.listAll("-updated_date", 500, 1000)
+        : await AppConfig.list("-updated_date", 500));
+    const configs = Array.isArray(configResponse?.data) ? configResponse.data : (configResponse || []);
+    const nextFlags = {
+      balanceReadEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.walletBalanceReadEnabled, userProfile.empresa_id),
+      movementsEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.walletMovementsEnabled, userProfile.empresa_id),
+      manualAdjustmentsEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.walletManualAdjustmentsEnabled, userProfile.empresa_id),
+    };
+    setWalletFlags(nextFlags);
+    return nextFlags;
+  };
+
+  const loadWalletAdminData = async (userProfile = currentUser, preferredWalletAccountId = selectedWalletAccountId) => {
+    if (!userProfile?.empresa_id) {
+      setWalletAccounts([]);
+      setWalletAuditRows([]);
+      setWalletRecentMovements([]);
+      setSelectedWalletAccountId("");
+      return;
+    }
+
+    setWalletLoading(true);
+    try {
+      const nextFlags = await loadWalletFlags(userProfile);
+      const walletReadEnabled = nextFlags.balanceReadEnabled || nextFlags.movementsEnabled;
+
+      if (!walletReadEnabled) {
+        setWalletAccounts([]);
+        setWalletAuditRows([]);
+        setWalletRecentMovements([]);
+        setSelectedWalletAccountId("");
+        return;
+      }
+
+      const [accounts, auditRows] = await Promise.all([
+        financeWalletAdminReadAccounts({ empresa_id: userProfile.empresa_id }),
+        nextFlags.balanceReadEnabled
+          ? financeWalletAdminAuditAccounts({ empresa_id: userProfile.empresa_id })
+          : Promise.resolve([]),
+      ]);
+
+      const normalizedAccounts = Array.isArray(accounts) ? accounts : [];
+      setWalletAccounts(normalizedAccounts);
+      setWalletAuditRows(Array.isArray(auditRows) ? auditRows : []);
+
+      const nextSelectedWalletId = normalizedAccounts.some((item) => item.carteira_conta_id === preferredWalletAccountId)
+        ? preferredWalletAccountId
+        : (normalizedAccounts[0]?.carteira_conta_id || "");
+      setSelectedWalletAccountId(nextSelectedWalletId);
+
+      if (nextFlags.movementsEnabled && nextSelectedWalletId) {
+        const recentMovements = await financeWalletAdminReadMovements({
+          empresa_id: userProfile.empresa_id,
+          carteira_conta_id: nextSelectedWalletId,
+          limit: 20,
+        });
+        setWalletRecentMovements(Array.isArray(recentMovements) ? recentMovements : []);
+      } else {
+        setWalletRecentMovements([]);
+      }
+    } catch (error) {
+      console.warn("Não foi possível carregar a leitura administrativa da carteira:", error);
+      setWalletAccounts([]);
+      setWalletAuditRows([]);
+      setWalletRecentMovements([]);
+      setSelectedWalletAccountId("");
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
+  const loadWalletMovements = async (walletAccountId, userProfile = currentUser) => {
+    if (!walletFlags.movementsEnabled || !userProfile?.empresa_id || !walletAccountId) {
+      setWalletRecentMovements([]);
+      return;
+    }
+
+    setWalletLoading(true);
+    try {
+      const recentMovements = await financeWalletAdminReadMovements({
+        empresa_id: userProfile.empresa_id,
+        carteira_conta_id: walletAccountId,
+        limit: 20,
+      });
+      setWalletRecentMovements(Array.isArray(recentMovements) ? recentMovements : []);
+    } catch (error) {
+      console.warn("Não foi possível carregar os movimentos administrativos da carteira:", error);
+      setWalletRecentMovements([]);
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!currentUser?.empresa_id) return;
+    loadWalletAdminData(currentUser);
+  }, [currentUser?.empresa_id]);
+
+  useEffect(() => {
+    if (!currentUser?.empresa_id) return;
+    if (!walletFlags.movementsEnabled) return;
+    if (!selectedWalletAccountId) {
+      setWalletRecentMovements([]);
+      return;
+    }
+    loadWalletMovements(selectedWalletAccountId, currentUser);
+  }, [currentUser?.empresa_id, walletFlags.movementsEnabled, selectedWalletAccountId]);
+
+  const normalizedMovements = React.useMemo(
     () =>
       dedupeOfficialImportedMovements(movimentacoes || [])
         .map((item) => normalizeMovement(item))
@@ -433,12 +634,6 @@ export default function Movimentacoes() {
   const totalSaidas = filtered
     .filter((item) => item.tipo === "saida")
     .reduce((sum, item) => sum + (item.valor || 0), 0);
-  const totalEntradasGeral = normalizedMovements
-    .filter((item) => item.tipo === "entrada")
-    .reduce((sum, item) => sum + (item.valor || 0), 0);
-  const totalSaidasGeral = normalizedMovements
-    .filter((item) => item.tipo === "saida")
-    .reduce((sum, item) => sum + (item.valor || 0), 0);
   const derivedSummaryFromLoadedRows = useMemo(
     () => buildSummaryFromMovements(movimentacoes),
     [movimentacoes],
@@ -454,6 +649,10 @@ export default function Movimentacoes() {
   const hasOfficialBalance = typeof currentBalance === "number";
   const saldoAtual = hasOfficialBalance ? currentBalance : null;
   const saldoAtualDisplay = hasOfficialBalance ? formatCurrency(currentBalance) : "—";
+  const walletReadEnabled = walletFlags.balanceReadEnabled || walletFlags.movementsEnabled;
+  const selectedWalletAccount = walletAccounts.find((item) => item.carteira_conta_id === selectedWalletAccountId) || null;
+  const selectedWalletAudit = walletAuditRows.find((item) => item.carteira_conta_id === selectedWalletAccountId) || null;
+
   const refreshStoredSummary = async (userProfile = currentUser) => {
     try {
       const data = await bancoInter({
@@ -473,6 +672,101 @@ export default function Movimentacoes() {
       }
     } catch (error) {
       console.warn("Nao foi possivel atualizar o resumo persistido do extrato:", error);
+    }
+  };
+
+  const openWalletOperationModal = (tipo, options = {}) => {
+    const defaultNatureza = tipo === "credito_manual" || tipo === "entrada_direcionada" ? "entrada" : "entrada";
+    setWalletActionMessage(null);
+    setWalletOperationForm({
+      carteira_conta_id: options.carteira_conta_id || selectedWalletAccountId || "",
+      tipo,
+      natureza: options.natureza || defaultNatureza,
+      valor: options.valor != null ? String(options.valor).replace(".", ",") : "",
+      referencia_amigavel: options.referencia_amigavel || "",
+      motivo: options.motivo || "",
+      observacao: options.observacao || "",
+      origem: options.origem || (tipo === "entrada_direcionada" ? "transacao_direcionada" : "admin_manual"),
+      transacao_id: options.transacao_id || "",
+    });
+    setShowWalletOperationModal(true);
+  };
+
+  const handleWalletReconcile = async () => {
+    if (!selectedWalletAccountId || !currentUser?.empresa_id) return;
+    setWalletLoading(true);
+    setWalletActionMessage(null);
+    try {
+      const result = await financeWalletReconcileAccount({
+        carteira_conta_id: selectedWalletAccountId,
+        usuario_id: currentUser?.id || null,
+      });
+      await loadWalletAdminData(currentUser, selectedWalletAccountId);
+      setWalletActionMessage({
+        type: result?.out_status === "ok" ? "success" : "warning",
+        message: result?.out_status === "ok"
+          ? "Reconciliação concluída sem divergência."
+          : "Reconciliação registrada com divergência. Nenhuma correção automática foi aplicada.",
+      });
+    } catch (error) {
+      setWalletActionMessage({
+        type: "error",
+        message: error?.message || "Não foi possível reconciliar a carteira selecionada.",
+      });
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
+  const handleWalletOperationSave = async () => {
+    if (!walletOperationForm.carteira_conta_id || !walletOperationForm.valor || !walletOperationForm.referencia_amigavel.trim() || !walletOperationForm.motivo.trim()) {
+      alert("Selecione a carteira e preencha valor, referência e motivo.");
+      return;
+    }
+
+    if (
+      (walletOperationForm.tipo === "credito_manual" || walletOperationForm.tipo === "entrada_direcionada")
+      && walletOperationForm.natureza !== "entrada"
+    ) {
+      alert("Essa operação deve usar natureza de entrada.");
+      return;
+    }
+
+    setWalletSaving(true);
+    setWalletActionMessage(null);
+    try {
+      await financeWalletAdminApplyOperation({
+        carteira_conta_id: walletOperationForm.carteira_conta_id,
+        operacao_idempotencia: buildWalletOperationIdempotency(walletOperationForm.tipo),
+        tipo: walletOperationForm.tipo,
+        natureza: walletOperationForm.natureza,
+        valor: parseCurrencyInput(walletOperationForm.valor),
+        referencia_amigavel: walletOperationForm.referencia_amigavel.trim(),
+        motivo: walletOperationForm.motivo.trim(),
+        observacao: walletOperationForm.observacao.trim() || null,
+        origem: walletOperationForm.origem.trim() || "admin_manual",
+        transacao_id: walletOperationForm.transacao_id.trim() || null,
+        usuario_id: currentUser?.id || null,
+        metadata: {
+          initiated_from: "movimentacoes_admin_block",
+          initiated_at: new Date().toISOString(),
+        },
+      });
+
+      await loadWalletAdminData(currentUser, walletOperationForm.carteira_conta_id);
+      setShowWalletOperationModal(false);
+      setWalletOperationForm({ ...EMPTY_WALLET_OPERATION_FORM });
+      setWalletActionMessage({
+        type: "success",
+        message: `${WALLET_OPERATION_LABELS[walletOperationForm.tipo] || "Operação"} registrada na carteira.`,
+      });
+    } catch (error) {
+      setWalletActionMessage({
+        type: "error",
+        message: error?.message || "Não foi possível registrar a operação da carteira.",
+      });
+    } finally {
+      setWalletSaving(false);
     }
   };
 
@@ -756,6 +1050,246 @@ export default function Movimentacoes() {
           />
         </div>
 
+        {walletReadEnabled && (
+          <Card className="mb-6 border-slate-200 bg-white">
+            <CardContent className="space-y-4 p-4 sm:p-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-semibold text-slate-900 sm:text-lg">Carteira financeira</h2>
+                    <Badge variant="outline">Leitura controlada</Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Bloco administrativo temporário para auditoria de saldo e movimentos, sem substituir o fluxo principal.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => loadWalletAdminData(currentUser, selectedWalletAccountId)}
+                    disabled={walletLoading}
+                    className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                  >
+                    <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${walletLoading ? "animate-spin" : ""}`} />
+                    Atualizar carteira
+                  </Button>
+                  {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations && (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => openWalletOperationModal("credito_manual")}
+                        className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                      >
+                        Crédito manual
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => openWalletOperationModal("ajuste_manual")}
+                        className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                      >
+                        Ajuste manual
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => openWalletOperationModal("estorno_manual")}
+                        className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                      >
+                        Estorno manual
+                      </Button>
+                    </>
+                  )}
+                  {walletFlags.balanceReadEnabled && selectedWalletAccountId && (
+                    <Button
+                      variant="outline"
+                      onClick={handleWalletReconcile}
+                      disabled={walletLoading}
+                      className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                    >
+                      Reconciliar
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {walletActionMessage && (
+                <div
+                  className={`rounded-2xl border px-4 py-3 text-sm ${
+                    walletActionMessage.type === "success"
+                      ? "border-green-200 bg-green-50 text-green-800"
+                      : walletActionMessage.type === "warning"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-red-200 bg-red-50 text-red-800"
+                  }`}
+                >
+                  {walletActionMessage.message}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <Label>Carteira selecionada</Label>
+                    <Select value={selectedWalletAccountId || ""} onValueChange={setSelectedWalletAccountId}>
+                      <SelectTrigger className="mt-2">
+                        <SelectValue placeholder="Selecione uma carteira" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {walletAccounts.map((account) => (
+                          <SelectItem key={account.carteira_conta_id} value={account.carteira_conta_id}>
+                            {account.carteira_nome}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-3">
+                    {walletAccounts.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
+                        Nenhuma conta de carteira disponível para a leitura administrativa atual.
+                      </div>
+                    ) : (
+                      walletAccounts.map((account) => {
+                        const isSelected = account.carteira_conta_id === selectedWalletAccountId;
+                        return (
+                          <button
+                            key={account.carteira_conta_id}
+                            type="button"
+                            onClick={() => setSelectedWalletAccountId(account.carteira_conta_id)}
+                            className={`w-full rounded-2xl border p-4 text-left transition ${
+                              isSelected
+                                ? "border-blue-300 bg-blue-50"
+                                : "border-slate-200 bg-white hover:border-slate-300"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-semibold text-slate-900">{account.carteira_nome}</p>
+                                {account.carteira_codigo ? (
+                                  <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
+                                    {account.carteira_codigo}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <Badge variant={account.latest_reconciliation_status === "divergente" ? "destructive" : "outline"}>
+                                {account.latest_reconciliation_status === "divergente" ? "Divergente" : "Auditável"}
+                              </Badge>
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                              <div>
+                                <p className="text-slate-500">Saldo atual</p>
+                                <p className="mt-1 font-semibold text-slate-900">{formatCurrency(account.saldo_atual)}</p>
+                              </div>
+                              <div>
+                                <p className="text-slate-500">Movimentos</p>
+                                <p className="mt-1 font-semibold text-slate-900">{account.movimento_count || 0}</p>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {selectedWalletAccount ? (
+                    <>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <StatCard
+                          label="Saldo da carteira"
+                          value={formatCurrency(selectedWalletAccount.saldo_atual)}
+                          className="border-blue-200"
+                          valueClassName="text-blue-700"
+                        />
+                        <StatCard
+                          label="Último movimento"
+                          value={selectedWalletAccount.ultimo_movimento_em ? new Date(selectedWalletAccount.ultimo_movimento_em).toLocaleDateString("pt-BR") : "—"}
+                          className="border-slate-200"
+                          valueClassName="text-slate-900 text-base sm:text-lg"
+                          helper={selectedWalletAccount.ultimo_movimento_em ? new Date(selectedWalletAccount.ultimo_movimento_em).toLocaleTimeString("pt-BR") : "Sem movimentos"}
+                        />
+                        <StatCard
+                          label="Reconciliação"
+                          value={selectedWalletAudit?.status === "divergente" ? "Divergente" : "OK"}
+                          className={selectedWalletAudit?.status === "divergente" ? "border-amber-200" : "border-green-200"}
+                          valueClassName={selectedWalletAudit?.status === "divergente" ? "text-amber-700 text-base sm:text-lg" : "text-green-700 text-base sm:text-lg"}
+                          helper={selectedWalletAudit ? `Diferença: ${formatCurrency(selectedWalletAudit.diferenca_ultimo || 0)}` : "Sem auditoria detalhada carregada"}
+                        />
+                      </div>
+
+                      {walletFlags.movementsEnabled ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white">
+                          <div className="border-b border-slate-100 px-4 py-3">
+                            <h3 className="font-semibold text-slate-900">Últimos movimentos</h3>
+                            <p className="mt-1 text-sm text-slate-500">
+                              Origem, referência e saldo antes/depois, sem timeline final nesta sprint.
+                            </p>
+                          </div>
+                          <div className="divide-y divide-slate-100">
+                            {walletRecentMovements.length === 0 ? (
+                              <div className="px-4 py-6 text-sm text-slate-500">Nenhum movimento encontrado para a carteira selecionada.</div>
+                            ) : (
+                              walletRecentMovements.map((movement) => (
+                                <div key={movement.movimento_id} className="grid grid-cols-1 gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_140px_180px]">
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="font-medium text-slate-900">
+                                        {WALLET_OPERATION_LABELS[movement.tipo] || movement.tipo}
+                                      </p>
+                                      <Badge variant="outline">{movement.origem}</Badge>
+                                      <Badge className={movement.natureza === "entrada" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
+                                        {movement.natureza === "entrada" ? "Entrada" : "Saída"}
+                                      </Badge>
+                                    </div>
+                                    <p className="mt-1 text-sm text-slate-600">{movement.referencia_amigavel}</p>
+                                    {movement.descricao ? (
+                                      <p className="mt-1 text-sm text-slate-500">{movement.descricao}</p>
+                                    ) : null}
+                                    <p className="mt-2 text-xs text-slate-400">
+                                      {new Date(movement.created_date).toLocaleString("pt-BR")}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Valor</p>
+                                    <p className={`mt-1 text-base font-semibold ${movement.natureza === "entrada" ? "text-green-700" : "text-red-600"}`}>
+                                      {movement.natureza === "entrada" ? "+" : "-"}
+                                      {formatCurrency(movement.valor)}
+                                    </p>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <p className="text-slate-500">Saldo anterior</p>
+                                      <p className="mt-1 font-medium text-slate-900">{formatCurrency(movement.saldo_anterior)}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-slate-500">Saldo final</p>
+                                      <p className="mt-1 font-medium text-slate-900">{formatCurrency(movement.saldo_final)}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
+                          A leitura detalhada dos movimentos ainda está desligada por feature flag.
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-sm text-slate-500">
+                      Selecione uma carteira para auditar saldo, reconciliação e movimentos.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="mb-6 border-gray-200 bg-white">
           <CardContent className="p-3 sm:p-4">
             <SearchFiltersToolbar
@@ -878,6 +1412,26 @@ export default function Movimentacoes() {
                   </div>
 
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    {walletFlags.movementsEnabled && canManageWalletOperations && movement.tipo === "entrada" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm"
+                        onClick={() =>
+                          openWalletOperationModal("entrada_direcionada", {
+                            carteira_conta_id: selectedWalletAccountId,
+                            valor: Math.abs(movement.valor || 0),
+                            referencia_amigavel: `Entrada direcionada - ${movement.contraparte || movement.referenciaFinanceira || movement.id}`,
+                            observacao: `Origem do extrato: ${movement.id}`,
+                            origem: "transacao_direcionada",
+                            transacao_id: movement.id,
+                          })
+                        }
+                        disabled={!selectedWalletAccountId}
+                      >
+                        Direcionar para carteira
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -1031,6 +1585,151 @@ export default function Movimentacoes() {
             </Button>
             <Button onClick={handleSave} disabled={isSaving}>
               {isSaving ? "Salvando..." : editingItem?.apiLocked ? "Salvar complemento" : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showWalletOperationModal} onOpenChange={setShowWalletOperationModal}>
+        <DialogContent className="w-[95vw] max-w-[720px]">
+          <DialogHeader>
+            <DialogTitle>{WALLET_OPERATION_LABELS[walletOperationForm.tipo] || "Operação de carteira"}</DialogTitle>
+            <DialogDescription>
+              Registro administrativo controlado da carteira, sempre via RPC e com movimento compensatório auditável.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <Label>Responsável financeiro destino *</Label>
+              <Select
+                value={walletOperationForm.carteira_conta_id}
+                onValueChange={(value) => setWalletOperationForm((prev) => ({ ...prev, carteira_conta_id: value }))}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Selecione a carteira" />
+                </SelectTrigger>
+                <SelectContent>
+                  {walletAccounts.map((account) => (
+                    <SelectItem key={account.carteira_conta_id} value={account.carteira_conta_id}>
+                      {account.carteira_nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Tipo *</Label>
+              <Select
+                value={walletOperationForm.tipo}
+                onValueChange={(value) =>
+                  setWalletOperationForm((prev) => ({
+                    ...prev,
+                    tipo: value,
+                    natureza: value === "credito_manual" || value === "entrada_direcionada" ? "entrada" : prev.natureza,
+                  }))
+                }
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="credito_manual">Crédito manual</SelectItem>
+                  <SelectItem value="ajuste_manual">Ajuste manual</SelectItem>
+                  <SelectItem value="estorno_manual">Estorno manual</SelectItem>
+                  <SelectItem value="entrada_direcionada">Entrada direcionada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Natureza *</Label>
+              <Select
+                value={walletOperationForm.natureza}
+                onValueChange={(value) => setWalletOperationForm((prev) => ({ ...prev, natureza: value }))}
+                disabled={walletOperationForm.tipo === "credito_manual" || walletOperationForm.tipo === "entrada_direcionada"}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="entrada">Entrada</SelectItem>
+                  <SelectItem value="saida">Saída</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Valor *</Label>
+              <Input
+                className="mt-2"
+                value={walletOperationForm.valor}
+                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, valor: event.target.value }))}
+                placeholder="0,00"
+              />
+            </div>
+
+            <div>
+              <Label>Origem *</Label>
+              <Input
+                className="mt-2"
+                value={walletOperationForm.origem}
+                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, origem: event.target.value }))}
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <Label>Referência amigável *</Label>
+              <Input
+                className="mt-2"
+                value={walletOperationForm.referencia_amigavel}
+                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, referencia_amigavel: event.target.value }))}
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <Label>Motivo *</Label>
+              <Input
+                className="mt-2"
+                value={walletOperationForm.motivo}
+                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, motivo: event.target.value }))}
+                placeholder="Explique por que essa movimentação está sendo registrada"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <Label>Observação</Label>
+              <Textarea
+                className="mt-2"
+                rows={3}
+                value={walletOperationForm.observacao}
+                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, observacao: event.target.value }))}
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <Label>Transação de origem</Label>
+              <Input
+                className="mt-2"
+                value={walletOperationForm.transacao_id}
+                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, transacao_id: event.target.value }))}
+                placeholder="Opcional, para direcionamento ou rastreabilidade"
+              />
+            </div>
+
+            <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              <p><span className="font-medium text-slate-900">Usuário:</span> {currentUser?.full_name || currentUser?.name || currentUser?.email || "Sessão atual"}</p>
+              <p className="mt-1"><span className="font-medium text-slate-900">Data/hora:</span> {new Date().toLocaleString("pt-BR")}</p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowWalletOperationModal(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleWalletOperationSave} disabled={walletSaving}>
+              {walletSaving ? "Salvando..." : "Registrar movimento"}
             </Button>
           </DialogFooter>
         </DialogContent>

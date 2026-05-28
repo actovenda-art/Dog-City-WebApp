@@ -32,6 +32,10 @@ function sanitizeText(value: unknown) {
   return String(value).trim();
 }
 
+function normalizeLogin(value: unknown) {
+  return sanitizeText(value).toLowerCase();
+}
+
 function normalizeCpf(value: unknown) {
   return sanitizeText(value).replace(/\D/g, "").slice(0, 11);
 }
@@ -59,6 +63,21 @@ function formatDisplayName(value: unknown) {
         .join("")
     )
     .join(" ");
+}
+
+function randomToken(bytes = 24) {
+  const buffer = crypto.getRandomValues(new Uint8Array(bytes));
+  return Array.from(buffer).map((item) => item.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Hex(value: string) {
+  const encoded = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(digest)).map((item) => item.toString(16).padStart(2, "0")).join("");
+}
+
+async function hashPassword(password: string, salt: string) {
+  return sha256Hex(`${salt}:${password}`);
 }
 
 const COMMERCIAL_NOTIFICATION_PERMISSIONS = [
@@ -1058,6 +1077,61 @@ async function handleSubmit(payload: Record<string, unknown>) {
       }
 
       responsavelId = responsavelRow.id;
+
+      const portalLogin = normalizeLogin(responsavel.login_portal);
+      const portalPassword = sanitizeText(responsavel.senha_portal);
+      const portalConfirmPassword = sanitizeText(responsavel.confirmar_senha_portal);
+
+      if (portalLogin || portalPassword || portalConfirmPassword) {
+        if (!portalLogin || !portalPassword || !portalConfirmPassword) {
+          return jsonResponse({ error: "Se quiser preparar a confirmacao autenticada, preencha login, senha e confirmacao da senha." }, 400);
+        }
+
+        if (portalPassword.length < 6) {
+          return jsonResponse({ error: "A senha para confirmacao de orcamentos/agendamentos precisa ter pelo menos 6 caracteres." }, 400);
+        }
+
+        if (portalPassword !== portalConfirmPassword) {
+          return jsonResponse({ error: "A confirmacao da senha do responsavel nao confere." }, 400);
+        }
+
+        const { data: existingLogin } = await admin
+          .from("responsavel_portal_access")
+          .select("id, responsavel_id")
+          .eq("login", portalLogin)
+          .maybeSingle();
+
+        if (existingLogin && existingLogin.responsavel_id !== responsavelId) {
+          return jsonResponse({ error: "Este login ja esta sendo usado por outro responsavel." }, 409);
+        }
+
+        const { data: currentAccess } = await admin
+          .from("responsavel_portal_access")
+          .select("id")
+          .eq("responsavel_id", responsavelId)
+          .maybeSingle();
+
+        const salt = randomToken(16);
+        const passwordHash = await hashPassword(portalPassword, salt);
+        const accessPayload = {
+          empresa_id: link.empresa_id,
+          responsavel_id: responsavelId,
+          login: portalLogin,
+          password_hash: passwordHash,
+          password_salt: salt,
+          ativo: true,
+          updated_at: now,
+        };
+
+        const accessQuery = currentAccess
+          ? admin.from("responsavel_portal_access").update(accessPayload).eq("id", currentAccess.id).select("id").single()
+          : admin.from("responsavel_portal_access").insert([{ ...accessPayload, created_at: now }]).select("id").single();
+
+        const { error: accessError } = await accessQuery;
+        if (accessError) {
+          return jsonResponse({ error: accessError.message || "Nao foi possivel preparar a confirmacao autenticada do responsavel." }, 400);
+        }
+      }
     } else {
       if (!responsavelId) {
         return jsonResponse({ error: "Este link nao possui um responsavel existente vinculado." }, 400);

@@ -56,6 +56,10 @@ const UNIT_SCOPED_ENTITIES = new Set([
   'PackageSession',
   'PackageCredit',
   'PackageBilling',
+  'CarteiraConta',
+  'CarteiraMovimento',
+  'CarteiraReconciliacao',
+  'AutorizacaoFinanceira',
   'AuditLog',
   'IntegracaoConfig',
   'Receita',
@@ -124,6 +128,8 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
   const missingCheckinColumn = isMissingColumnFor('checkins');
   const missingServiceProviderColumn = isMissingColumnFor('serviceproviders');
   const missingExtratoColumn = isMissingColumnFor('extratobancario');
+  const missingDespesaColumn = isMissingColumnFor('despesa');
+  const missingReceitaColumn = isMissingColumnFor('receita');
   const missingUsersPinColumn = isMissingColumnFor('users')
     && /pin_required_reset|pin_bootstrap_status|pin_updated_at|pin_last_verified_at/i.test(rawMessage);
   const missingCentroCustoTable = rawMessage.includes('centro_custo') && (
@@ -142,8 +148,8 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
       ? `${rawMessage}. Execute o arquivo supabase-schema-registrador-alertas.sql no Supabase.`
     : missingServiceProviderColumn
       ? `${rawMessage}. Execute o arquivo supabase-schema-escalacao.sql no Supabase.`
-    : missingExtratoColumn
-      ? `${rawMessage}. Execute os arquivos supabase-schema-finance-ledger.sql e supabase-schema-controle-gerencial.sql no Supabase.`
+    : missingExtratoColumn || missingDespesaColumn || missingReceitaColumn
+      ? `${rawMessage}. Execute o arquivo supabase-schema-finance-transaction-link.sql no Supabase.`
     : missingUsersPinColumn
       ? `${rawMessage}. Execute o arquivo supabase-schema-auth-pin.sql no Supabase.`
     : missingCentroCustoTable
@@ -400,7 +406,8 @@ const defaultEntities = {};
   'Dog', 'Checkin', 'Schedule', 'ServiceProvider', 'ServiceProviderSchedule', 'Lancamento', 'ExtratoBancario', 'Despesa',
   'Responsavel', 'Carteira', 'Notificacao', 'Orcamento', 'TabelaPrecos', 'Appointment',
   'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
-  'RecurringPackage', 'PackageSession', 'PackageCredit', 'PackageBilling', 'AuditLog',
+  'RecurringPackage', 'PackageSession', 'PackageCredit', 'PackageBilling', 'CarteiraConta',
+  'CarteiraMovimento', 'CarteiraReconciliacao', 'AutorizacaoFinanceira', 'AuditLog',
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
   'UserInvite', 'UserUnitAccess',
   'UserProfile', 'ContaReceber', 'Client', 'PedidoInterno',
@@ -408,6 +415,86 @@ const defaultEntities = {};
 ].forEach((name) => {
   defaultEntities[name] = createMockEntity(name, { unitScoped: UNIT_SCOPED_ENTITIES.has(name) });
 });
+
+function getMockFlagValue(key, empresaId = null) {
+  const configs = readStorage('AppConfig');
+  const scoped = configs.find(
+    (item) => item?.key === key && item?.empresa_id === empresaId && item?.ativo !== false
+  );
+  if (scoped) return Boolean(scoped?.value?.enabled);
+
+  const globalConfig = configs.find(
+    (item) => item?.key === key && (item?.empresa_id === null || item?.empresa_id === undefined) && item?.ativo !== false
+  );
+  return Boolean(globalConfig?.value?.enabled);
+}
+
+function getMockWalletAccountsByCompany(empresaId) {
+  const contas = readStorage('CarteiraConta');
+  const carteiras = readStorage('Carteira');
+  const movimentos = readStorage('CarteiraMovimento');
+  const reconciliacoes = readStorage('CarteiraReconciliacao');
+
+  return contas
+    .filter((conta) => !empresaId || conta?.empresa_id === empresaId)
+    .map((conta) => {
+      const carteira = carteiras.find((item) => item?.id === conta?.carteira_id);
+      const contaMovements = movimentos
+        .filter((item) => item?.carteira_conta_id === conta?.id)
+        .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime());
+      const latestReconciliation = reconciliacoes
+        .filter((item) => item?.carteira_conta_id === conta?.id)
+        .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime())[0];
+
+      return {
+        carteira_conta_id: conta.id,
+        carteira_id: conta.carteira_id,
+        empresa_id: conta.empresa_id,
+        carteira_codigo: carteira?.codigo || '',
+        carteira_nome: carteira?.nome_razao_social || carteira?.nome_fantasia || carteira?.id || conta.carteira_id,
+        saldo_atual: Number(conta?.saldo_atual || 0),
+        movimento_count: contaMovements.length,
+        ultimo_movimento_em: conta?.ultimo_movimento_em || contaMovements[0]?.created_date || null,
+        ultima_reconciliacao_em: conta?.ultima_reconciliacao_em || latestReconciliation?.created_date || null,
+        latest_reconciliation_status: latestReconciliation?.status || null,
+        latest_reconciliation_diff: Number(latestReconciliation?.diferenca || 0),
+        latest_reconciliation_id: latestReconciliation?.id || null,
+      };
+    });
+}
+
+function buildMockWalletAuditRows(empresaId) {
+  const contas = readStorage('CarteiraConta').filter((conta) => !empresaId || conta?.empresa_id === empresaId);
+  const carteiras = readStorage('Carteira');
+  const movimentos = readStorage('CarteiraMovimento');
+
+  return contas.map((conta) => {
+    const carteira = carteiras.find((item) => item?.id === conta?.carteira_id);
+    const contaMovements = movimentos
+      .filter((item) => item?.carteira_conta_id === conta?.id)
+      .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime());
+    const saldoPorUltimo = Number(contaMovements[0]?.saldo_final || 0);
+    const saldoPorSoma = contaMovements.reduce((sum, item) => {
+      const valor = Number(item?.valor || 0);
+      return item?.natureza === 'saida' ? sum - valor : sum + valor;
+    }, 0);
+    const saldoPersistido = Number(conta?.saldo_atual || 0);
+    const diffUltimo = Math.round((saldoPersistido - saldoPorUltimo) * 100) / 100;
+    const diffSoma = Math.round((saldoPersistido - saldoPorSoma) * 100) / 100;
+
+    return {
+      carteira_conta_id: conta.id,
+      carteira_id: conta.carteira_id,
+      carteira_nome: carteira?.nome_razao_social || carteira?.nome_fantasia || carteira?.id || conta.carteira_id,
+      saldo_persistido: saldoPersistido,
+      saldo_por_ultimo_movimento: saldoPorUltimo,
+      saldo_por_soma: Math.round(saldoPorSoma * 100) / 100,
+      diferenca_ultimo: diffUltimo,
+      diferenca_soma: diffSoma,
+      status: diffUltimo === 0 && diffSoma === 0 ? 'ok' : 'divergente',
+    };
+  });
+}
 
 const mockFunctions = {
   notificacoesOrcamento: async (payload) => {
@@ -434,6 +521,7 @@ const mockFunctions = {
   },
   clientRegistration: async (payload = {}) => {
     const links = readStorage('client_registration_links');
+    const accesses = readStorage('responsavel_portal_access');
     const action = payload?.action;
 
     if (action === 'create_link') {
@@ -490,6 +578,23 @@ const mockFunctions = {
     }
 
     if (action === 'submit') {
+      const responsavelPayload = payload?.payload?.responsavel || {};
+      const portalLogin = String(responsavelPayload?.login_portal || '').trim().toLowerCase();
+      const portalPassword = String(responsavelPayload?.senha_portal || '').trim();
+      const portalConfirmPassword = String(responsavelPayload?.confirmar_senha_portal || '').trim();
+
+      if (portalLogin || portalPassword || portalConfirmPassword) {
+        if (!portalLogin || !portalPassword || !portalConfirmPassword) {
+          throw new Error('Se quiser preparar a confirmação autenticada, preencha login, senha e confirmação da senha.');
+        }
+        if (portalPassword.length < 6) {
+          throw new Error('A senha para confirmação de orçamentos/agendamentos precisa ter pelo menos 6 caracteres.');
+        }
+        if (portalPassword !== portalConfirmPassword) {
+          throw new Error('A confirmação da senha do responsável não confere.');
+        }
+      }
+
       links[rowIndex] = {
         ...row,
         status: 'concluido',
@@ -498,6 +603,25 @@ const mockFunctions = {
         updated_date: new Date().toISOString(),
       };
       writeStorage('client_registration_links', links);
+
+      if (portalLogin && portalPassword) {
+        const currentIndex = accesses.findIndex((item) => item.login === portalLogin);
+        const responsavelId = links[rowIndex]?.responsavel_id || links[rowIndex]?.id || makeId();
+        const nextAccess = {
+          id: currentIndex >= 0 ? accesses[currentIndex].id : makeId(),
+          responsavel_id: responsavelId,
+          empresa_id: links[rowIndex]?.empresa_id || getMockScopedUnitId(),
+          login: portalLogin,
+          mock_password: portalPassword,
+          ativo: true,
+          created_at: currentIndex >= 0 ? accesses[currentIndex].created_at : new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        if (currentIndex >= 0) accesses[currentIndex] = nextAccess;
+        else accesses.push(nextAccess);
+        writeStorage('responsavel_portal_access', accesses);
+      }
+
       return {
         ok: true,
         link: links[rowIndex],
@@ -705,6 +829,221 @@ const mockFunctions = {
     }
 
     throw new Error('Ação do WhatsApp inválida.');
+  },
+  financeShadowSync: async (payload = {}) => {
+    console.info('[mock] financeShadowSync called with', payload);
+    return {
+      obligations_enabled: false,
+      charges_enabled: false,
+      skipped: true,
+      skipped_reason: 'mock client',
+      created_obligations: 0,
+      updated_obligations: 0,
+      cancelled_obligations: 0,
+      created_charges: 0,
+      updated_charges: 0,
+      created_charge_items: 0,
+      deleted_charge_items: 0,
+      charge_id: null,
+    };
+  },
+  financeWalletAdminReadAccounts: async (payload = {}) => {
+    if (!payload?.empresa_id) {
+      throw new Error('empresa_id é obrigatório para leitura administrativa da carteira.');
+    }
+
+    if (!(getMockFlagValue('finance.wallet_balance_read_enabled', payload.empresa_id)
+      || getMockFlagValue('finance.wallet_movements_enabled', payload.empresa_id))) {
+      throw new Error(`Leitura administrativa da carteira desligada para a empresa ${payload.empresa_id}.`);
+    }
+
+    return getMockWalletAccountsByCompany(payload.empresa_id);
+  },
+  financeWalletAdminReadMovements: async (payload = {}) => {
+    if (!payload?.empresa_id) {
+      throw new Error('empresa_id é obrigatório para leitura administrativa dos movimentos.');
+    }
+
+    if (!getMockFlagValue('finance.wallet_movements_enabled', payload.empresa_id)) {
+      throw new Error(`Feature flag finance.wallet_movements_enabled está desligada para a empresa ${payload.empresa_id}.`);
+    }
+
+    const carteiras = readStorage('Carteira');
+    const contas = readStorage('CarteiraConta');
+    const movimentos = readStorage('CarteiraMovimento')
+      .filter((item) => item?.empresa_id === payload.empresa_id)
+      .filter((item) => !payload?.carteira_conta_id || item?.carteira_conta_id === payload.carteira_conta_id)
+      .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime())
+      .slice(0, Math.max(1, Math.min(Number(payload?.limit) || 20, 100)));
+
+    return movimentos.map((item) => {
+      const conta = contas.find((entry) => entry?.id === item?.carteira_conta_id);
+      const carteira = carteiras.find((entry) => entry?.id === conta?.carteira_id);
+      return {
+        movimento_id: item.id,
+        carteira_conta_id: item.carteira_conta_id,
+        carteira_id: conta?.carteira_id || null,
+        empresa_id: item.empresa_id,
+        carteira_nome: carteira?.nome_razao_social || carteira?.nome_fantasia || carteira?.id || conta?.carteira_id || '',
+        tipo: item.tipo,
+        natureza: item.natureza,
+        origem: item.origem,
+        valor: Number(item.valor || 0),
+        referencia_amigavel: item.referencia_amigavel || '',
+        descricao: item.descricao || '',
+        saldo_anterior: Number(item.saldo_anterior || 0),
+        saldo_final: Number(item.saldo_final || 0),
+        transacao_id: item.transacao_id || null,
+        usuario_id: item.usuario_id || null,
+        created_date: item.created_date,
+      };
+    });
+  },
+  financeWalletAdminAuditAccounts: async (payload = {}) => {
+    if (!payload?.empresa_id) {
+      throw new Error('empresa_id é obrigatório para auditoria da carteira.');
+    }
+
+    if (!getMockFlagValue('finance.wallet_balance_read_enabled', payload.empresa_id)) {
+      throw new Error(`Feature flag finance.wallet_balance_read_enabled está desligada para a empresa ${payload.empresa_id}.`);
+    }
+
+    return buildMockWalletAuditRows(payload.empresa_id);
+  },
+  financeWalletAdminApplyOperation: async (payload = {}) => {
+    const contas = readStorage('CarteiraConta');
+    const movimentos = readStorage('CarteiraMovimento');
+    const contaIndex = contas.findIndex((item) => item?.id === payload?.carteira_conta_id);
+    if (contaIndex < 0) throw new Error('carteira_conta não encontrada.');
+
+    const conta = contas[contaIndex];
+    const empresaId = conta?.empresa_id || null;
+    const tipo = String(payload?.tipo || '').trim();
+    const natureza = String(payload?.natureza || '').trim();
+
+    if (tipo === 'entrada_direcionada') {
+      if (!getMockFlagValue('finance.wallet_movements_enabled', empresaId)) {
+        throw new Error(`Feature flag finance.wallet_movements_enabled está desligada para a empresa ${empresaId}.`);
+      }
+    } else if (!getMockFlagValue('finance.wallet_manual_adjustments_enabled', empresaId)) {
+      throw new Error(`Feature flag finance.wallet_manual_adjustments_enabled está desligada para a empresa ${empresaId}.`);
+    }
+
+    const existing = movimentos.find(
+      (item) => item?.empresa_id === empresaId && item?.operacao_idempotencia === payload?.operacao_idempotencia
+    );
+    if (existing) {
+      return {
+        movimento_id: existing.id,
+        carteira_conta_id: existing.carteira_conta_id,
+        saldo_anterior: Number(existing.saldo_anterior || 0),
+        saldo_final: Number(existing.saldo_final || 0),
+        reused: true,
+      };
+    }
+
+    const valor = Math.round((Number(payload?.valor || 0) + Number.EPSILON) * 100) / 100;
+    const saldoAnterior = Math.round((Number(conta?.saldo_atual || 0) + Number.EPSILON) * 100) / 100;
+    const saldoFinal = Math.round((natureza === 'saida' ? saldoAnterior - valor : saldoAnterior + valor) * 100) / 100;
+    const now = new Date().toISOString();
+    const movimento = {
+      id: makeId(),
+      empresa_id: empresaId,
+      carteira_conta_id: conta.id,
+      tipo,
+      natureza,
+      origem: payload?.origem || 'admin_manual',
+      operacao_idempotencia: payload?.operacao_idempotencia,
+      valor,
+      saldo_anterior: saldoAnterior,
+      saldo_final: saldoFinal,
+      referencia_amigavel: payload?.referencia_amigavel || '',
+      descricao: payload?.observacao || payload?.motivo || '',
+      transacao_id: payload?.transacao_id || null,
+      usuario_id: payload?.usuario_id || null,
+      metadata: {
+        ...(payload?.metadata || {}),
+        motivo: payload?.motivo || '',
+        observacao: payload?.observacao || null,
+        admin_scope: 'sprint3_controlled_read',
+      },
+      created_date: now,
+    };
+
+    movimentos.push(movimento);
+    writeStorage('CarteiraMovimento', movimentos);
+
+    contas[contaIndex] = {
+      ...conta,
+      saldo_atual: saldoFinal,
+      ultimo_movimento_em: now,
+      updated_date: now,
+      lock_version: Number(conta?.lock_version || 0) + 1,
+    };
+    writeStorage('CarteiraConta', contas);
+
+    return {
+      movimento_id: movimento.id,
+      carteira_conta_id: movimento.carteira_conta_id,
+      saldo_anterior: saldoAnterior,
+      saldo_final: saldoFinal,
+      reused: false,
+    };
+  },
+  financeWalletReconcileAccount: async (payload = {}) => {
+    const contas = readStorage('CarteiraConta');
+    const movimentos = readStorage('CarteiraMovimento');
+    const reconciliacoes = readStorage('CarteiraReconciliacao');
+    const contaIndex = contas.findIndex((item) => item?.id === payload?.carteira_conta_id);
+    if (contaIndex < 0) throw new Error('carteira_conta não encontrada.');
+
+    const conta = contas[contaIndex];
+    const contaMovements = movimentos
+      .filter((item) => item?.carteira_conta_id === conta.id)
+      .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime());
+    const saldoPersistido = Number(conta?.saldo_atual || 0);
+    const saldoRecalculado = Number(contaMovements[0]?.saldo_final || 0);
+    const saldoPorSoma = contaMovements.reduce((sum, item) => {
+      const valor = Number(item?.valor || 0);
+      return item?.natureza === 'saida' ? sum - valor : sum + valor;
+    }, 0);
+    const diferenca = Math.round((saldoPersistido - saldoRecalculado) * 100) / 100;
+    const status = diferenca === 0 && Math.round((saldoPersistido - saldoPorSoma) * 100) / 100 === 0 ? 'ok' : 'divergente';
+    const now = new Date().toISOString();
+    const reconciliacao = {
+      id: makeId(),
+      empresa_id: conta.empresa_id,
+      carteira_conta_id: conta.id,
+      saldo_persistido: saldoPersistido,
+      saldo_recalculado: saldoRecalculado,
+      diferenca,
+      status,
+      acao_tomada: null,
+      usuario_id: payload?.usuario_id || null,
+      metadata: {
+        saldo_por_soma: Math.round(saldoPorSoma * 100) / 100,
+        saldo_por_ultimo_movimento: saldoRecalculado,
+      },
+      created_date: now,
+    };
+    reconciliacoes.push(reconciliacao);
+    writeStorage('CarteiraReconciliacao', reconciliacoes);
+    contas[contaIndex] = {
+      ...conta,
+      ultima_reconciliacao_em: now,
+      updated_date: now,
+      lock_version: Number(conta?.lock_version || 0) + 1,
+    };
+    writeStorage('CarteiraConta', contas);
+
+    return {
+      out_carteira_conta_id: conta.id,
+      out_saldo_persistido: saldoPersistido,
+      out_saldo_recalculado: saldoRecalculado,
+      out_diferenca: diferenca,
+      out_status: status,
+      out_reconciliacao_id: reconciliacao.id,
+    };
   },
 };
 
@@ -1184,6 +1523,10 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     PackageSession: 'package_sessions',
     PackageCredit: 'package_credits',
     PackageBilling: 'package_billings',
+    CarteiraConta: 'carteira_conta',
+    CarteiraMovimento: 'carteira_movimento',
+    CarteiraReconciliacao: 'carteira_reconciliacao',
+    AutorizacaoFinanceira: 'autorizacao_financeira',
     AuditLog: 'audit_logs',
     TabelaPrecos: 'tabelaprecos',
     ServiceProvided: 'serviceprovided',
@@ -1432,6 +1775,81 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function whatsapp-bridge no Supabase.` : baseMessage);
       }
       return data;
+    },
+    financeShadowSync: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_shadow_sync_orcamento', {
+        p_orcamento_id: payload?.orcamento_id || null,
+        p_empresa_id: payload?.empresa_id || null,
+        p_carteira_id: payload?.carteira_id || null,
+        p_due_date: payload?.due_date || null,
+        p_status: payload?.status || null,
+        p_items: payload?.items || [],
+        p_payload: payload?.payload || {},
+        p_usuario_id: payload?.usuario_id || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao sincronizar shadow financeiro do orÃ§amento.');
+      }
+      return Array.isArray(data) ? (data[0] || null) : data;
+    },
+    financeWalletAdminReadAccounts: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_wallet_admin_read_accounts', {
+        p_empresa_id: payload?.empresa_id || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar a leitura administrativa das contas de carteira.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+    financeWalletAdminReadMovements: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_wallet_admin_read_movements', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_carteira_conta_id: payload?.carteira_conta_id || null,
+        p_limit: payload?.limit || 20,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar a leitura administrativa dos movimentos da carteira.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+    financeWalletAdminAuditAccounts: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_wallet_admin_audit_accounts', {
+        p_empresa_id: payload?.empresa_id || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar a auditoria administrativa da carteira.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+    financeWalletAdminApplyOperation: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_wallet_admin_apply_operation', {
+        p_carteira_conta_id: payload?.carteira_conta_id || null,
+        p_operacao_idempotencia: payload?.operacao_idempotencia || null,
+        p_tipo: payload?.tipo || null,
+        p_natureza: payload?.natureza || null,
+        p_valor: payload?.valor ?? null,
+        p_referencia_amigavel: payload?.referencia_amigavel || null,
+        p_motivo: payload?.motivo || null,
+        p_observacao: payload?.observacao || null,
+        p_origem: payload?.origem || 'admin_manual',
+        p_transacao_id: payload?.transacao_id || null,
+        p_usuario_id: payload?.usuario_id || null,
+        p_metadata: payload?.metadata || {},
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao aplicar operação administrativa da carteira.');
+      }
+      return Array.isArray(data) ? (data[0] || null) : data;
+    },
+    financeWalletReconcileAccount: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_reconcile_wallet_account', {
+        p_carteira_conta_id: payload?.carteira_conta_id || null,
+        p_usuario_id: payload?.usuario_id || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao reconciliar a carteira.');
+      }
+      return Array.isArray(data) ? (data[0] || null) : data;
     },
   };
 

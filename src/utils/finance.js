@@ -456,7 +456,7 @@ export function getMovementTransactionType(record) {
 }
 
 export function getMovementReference(record) {
-  return record?.id || record?.referencia || record?.external_id || record?.lancamento_id || "-";
+  return record?.id || record?.referencia || "-";
 }
 
 export function getMovementWallet(record) {

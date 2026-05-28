@@ -7,6 +7,7 @@ create table if not exists public.recurring_packages (
   client_id text not null,
   pet_id text not null,
   service_id text not null,
+  financial_behavior text not null default 'billable_detailed' check (financial_behavior in ('billable_detailed','operational_only')),
   weekday integer,
   weekdays integer[] default '{}'::integer[],
   frequency text not null default 'semanal',
@@ -137,6 +138,9 @@ create unique index if not exists idx_package_credits_used_session_unique
 
 create index if not exists idx_recurring_packages_empresa_status
   on public.recurring_packages(empresa_id, status);
+
+create index if not exists idx_recurring_packages_financial_behavior
+  on public.recurring_packages(empresa_id, financial_behavior, status);
 
 create index if not exists idx_package_sessions_month
   on public.package_sessions(empresa_id, billing_month, scheduled_date);

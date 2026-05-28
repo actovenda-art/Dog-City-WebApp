@@ -322,7 +322,7 @@ export default function ContasPagar() {
           ? Math.max(0, Math.floor((new Date(dataQuitacao) - new Date(vinculandoConta.vencimento)) / (1000 * 60 * 60 * 24)))
           : 0;
 
-        await Despesa.create({
+        const despesaCriada = await Despesa.create({
           data: dataQuitacao,
           categoria: vinculandoConta.categoria,
           subcategoria: vinculandoConta.referencia,
@@ -331,6 +331,8 @@ export default function ContasPagar() {
           centro_custo_nome: vinculandoConta.centro_custo_nome || vinculandoConta.categoria || null,
           forma_pagamento: vinculandoConta.forma_pagamento,
           fornecedor: vinculandoConta.recebedor,
+          transacao_id: loadedTransaction.id,
+          vinculo_transacao_id: loadedTransaction.id,
           observacoes: JSON.stringify({
             vencimento_original: vinculandoConta.vencimento,
             dias_atraso: diasAtraso,
@@ -340,7 +342,16 @@ export default function ContasPagar() {
         });
 
         // Marcar como movido
-        await Lancamento.update(vinculandoConta.id, { movido_para_despesas: true });
+        await Promise.all([
+          Lancamento.update(vinculandoConta.id, {
+            movido_para_despesas: true,
+            transacao_id: loadedTransaction.id,
+            codigo_vinculo_financeiro: despesaCriada?.id || vinculandoConta.id,
+          }),
+          ExtratoBancario.update(loadedTransaction.id, {
+            vinculo_financeiro: despesaCriada?.id || vinculandoConta.id,
+          }),
+        ]);
       }
 
       await loadData();

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Appointment,
+  AppConfig,
   Carteira,
   CentroCusto,
   Checkin,
@@ -12,7 +13,18 @@ import {
   PlanConfig,
   Responsavel,
   ServiceProvided,
+  User,
 } from "@/api/entities";
+import {
+  financeReportsV2Context,
+  financeReportsV2Summary,
+  financeSnapshotCompare,
+  financeSnapshotCreate,
+  financeSnapshotDeltaList,
+  financeSnapshotList,
+  financeCommissionReadContext,
+  financeCommissionList,
+} from "@/api/functions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,10 +40,10 @@ import {
   BarChart3,
   CalendarClock,
   CreditCard,
+  HandCoins,
   Dog as DogIcon,
   Plus,
   RefreshCcw,
-  Search,
   Users,
   Wallet,
 } from "lucide-react";
@@ -44,6 +56,7 @@ import {
   isApprovedOrcamento,
   shouldIncludeLinkedRecord,
 } from "@/lib/attendance";
+import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
 import {
   dedupeOfficialImportedMovements,
   formatCurrency,
@@ -137,6 +150,7 @@ async function safeLoad(label, loader, errors) {
 }
 
 export default function ControleGerencial() {
+  const [currentUser, setCurrentUser] = useState(null);
   const [data, setData] = useState({
     plans: [], dogs: [], carteiras: [], responsaveis: [], contas: [], orcamentos: [],
     usages: [], checkins: [], appointments: [], extrato: [], lancamentos: [], centrosCusto: [],
@@ -149,8 +163,44 @@ export default function ControleGerencial() {
   const [searchTerm, setSearchTerm] = useState("");
   const [newCostCenterName, setNewCostCenterName] = useState("");
   const [isSavingCostCenter, setIsSavingCostCenter] = useState(false);
+  const [financeV2Flags, setFinanceV2Flags] = useState({
+    reportsV2Enabled: false,
+    snapshotsEnabled: false,
+    financialCompetenceEnabled: false,
+  });
+  const [financeV2Context, setFinanceV2Context] = useState(null);
+  const [financeV2Summary, setFinanceV2Summary] = useState(null);
+  const [financeV2Snapshots, setFinanceV2Snapshots] = useState([]);
+  const [financeV2Deltas, setFinanceV2Deltas] = useState([]);
+  const [selectedFinanceSnapshotId, setSelectedFinanceSnapshotId] = useState("");
+  const [financeV2Loading, setFinanceV2Loading] = useState(false);
+  const [financeV2ActionLoading, setFinanceV2ActionLoading] = useState(false);
+  const [financeV2Error, setFinanceV2Error] = useState("");
+  const [commissionFlags, setCommissionFlags] = useState({
+    commissionEnabled: false,
+    commissionVisualizationEnabled: false,
+  });
+  const [commissionContext, setCommissionContext] = useState(null);
+  const [commissionRows, setCommissionRows] = useState([]);
+  const [commissionLoading, setCommissionLoading] = useState(false);
+  const [commissionError, setCommissionError] = useState("");
 
   useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCurrentUser() {
+      try {
+        const me = await User.me();
+        if (!cancelled) setCurrentUser(me || null);
+      } catch {
+        if (!cancelled) setCurrentUser(null);
+      }
+    }
+
+    loadCurrentUser();
+    return () => { cancelled = true; };
+  }, []);
 
   async function loadData() {
     setIsLoading(true);
@@ -255,6 +305,182 @@ export default function ControleGerencial() {
       end: endOfMonth(new Date()),
     };
   }, [periodMonths]);
+
+  const loadFinanceV2Data = useCallback(async (userProfile = currentUser) => {
+    if (!userProfile?.empresa_id) {
+      setFinanceV2Flags({
+        reportsV2Enabled: false,
+        snapshotsEnabled: false,
+        financialCompetenceEnabled: false,
+      });
+      setFinanceV2Context(null);
+      setFinanceV2Summary(null);
+      setFinanceV2Snapshots([]);
+      setFinanceV2Deltas([]);
+      return;
+    }
+
+    setFinanceV2Loading(true);
+    setFinanceV2Error("");
+    try {
+      const configs = await AppConfig.listAll("key", 1000, 5000);
+      const reportsV2Enabled = getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.reportsV2Enabled, userProfile.empresa_id);
+      const snapshotsEnabled = getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.snapshotsEnabled, userProfile.empresa_id);
+      const financialCompetenceEnabled = getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.financialCompetenceEnabled, userProfile.empresa_id);
+
+      setFinanceV2Flags({ reportsV2Enabled, snapshotsEnabled, financialCompetenceEnabled });
+
+      if (!reportsV2Enabled) {
+        setFinanceV2Context(null);
+        setFinanceV2Summary(null);
+        setFinanceV2Snapshots([]);
+        setFinanceV2Deltas([]);
+        setSelectedFinanceSnapshotId("");
+        return;
+      }
+
+      const periodoInicio = format(period.start, "yyyy-MM-dd");
+      const periodoFim = format(period.end, "yyyy-MM-dd");
+
+      const [context, summary, snapshots] = await Promise.all([
+        financeReportsV2Context({ empresa_id: userProfile.empresa_id }),
+        financeReportsV2Summary({
+          empresa_id: userProfile.empresa_id,
+          periodo_inicio: periodoInicio,
+          periodo_fim: periodoFim,
+        }),
+        financeSnapshotList({ empresa_id: userProfile.empresa_id, limit: 40 }),
+      ]);
+
+      setFinanceV2Context(context || null);
+      setFinanceV2Snapshots(Array.isArray(snapshots) ? snapshots : []);
+
+      const nextSelectedSnapshotId = selectedFinanceSnapshotId || snapshots?.[0]?.id || "";
+      setSelectedFinanceSnapshotId(nextSelectedSnapshotId);
+      setFinanceV2Summary(summary ? {
+        walletCount: Number(summary?.wallet_count || 0),
+        walletTotal: Number(summary?.wallet_total || 0),
+        generationCount: Number(summary?.generation_count || 0),
+        generationTotal: Number(summary?.generation_total || 0),
+        billingCount: Number(summary?.billing_count || 0),
+        billingTotal: Number(summary?.billing_total || 0),
+        servicesCount: Number(summary?.services_count || 0),
+        servicesTotal: Number(summary?.services_total || 0),
+      } : null);
+
+      if (nextSelectedSnapshotId) {
+        const snapshotDeltas = await financeSnapshotDeltaList({
+          snapshot_id: nextSelectedSnapshotId,
+          limit: 200,
+        });
+        setFinanceV2Deltas(Array.isArray(snapshotDeltas) ? snapshotDeltas : []);
+      } else {
+        setFinanceV2Deltas([]);
+      }
+    } catch (error) {
+      setFinanceV2Error(error?.message || "Não foi possível carregar os relatórios V2.");
+    } finally {
+      setFinanceV2Loading(false);
+    }
+  }, [currentUser, period.end, period.start, selectedFinanceSnapshotId]);
+
+  const loadCommissionData = useCallback(async (userProfile = currentUser) => {
+    if (!userProfile?.empresa_id) {
+      setCommissionFlags({
+        commissionEnabled: false,
+        commissionVisualizationEnabled: false,
+      });
+      setCommissionContext(null);
+      setCommissionRows([]);
+      return;
+    }
+
+    setCommissionLoading(true);
+    setCommissionError("");
+    try {
+      const configs = await AppConfig.listAll("key", 1000, 5000);
+      const commissionEnabled = getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.commissionEnabled, userProfile.empresa_id);
+      const commissionVisualizationEnabled = getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.commissionVisualizationEnabled, userProfile.empresa_id);
+      setCommissionFlags({ commissionEnabled, commissionVisualizationEnabled });
+
+      if (!commissionVisualizationEnabled) {
+        setCommissionContext(null);
+        setCommissionRows([]);
+        return;
+      }
+
+      const [context, rows] = await Promise.all([
+        financeCommissionReadContext({ empresa_id: userProfile.empresa_id }),
+        financeCommissionList({ empresa_id: userProfile.empresa_id, limit: 200 }),
+      ]);
+      setCommissionContext(context || null);
+      setCommissionRows(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      setCommissionError(error?.message || "Não foi possível carregar as comissões.");
+    } finally {
+      setCommissionLoading(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser?.empresa_id) return;
+    loadFinanceV2Data(currentUser);
+  }, [currentUser, loadFinanceV2Data]);
+
+  useEffect(() => {
+    if (!currentUser?.empresa_id) return;
+    loadCommissionData(currentUser);
+  }, [currentUser, loadCommissionData]);
+
+  async function handleGenerateFinanceSnapshots() {
+    if (!currentUser?.empresa_id) return;
+    setFinanceV2ActionLoading(true);
+    setFinanceV2Error("");
+    try {
+      const competencia = format(period.end, "yyyy-MM");
+      const periodoInicio = format(period.start, "yyyy-MM-dd");
+      const periodoFim = format(period.end, "yyyy-MM-dd");
+
+      const types = ["geracao_recursos", "faturamento_real", "carteira", "servicos_prestados"];
+      for (const tipo of types) {
+        await financeSnapshotCreate({
+          empresa_id: currentUser.empresa_id,
+          tipo,
+          competencia,
+          periodo_inicio: periodoInicio,
+          periodo_fim: periodoFim,
+          usuario_id: currentUser?.id || null,
+          metadata: { source: "controle_gerencial_sprint6" },
+        });
+      }
+
+      await loadFinanceV2Data(currentUser);
+    } catch (error) {
+      setFinanceV2Error(error?.message || "Não foi possível gerar os snapshots financeiros.");
+    } finally {
+      setFinanceV2ActionLoading(false);
+    }
+  }
+
+  async function handleCompareFinanceSnapshot(snapshotId) {
+    if (!snapshotId || !currentUser?.empresa_id) return;
+    setFinanceV2ActionLoading(true);
+    setFinanceV2Error("");
+    try {
+      const rows = await financeSnapshotCompare({
+        snapshot_id: snapshotId,
+        usuario_id: currentUser?.id || null,
+        metadata: { source: "controle_gerencial_sprint6" },
+      });
+      setSelectedFinanceSnapshotId(snapshotId);
+      setFinanceV2Deltas(Array.isArray(rows) ? rows : []);
+      await loadFinanceV2Data(currentUser);
+    } catch (error) {
+      setFinanceV2Error(error?.message || "Não foi possível comparar o snapshot financeiro.");
+    } finally {
+      setFinanceV2ActionLoading(false);
+    }
+  }
 
   const usageAveragesByDog = useMemo(() => {
     const byDog = {};
@@ -542,6 +768,14 @@ export default function ControleGerencial() {
           </CardContent>
         </Card>
 
+        {financeV2Error ? (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="p-4 text-sm text-amber-900">
+              {financeV2Error}
+            </CardContent>
+          </Card>
+        ) : null}
+
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <PageSubTabs
             className="mb-6"
@@ -552,6 +786,8 @@ export default function ControleGerencial() {
               { value: "orcamentos", label: "A receber" },
               { value: "pagar", label: "Contas a pagar" },
               { value: "ausentes", label: "Cães ausentes" },
+              ...(financeV2Flags.reportsV2Enabled ? [{ value: "financeiro_v2", label: "Financeiro V2" }] : []),
+              ...(commissionFlags.commissionVisualizationEnabled ? [{ value: "comissoes_v2", label: "Comissões" }] : []),
             ]}
           />
 
@@ -822,6 +1058,263 @@ export default function ControleGerencial() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="financeiro_v2">
+            <div className="space-y-4">
+              <Card className="border-slate-200 bg-white">
+                <CardHeader>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <CardTitle>Relatórios Financeiros V2</CardTitle>
+                      <p className="text-sm text-gray-500">
+                        Leitura controlada da Sprint 6. O dashboard legado continua principal.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant={financeV2Flags.snapshotsEnabled ? "default" : "outline"}>
+                        Snapshots {financeV2Flags.snapshotsEnabled ? "ligados" : "desligados"}
+                      </Badge>
+                      <Badge variant={financeV2Flags.financialCompetenceEnabled ? "default" : "outline"}>
+                        Competência {financeV2Flags.financialCompetenceEnabled ? "ligada" : "desligada"}
+                      </Badge>
+                      <Button variant="outline" onClick={() => loadFinanceV2Data(currentUser)} disabled={financeV2Loading || financeV2ActionLoading}>
+                        <RefreshCcw className="mr-2 h-4 w-4" />
+                        Atualizar V2
+                      </Button>
+                      <Button onClick={handleGenerateFinanceSnapshots} disabled={financeV2ActionLoading || !financeV2Flags.snapshotsEnabled}>
+                        Gerar snapshots do período
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <Card className="border-emerald-100 bg-emerald-50">
+                      <CardContent className="p-4">
+                        <p className="text-xs text-emerald-800">Geração de recursos</p>
+                        <p className="mt-2 text-2xl font-bold text-emerald-700">{formatCurrency(financeV2Summary?.generationTotal || 0)}</p>
+                        <p className="mt-1 text-xs text-emerald-900">{financeV2Summary?.generationCount || 0} item(ns)</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-blue-100 bg-blue-50">
+                      <CardContent className="p-4">
+                        <p className="text-xs text-blue-800">Faturamento real</p>
+                        <p className="mt-2 text-2xl font-bold text-blue-700">{formatCurrency(financeV2Summary?.billingTotal || 0)}</p>
+                        <p className="mt-1 text-xs text-blue-900">{financeV2Summary?.billingCount || 0} recebimento(s)</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-violet-100 bg-violet-50">
+                      <CardContent className="p-4">
+                        <p className="text-xs text-violet-800">Carteira</p>
+                        <p className="mt-2 text-2xl font-bold text-violet-700">{formatCurrency(financeV2Summary?.walletTotal || 0)}</p>
+                        <p className="mt-1 text-xs text-violet-900">{financeV2Summary?.walletCount || 0} conta(s)</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-amber-100 bg-amber-50">
+                      <CardContent className="p-4">
+                        <p className="text-xs text-amber-800">Serviços prestados</p>
+                        <p className="mt-2 text-2xl font-bold text-amber-700">{formatCurrency(financeV2Summary?.servicesTotal || 0)}</p>
+                        <p className="mt-1 text-xs text-amber-900">{financeV2Summary?.servicesCount || 0} registro(s)</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    {financeV2Loading ? "Carregando leitura V2..." : (
+                      <>
+                        {financeV2Context?.snapshots_count || 0} snapshot(s) fechados.
+                        {financeV2Context?.latest_snapshot_created_at ? ` Último fechamento em ${format(new Date(financeV2Context.latest_snapshot_created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}.` : " Nenhum snapshot fechado ainda."}
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+                <Card className="border-gray-200 bg-white">
+                  <CardHeader>
+                    <CardTitle>Snapshots fechados</CardTitle>
+                    <p className="text-sm text-gray-500">
+                      O snapshot preserva a fotografia original da competência. Comparações não sobrescrevem histórico.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Competência</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead className="text-right">Itens</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead>Gerado em</TableHead>
+                          <TableHead className="text-right">Ação</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {financeV2Snapshots.length === 0 ? (
+                          <TableRow><TableCell colSpan={6} className="py-10 text-center text-gray-500">Nenhum snapshot V2 encontrado.</TableCell></TableRow>
+                        ) : financeV2Snapshots.map((snapshot) => (
+                          <TableRow key={snapshot.id}>
+                            <TableCell className="font-medium">{snapshot.competencia}</TableCell>
+                            <TableCell><Badge variant="outline">{snapshot.tipo}</Badge></TableCell>
+                            <TableCell className="text-right">{snapshot.item_count || 0}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(snapshot.total_valor || 0)}</TableCell>
+                            <TableCell>{snapshot.created_date ? format(new Date(snapshot.created_date), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant={selectedFinanceSnapshotId === snapshot.id ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => handleCompareFinanceSnapshot(snapshot.id)}
+                                disabled={financeV2ActionLoading}
+                              >
+                                Comparar
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-gray-200 bg-white">
+                  <CardHeader>
+                    <CardTitle>O que mudou</CardTitle>
+                    <p className="text-sm text-gray-500">
+                      Inclusões, remoções e alterações entre o fechamento salvo e o estado atual.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Registro</TableHead>
+                          <TableHead className="text-right">Antes</TableHead>
+                          <TableHead className="text-right">Agora</TableHead>
+                          <TableHead className="text-right">Impacto</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {financeV2Deltas.length === 0 ? (
+                          <TableRow><TableCell colSpan={5} className="py-10 text-center text-gray-500">Nenhum delta carregado.</TableCell></TableRow>
+                        ) : financeV2Deltas.map((delta) => (
+                          <TableRow key={`${delta.comparison_run_id || "run"}-${delta.entity_key}`}>
+                            <TableCell><Badge variant={delta.delta_kind === "alterado" ? "default" : "outline"}>{delta.delta_kind}</Badge></TableCell>
+                            <TableCell className="max-w-[220px] truncate">{delta.entity_label || delta.entity_key}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(delta.valor_anterior || 0)}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(delta.valor_atual || 0)}</TableCell>
+                            <TableCell className={`text-right font-semibold ${(delta.impacto_financeiro || 0) > 0 ? "text-emerald-700" : (delta.impacto_financeiro || 0) < 0 ? "text-red-700" : "text-slate-700"}`}>
+                              {formatCurrency(delta.impacto_financeiro || 0)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="comissoes_v2">
+            <div className="space-y-4">
+              {commissionError ? (
+                <Card className="border-amber-200 bg-amber-50">
+                  <CardContent className="p-4 text-sm text-amber-900">
+                    {commissionError}
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              <Card className="border-fuchsia-200 bg-white">
+                <CardHeader>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <CardTitle>Comissão por venda quitada</CardTitle>
+                      <p className="text-sm text-gray-500">
+                        Leitura administrativa da Sprint 7. O legado continua principal enquanto as flags estiverem desligadas.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant={commissionFlags.commissionEnabled ? "default" : "outline"}>
+                        Motor {commissionFlags.commissionEnabled ? "ligado" : "desligado"}
+                      </Badge>
+                      <Badge variant={commissionFlags.commissionVisualizationEnabled ? "default" : "outline"}>
+                        Visualização {commissionFlags.commissionVisualizationEnabled ? "ligada" : "desligada"}
+                      </Badge>
+                      <Button variant="outline" onClick={() => loadCommissionData(currentUser)} disabled={commissionLoading}>
+                        <RefreshCcw className="mr-2 h-4 w-4" />
+                        Atualizar comissões
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <Card className="border-fuchsia-100 bg-fuchsia-50">
+                      <CardContent className="p-4">
+                        <HandCoins className="mb-3 h-6 w-6 text-fuchsia-700" />
+                        <p className="text-xs text-fuchsia-800">Eventos</p>
+                        <p className="text-2xl font-bold text-fuchsia-700">{commissionContext?.events_count || 0}</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-emerald-100 bg-emerald-50">
+                      <CardContent className="p-4">
+                        <CreditCard className="mb-3 h-6 w-6 text-emerald-700" />
+                        <p className="text-xs text-emerald-800">Concedidas</p>
+                        <p className="text-2xl font-bold text-emerald-700">{commissionContext?.granted_count || 0}</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-slate-100 bg-slate-50">
+                      <CardContent className="p-4">
+                        <CalendarClock className="mb-3 h-6 w-6 text-slate-700" />
+                        <p className="text-xs text-slate-700">Último evento</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {commissionContext?.latest_event_created_at
+                            ? format(new Date(commissionContext.latest_event_created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })
+                            : "Sem eventos"}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Vendedor</TableHead>
+                          <TableHead>Origem</TableHead>
+                          <TableHead>Produto/serviço</TableHead>
+                          <TableHead className="text-right">%</TableHead>
+                          <TableHead className="text-right">Base</TableHead>
+                          <TableHead className="text-right">Comissão</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Data</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {commissionRows.length === 0 ? (
+                          <TableRow><TableCell colSpan={8} className="py-10 text-center text-gray-500">{commissionLoading ? "Carregando..." : "Nenhum evento de comissão encontrado."}</TableCell></TableRow>
+                        ) : commissionRows.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell className="font-medium">{row.vendedor_nome || row.vendedor_user_id || "-"}</TableCell>
+                            <TableCell><Badge variant="outline">{row.origem || "-"}</Badge></TableCell>
+                            <TableCell>{row.produto_servico || "-"}</TableCell>
+                            <TableCell className="text-right">{Number(row.percentual || 0).toFixed(2)}%</TableCell>
+                            <TableCell className="text-right">{formatCurrency(Number(row.valor_base || 0))}</TableCell>
+                            <TableCell className="text-right font-semibold text-fuchsia-700">{formatCurrency(Number(row.valor_comissao || 0))}</TableCell>
+                            <TableCell>{statusBadge(row.status)}</TableCell>
+                            <TableCell>{row.data_comissao ? format(new Date(row.data_comissao), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
 

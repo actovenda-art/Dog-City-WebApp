@@ -1,11 +1,22 @@
 ﻿import React, { useEffect, useState } from "react";
 import { Appointment, Carteira, Checkin, ContaReceber, Dog, IntegracaoConfig, Orcamento, RecurringPackage, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
-import { financeShadowSync, notificacoesOrcamento, responsavelApproval, whatsappBridge } from "@/api/functions";
+import {
+  financeApproveBudgetWithAuthorization,
+  financeProcessBudgetCancellationV2,
+  financePreviewBudgetConsumption,
+  financeShadowSync,
+  financeWalletBudgetReadContext,
+  notificacoesOrcamento,
+  responsavelApproval,
+  whatsappBridge,
+} from "@/api/functions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import OrcamentoAgendamentoEditorDialog from "@/components/orcamento/OrcamentoAgendamentoEditorDialog";
@@ -44,6 +55,8 @@ import {
   isApprovedOrcamentoStatus,
 } from "@/lib/attendance";
 import { buildShadowFinanceItemsFromOrcamento, resolveShadowChargeDueDate } from "@/lib/finance-shadow";
+import { buildBudgetPreviewItems, resolveRecurringPackageFinancialBehavior } from "@/lib/finance-budget";
+import { isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -334,37 +347,6 @@ function getLinkedResponsaveisForDogIds(responsaveis = [], dogIds = []) {
   );
 }
 
-function normalizePackageFinancialBehavior(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "billable_detailed") return "billable_detailed";
-  if (normalized === "operational_only") return "operational_only";
-  return null;
-}
-
-function getPackageBehaviorCandidateServiceIds(serviceType) {
-  switch (serviceType) {
-    case "banho":
-    case "tosa":
-      return [serviceType, "banho_tosa"];
-    default:
-      return [serviceType];
-  }
-}
-
-function resolveRecurringPackageFinancialBehavior(recurringPackages = [], cao, serviceType) {
-  const dogId = cao?.dog_id;
-  if (!dogId) return null;
-
-  const candidateServiceIds = getPackageBehaviorCandidateServiceIds(serviceType);
-  const matches = (recurringPackages || [])
-    .filter((item) => item?.status === "ativo")
-    .filter((item) => item?.pet_id === dogId)
-    .filter((item) => candidateServiceIds.includes(item?.service_id))
-    .sort((left, right) => getCreatedTimestamp(right) - getCreatedTimestamp(left));
-
-  return normalizePackageFinancialBehavior(matches[0]?.financial_behavior);
-}
-
 function serializeOperationalAppointmentForPrefill(appointment) {
   const metadata = getAppointmentMeta(appointment);
   return {
@@ -481,6 +463,7 @@ function getStatusBadge(status) {
     enviado: { color: "bg-blue-100 text-blue-700", icon: Send, label: "Enviado" },
     aprovado: { color: "bg-green-100 text-green-700", icon: CheckCircle, label: "Aprovado" },
     recusado: { color: "bg-red-100 text-red-700", icon: XCircle, label: "Recusado" },
+    cancelado: { color: "bg-slate-200 text-slate-700", icon: XCircle, label: "Cancelado" },
     expirado: { color: "bg-orange-100 text-orange-700", icon: Clock, label: "Expirado" },
   };
   const current = config[status] || config.rascunho;
@@ -527,6 +510,20 @@ export default function OrcamentosHistoricoPanel({
   const [approvalDialog, setApprovalDialog] = useState(null);
   const [approvalPhone, setApprovalPhone] = useState("");
   const [approvalNote, setApprovalNote] = useState("");
+  const [budgetFinanceContext, setBudgetFinanceContext] = useState(null);
+  const [budgetFinancePreview, setBudgetFinancePreview] = useState(null);
+  const [budgetFinanceLoading, setBudgetFinanceLoading] = useState(false);
+  const [budgetFinanceError, setBudgetFinanceError] = useState("");
+  const [authorizeWithoutPayment, setAuthorizeWithoutPayment] = useState(false);
+  const [authorizationReason, setAuthorizationReason] = useState("");
+  const [authorizationDueDate, setAuthorizationDueDate] = useState("");
+  const [cancellationOrigin, setCancellationOrigin] = useState("cliente");
+  const [applyCancellationPenalty, setApplyCancellationPenalty] = useState(false);
+  const [cancellationPenaltyPercent, setCancellationPenaltyPercent] = useState("");
+  const [allowNegativePenalty, setAllowNegativePenalty] = useState(false);
+  const [generateCompensatoryCredit, setGenerateCompensatoryCredit] = useState(false);
+  const [compensatoryCreditValue, setCompensatoryCreditValue] = useState("");
+  const [cancellationReason, setCancellationReason] = useState("");
   const [approvalWhatsappSlot, setApprovalWhatsappSlot] = useState("manual");
   const [isSendingApproval, setIsSendingApproval] = useState(false);
 
@@ -540,6 +537,147 @@ export default function OrcamentosHistoricoPanel({
     if (!matchedOrcamento) return;
     openOrcamentoDetail(matchedOrcamento);
   }, [openOrcamentoId, orcamentos]);
+
+  const canAuthorizeBudgetFinancially = Boolean(
+    currentUser?.is_platform_admin
+    || currentUser?.company_role === "platform_admin"
+    || isManagerialProfile(currentUser)
+    || isCommercialProfile(currentUser),
+  );
+
+  const canManageFinancialCancellation = canAuthorizeBudgetFinancially;
+
+  function resetBudgetFinancialDrafts() {
+    setBudgetFinanceContext(null);
+    setBudgetFinancePreview(null);
+    setBudgetFinanceError("");
+    setAuthorizeWithoutPayment(false);
+    setAuthorizationReason("");
+    setAuthorizationDueDate("");
+    setCancellationOrigin("cliente");
+    setApplyCancellationPenalty(false);
+    setCancellationPenaltyPercent("");
+    setAllowNegativePenalty(false);
+    setGenerateCompensatoryCredit(false);
+    setCompensatoryCreditValue("");
+    setCancellationReason("");
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBudgetFinanceContext() {
+      if (!showDetailModal || !selectedOrcamento?.cliente_id || !currentUser?.empresa_id) {
+        if (!cancelled) {
+          resetBudgetFinancialDrafts();
+        }
+        return;
+      }
+
+      setBudgetFinanceLoading(true);
+      setBudgetFinanceError("");
+      try {
+        const context = await financeWalletBudgetReadContext({
+          empresa_id: currentUser.empresa_id,
+          carteira_id: selectedOrcamento.cliente_id,
+        });
+
+        if (cancelled) return;
+        setBudgetFinanceContext(context || null);
+        if (!authorizationDueDate) {
+          setAuthorizationDueDate(selectedOrcamento?.data_validade || "");
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setBudgetFinanceContext(null);
+        setBudgetFinancePreview(null);
+        setBudgetFinanceError(error?.message || "Não foi possível carregar a carteira vinculada ao orçamento.");
+      } finally {
+        if (!cancelled) {
+          setBudgetFinanceLoading(false);
+        }
+      }
+    }
+
+    loadBudgetFinanceContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showDetailModal,
+    selectedOrcamento?.cliente_id,
+    selectedOrcamento?.data_validade,
+    currentUser?.empresa_id,
+    authorizationDueDate,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBudgetPreview() {
+      if (
+        !showDetailModal
+        || selectedStatusDraft !== "aprovado"
+        || !selectedOrcamento
+        || !budgetFinanceContext?.carteira_conta_id
+        || !budgetFinanceContext?.chronological_consumption_enabled
+      ) {
+        if (!cancelled) {
+          setBudgetFinancePreview(null);
+        }
+        return;
+      }
+
+      setBudgetFinanceLoading(true);
+      setBudgetFinanceError("");
+      try {
+        const previewItems = buildBudgetPreviewItems({
+          orcamento: selectedOrcamento,
+          dogs,
+          precos,
+          recurringPackages,
+        });
+        const maxAutomaticUsage = Math.min(
+          Math.max(Number(budgetFinanceContext?.saldo_positivo_disponivel || 0), 0),
+          Number(selectedOrcamento?.valor_total || 0),
+        );
+        const preview = await financePreviewBudgetConsumption({
+          carteira_conta_id: budgetFinanceContext.carteira_conta_id,
+          valor_orcamento_total: Number(selectedOrcamento?.valor_total || 0),
+          valor_saldo_solicitado: maxAutomaticUsage,
+          preview_items: previewItems,
+        });
+
+        if (cancelled) return;
+        setBudgetFinancePreview(preview || null);
+      } catch (error) {
+        if (cancelled) return;
+        setBudgetFinancePreview(null);
+        setBudgetFinanceError(error?.message || "Não foi possível simular o consumo cronológico deste orçamento.");
+      } finally {
+        if (!cancelled) {
+          setBudgetFinanceLoading(false);
+        }
+      }
+    }
+
+    loadBudgetPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showDetailModal,
+    selectedStatusDraft,
+    selectedOrcamento,
+    budgetFinanceContext?.carteira_conta_id,
+    budgetFinanceContext?.chronological_consumption_enabled,
+    budgetFinanceContext?.saldo_positivo_disponivel,
+    dogs,
+    precos,
+    recurringPackages,
+  ]);
 
   async function loadData() {
     setIsLoading(true);
@@ -672,6 +810,7 @@ export default function OrcamentosHistoricoPanel({
     try {
       setSelectedOrcamento(orcamento);
       setSelectedStatusDraft(orcamento?.status || "rascunho");
+      resetBudgetFinancialDrafts();
       setShowDetailModal(true);
     } catch {
       setSelectedOrcamento(null);
@@ -769,9 +908,12 @@ export default function OrcamentosHistoricoPanel({
     window.location.href = `${createPageUrl("Orcamentos")}?prefillKey=${encodeURIComponent(token)}`;
   }
 
-  async function handleStatusChange(id, newStatus) {
+  async function handleStatusChange(id, newStatus, options = {}) {
+    const { skipStatusPersist = false, skipShadowSync = false } = options;
     try {
-      await Orcamento.update(id, { status: newStatus });
+      if (!skipStatusPersist) {
+        await Orcamento.update(id, { status: newStatus });
+      }
 
       const currentOrcamento = orcamentos.find((item) => item.id === id);
       const nextOrcamento = currentOrcamento ? { ...currentOrcamento, status: newStatus } : null;
@@ -866,39 +1008,41 @@ export default function OrcamentosHistoricoPanel({
           console.error("Erro ao sincronizar agendamentos do orÃ§amento:", error);
         }
 
-        try {
-          const shadowEmpresaId = nextOrcamento?.empresa_id || currentUser?.empresa_id || null;
-          if (nextOrcamento?.cliente_id && shadowEmpresaId) {
-            const shadowItems = isApprovedOrcamentoStatus(newStatus)
-              ? buildShadowFinanceItemsFromOrcamento({
-                  orcamento: nextOrcamento,
-                  dogs,
-                  precos,
-                  packageBehaviorResolver: ({ cao, serviceType }) =>
-                    resolveRecurringPackageFinancialBehavior(recurringPackages, cao, serviceType),
-                })
-              : [];
+        if (!skipShadowSync) {
+          try {
+            const shadowEmpresaId = nextOrcamento?.empresa_id || currentUser?.empresa_id || null;
+            if (nextOrcamento?.cliente_id && shadowEmpresaId) {
+              const shadowItems = isApprovedOrcamentoStatus(newStatus)
+                ? buildShadowFinanceItemsFromOrcamento({
+                    orcamento: nextOrcamento,
+                    dogs,
+                    precos,
+                    packageBehaviorResolver: ({ cao, serviceType }) =>
+                      resolveRecurringPackageFinancialBehavior(recurringPackages, cao, serviceType),
+                  })
+                : [];
 
-            await financeShadowSync({
-              orcamento_id: nextOrcamento.id,
-              empresa_id: shadowEmpresaId,
-              carteira_id: nextOrcamento.cliente_id,
-              due_date: resolveShadowChargeDueDate({
-                orcamento: nextOrcamento,
+              await financeShadowSync({
+                orcamento_id: nextOrcamento.id,
+                empresa_id: shadowEmpresaId,
+                carteira_id: nextOrcamento.cliente_id,
+                due_date: resolveShadowChargeDueDate({
+                  orcamento: nextOrcamento,
+                  items: shadowItems,
+                }),
+                status: newStatus,
                 items: shadowItems,
-              }),
-              status: newStatus,
-              items: shadowItems,
-              payload: {
-                source: "orcamentos_historico_panel",
-                shadow_item_count: shadowItems.length,
-                valor_total_legado: Number(nextOrcamento?.valor_total || 0) || 0,
-              },
-              usuario_id: currentUser?.id || null,
-            });
+                payload: {
+                  source: "orcamentos_historico_panel",
+                  shadow_item_count: shadowItems.length,
+                  valor_total_legado: Number(nextOrcamento?.valor_total || 0) || 0,
+                },
+                usuario_id: currentUser?.id || null,
+              });
+            }
+          } catch (error) {
+            console.error("Erro ao sincronizar shadow financeiro do orçamento:", error);
           }
-        } catch (error) {
-          console.error("Erro ao sincronizar shadow financeiro do orçamento:", error);
         }
       }
 
@@ -924,6 +1068,196 @@ export default function OrcamentosHistoricoPanel({
   async function saveSelectedOrcamentoChanges() {
     if (!selectedOrcamento?.id) return;
     if (selectedStatusDraft === selectedOrcamento.status) return;
+
+    if (selectedStatusDraft === "cancelado" && budgetFinanceContext?.cancellation_v2_enabled) {
+      if (!canManageFinancialCancellation) {
+        showFeedback(
+          "Perfil sem autorização",
+          "Somente Comercial, Gerência ou Administrador podem usar o cancelamento financeiro V2 nesta fase controlada.",
+          "error",
+        );
+        return;
+      }
+
+      if (!budgetFinanceContext?.carteira_conta_id) {
+        showFeedback(
+          "Carteira não localizada",
+          "O cancelamento V2 exige uma carteira financeira vinculada ao orçamento.",
+          "error",
+        );
+        return;
+      }
+
+      if (!cancellationReason.trim()) {
+        showFeedback(
+          "Motivo obrigatório",
+          "Informe o motivo do cancelamento para registrar a reversão financeira auditável.",
+          "error",
+        );
+        return;
+      }
+
+      const penaltyPercent = Number(String(cancellationPenaltyPercent || "").replace(",", ".")) || 0;
+      const creditValue = Number(String(compensatoryCreditValue || "").replace(",", ".")) || 0;
+
+      if (cancellationOrigin === "cliente" && applyCancellationPenalty && penaltyPercent <= 0) {
+        showFeedback(
+          "Multa incompleta",
+          "Informe um percentual de multa maior que zero para continuar com o cancelamento do cliente.",
+          "error",
+        );
+        return;
+      }
+
+      if (cancellationOrigin === "dogcity" && generateCompensatoryCredit && creditValue <= 0) {
+        showFeedback(
+          "Crédito compensatório incompleto",
+          "Informe o valor do crédito compensatório que será concedido neste cancelamento.",
+          "error",
+        );
+        return;
+      }
+
+      try {
+        setIsSavingStatus(true);
+        const result = await financeProcessBudgetCancellationV2({
+          orcamento_id: selectedOrcamento.id,
+          carteira_conta_id: budgetFinanceContext.carteira_conta_id,
+          origem_cancelamento: cancellationOrigin,
+          aplicar_multa: cancellationOrigin === "cliente" ? applyCancellationPenalty : false,
+          percentual_multa: cancellationOrigin === "cliente" && applyCancellationPenalty ? penaltyPercent : 0,
+          gerar_credito_compensatorio: cancellationOrigin === "dogcity" ? generateCompensatoryCredit : false,
+          valor_credito_compensatorio: cancellationOrigin === "dogcity" && generateCompensatoryCredit ? creditValue : null,
+          permitir_saldo_negativo_multa: cancellationOrigin === "cliente" && applyCancellationPenalty ? allowNegativePenalty : false,
+          motivo: cancellationReason.trim(),
+          usuario_id: currentUser?.id || null,
+          metadata: {
+            source: "orcamentos_historico_panel",
+            cancellation_origin: cancellationOrigin,
+            selected_status_draft: selectedStatusDraft,
+            valor_orcamento_total: Number(selectedOrcamento?.valor_total || 0),
+          },
+        });
+
+        if (result?.orcamento_status !== "cancelado") {
+          showFeedback(
+            "Cancelamento não concluído",
+            "O fluxo financeiro de cancelamento não concluiu o orçamento como cancelado. Nenhuma mudança visual foi aplicada.",
+            "error",
+          );
+          setIsSavingStatus(false);
+          return;
+        }
+
+        const saved = await handleStatusChange(selectedOrcamento.id, "cancelado", {
+          skipStatusPersist: true,
+          skipShadowSync: true,
+        });
+        if (saved) {
+          setSelectedOrcamento((current) => current ? { ...current, status: "cancelado" } : current);
+          showFeedback(
+            "Cancelamento registrado",
+            "O cancelamento V2 foi registrado com trilha financeira auditável, sem substituir o legado fora desta flag.",
+            "success",
+          );
+        }
+        setIsSavingStatus(false);
+        return;
+      } catch (error) {
+        console.error("Erro ao processar cancelamento financeiro do orçamento:", error);
+        showFeedback(
+          "Não foi possível processar o cancelamento",
+          error?.message || "Revise os dados financeiros e tente novamente.",
+          "error",
+        );
+        setIsSavingStatus(false);
+        return;
+      }
+    }
+
+    if (
+      selectedStatusDraft === "aprovado"
+      && budgetFinanceContext?.chronological_consumption_enabled
+      && budgetFinancePreview?.requires_authorization
+    ) {
+      if (!budgetFinanceContext?.budget_authorization_enabled) {
+        showFeedback(
+          "Autorização financeira exigida",
+          "A simulação indica saldo insuficiente e a flag de autorização do orçamento ainda está desligada.",
+          "error",
+        );
+        return;
+      }
+
+      if (!budgetFinanceContext?.allow_negative_wallet_with_authorization) {
+        showFeedback(
+          "Saldo insuficiente",
+          "A carteira não cobre o orçamento e a empresa ainda não liberou aprovação com saldo negativo autorizado.",
+          "error",
+        );
+        return;
+      }
+
+      if (!canAuthorizeBudgetFinancially) {
+        showFeedback(
+          "Perfil sem autorização",
+          "Somente Comercial, Gerência ou Administrador podem autorizar orçamento sem pagamento nesta fase controlada.",
+          "error",
+        );
+        return;
+      }
+
+      if (!authorizeWithoutPayment || !authorizationReason.trim() || !authorizationDueDate) {
+        showFeedback(
+          "Autorização incompleta",
+          "Preencha motivo e novo vencimento para registrar a autorização sem pagamento antes de aprovar.",
+          "error",
+        );
+        return;
+      }
+
+      try {
+        const approvalResult = await financeApproveBudgetWithAuthorization({
+          orcamento_id: selectedOrcamento.id,
+          carteira_conta_id: budgetFinanceContext.carteira_conta_id,
+          motivo: authorizationReason.trim(),
+          vencimento_novo: authorizationDueDate,
+          usuario_id: currentUser?.id || null,
+          metadata: {
+            source: "orcamentos_historico_panel",
+            valor_orcamento_total: Number(selectedOrcamento?.valor_total || 0),
+            valor_orcamento_em_aberto: Number(budgetFinancePreview?.valor_orcamento_em_aberto || 0),
+            projected_balance_after_wallet_usage: Number(budgetFinancePreview?.projected_balance_after_wallet_usage || 0),
+          },
+        });
+
+        if (!approvalResult?.autorizacao_financeira_id || approvalResult?.orcamento_status !== "aprovado") {
+          showFeedback(
+            "Aprovação atômica incompleta",
+            "O orçamento não foi aprovado com autorização financeira. Nenhuma mudança foi aplicada.",
+            "error",
+          );
+          return;
+        }
+
+        setIsSavingStatus(true);
+        const saved = await handleStatusChange(selectedOrcamento.id, selectedStatusDraft, { skipStatusPersist: true });
+        if (saved) {
+          setSelectedOrcamento((current) => current ? { ...current, status: selectedStatusDraft } : current);
+          showFeedback("Alterações salvas", "O status do orçamento foi atualizado com autorização financeira auditável.", "success");
+        }
+        setIsSavingStatus(false);
+        return;
+      } catch (error) {
+        console.error("Erro ao registrar a autorização financeira do orçamento:", error);
+        showFeedback(
+          "Não foi possível registrar a autorização",
+          error?.message || "Revise os dados e tente novamente.",
+          "error",
+        );
+        return;
+      }
+    }
 
     setIsSavingStatus(true);
     const saved = await handleStatusChange(selectedOrcamento.id, selectedStatusDraft);
@@ -1230,7 +1564,10 @@ export default function OrcamentosHistoricoPanel({
         open={showDetailModal}
         onOpenChange={(open) => {
           setShowDetailModal(open);
-          if (!open) setSelectedStatusDraft(selectedOrcamento?.status || "");
+          if (!open) {
+            setSelectedStatusDraft(selectedOrcamento?.status || "");
+            resetBudgetFinancialDrafts();
+          }
         }}
       >
         <DialogContent className="max-h-[90vh] w-[95vw] max-w-[600px] overflow-y-auto">
@@ -1254,6 +1591,23 @@ export default function OrcamentosHistoricoPanel({
                 <span className="text-gray-600">Válido até:</span>
                 <span>{formatDate(selectedOrcamento.data_validade)}</span>
               </div>
+
+              {selectedOrcamento.cliente_id && budgetFinanceContext?.wallet_budget_balance_enabled ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Carteira vinculada</p>
+                      <p className="mt-1 text-lg font-semibold text-emerald-950">
+                        Saldo atual: {formatCurrency(Number(budgetFinanceContext?.saldo_atual || 0))}
+                      </p>
+                    </div>
+                    {budgetFinanceLoading ? <Badge className="bg-white text-emerald-700">Carregando...</Badge> : null}
+                  </div>
+                  <p className="mt-2 text-sm text-emerald-800">
+                    Esta leitura é controlada por feature flag e ainda não substitui o financeiro legado.
+                  </p>
+                </div>
+              ) : null}
 
               <hr />
 
@@ -1337,7 +1691,13 @@ export default function OrcamentosHistoricoPanel({
               <div>
                 <h4 className="mb-2 font-semibold">Alterar status</h4>
                 <div className="flex flex-wrap gap-2">
-                  {["rascunho", "enviado", "aprovado", "recusado"].map((status) => (
+                  {[
+                    "rascunho",
+                    "enviado",
+                    "aprovado",
+                    "recusado",
+                    ...(budgetFinanceContext?.cancellation_v2_enabled && canManageFinancialCancellation ? ["cancelado"] : []),
+                  ].map((status) => (
                     <Button
                       key={status}
                       variant={selectedStatusDraft === status ? "default" : "outline"}
@@ -1354,6 +1714,238 @@ export default function OrcamentosHistoricoPanel({
                   </p>
                 )}
               </div>
+
+              {selectedStatusDraft === "cancelado" && budgetFinanceContext?.cancellation_v2_enabled ? (
+                <div className="space-y-4 rounded-xl border border-rose-200 bg-rose-50 p-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-700">Cancelamento V2 controlado</p>
+                    <h4 className="mt-1 font-semibold text-rose-950">Reversão financeira auditável</h4>
+                    <p className="mt-2 text-sm text-rose-900">
+                      Este fluxo continua atrás de flag. Com ele ligado, o orçamento pode registrar origem do cancelamento, multa e crédito compensatório sem editar o histórico da carteira.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Origem do cancelamento</Label>
+                      <Select value={cancellationOrigin} onValueChange={setCancellationOrigin}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="dogcity">DogCity</SelectItem>
+                          <SelectItem value="cliente">Cliente</SelectItem>
+                          <SelectItem value="natural">Natural</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Motivo obrigatório</Label>
+                      <Textarea
+                        value={cancellationReason}
+                        onChange={(event) => setCancellationReason(event.target.value)}
+                        placeholder="Explique o motivo do cancelamento e qualquer acordo financeiro aplicado."
+                        rows={3}
+                      />
+                    </div>
+                  </div>
+
+                  {cancellationOrigin === "cliente" ? (
+                    <div className="space-y-3 rounded-xl border border-white bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">Aplicar multa</p>
+                          <p className="text-xs text-slate-500">
+                            A multa nasce como novo movimento auditável e nunca substitui a obrigação original.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={applyCancellationPenalty}
+                          onCheckedChange={setApplyCancellationPenalty}
+                          disabled={!budgetFinanceContext?.cancellation_penalty_enabled}
+                        />
+                      </div>
+
+                      {applyCancellationPenalty ? (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Percentual da multa</Label>
+                            <Input
+                              value={cancellationPenaltyPercent}
+                              onChange={(event) => setCancellationPenaltyPercent(event.target.value)}
+                              placeholder="Ex.: 20"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div>
+                              <p className="text-sm font-medium text-slate-900">Permitir saldo negativo</p>
+                              <p className="text-xs text-slate-500">
+                                Só funciona se a empresa já liberou negativação autorizada na Sprint 4.
+                              </p>
+                            </div>
+                            <Switch checked={allowNegativePenalty} onCheckedChange={setAllowNegativePenalty} />
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {!budgetFinanceContext?.cancellation_penalty_enabled ? (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                          A flag de multa de cancelamento ainda está desligada para esta empresa.
+                        </div>
+                      ) : null}
+
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        Se existir valor já quitado nesta obrigação, o cancelamento pelo cliente devolve apenas a parte paga como crédito compensatório, desde que a flag correspondente esteja ligada.
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {cancellationOrigin === "dogcity" ? (
+                    <div className="space-y-3 rounded-xl border border-white bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">Gerar crédito compensatório</p>
+                          <p className="text-xs text-slate-500">
+                            O crédito não é automático. Ele só nasce se for explicitamente concedido agora.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={generateCompensatoryCredit}
+                          onCheckedChange={setGenerateCompensatoryCredit}
+                          disabled={!budgetFinanceContext?.compensatory_credit_enabled}
+                        />
+                      </div>
+
+                      {generateCompensatoryCredit ? (
+                        <div className="space-y-2">
+                          <Label>Valor do crédito compensatório</Label>
+                          <Input
+                            value={compensatoryCreditValue}
+                            onChange={(event) => setCompensatoryCreditValue(event.target.value)}
+                            placeholder="0,00"
+                          />
+                        </div>
+                      ) : null}
+
+                      {!budgetFinanceContext?.compensatory_credit_enabled ? (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                          A flag de crédito compensatório ainda está desligada para esta empresa.
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {cancellationOrigin === "natural" ? (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                      Cancelamento natural encerra a obrigação futura sem multa e sem crédito indevido.
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {selectedStatusDraft === "aprovado" && budgetFinanceContext?.chronological_consumption_enabled ? (
+                <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Simulação financeira controlada</p>
+                      <h4 className="mt-1 font-semibold text-slate-900">Prévia do consumo cronológico</h4>
+                    </div>
+                    {budgetFinancePreview ? (
+                      <Badge className={budgetFinancePreview.requires_authorization ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}>
+                        {budgetFinancePreview.requires_authorization ? "Exige autorização" : "Saldo simulado suficiente"}
+                      </Badge>
+                    ) : null}
+                  </div>
+
+                  {budgetFinancePreview ? (
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-slate-200 bg-white p-3">
+                          <p className="text-xs text-slate-500">Saldo aplicado em simulação</p>
+                          <p className="mt-1 font-semibold text-slate-900">{formatCurrency(budgetFinancePreview.valor_saldo_aplicado)}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-3">
+                          <p className="text-xs text-slate-500">Orçamento coberto pela carteira</p>
+                          <p className="mt-1 font-semibold text-emerald-700">{formatCurrency(budgetFinancePreview.valor_orcamento_coberto)}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-3">
+                          <p className="text-xs text-slate-500">Valor ainda em aberto</p>
+                          <p className="mt-1 font-semibold text-slate-900">{formatCurrency(budgetFinancePreview.valor_orcamento_em_aberto)}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-3">
+                          <p className="text-xs text-slate-500">Saldo projetado após uso da carteira</p>
+                          <p className="mt-1 font-semibold text-slate-900">{formatCurrency(budgetFinancePreview.projected_balance_after_wallet_usage)}</p>
+                        </div>
+                      </div>
+
+                      {budgetFinancePreview.requires_authorization ? (
+                        <>
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                            Esta aprovação deixaria {formatCurrency(budgetFinancePreview.valor_orcamento_em_aberto)} sem cobertura imediata da carteira. Se a empresa permitir, a aprovação pode seguir apenas com autorização registrada.
+                          </div>
+
+                          {budgetFinanceContext?.budget_authorization_enabled ? (
+                            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-medium text-slate-900">Autorizar sem pagamento</p>
+                                  <p className="text-xs text-slate-500">
+                                    Libera os agendamentos mantendo a pendência auditável na carteira.
+                                  </p>
+                                </div>
+                                <Switch checked={authorizeWithoutPayment} onCheckedChange={setAuthorizeWithoutPayment} disabled={!canAuthorizeBudgetFinancially} />
+                              </div>
+
+                              {authorizeWithoutPayment ? (
+                                <div className="space-y-3">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="authorization-due-date">Novo vencimento autorizado</Label>
+                                    <Input
+                                      id="authorization-due-date"
+                                      type="date"
+                                      value={authorizationDueDate}
+                                      onChange={(event) => setAuthorizationDueDate(event.target.value)}
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="authorization-reason">Motivo obrigatório</Label>
+                                    <Textarea
+                                      id="authorization-reason"
+                                      value={authorizationReason}
+                                      onChange={(event) => setAuthorizationReason(event.target.value)}
+                                      placeholder="Explique por que a aprovação seguirá sem cobertura imediata da carteira."
+                                      rows={3}
+                                    />
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                              A flag de autorização do orçamento ainda está desligada para esta empresa.
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                          Nesta simulação, a carteira cobre o orçamento sem exigir autorização adicional.
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-600">
+                      {budgetFinanceLoading ? "Carregando simulação financeira..." : "A simulação será carregada quando a carteira vinculada estiver disponível."}
+                    </div>
+                  )}
+
+                  {budgetFinanceError ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      {budgetFinanceError}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           )}
           <DialogFooter className="gap-2">

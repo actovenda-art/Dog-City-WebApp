@@ -1,12 +1,15 @@
-import React, { useEffect, useState } from "react";
-import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment } from "@/api/entities";
+import React, { useEffect, useMemo, useState } from "react";
+import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment, RecurringPackage, AppConfig, ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
 import { useLocation } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { getAppointmentDateKey, getAppointmentMeta, getAppointmentTimeValue, getManualAppointmentNotice } from "@/lib/attendance";
 import { AlertTriangle, Calculator, Dog as DogIcon, FileText, Plus, Save, Send } from "lucide-react";
@@ -16,6 +19,9 @@ import OrcamentoCaoForm from "@/components/orcamento/OrcamentoCaoForm";
 import OrcamentosHistoricoPanel from "@/components/orcamento/OrcamentosHistoricoPanel";
 import OrcamentoResumo from "@/components/orcamento/OrcamentoResumo";
 import { findEntityByReference } from "@/lib/entity-identifiers";
+import { buildBudgetPreviewItems } from "@/lib/finance-budget";
+import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
+import { financePreviewBudgetConsumption, financeWalletBudgetReadContext } from "@/api/functions";
 
 const PRECOS_PADRAO = {
   diaria_normal: 150,
@@ -153,6 +159,16 @@ function addDays(dateKey, days) {
   const baseDate = new Date(`${dateKey}T12:00:00`);
   baseDate.setDate(baseDate.getDate() + days);
   return baseDate.toISOString().slice(0, 10);
+}
+
+function parseCurrencyInput(value) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function buildPrefilledCaoFromAppointment(appointment, dog) {
@@ -489,6 +505,7 @@ export default function Orcamentos() {
   const openOrcamentoId = new URLSearchParams(location.search).get("orcamentoId") || "";
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
+  const [recurringPackages, setRecurringPackages] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [orcamentos, setOrcamentos] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -506,6 +523,19 @@ export default function Orcamentos() {
   const [observacoes, setObservacoes] = useState("");
   const [calculo, setCalculo] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [budgetWalletContext, setBudgetWalletContext] = useState(null);
+  const [budgetWalletPreview, setBudgetWalletPreview] = useState(null);
+  const [budgetWalletLoading, setBudgetWalletLoading] = useState(false);
+  const [budgetWalletError, setBudgetWalletError] = useState("");
+  const [useWalletBalance, setUseWalletBalance] = useState(false);
+  const [walletUsageInput, setWalletUsageInput] = useState("");
+  const [commissionFlags, setCommissionFlags] = useState({
+    commissionEnabled: false,
+  });
+  const [sellerProviders, setSellerProviders] = useState([]);
+  const [sellerSchedules, setSellerSchedules] = useState([]);
+  const [selectedSellerId, setSelectedSellerId] = useState("");
+  const [commissionPercentualInput, setCommissionPercentualInput] = useState("");
 
   useEffect(() => {
     loadData();
@@ -516,6 +546,139 @@ export default function Orcamentos() {
       setCalculo(calcularOrcamento(caes, dogs, precos));
     }
   }, [caes, dogs, precos]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBudgetWalletContext() {
+      if (!showModal || !currentUser?.empresa_id || !clienteSelecionado?.id) {
+        if (!cancelled) {
+          setBudgetWalletContext(null);
+          setBudgetWalletPreview(null);
+          setBudgetWalletError("");
+          setUseWalletBalance(false);
+          setWalletUsageInput("");
+        }
+        return;
+      }
+
+      setBudgetWalletLoading(true);
+      setBudgetWalletError("");
+      try {
+        const context = await financeWalletBudgetReadContext({
+          empresa_id: currentUser.empresa_id,
+          carteira_id: clienteSelecionado.id,
+        });
+
+        if (cancelled) return;
+        setBudgetWalletContext(context || null);
+
+        const positiveBalance = Number(context?.saldo_positivo_disponivel || 0);
+        if (positiveBalance <= 0) {
+          setUseWalletBalance(false);
+          setWalletUsageInput("");
+        } else if (!walletUsageInput) {
+          const suggestedAmount = calculo?.valor_total
+            ? Math.min(positiveBalance, Number(calculo.valor_total || 0))
+            : positiveBalance;
+          setWalletUsageInput(String(suggestedAmount.toFixed(2)));
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setBudgetWalletContext(null);
+        setBudgetWalletPreview(null);
+        setBudgetWalletError(error?.message || "Não foi possível carregar o saldo da carteira.");
+      } finally {
+        if (!cancelled) {
+          setBudgetWalletLoading(false);
+        }
+      }
+    }
+
+    loadBudgetWalletContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showModal, currentUser?.empresa_id, clienteSelecionado?.id, calculo?.valor_total, walletUsageInput]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBudgetPreview() {
+      if (
+        !showModal
+        || etapa !== "resumo"
+        || !calculo
+        || !budgetWalletContext?.carteira_conta_id
+        || !budgetWalletContext?.chronological_consumption_enabled
+      ) {
+        if (!cancelled) {
+          setBudgetWalletPreview(null);
+        }
+        return;
+      }
+
+      setBudgetWalletLoading(true);
+      setBudgetWalletError("");
+      try {
+        const previewItems = buildBudgetPreviewItems({
+          orcamento: {
+            id: "orcamento_preview_draft",
+            caes: JSON.parse(JSON.stringify(caes || [])),
+            data_criacao: new Date().toISOString().slice(0, 10),
+            data_validade: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+          },
+          dogs,
+          precos,
+          recurringPackages,
+        });
+
+        const positiveBalance = Number(budgetWalletContext?.saldo_positivo_disponivel || 0);
+        const maxRequested = Math.min(positiveBalance, Number(calculo?.valor_total || 0));
+        const requestedUsage = useWalletBalance
+          ? Math.min(parseCurrencyInput(walletUsageInput), maxRequested)
+          : 0;
+
+        const preview = await financePreviewBudgetConsumption({
+          carteira_conta_id: budgetWalletContext.carteira_conta_id,
+          valor_orcamento_total: Number(calculo.valor_total || 0),
+          valor_saldo_solicitado: requestedUsage,
+          preview_items: previewItems,
+        });
+
+        if (cancelled) return;
+        setBudgetWalletPreview(preview || null);
+      } catch (error) {
+        if (cancelled) return;
+        setBudgetWalletPreview(null);
+        setBudgetWalletError(error?.message || "Não foi possível simular o consumo cronológico.");
+      } finally {
+        if (!cancelled) {
+          setBudgetWalletLoading(false);
+        }
+      }
+    }
+
+    loadBudgetPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showModal,
+    etapa,
+    calculo,
+    budgetWalletContext?.carteira_conta_id,
+    budgetWalletContext?.chronological_consumption_enabled,
+    useWalletBalance,
+    walletUsageInput,
+    dogs,
+    precos,
+    recurringPackages,
+    caes,
+    budgetWalletContext?.saldo_positivo_disponivel,
+  ]);
 
   useEffect(() => {
     if (isLoading || prefillApplied || !dogs.length) return undefined;
@@ -681,21 +844,31 @@ export default function Orcamentos() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [dogsData, carteirasData, responsaveisData, orcamentosData, precosData, userData] = await Promise.all([
+      const [dogsData, carteirasData, recurringPackagesData, responsaveisData, orcamentosData, precosData, userData, appConfigData, providersData, schedulesData] = await Promise.all([
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
+        RecurringPackage.list("-created_at", 1000),
         Responsavel.list("-created_date", 500),
         Orcamento.list("-created_date", 100),
         TabelaPrecos.list("-created_date", 1000),
         User.me(),
+        AppConfig.listAll("key", 1000, 5000).catch(() => []),
+        ServiceProvider.listAll ? ServiceProvider.listAll("nome", 1000, 5000) : ServiceProvider.list("nome", 1000),
+        ServiceProviderSchedule.listAll ? ServiceProviderSchedule.listAll("-created_date", 1000, 5000) : ServiceProviderSchedule.list("-created_date", 1000),
       ]);
 
       setDogs((dogsData || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteirasData || []).filter((cliente) => cliente.ativo !== false));
+      setRecurringPackages(recurringPackagesData || []);
       setResponsaveis((responsaveisData || []).filter((responsavel) => responsavel.ativo !== false));
       setOrcamentos(orcamentosData || []);
       setCurrentUser(userData || null);
       setPrecos(buildPricingConfig(precosData || [], userData?.empresa_id || null));
+      setSellerProviders((providersData || []).filter((provider) => provider?.ativo !== false));
+      setSellerSchedules((schedulesData || []).filter((schedule) => schedule?.ativo !== false));
+      setCommissionFlags({
+        commissionEnabled: getFinanceFeatureFlagValue(appConfigData || [], FINANCE_FEATURE_FLAGS.commissionEnabled, userData?.empresa_id || null),
+      });
     } catch (error) {
       console.error("Erro ao carregar orçamentos:", error);
     }
@@ -710,6 +883,13 @@ export default function Orcamentos() {
     setObservacoes("");
     setCalculo(null);
     setPrefillNotice(null);
+    setBudgetWalletContext(null);
+    setBudgetWalletPreview(null);
+    setBudgetWalletError("");
+    setUseWalletBalance(false);
+    setWalletUsageInput("");
+    setSelectedSellerId("");
+    setCommissionPercentualInput("");
   }
 
   function getCaesDoCliente() {
@@ -790,6 +970,23 @@ export default function Orcamentos() {
     || selectedDogIds.length === 0
     || eligibleCarteirasForSelectedDogs.some((cliente) => cliente.id === clienteSelecionado.id);
 
+  const sellerOptions = useMemo(() => {
+    const eligibleProviderIds = new Set(
+      (sellerSchedules || [])
+        .filter((schedule) => ["vendedor", "comercial", "representante_comercial"].includes(String(schedule?.funcao || "").trim().toLowerCase()))
+        .map((schedule) => schedule?.serviceprovider_id)
+        .filter(Boolean),
+    );
+
+    return (sellerProviders || [])
+      .filter((provider) => eligibleProviderIds.has(provider.id))
+      .map((provider) => ({
+        id: provider.id,
+        nome: provider.nome || provider.full_name || provider.nome_completo || provider.id,
+      }))
+      .sort((left, right) => String(left.nome).localeCompare(String(right.nome), "pt-BR"));
+  }, [sellerProviders, sellerSchedules]);
+
   function getClienteSelecionadoError() {
     if (!clienteSelecionado || selectedDogIds.length === 0 || isClienteSelecionadoElegivel) {
       return "";
@@ -807,6 +1004,12 @@ export default function Orcamentos() {
 
     return true;
   }
+
+  const positiveWalletBalance = Number(budgetWalletContext?.saldo_positivo_disponivel || 0);
+  const maxWalletUsage = Math.min(positiveWalletBalance, Number(calculo?.valor_total || 0));
+  const normalizedWalletUsage = useWalletBalance
+    ? Math.min(parseCurrencyInput(walletUsageInput), maxWalletUsage)
+    : 0;
 
   function addCao() {
     setCaes((prev) => [...prev, { ...emptyCao }]);
@@ -832,6 +1035,18 @@ export default function Orcamentos() {
       return;
     }
 
+    if (commissionFlags.commissionEnabled) {
+      if (!selectedSellerId) {
+        alert("Selecione o vendedor responsável antes de salvar o orçamento.");
+        return;
+      }
+      const commissionPercentual = Number.parseFloat(String(commissionPercentualInput || "0").replace(",", "."));
+      if (!Number.isFinite(commissionPercentual) || commissionPercentual < 0) {
+        alert("Informe um percentual de comissão válido.");
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       const createdOrcamento = await Orcamento.create({
@@ -847,6 +1062,10 @@ export default function Orcamentos() {
         valor_total: calculo.valor_total,
         status,
         observacoes,
+        vendedor_user_id: commissionFlags.commissionEnabled ? selectedSellerId || null : null,
+        commission_percentual: commissionFlags.commissionEnabled
+          ? (Number.parseFloat(String(commissionPercentualInput || "0").replace(",", ".")) || 0)
+          : 0,
       });
 
       const linkedExternalAppointmentIds = (caes || [])
@@ -1118,7 +1337,148 @@ export default function Orcamentos() {
                 </div>
               )}
 
+              {budgetWalletContext?.wallet_budget_balance_enabled && clienteSelecionado && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Carteira vinculada</p>
+                      <p className="mt-1 text-lg font-semibold text-emerald-950">
+                        Saldo atual: {formatCurrency(Number(budgetWalletContext?.saldo_atual || 0))}
+                      </p>
+                      <p className="mt-1 text-sm text-emerald-800">
+                        Esta leitura é controlada por flag e não substitui o pagamento legado nesta sprint.
+                      </p>
+                    </div>
+                    {budgetWalletLoading ? (
+                      <Badge className="bg-white text-emerald-700">Carregando carteira...</Badge>
+                    ) : null}
+                  </div>
+
+                  {positiveWalletBalance > 0 ? (
+                    <div className="mt-4 space-y-3 rounded-xl border border-emerald-100 bg-white/80 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">Utilizar saldo?</p>
+                          <p className="text-xs text-slate-500">
+                            Disponível nesta fase para simulação controlada do orçamento.
+                          </p>
+                        </div>
+                        <Switch checked={useWalletBalance} onCheckedChange={setUseWalletBalance} />
+                      </div>
+
+                      {useWalletBalance ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="wallet-usage-input">Valor a simular com saldo da carteira</Label>
+                          <Input
+                            id="wallet-usage-input"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={walletUsageInput}
+                            onChange={(event) => setWalletUsageInput(event.target.value)}
+                          />
+                          <p className="text-xs text-slate-500">
+                            Limite desta fase: até {formatCurrency(maxWalletUsage)} entre saldo disponível e total em aberto do orçamento.
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                      Esta carteira não possui saldo positivo disponível para simulação de uso no orçamento.
+                    </div>
+                  )}
+                </div>
+              )}
+
               <OrcamentoResumo calculo={calculo} caes={caes} dogs={dogs} />
+
+              {budgetWalletContext?.chronological_consumption_enabled && budgetWalletPreview ? (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Simulação cronológica</p>
+                      <h3 className="mt-1 text-lg font-semibold text-slate-900">Prévia do consumo da carteira</h3>
+                    </div>
+                    <Badge className={budgetWalletPreview.requires_authorization ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}>
+                      {budgetWalletPreview.requires_authorization ? "Exigirá autorização" : "Cobertura simulada"}
+                    </Badge>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Saldo solicitado</p>
+                      <p className="mt-1 font-semibold text-slate-900">{formatCurrency(normalizedWalletUsage)}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Saldo aplicado</p>
+                      <p className="mt-1 font-semibold text-slate-900">{formatCurrency(budgetWalletPreview.valor_saldo_aplicado)}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Orçamento coberto</p>
+                      <p className="mt-1 font-semibold text-emerald-700">{formatCurrency(budgetWalletPreview.valor_orcamento_coberto)}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Saldo projetado</p>
+                      <p className="mt-1 font-semibold text-slate-900">{formatCurrency(budgetWalletPreview.projected_balance_after_wallet_usage)}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm text-slate-700">
+                    {budgetWalletPreview.requires_authorization ? (
+                      <>A simulação ainda deixaria {formatCurrency(budgetWalletPreview.valor_orcamento_em_aberto)} em aberto. A aprovação financeira controlada será tratada no fluxo de autorização do orçamento.</>
+                    ) : (
+                      <>A carteira cobriria integralmente o valor simulado desta etapa sem exigir autorização adicional.</>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {budgetWalletError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {budgetWalletError}
+                </div>
+              ) : null}
+
+              {commissionFlags.commissionEnabled ? (
+                <div className="rounded-xl border border-fuchsia-200 bg-fuchsia-50 p-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label>Vendedor responsável *</Label>
+                      <Select value={selectedSellerId || "__empty__"} onValueChange={(value) => setSelectedSellerId(value === "__empty__" ? "" : value)}>
+                        <SelectTrigger className="mt-2">
+                          <SelectValue placeholder="Selecione o vendedor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__empty__">Selecionar</SelectItem>
+                          {sellerOptions.map((seller) => (
+                            <SelectItem key={seller.id} value={seller.id}>
+                              {seller.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="mt-2 text-xs text-fuchsia-800">
+                        Comissão controlada da Sprint 7: só gera evento quando a obrigação financeira ficar quitada.
+                      </p>
+                    </div>
+                    <div>
+                      <Label htmlFor="orcamento-commission-percent">Percentual de comissão (%)</Label>
+                      <Input
+                        id="orcamento-commission-percent"
+                        className="mt-2"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={commissionPercentualInput}
+                        onChange={(event) => setCommissionPercentualInput(event.target.value)}
+                        placeholder="0,00"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {observacoes && (
                 <div className="rounded-lg border-l-4 border-yellow-400 bg-yellow-50 p-3">

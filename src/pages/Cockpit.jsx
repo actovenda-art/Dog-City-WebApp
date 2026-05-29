@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Transaction,
   ScheduledTransaction,
@@ -52,6 +52,9 @@ import {
   Plus,
   Trash2,
   Pencil,
+  Wallet,
+  Siren,
+  GitCompareArrows,
 } from "lucide-react";
 import {
   BarChart,
@@ -72,6 +75,14 @@ import { format, subMonths, startOfMonth, endOfMonth, subDays, differenceInDays 
 import { ptBR } from "date-fns/locale";
 import { doesAppointmentOccurOnDate, filterAppointmentsByApprovedOrcamentos, isApprovedOrcamento } from "@/lib/attendance";
 import { isManagerialProfile } from "@/lib/access-control";
+import {
+  financeCockpitV2Compare,
+  financeCockpitV2Context,
+  financeCockpitV2Summary,
+  financeFinancialAlertsV2,
+} from "@/api/functions";
+import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
+import { buildFinancialAlertsSummary } from "@/lib/finance-cockpit";
 
 const COLORS = ["#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#F59E0B", "#EF4444", "#6366F1", "#14B8A6"];
 const RISK_RULES_CONFIG_KEY = "cockpit.finance_risk_rules";
@@ -183,13 +194,25 @@ export default function Cockpit() {
   const [replacements, setReplacements] = useState([]);
   const [plans, setPlans] = useState([]);
   const [dogs, setDogs] = useState([]);
-  const [carteiras, setCarteiras] = useState([]);
+  const [, setCarteiras] = useState([]);
   const [checkins, setCheckins] = useState([]);
   const [providers, setProviders] = useState([]);
   const [lancamentos, setLancamentos] = useState([]);
   const [configs, setConfigs] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [cockpitV2Flags, setCockpitV2Flags] = useState({
+    cockpitV2Enabled: false,
+    cockpitV2CompareEnabled: false,
+    financialAlertsV2Enabled: false,
+    legacyCockpitFinanceDisabled: false,
+  });
+  const [cockpitV2Context, setCockpitV2Context] = useState(null);
+  const [cockpitV2Summary, setCockpitV2Summary] = useState(null);
+  const [cockpitV2CompareRows, setCockpitV2CompareRows] = useState([]);
+  const [cockpitV2Alerts, setCockpitV2Alerts] = useState([]);
+  const [cockpitV2Loading, setCockpitV2Loading] = useState(false);
+  const [cockpitV2Error, setCockpitV2Error] = useState("");
   const [periodoMeses, setPeriodoMeses] = useState("6");
   const [periodoDias, setPeriodoDias] = useState("30");
   const [currentView, setCurrentView] = useState("resumo");
@@ -233,7 +256,7 @@ export default function Cockpit() {
         Checkin.list("-created_date", 1000).catch(() => []),
         ServiceProvider.list("-created_date", 500).catch(() => []),
         Lancamento.list("-vencimento", 1000).catch(() => []),
-        AppConfig.filter({ key: RISK_RULES_CONFIG_KEY }, "-created_date", 20).catch(() => []),
+        AppConfig.listAll("-created_date", 1000, 5000).catch(() => []),
         User.me().catch(() => null),
       ]);
 
@@ -262,6 +285,92 @@ export default function Cockpit() {
       setIsLoading(false);
     }
   };
+
+  const cockpitPeriodo = useMemo(() => {
+    const months = Math.max(parseInt(periodoMeses, 10) || 1, 1);
+    const end = new Date();
+    const start = subMonths(end, months - 1);
+    return {
+      inicio: format(start, "yyyy-MM-dd"),
+      fim: format(end, "yyyy-MM-dd"),
+    };
+  }, [periodoMeses]);
+
+  const loadCockpitV2Data = useCallback(async () => {
+    const empresaId = currentUser?.empresa_id || null;
+    if (!empresaId) return;
+
+    const nextFlags = {
+      cockpitV2Enabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.cockpitV2Enabled, empresaId),
+      cockpitV2CompareEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.cockpitV2CompareEnabled, empresaId),
+      financialAlertsV2Enabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.financialAlertsV2Enabled, empresaId),
+      legacyCockpitFinanceDisabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.legacyCockpitFinanceDisabled, empresaId),
+    };
+
+    setCockpitV2Flags(nextFlags);
+
+    if (!nextFlags.cockpitV2Enabled && !nextFlags.cockpitV2CompareEnabled && !nextFlags.financialAlertsV2Enabled) {
+      setCockpitV2Context(null);
+      setCockpitV2Summary(null);
+      setCockpitV2CompareRows([]);
+      setCockpitV2Alerts([]);
+      setCockpitV2Error("");
+      return;
+    }
+
+    setCockpitV2Loading(true);
+    setCockpitV2Error("");
+    try {
+      const context = await financeCockpitV2Context({
+        empresa_id: empresaId,
+        periodo_inicio: cockpitPeriodo.inicio,
+        periodo_fim: cockpitPeriodo.fim,
+      });
+      setCockpitV2Context(context || null);
+
+      if (nextFlags.cockpitV2Enabled) {
+        const summary = await financeCockpitV2Summary({
+          empresa_id: empresaId,
+          periodo_inicio: cockpitPeriodo.inicio,
+          periodo_fim: cockpitPeriodo.fim,
+        });
+        setCockpitV2Summary(summary || null);
+      } else {
+        setCockpitV2Summary(null);
+      }
+
+      if (nextFlags.cockpitV2Enabled && nextFlags.cockpitV2CompareEnabled) {
+        const compareRows = await financeCockpitV2Compare({
+          empresa_id: empresaId,
+          periodo_inicio: cockpitPeriodo.inicio,
+          periodo_fim: cockpitPeriodo.fim,
+        });
+        setCockpitV2CompareRows(Array.isArray(compareRows) ? compareRows : []);
+      } else {
+        setCockpitV2CompareRows([]);
+      }
+
+      if (nextFlags.financialAlertsV2Enabled) {
+        const alerts = await financeFinancialAlertsV2({
+          empresa_id: empresaId,
+          periodo_inicio: cockpitPeriodo.inicio,
+          periodo_fim: cockpitPeriodo.fim,
+          limit: 100,
+        });
+        setCockpitV2Alerts(Array.isArray(alerts) ? alerts : []);
+      } else {
+        setCockpitV2Alerts([]);
+      }
+    } catch (error) {
+      setCockpitV2Error(error?.message || "Não foi possível carregar o Cockpit financeiro V2.");
+    } finally {
+      setCockpitV2Loading(false);
+    }
+  }, [cockpitPeriodo.fim, cockpitPeriodo.inicio, configs, currentUser?.empresa_id]);
+
+  useEffect(() => {
+    loadCockpitV2Data();
+  }, [loadCockpitV2Data]);
 
   const formatCurrency = (value) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -357,11 +466,11 @@ export default function Cockpit() {
 
   const monthlyData = getMonthlyData();
 
-  const filterByPeriod = (data, dateField = "date") => {
+  const filterByPeriod = useCallback((data, dateField = "date") => {
     const dias = parseInt(periodoDias, 10);
     const limite = subDays(new Date(), dias);
     return data.filter((item) => new Date(item[dateField]) >= limite);
-  };
+  }, [periodoDias]);
 
   const serviceFrequency = useMemo(() => {
     const filtered = filterByPeriod(servicesProvided);
@@ -376,7 +485,7 @@ export default function Cockpit() {
         color: COLORS[index % COLORS.length],
       }))
       .sort((a, b) => b.value - a.value);
-  }, [periodoDias, servicesProvided]);
+  }, [filterByPeriod, servicesProvided]);
 
   const topDogs = useMemo(() => {
     const filtered = filterByPeriod(servicesProvided);
@@ -392,7 +501,7 @@ export default function Cockpit() {
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
-  }, [dogsById, periodoDias, servicesProvided]);
+  }, [dogsById, filterByPeriod, servicesProvided]);
 
   const absentDogs = useMemo(() => {
     const ultimoServico = {};
@@ -477,11 +586,33 @@ export default function Cockpit() {
       });
   }, [openLancamentos, riskRules]);
 
+  const financialAlertsSummary = useMemo(
+    () => buildFinancialAlertsSummary(cockpitV2Alerts),
+    [cockpitV2Alerts],
+  );
+
+  const cockpitV2ComparisonIssues = useMemo(
+    () => cockpitV2CompareRows.filter((row) => !["ok", "info"].includes(String(row?.severity || ""))),
+    [cockpitV2CompareRows],
+  );
+
+  const usingFinanceCockpitV2Only = cockpitV2Flags.cockpitV2Enabled && cockpitV2Flags.legacyCockpitFinanceDisabled;
+
   const openRiskDialog = () => {
     setRiskRulesDraft(riskRules.length > 0 ? riskRules : [createEmptyRiskRule()]);
     setEditingRiskRuleId(null);
     setRiskDialogOpen(true);
   };
+
+  useEffect(() => {
+    const allowedViews = new Set(["resumo", "financeiro", "frequencia", "ranking", "ausentes"]);
+    if (cockpitV2Flags.cockpitV2Enabled) allowedViews.add("financeiro_v2");
+    if (cockpitV2Flags.cockpitV2Enabled && cockpitV2Flags.cockpitV2CompareEnabled) allowedViews.add("compare_v2");
+    if (cockpitV2Flags.financialAlertsV2Enabled) allowedViews.add("alertas_v2");
+    if (!allowedViews.has(currentView)) {
+      setCurrentView("resumo");
+    }
+  }, [cockpitV2Flags, currentView]);
 
   const handleRiskRuleChange = (ruleId, field, value) => {
     setRiskRulesDraft((current) =>
@@ -567,8 +698,30 @@ export default function Cockpit() {
               <p className="text-sm sm:text-base text-gray-600 mt-1">Visão completa do sistema</p>
             </div>
           </div>
+          {(cockpitV2Flags.cockpitV2Enabled || cockpitV2Flags.financialAlertsV2Enabled) ? (
+            <Button variant="outline" onClick={loadCockpitV2Data} disabled={cockpitV2Loading}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${cockpitV2Loading ? "animate-spin" : ""}`} />
+              Atualizar V2
+            </Button>
+          ) : null}
         </div>
 
+        {cockpitV2Error ? (
+          <Card className="mb-6 border-amber-200 bg-amber-50">
+            <CardContent className="p-4 text-sm text-amber-900">{cockpitV2Error}</CardContent>
+          </Card>
+        ) : null}
+
+        {usingFinanceCockpitV2Only ? (
+          <Card className="mb-6 border-blue-200 bg-blue-50">
+            <CardContent className="p-4 text-sm text-blue-900">
+              O cockpit financeiro está lendo a camada V2 por flag. O legado continua preservado e pode ser reativado desligando <code>finance.legacy_cockpit_finance_disabled</code>.
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {!usingFinanceCockpitV2Only ? (
+        <>
         <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card className="border-green-200 bg-white">
             <CardContent className="p-2.5 sm:p-4">
@@ -664,6 +817,104 @@ export default function Cockpit() {
             </CardContent>
           </Card>
         </div>
+        </>
+        ) : (
+          <div className="mb-6 grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Card className="border-emerald-200 bg-white">
+              <CardContent className="p-2.5 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600">Faturamento Real V2</p>
+                    <p className="text-lg sm:text-2xl font-bold text-emerald-600">{formatCurrency(cockpitV2Summary?.faturamento_real_total || 0)}</p>
+                  </div>
+                  <Wallet className="h-7 w-7 text-emerald-500 sm:h-10 sm:w-10" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-blue-200 bg-white">
+              <CardContent className="p-2.5 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600">Geração de Recursos V2</p>
+                    <p className="text-lg sm:text-2xl font-bold text-blue-600">{formatCurrency(cockpitV2Summary?.geracao_recursos_total || 0)}</p>
+                  </div>
+                  <BarChart3 className="h-7 w-7 text-blue-500 sm:h-10 sm:w-10" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-orange-200 bg-white">
+              <CardContent className="p-2.5 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600">Cobranças Vencidas V2</p>
+                    <p className="text-lg sm:text-2xl font-bold text-orange-600">{formatCurrency(cockpitV2Summary?.cobrancas_vencidas_total || 0)}</p>
+                  </div>
+                  <Clock className="h-7 w-7 text-orange-500 sm:h-10 sm:w-10" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-red-200 bg-white">
+              <CardContent className="p-2.5 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600">Carteiras Negativas</p>
+                    <p className="text-lg sm:text-2xl font-bold text-red-600">{cockpitV2Summary?.carteiras_negativas_count || 0}</p>
+                  </div>
+                  <AlertTriangle className="h-7 w-7 text-red-500 sm:h-10 sm:w-10" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {usingFinanceCockpitV2Only ? (
+          <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+            <Card className="border-blue-200 bg-white">
+              <CardContent className="p-2.5 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600">Agendamentos Hoje</p>
+                    <p className="text-lg sm:text-2xl font-bold text-blue-600">{agendamentosHoje}</p>
+                  </div>
+                  <Calendar className="h-7 w-7 text-blue-500 sm:h-10 sm:w-10" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-emerald-200 bg-white">
+              <CardContent className="p-2.5 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600">Serviços Hoje</p>
+                    <p className="text-lg sm:text-2xl font-bold text-emerald-600">{servicosHoje}</p>
+                  </div>
+                  <Clipboard className="h-7 w-7 text-emerald-500 sm:h-10 sm:w-10" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-orange-200 bg-white">
+              <CardContent className="p-2.5 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600">Obrigações em Aberto V2</p>
+                    <p className="text-lg sm:text-2xl font-bold text-orange-600">{formatCurrency(cockpitV2Summary?.obrigacoes_abertas_total || 0)}</p>
+                  </div>
+                  <Clock className="h-7 w-7 text-orange-500 sm:h-10 sm:w-10" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-pink-200 bg-white">
+              <CardContent className="p-2.5 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600">Cobranças em Aberto V2</p>
+                    <p className="text-lg sm:text-2xl font-bold text-pink-600">{formatCurrency(cockpitV2Summary?.cobrancas_abertas_total || 0)}</p>
+                  </div>
+                  <TrendingUp className="h-7 w-7 text-pink-500 sm:h-10 sm:w-10" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
 
         <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card className="border-indigo-200 bg-white">
@@ -720,10 +971,13 @@ export default function Cockpit() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="resumo">Resumo Geral</SelectItem>
-                <SelectItem value="financeiro">Financeiro (Entradas x Saídas)</SelectItem>
+                {!usingFinanceCockpitV2Only ? <SelectItem value="financeiro">Financeiro (Entradas x Saídas)</SelectItem> : null}
                 <SelectItem value="frequencia">Frequência de Serviços</SelectItem>
                 <SelectItem value="ranking">Top 10 Cães</SelectItem>
                 <SelectItem value="ausentes">Cães Ausentes</SelectItem>
+                {cockpitV2Flags.cockpitV2Enabled ? <SelectItem value="financeiro_v2">Financeiro V2</SelectItem> : null}
+                {cockpitV2Flags.cockpitV2Enabled && cockpitV2Flags.cockpitV2CompareEnabled ? <SelectItem value="compare_v2">Comparativo Legado x V2</SelectItem> : null}
+                {cockpitV2Flags.financialAlertsV2Enabled ? <SelectItem value="alertas_v2">Alertas Financeiros V2</SelectItem> : null}
               </SelectContent>
             </Select>
           </CardContent>
@@ -1128,6 +1382,219 @@ export default function Cockpit() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {currentView === "financeiro_v2" && cockpitV2Flags.cockpitV2Enabled && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <Card className="border-emerald-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Faturamento Real V2</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-emerald-600">{formatCurrency(cockpitV2Summary?.faturamento_real_total || 0)}</p>
+                </CardContent>
+              </Card>
+              <Card className="border-blue-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Geração de Recursos V2</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-blue-600">{formatCurrency(cockpitV2Summary?.geracao_recursos_total || 0)}</p>
+                </CardContent>
+              </Card>
+              <Card className="border-orange-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Obrigações Vencidas V2</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-orange-600">{formatCurrency(cockpitV2Summary?.obrigacoes_vencidas_total || 0)}</p>
+                </CardContent>
+              </Card>
+              <Card className="border-violet-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Comissões Concedidas</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-violet-600">{formatCurrency(cockpitV2Summary?.comissoes_total || 0)}</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="border-gray-200 bg-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Wallet className="w-5 h-5 text-blue-600" />
+                  Cockpit Financeiro V2
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm text-gray-500">Saldo consolidado em carteira</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{formatCurrency(cockpitV2Summary?.wallet_total || 0)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm text-gray-500">Cobranças em aberto</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{formatCurrency(cockpitV2Summary?.cobrancas_abertas_total || 0)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm text-gray-500">Carteiras negativas</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{cockpitV2Summary?.carteiras_negativas_count || 0}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm text-gray-500">Reconcilições divergentes</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{cockpitV2Summary?.reconciliacoes_divergentes_count || 0}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm text-gray-500">Deltas relevantes</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{cockpitV2Summary?.deltas_relevantes_count || 0}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm text-gray-500">Contexto de snapshots</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900">{cockpitV2Context?.snapshots_count || 0} snapshot(s)</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Último: {cockpitV2Context?.latest_snapshot_created_at ? format(new Date(cockpitV2Context.latest_snapshot_created_at), "dd/MM/yyyy HH:mm") : "—"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {currentView === "compare_v2" && cockpitV2Flags.cockpitV2Enabled && cockpitV2Flags.cockpitV2CompareEnabled && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <Card className="border-slate-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Linhas comparadas</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-slate-900">{cockpitV2CompareRows.length}</p>
+                </CardContent>
+              </Card>
+              <Card className="border-amber-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Diferenças relevantes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-amber-700">{cockpitV2ComparisonIssues.length}</p>
+                </CardContent>
+              </Card>
+              <Card className="border-blue-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Modo de rollout</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Badge className="bg-blue-100 text-blue-700">{usingFinanceCockpitV2Only ? "8B ativo" : "8A paralelo"}</Badge>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="border-gray-200 bg-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <GitCompareArrows className="w-5 h-5 text-blue-600" />
+                  Comparativo Legado x V2
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-slate-500">
+                      <th className="py-2 pr-3">Métrica</th>
+                      <th className="py-2 pr-3">Legado</th>
+                      <th className="py-2 pr-3">V2</th>
+                      <th className="py-2 pr-3">Diferença</th>
+                      <th className="py-2 pr-3">Severidade</th>
+                      <th className="py-2">Origem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cockpitV2CompareRows.map((row) => (
+                      <tr key={row.metric_key} className="border-b border-slate-100">
+                        <td className="py-3 pr-3 font-medium text-slate-900">{row.metric_label}</td>
+                        <td className="py-3 pr-3">{row.unit === "count" ? row.legacy_value : formatCurrency(row.legacy_value)}</td>
+                        <td className="py-3 pr-3">{row.unit === "count" ? row.v2_value : formatCurrency(row.v2_value)}</td>
+                        <td className="py-3 pr-3">{row.unit === "count" ? row.difference_value : formatCurrency(row.difference_value)}</td>
+                        <td className="py-3 pr-3">
+                          <Badge variant="outline">{row.severity}</Badge>
+                        </td>
+                        <td className="py-3 text-slate-600">{row.difference_origin}</td>
+                      </tr>
+                    ))}
+                    {cockpitV2CompareRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-slate-500">Nenhum comparativo carregado.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {currentView === "alertas_v2" && cockpitV2Flags.financialAlertsV2Enabled && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <Card className="border-red-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Alertas ativos</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-red-700">{financialAlertsSummary.total}</p>
+                </CardContent>
+              </Card>
+              <Card className="border-orange-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Alta severidade</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-orange-700">{(financialAlertsSummary.bySeverity.alta || 0) + (financialAlertsSummary.bySeverity.critica || 0)}</p>
+                </CardContent>
+              </Card>
+              <Card className="border-blue-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Alertas informativos</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-blue-700">{financialAlertsSummary.bySeverity.info || 0}</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="border-gray-200 bg-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Siren className="w-5 h-5 text-red-600" />
+                  Alertas Financeiros V2
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {cockpitV2Alerts.map((alert) => (
+                  <div key={alert.alert_key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{alert.title}</p>
+                        <p className="text-sm text-slate-600">{alert.description}</p>
+                        <p className="mt-1 text-xs text-slate-500">{alert.alert_type} · {alert.entity_type}</p>
+                      </div>
+                      <Badge className="bg-white text-slate-700 border border-slate-200">{alert.severity}</Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                      <Badge variant="outline">Valor: {formatCurrency(alert.amount || 0)}</Badge>
+                      <Badge variant="outline">ID: {alert.entity_id}</Badge>
+                    </div>
+                  </div>
+                ))}
+                {cockpitV2Alerts.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
+                    Nenhum alerta financeiro V2 ativo no momento.
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          </div>
         )}
       </div>
 

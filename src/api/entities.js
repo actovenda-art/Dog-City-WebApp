@@ -36,6 +36,12 @@ export const CarteiraReconciliacao = appClient.entities.CarteiraReconciliacao;
 
 export const AutorizacaoFinanceira = appClient.entities.AutorizacaoFinanceira;
 
+export const CancelamentoFinanceiro = appClient.entities.CancelamentoFinanceiro;
+
+export const FinanceSnapshot = appClient.entities.FinanceSnapshot;
+
+export const FinanceSnapshotDelta = appClient.entities.FinanceSnapshotDelta;
+
 export const Notificacao = appClient.entities.Notificacao;
 
 export const Orcamento = appClient.entities.Orcamento;
@@ -64,6 +70,14 @@ export const PackageSession = appClient.entities.PackageSession;
 export const PackageCredit = appClient.entities.PackageCredit;
 
 export const PackageBilling = appClient.entities.PackageBilling;
+
+export const ObrigacaoFinanceira = appClient.entities.ObrigacaoFinanceira;
+
+export const CobrancaFinanceira = appClient.entities.CobrancaFinanceira;
+
+export const CobrancaItem = appClient.entities.CobrancaItem;
+
+export const ComissaoEvento = appClient.entities.ComissaoEvento;
 
 export const AuditLog = appClient.entities.AuditLog;
 

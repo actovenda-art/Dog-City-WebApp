@@ -256,6 +256,7 @@ export default function Movimentacoes() {
     balanceReadEnabled: false,
     movementsEnabled: false,
     manualAdjustmentsEnabled: false,
+    manualCreditEnabled: false,
   });
   const [walletAccounts, setWalletAccounts] = useState([]);
   const [walletAuditRows, setWalletAuditRows] = useState([]);
@@ -450,11 +451,13 @@ export default function Movimentacoes() {
         balanceReadEnabled: false,
         movementsEnabled: false,
         manualAdjustmentsEnabled: false,
+        manualCreditEnabled: false,
       });
       return {
         balanceReadEnabled: false,
         movementsEnabled: false,
         manualAdjustmentsEnabled: false,
+        manualCreditEnabled: false,
       };
     }
 
@@ -468,6 +471,7 @@ export default function Movimentacoes() {
       balanceReadEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.walletBalanceReadEnabled, userProfile.empresa_id),
       movementsEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.walletMovementsEnabled, userProfile.empresa_id),
       manualAdjustmentsEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.walletManualAdjustmentsEnabled, userProfile.empresa_id),
+      manualCreditEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.manualCreditEnabled, userProfile.empresa_id),
     };
     setWalletFlags(nextFlags);
     return nextFlags;
@@ -1076,13 +1080,15 @@ export default function Movimentacoes() {
                   </Button>
                   {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations && (
                     <>
-                      <Button
-                        variant="outline"
-                        onClick={() => openWalletOperationModal("credito_manual")}
-                        className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                      >
-                        Crédito manual
-                      </Button>
+                      {walletFlags.manualCreditEnabled ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => openWalletOperationModal("credito_manual")}
+                          className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                        >
+                          Crédito manual
+                        </Button>
+                      ) : null}
                       <Button
                         variant="outline"
                         onClick={() => openWalletOperationModal("ajuste_manual")}
@@ -1635,7 +1641,9 @@ export default function Movimentacoes() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="credito_manual">Crédito manual</SelectItem>
+                  {walletFlags.manualCreditEnabled ? (
+                    <SelectItem value="credito_manual">Crédito manual</SelectItem>
+                  ) : null}
                   <SelectItem value="ajuste_manual">Ajuste manual</SelectItem>
                   <SelectItem value="estorno_manual">Estorno manual</SelectItem>
                   <SelectItem value="entrada_direcionada">Entrada direcionada</SelectItem>

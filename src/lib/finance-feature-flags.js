@@ -6,6 +6,23 @@ export const FINANCE_FEATURE_FLAGS = {
   walletBalanceReadEnabled: "finance.wallet_balance_read_enabled",
   walletMovementsEnabled: "finance.wallet_movements_enabled",
   walletManualAdjustmentsEnabled: "finance.wallet_manual_adjustments_enabled",
+  walletBudgetBalanceEnabled: "finance.wallet_budget_balance_enabled",
+  chronologicalConsumptionEnabled: "finance.chronological_consumption_enabled",
+  allowNegativeWalletWithAuthorization: "finance.allow_negative_wallet_with_authorization",
+  budgetAuthorizationEnabled: "finance.budget_authorization_enabled",
+  cancellationV2Enabled: "finance.cancellation_v2_enabled",
+  compensatoryCreditEnabled: "finance.compensatory_credit_enabled",
+  manualCreditEnabled: "finance.manual_credit_enabled",
+  cancellationPenaltyEnabled: "finance.cancellation_penalty_enabled",
+  reportsV2Enabled: "finance.reports_v2_enabled",
+  snapshotsEnabled: "finance.snapshots_enabled",
+  financialCompetenceEnabled: "finance.financial_competence_enabled",
+  commissionEnabled: "finance.commission_enabled",
+  commissionVisualizationEnabled: "finance.commission_visualization_enabled",
+  cockpitV2Enabled: "finance.cockpit_v2_enabled",
+  cockpitV2CompareEnabled: "finance.cockpit_v2_compare_enabled",
+  financialAlertsV2Enabled: "finance.financial_alerts_v2_enabled",
+  legacyCockpitFinanceDisabled: "finance.legacy_cockpit_finance_disabled",
 };
 
 export function getFinanceFeatureFlagValue(configs = [], key, empresaId = null) {

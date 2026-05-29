@@ -24,6 +24,7 @@ import {
 
 import {
   Appointment,
+  AppConfig,
   AuditLog,
   Carteira,
   ContaReceber,
@@ -33,6 +34,8 @@ import {
   PackageSession,
   PlanConfig,
   RecurringPackage,
+  ServiceProvider,
+  ServiceProviderSchedule,
   TabelaPrecos,
   User,
 } from "@/api/entities";
@@ -67,6 +70,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
+import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
 
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 const DAY_CARE_PACKAGE_TYPE = "day_care_pacote";
@@ -162,6 +166,8 @@ const DEFAULT_FORM_DATA = {
   start_date: "",
   monthly_value: "",
   first_month_dates: [],
+  vendedor_user_id: "",
+  commission_percentual: "",
 };
 
 const PREPAID_PACKAGE_SERVICES = new Set(["day_care", "banho", "tosa", "banho_tosa", "transporte", "hospedagem"]);
@@ -650,6 +656,8 @@ function getPlanGroupPayload({
   dueDay,
   nextBillingDate,
   metadataGerencial,
+  vendedorUserId,
+  commissionPercentual,
 }) {
   return {
     client_id: clientId,
@@ -663,6 +671,8 @@ function getPlanGroupPayload({
     due_day: dueDay,
     renovacao_dia: dueDay,
     next_billing_date: nextBillingDate || null,
+    vendedor_user_id: vendedorUserId || null,
+    commission_percentual: Number(commissionPercentual || 0) || 0,
     metadata_gerencial: metadataGerencial || {},
     cliente_fixo: true,
   };
@@ -711,6 +721,8 @@ function buildRecurringPackagePayloadFromPlan(plan) {
     weekdays,
     frequency: getRecurringFrequencyFromPlan(plan),
     financial_behavior: getRecurringPackageFinancialBehavior(serviceId),
+    vendedor_user_id: plan?.vendedor_user_id || null,
+    commission_percentual: Number(plan?.commission_percentual || 0) || 0,
     price_per_session: getSessionUnitPriceFromPlan(plan),
     start_date: startDate,
     end_date: metadata.end_date || null,
@@ -736,6 +748,11 @@ export default function PlanosConfig() {
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
   const [pricingRows, setPricingRows] = useState([]);
+  const [sellerProviders, setSellerProviders] = useState([]);
+  const [sellerSchedules, setSellerSchedules] = useState([]);
+  const [commissionFlags, setCommissionFlags] = useState({
+    commissionEnabled: false,
+  });
   const [appointments, setAppointments] = useState([]);
   const [receivables, setReceivables] = useState([]);
   const [prepaidPackages, setPrepaidPackages] = useState([]);
@@ -816,6 +833,9 @@ export default function PlanosConfig() {
         packageCreditsData,
         packageBillingsData,
         me,
+        appConfigData,
+        providersData,
+        schedulesData,
       ] = await Promise.all([
         safeLoad("planos recorrentes", () => PlanConfig.list("-created_date", 500), []),
         safeLoad("cães", () => Dog.list("-created_date", 500), []),
@@ -828,6 +848,9 @@ export default function PlanosConfig() {
         safeLoad("créditos de pacotes", () => (PackageCredit.listAll ? PackageCredit.listAll("-created_at", 1000, 20000) : PackageCredit.list("-created_at", 5000)), []),
         safeLoad("cobranças de pacotes", () => (PackageBilling.listAll ? PackageBilling.listAll("-created_at", 1000, 20000) : PackageBilling.list("-created_at", 5000)), []),
         User.me().catch(() => null),
+        AppConfig.listAll("key", 1000, 5000).catch(() => []),
+        safeLoad("vendedores", () => (ServiceProvider.listAll ? ServiceProvider.listAll("nome", 1000, 5000) : ServiceProvider.list("nome", 1000)), []),
+        safeLoad("escala comercial", () => (ServiceProviderSchedule.listAll ? ServiceProviderSchedule.listAll("-created_date", 1000, 5000) : ServiceProviderSchedule.list("-created_date", 1000)), []),
       ]);
 
       const empresaId = me?.empresa_id || null;
@@ -863,6 +886,11 @@ export default function PlanosConfig() {
       setPackageSessions(activePackageSessions);
       setPackageCredits(activePackageCredits);
       setPackageBillings(activePackageBillings);
+      setSellerProviders((providersData || []).filter((provider) => provider?.ativo !== false));
+      setSellerSchedules((schedulesData || []).filter((schedule) => schedule?.ativo !== false));
+      setCommissionFlags({
+        commissionEnabled: getFinanceFeatureFlagValue(appConfigData || [], FINANCE_FEATURE_FLAGS.commissionEnabled, empresaId),
+      });
       setPricingRows(
         (tabelaPrecosData || []).filter(
           (item) => item.ativo !== false && item.tipo === DAY_CARE_PACKAGE_TYPE && (!item.empresa_id || item.empresa_id === empresaId),
@@ -909,6 +937,8 @@ export default function PlanosConfig() {
       first_month_dates: normalizeFirstMonthDateList(existingStartDate, packageMeta.metadata.first_month_real_dates).length > 0
         ? normalizeFirstMonthDateList(existingStartDate, packageMeta.metadata.first_month_real_dates)
         : buildFirstMonthRealDates(existingStartDate, existingWeekdays),
+      vendedor_user_id: representativePlan?.vendedor_user_id || "",
+      commission_percentual: representativePlan?.commission_percentual ? String(representativePlan.commission_percentual) : "",
     });
     setShowModal(true);
   }
@@ -959,6 +989,23 @@ export default function PlanosConfig() {
         return String(left.nome_razao_social || "").localeCompare(String(right.nome_razao_social || ""), "pt-BR");
       });
   }, [carteiras, selectedDogIds]);
+
+  const sellerOptions = useMemo(() => {
+    const eligibleProviderIds = new Set(
+      (sellerSchedules || [])
+        .filter((schedule) => ["vendedor", "comercial", "representante_comercial"].includes(String(schedule?.funcao || "").trim().toLowerCase()))
+        .map((schedule) => schedule?.serviceprovider_id)
+        .filter(Boolean),
+    );
+
+    return (sellerProviders || [])
+      .filter((provider) => eligibleProviderIds.has(provider.id))
+      .map((provider) => ({
+        id: provider.id,
+        nome: provider.nome || provider.full_name || provider.nome_completo || provider.id,
+      }))
+      .sort((left, right) => String(left.nome).localeCompare(String(right.nome), "pt-BR"));
+  }, [sellerProviders, sellerSchedules]);
 
   const selectedClientCoverage = useMemo(
     () => getCoverageSummary(selectedClient, selectedDogIds),
@@ -1845,6 +1892,18 @@ export default function PlanosConfig() {
       return;
     }
 
+    if (commissionFlags.commissionEnabled) {
+      if (!formData.vendedor_user_id) {
+        alert("Selecione o vendedor responsável antes de salvar o plano.");
+        return;
+      }
+      const commissionPercentual = Number.parseFloat(String(formData.commission_percentual || "0").replace(",", "."));
+      if (!Number.isFinite(commissionPercentual) || commissionPercentual < 0) {
+        alert("Informe um percentual de comissão válido.");
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       const linkWasEnsured = await ensureFinancialLink(selectedClient, uniqueDogIds);
@@ -1892,6 +1951,10 @@ export default function PlanosConfig() {
             ?formatDateOnly(firstBillingPreview.firstDueDate)
             : formatDateOnly(firstBillingPreview.nextRecurringDueDate),
         metadataGerencial,
+        vendedorUserId: commissionFlags.commissionEnabled ? formData.vendedor_user_id || null : null,
+        commissionPercentual: commissionFlags.commissionEnabled
+          ? (Number.parseFloat(String(formData.commission_percentual || "0").replace(",", ".")) || 0)
+          : 0,
       };
       const savedPlans = [];
 
@@ -3159,6 +3222,54 @@ export default function PlanosConfig() {
                         Ao salvar, o sistema vai perguntar se você deseja criar esse vínculo automaticamente.
                       </div>
                     ) : null}
+
+                    {commissionFlags.commissionEnabled ? (
+                      <div className="rounded-xl border border-fuchsia-200 bg-fuchsia-50 p-4">
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div>
+                            <Label>Vendedor responsável *</Label>
+                            <Select
+                              value={formData.vendedor_user_id || "__empty__"}
+                              onValueChange={(value) => setFormData((current) => ({
+                                ...current,
+                                vendedor_user_id: value === "__empty__" ? "" : value,
+                              }))}
+                            >
+                              <SelectTrigger className="mt-2">
+                                <SelectValue placeholder="Selecione o vendedor" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__empty__">Selecionar</SelectItem>
+                                {sellerOptions.map((seller) => (
+                                  <SelectItem key={seller.id} value={seller.id}>
+                                    {seller.nome}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>Percentual de comissão (%)</Label>
+                            <Input
+                              className="mt-2"
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.01"
+                              value={formData.commission_percentual}
+                              onChange={(event) => setFormData((current) => ({
+                                ...current,
+                                commission_percentual: event.target.value,
+                              }))}
+                              placeholder="0,00"
+                            />
+                          </div>
+                        </div>
+                        <p className="mt-3 text-xs text-fuchsia-800">
+                          A comissão da Sprint 7 só nasce quando a obrigação financeira vinculada ficar quitada.
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -3437,6 +3548,22 @@ export default function PlanosConfig() {
                       <span className="text-gray-500">Serviço</span>
                       <span className="text-right font-medium text-gray-900">{activeService.label}</span>
                     </div>
+                    {commissionFlags.commissionEnabled ? (
+                      <>
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-gray-500">Vendedor</span>
+                          <span className="text-right font-medium text-gray-900">
+                            {sellerOptions.find((seller) => seller.id === formData.vendedor_user_id)?.nome || "Selecione um vendedor"}
+                          </span>
+                        </div>
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-gray-500">Comissão</span>
+                          <span className="text-right font-medium text-fuchsia-700">
+                            {formData.commission_percentual ? `${formData.commission_percentual}%` : "0%"}
+                          </span>
+                        </div>
+                      </>
+                    ) : null}
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-gray-500">Frequência</span>
                       <span className="text-right font-medium text-gray-900">

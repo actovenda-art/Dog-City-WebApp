@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarClock, CheckCircle2, Clock3, Coffee, Copy, Link as LinkIcon, Plus, ShieldCheck, Users } from "lucide-react";
 import { useLocation } from "react-router-dom";
 
-import { ServiceProvider, ServiceProviderSchedule, User } from "@/api/entities";
+import { ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ const ROLE_OPTIONS = [
   { value: "tosador", label: "Tosador" },
   { value: "banhista_tosador", label: "Banhista & Tosador" },
   { value: "motorista", label: "Motorista" },
+  { value: "vendedor", label: "Vendedor" },
   { value: "representante_comercial", label: "Representante comercial" },
 ];
 
@@ -46,7 +47,7 @@ const COVERAGE_FILTERS = [
   { value: "monitor", label: "Monitores", roles: ["monitor"] },
   { value: "banho_tosa", label: "Banhistas e tosadores", roles: ["banhista", "tosador", "banhista_tosador"] },
   { value: "motorista", label: "Motorista", roles: ["motorista"] },
-  { value: "comercial", label: "Representante comercial", roles: ["comercial", "representante_comercial"] },
+  { value: "comercial", label: "Representante comercial", roles: ["comercial", "representante_comercial", "vendedor"] },
 ];
 
 const EMPTY_PROVIDER_FORM = {
@@ -199,7 +200,6 @@ export default function Escalacao() {
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [loadWarnings, setLoadWarnings] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
   const [generatedProviderLink, setGeneratedProviderLink] = useState("");
   const [feedbackDialog, setFeedbackDialog] = useState({ open: false, title: "", description: "", tone: "info", value: "", valueLabel: "" });
   const [confirmDialog, setConfirmDialog] = useState({ open: false, title: "", description: "", confirmLabel: "Confirmar", kind: "", item: null });
@@ -212,7 +212,7 @@ export default function Escalacao() {
     setIsLoading(true);
     const warnings = [];
 
-    const [providersData, schedulesData, me] = await Promise.all([
+    const [providersData, schedulesData] = await Promise.all([
       safeLoad(async () => {
         try {
           return ServiceProvider.listAll ? await ServiceProvider.listAll("nome", 1000, 5000) : await ServiceProvider.list("nome", 1000);
@@ -231,12 +231,10 @@ export default function Escalacao() {
           throw error;
         }
       }),
-      User.me().catch(() => null),
     ]);
 
     setProviders((providersData || []).filter((item) => item?.ativo !== false));
     setSchedules((schedulesData || []).filter((item) => item?.ativo !== false));
-    setCurrentUser(me || null);
     setLoadWarnings(warnings);
     setIsLoading(false);
   }

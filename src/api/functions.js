@@ -101,3 +101,203 @@ export const financeWalletReconcileAccount = async (...args) => {
 	}
 	return f.financeWalletReconcileAccount(...args);
 };
+
+export const financeWalletBudgetReadContext = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeWalletBudgetReadContext !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeWalletBudgetReadContext is not available'));
+	}
+	return f.financeWalletBudgetReadContext(...args);
+};
+
+export const financePreviewBudgetConsumption = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financePreviewBudgetConsumption !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financePreviewBudgetConsumption is not available'));
+	}
+	return f.financePreviewBudgetConsumption(...args);
+};
+
+export const financeRegisterBudgetAuthorization = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeRegisterBudgetAuthorization !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeRegisterBudgetAuthorization is not available'));
+	}
+	return f.financeRegisterBudgetAuthorization(...args);
+};
+
+export const financeApproveBudgetWithAuthorization = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeApproveBudgetWithAuthorization !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeApproveBudgetWithAuthorization is not available'));
+	}
+	return f.financeApproveBudgetWithAuthorization(...args);
+};
+
+export const financeApplyCompensatoryCredit = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeApplyCompensatoryCredit !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeApplyCompensatoryCredit is not available'));
+	}
+	return f.financeApplyCompensatoryCredit(...args);
+};
+
+export const financeProcessCancellationV2 = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeProcessCancellationV2 !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeProcessCancellationV2 is not available'));
+	}
+	return f.financeProcessCancellationV2(...args);
+};
+
+export const financeProcessBudgetCancellationV2 = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeProcessBudgetCancellationV2 !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeProcessBudgetCancellationV2 is not available'));
+	}
+	return f.financeProcessBudgetCancellationV2(...args);
+};
+
+export const financeReportsV2Context = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeReportsV2Context !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeReportsV2Context is not available'));
+	}
+	return f.financeReportsV2Context(...args);
+};
+
+export const financeReportsV2Summary = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeReportsV2Summary !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeReportsV2Summary is not available'));
+	}
+	return f.financeReportsV2Summary(...args);
+};
+
+export const financeReportGenerationResources = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeReportGenerationResources !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeReportGenerationResources is not available'));
+	}
+	return f.financeReportGenerationResources(...args);
+};
+
+export const financeReportRealBilling = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeReportRealBilling !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeReportRealBilling is not available'));
+	}
+	return f.financeReportRealBilling(...args);
+};
+
+export const financeReportWallet = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeReportWallet !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeReportWallet is not available'));
+	}
+	return f.financeReportWallet(...args);
+};
+
+export const financeReportServicesProvided = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeReportServicesProvided !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeReportServicesProvided is not available'));
+	}
+	return f.financeReportServicesProvided(...args);
+};
+
+export const financeSnapshotCreate = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeSnapshotCreate !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeSnapshotCreate is not available'));
+	}
+	return f.financeSnapshotCreate(...args);
+};
+
+export const financeSnapshotCompare = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeSnapshotCompare !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeSnapshotCompare is not available'));
+	}
+	return f.financeSnapshotCompare(...args);
+};
+
+export const financeSnapshotList = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeSnapshotList !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeSnapshotList is not available'));
+	}
+	return f.financeSnapshotList(...args);
+};
+
+export const financeSnapshotDeltaList = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeSnapshotDeltaList !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeSnapshotDeltaList is not available'));
+	}
+	return f.financeSnapshotDeltaList(...args);
+};
+
+export const financeCommissionReadContext = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeCommissionReadContext !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeCommissionReadContext is not available'));
+	}
+	return f.financeCommissionReadContext(...args);
+};
+
+export const financeCommissionList = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeCommissionList !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeCommissionList is not available'));
+	}
+	return f.financeCommissionList(...args);
+};
+
+export const financeProcessCommissionForObrigacao = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeProcessCommissionForObrigacao !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeProcessCommissionForObrigacao is not available'));
+	}
+	return f.financeProcessCommissionForObrigacao(...args);
+};
+
+export const financeProcessCommissionForOrcamento = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeProcessCommissionForOrcamento !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeProcessCommissionForOrcamento is not available'));
+	}
+	return f.financeProcessCommissionForOrcamento(...args);
+};
+
+export const financeCockpitV2Context = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeCockpitV2Context !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeCockpitV2Context is not available'));
+	}
+	return f.financeCockpitV2Context(...args);
+};
+
+export const financeCockpitV2Summary = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeCockpitV2Summary !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeCockpitV2Summary is not available'));
+	}
+	return f.financeCockpitV2Summary(...args);
+};
+
+export const financeCockpitV2Compare = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeCockpitV2Compare !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeCockpitV2Compare is not available'));
+	}
+	return f.financeCockpitV2Compare(...args);
+};
+
+export const financeFinancialAlertsV2 = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeFinancialAlertsV2 !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeFinancialAlertsV2 is not available'));
+	}
+	return f.financeFinancialAlertsV2(...args);
+};

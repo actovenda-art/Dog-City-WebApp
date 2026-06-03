@@ -64,6 +64,7 @@ import {
   getMovementComparableDate,
   normalizeMovement,
 } from "@/utils/finance";
+import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 
 const DOG_LINK_KEYS = [1, 2, 3, 4, 5, 6, 7, 8].map((index) => `dog_id_${index}`);
 const FIXED_SERVICES = ["day_care", "banho", "tosa", "hospedagem", "transporte"];
@@ -285,6 +286,10 @@ export default function ControleGerencial() {
   const visibleContas = useMemo(
     () => data.contas.filter((item) => shouldIncludeLinkedRecord(item, visibleAppointmentsById, approvedOrcamentosById)),
     [approvedOrcamentosById, data.contas, visibleAppointmentsById]
+  );
+  const financialStatusMap = useMemo(
+    () => buildFinancialOperationalStatusMap(visibleContas),
+    [visibleContas],
   );
 
   const visibleUsages = useMemo(
@@ -627,6 +632,7 @@ export default function ControleGerencial() {
       const total = Number(orcamento.valor_total || charged || 0);
       return {
         id,
+        carteiraId: client?.id || orcamento.cliente_id || contas[0]?.cliente_id || null,
         cliente: client?.nome_razao_social || "-",
         status: orcamento.status || contas[0]?.status || "pendente",
         valorOrcamento: total,
@@ -936,6 +942,7 @@ export default function ControleGerencial() {
                     <TableRow>
                       <TableHead>Orçamento</TableHead>
                       <TableHead>Cliente</TableHead>
+                      <TableHead>Situação financeira</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Vencimento</TableHead>
                       <TableHead className="text-right">Previsto</TableHead>
@@ -946,11 +953,22 @@ export default function ControleGerencial() {
                   </TableHeader>
                   <TableBody>
                     {receivablesByBudget.length === 0 ? (
-                      <TableRow><TableCell colSpan={8} className="py-10 text-center text-gray-500">Nenhum orçamento com valores a receber.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={9} className="py-10 text-center text-gray-500">Nenhum orçamento aprovado com valores a receber neste recorte.</TableCell></TableRow>
                     ) : receivablesByBudget.map((row) => (
                       <TableRow key={row.id}>
                         <TableCell className="max-w-[180px] truncate font-mono text-xs">{row.id}</TableCell>
                         <TableCell className="font-medium">{row.cliente}</TableCell>
+                        <TableCell>
+                          {(() => {
+                            const financialStatus = getFinancialOperationalStatus(financialStatusMap, row.carteiraId);
+                            return (
+                              <Badge className={`${financialStatus.isIrregular ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"} whitespace-nowrap`}>
+                                {financialStatus.label}
+                                {financialStatus.isIrregular ? " (>5 dias)" : ""}
+                              </Badge>
+                            );
+                          })()}
+                        </TableCell>
                         <TableCell>{statusBadge(row.status)}</TableCell>
                         <TableCell>{formatDate(row.vencimento)}</TableCell>
                         <TableCell className="text-right">{formatCurrency(row.valorOrcamento)}</TableCell>

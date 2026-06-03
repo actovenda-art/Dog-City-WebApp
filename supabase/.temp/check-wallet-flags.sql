@@ -1,0 +1,1 @@
+select key, empresa_id, value from public.app_config where key in ('finance.wallet_account_enabled','finance.wallet_ledger_enabled','finance.payment_v2_write_enabled','finance.payment_v2_reversal_enabled') order by key, empresa_id nulls first;

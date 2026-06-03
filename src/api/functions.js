@@ -301,3 +301,83 @@ export const financeFinancialAlertsV2 = async (...args) => {
 	}
 	return f.financeFinancialAlertsV2(...args);
 };
+
+export const financeWriteFlowMap = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeWriteFlowMap !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeWriteFlowMap is not available'));
+	}
+	return f.financeWriteFlowMap(...args);
+};
+
+export const financeWriteGovernanceMatrix = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeWriteGovernanceMatrix !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeWriteGovernanceMatrix is not available'));
+	}
+	return f.financeWriteGovernanceMatrix(...args);
+};
+
+export const financeOperationalObservabilityContext = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeOperationalObservabilityContext !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeOperationalObservabilityContext is not available'));
+	}
+	return f.financeOperationalObservabilityContext(...args);
+};
+
+export const financeHybridWriteAudit = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeHybridWriteAudit !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeHybridWriteAudit is not available'));
+	}
+	return f.financeHybridWriteAudit(...args);
+};
+
+export const financeOperationalReconciliationMatrix = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeOperationalReconciliationMatrix !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeOperationalReconciliationMatrix is not available'));
+	}
+	return f.financeOperationalReconciliationMatrix(...args);
+};
+
+export const financePaymentV2Contract = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financePaymentV2Contract !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financePaymentV2Contract is not available'));
+	}
+	return f.financePaymentV2Contract(...args);
+};
+
+export const financePaymentV2Execute = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financePaymentV2Execute !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financePaymentV2Execute is not available'));
+	}
+	return f.financePaymentV2Execute(...args);
+};
+
+export const financePaymentV2ExecutionAudit = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financePaymentV2ExecutionAudit !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financePaymentV2ExecutionAudit is not available'));
+	}
+	return f.financePaymentV2ExecutionAudit(...args);
+};
+
+export const financePaymentV2Reverse = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financePaymentV2Reverse !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financePaymentV2Reverse is not available'));
+	}
+	return f.financePaymentV2Reverse(...args);
+};
+
+export const financePaymentV2ReversalAudit = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financePaymentV2ReversalAudit !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financePaymentV2ReversalAudit is not available'));
+	}
+	return f.financePaymentV2ReversalAudit(...args);
+};

@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import FinancialOperationalAlert from "@/components/finance/FinancialOperationalAlert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -57,6 +58,7 @@ import {
 import { buildShadowFinanceItemsFromOrcamento, resolveShadowChargeDueDate } from "@/lib/finance-shadow";
 import { buildBudgetPreviewItems, resolveRecurringPackageFinancialBehavior } from "@/lib/finance-budget";
 import { isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
+import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -485,6 +487,7 @@ export default function OrcamentosHistoricoPanel({
   const [orcamentos, setOrcamentos] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
+  const [contasReceber, setContasReceber] = useState([]);
   const [recurringPackages, setRecurringPackages] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
@@ -526,6 +529,14 @@ export default function OrcamentosHistoricoPanel({
   const [cancellationReason, setCancellationReason] = useState("");
   const [approvalWhatsappSlot, setApprovalWhatsappSlot] = useState("manual");
   const [isSendingApproval, setIsSendingApproval] = useState(false);
+  const financialStatusMap = React.useMemo(
+    () => buildFinancialOperationalStatusMap(contasReceber),
+    [contasReceber],
+  );
+  const selectedOrcamentoFinancialStatus = React.useMemo(
+    () => getFinancialOperationalStatus(financialStatusMap, selectedOrcamento?.cliente_id || null),
+    [financialStatusMap, selectedOrcamento?.cliente_id],
+  );
 
   useEffect(() => {
     loadData();
@@ -682,7 +693,7 @@ export default function OrcamentosHistoricoPanel({
   async function loadData() {
     setIsLoading(true);
     try {
-      const [orcData, dogsData, carteirasData, recurringPackagesData, responsaveisData, precosData, currentUser, integracoesData] = await Promise.all([
+      const [orcData, dogsData, carteirasData, recurringPackagesData, responsaveisData, precosData, currentUser, integracoesData, receivableRows] = await Promise.all([
         Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
@@ -691,10 +702,12 @@ export default function OrcamentosHistoricoPanel({
         TabelaPrecos.list("-created_date", 1000),
         User.me(),
         IntegracaoConfig.list("-created_date", 100),
+        ContaReceber.listAll("-created_date", 1000, 10000),
       ]);
       setOrcamentos(orcData || []);
       setDogs(dogsData || []);
       setCarteiras(carteirasData || []);
+      setContasReceber(receivableRows || []);
       setRecurringPackages(recurringPackagesData || []);
       setResponsaveis(responsaveisData || []);
       setCurrentUser(currentUser || null);
@@ -1488,7 +1501,7 @@ export default function OrcamentosHistoricoPanel({
           {filtered.length === 0 ? (
             <div className="py-12 text-center">
               <FileText className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-              <p className="text-gray-500">Nenhum orçamento encontrado</p>
+              <p className="text-gray-500">Nenhum orçamento encontrado para os filtros atuais.</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
@@ -1607,6 +1620,13 @@ export default function OrcamentosHistoricoPanel({
                     Esta leitura é controlada por feature flag e ainda não substitui o financeiro legado.
                   </p>
                 </div>
+              ) : null}
+
+              {selectedOrcamento?.cliente_id ? (
+                <FinancialOperationalAlert
+                  status={selectedOrcamentoFinancialStatus}
+                  title="Situação financeira do responsável"
+                />
               ) : null}
 
               <hr />

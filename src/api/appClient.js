@@ -44,6 +44,15 @@ import {
   buildCockpitCompareRows,
   sortFinancialAlerts,
 } from '@/lib/finance-cockpit';
+import {
+  buildFinanceWriteFlowMap,
+  buildFinanceWriteGovernanceMatrix,
+  buildLegacyReceivablesCoverage,
+  buildOperationalObservabilityContext,
+  buildOperationalReconciliationRows,
+  buildPaymentV2Contract,
+  isInPeriod,
+} from '@/lib/finance-observability';
 
 const STORAGE_PREFIX = 'local_app_client_';
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -51,9 +60,11 @@ const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).sl
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const APP_SITE_URL = import.meta.env.VITE_SITE_URL;
+const MOCK_QA_ROLE_ENV = String(import.meta.env.VITE_MOCK_QA_ROLE || '').trim().toLowerCase();
 const SUPABASE_PUBLIC_BUCKET = import.meta.env.VITE_SUPABASE_PUBLIC_BUCKET || 'public-assets';
 const SUPABASE_PRIVATE_BUCKET = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'private-files';
 const DEFAULT_EMAIL_WEBHOOK_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/send-email` : '';
+const MOCK_QA_ROLE_STORAGE_KEY = `${STORAGE_PREFIX}mock_qa_role`;
 const UNIT_SCOPED_ENTITIES = new Set([
   'Dog',
   'Checkin',
@@ -80,6 +91,8 @@ const UNIT_SCOPED_ENTITIES = new Set([
   'PackageBilling',
   'CarteiraConta',
   'CarteiraMovimento',
+  'PagamentoV2Execucao',
+  'PagamentoV2Reversao',
   'CarteiraReconciliacao',
   'AutorizacaoFinanceira',
   'CancelamentoFinanceiro',
@@ -108,6 +121,84 @@ function readStorage(key) {
 
 function writeStorage(key, value) {
   localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+}
+
+function normalizeMockQaRole(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized || ['off', 'none', 'neutral', 'false', '0'].includes(normalized)) return null;
+  if (['admin', 'administrativo', 'administracao', 'platform_admin', 'platform-admin'].includes(normalized)) {
+    return 'platform_admin';
+  }
+  if (['gerencial', 'managerial', 'financeiro', 'backoffice'].includes(normalized)) {
+    return 'gerencial';
+  }
+  if (['comercial', 'commercial', 'vendas', 'orcamentos'].includes(normalized)) {
+    return 'comercial';
+  }
+  return null;
+}
+
+function readMockQaRoleOverride() {
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    const localOverride = normalizeMockQaRole(window.localStorage.getItem(MOCK_QA_ROLE_STORAGE_KEY));
+    if (localOverride) return localOverride;
+  }
+  return normalizeMockQaRole(MOCK_QA_ROLE_ENV);
+}
+
+function applyMockQaRole(user = {}) {
+  const roleOverride = readMockQaRoleOverride();
+  const baseUser = {
+    ...user,
+    company_role: user?.company_role || null,
+    is_platform_admin: Boolean(user?.is_platform_admin),
+    access_profile_permissions: Array.isArray(user?.access_profile_permissions) ? user.access_profile_permissions : [],
+    access_profile_name: user?.access_profile_name || null,
+    access_profile_code: user?.access_profile_code || null,
+  };
+
+  if (!roleOverride) {
+    return {
+      ...baseUser,
+      company_role: baseUser.company_role === 'platform_admin' ? null : baseUser.company_role,
+      is_platform_admin: false,
+    };
+  }
+
+  if (roleOverride === 'platform_admin') {
+    return {
+      ...baseUser,
+      company_role: 'platform_admin',
+      is_platform_admin: true,
+      access_profile_name: 'QA Admin',
+      access_profile_code: 'qa_admin',
+      access_profile_permissions: [],
+    };
+  }
+
+  if (roleOverride === 'gerencial') {
+    return {
+      ...baseUser,
+      company_role: 'company_user',
+      is_platform_admin: false,
+      access_profile_name: 'QA Gerencial',
+      access_profile_code: 'qa_gerencial',
+      access_profile_permissions: ['financeiro:*', 'empresa:*', 'usuarios:read'],
+    };
+  }
+
+  if (roleOverride === 'comercial') {
+    return {
+      ...baseUser,
+      company_role: 'company_user',
+      is_platform_admin: false,
+      access_profile_name: 'QA Comercial',
+      access_profile_code: 'qa_comercial',
+      access_profile_permissions: ['orcamentos:*'],
+    };
+  }
+
+  return baseUser;
 }
 
 function isLikelyNetworkError(error) {
@@ -436,7 +527,7 @@ const defaultEntities = {};
   'Responsavel', 'Carteira', 'Notificacao', 'Orcamento', 'TabelaPrecos', 'Appointment',
   'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
   'RecurringPackage', 'PackageSession', 'PackageCredit', 'PackageBilling', 'CarteiraConta',
-  'CarteiraMovimento', 'CarteiraReconciliacao', 'AutorizacaoFinanceira', 'CancelamentoFinanceiro',
+  'CarteiraMovimento', 'PagamentoV2Execucao', 'PagamentoV2Reversao', 'CarteiraReconciliacao', 'AutorizacaoFinanceira', 'CancelamentoFinanceiro',
   'ObrigacaoFinanceira', 'CobrancaFinanceira', 'CobrancaItem', 'ComissaoEvento',
   'FinanceSnapshot', 'FinanceSnapshotDelta', 'AuditLog',
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
@@ -561,6 +652,16 @@ function getMockCockpitFlags(empresaId) {
     cockpit_v2_compare_enabled: getMockFlagValue('finance.cockpit_v2_compare_enabled', empresaId),
     financial_alerts_v2_enabled: getMockFlagValue('finance.financial_alerts_v2_enabled', empresaId),
     legacy_cockpit_finance_disabled: getMockFlagValue('finance.legacy_cockpit_finance_disabled', empresaId),
+  };
+}
+
+function getMockObservabilityFlags(empresaId) {
+  return {
+    operational_observability_enabled: getMockFlagValue('finance.operational_observability_enabled', empresaId),
+    write_governance_enabled: getMockFlagValue('finance.write_governance_enabled', empresaId),
+    payment_v2_contract_enabled: getMockFlagValue('finance.payment_v2_contract_enabled', empresaId),
+    ...getMockCockpitFlags(empresaId),
+    ...getMockReportsFlags(empresaId),
   };
 }
 
@@ -949,6 +1050,221 @@ function applyMockWalletOperationCore(payload = {}) {
 
 function roundMockCurrency(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function persistMockPaymentV2Execution(row = {}) {
+  const execucoes = readStorage('PagamentoV2Execucao');
+  const now = new Date().toISOString();
+  const existingIndex = execucoes.findIndex(
+    (item) => item?.empresa_id === row?.empresa_id && item?.operacao_idempotencia === row?.operacao_idempotencia,
+  );
+  const nextRow = {
+    id: row?.id || makeId(),
+    metadata: row?.metadata || {},
+    created_date: row?.created_date || now,
+    updated_date: now,
+    ...row,
+  };
+
+  if (existingIndex >= 0) {
+    execucoes[existingIndex] = {
+      ...execucoes[existingIndex],
+      ...nextRow,
+      id: execucoes[existingIndex]?.id || nextRow.id,
+      created_date: execucoes[existingIndex]?.created_date || nextRow.created_date,
+      updated_date: now,
+    };
+    writeStorage('PagamentoV2Execucao', execucoes);
+    return execucoes[existingIndex];
+  }
+
+  execucoes.push(nextRow);
+  writeStorage('PagamentoV2Execucao', execucoes);
+  return nextRow;
+}
+
+function buildMockPaymentV2Response(execucao = {}, forcedClass = null) {
+  const movimento = execucao?.carteira_movimento_id
+    ? readStorage('CarteiraMovimento').find((item) => item?.id === execucao.carteira_movimento_id)
+    : null;
+
+  return {
+    execucao_id: execucao?.id || null,
+    classe_resultado: forcedClass || execucao?.classe_resultado || 'falha_controlada',
+    carteira_movimento_id: execucao?.carteira_movimento_id || null,
+    carteira_alocacao_id: execucao?.carteira_alocacao_id || null,
+    carteira_conta_id: execucao?.carteira_conta_id || null,
+    obrigacao_id: execucao?.obrigacao_id || null,
+    cobranca_financeira_id: execucao?.cobranca_financeira_id || null,
+    operacao_idempotencia: execucao?.operacao_idempotencia || null,
+    source_key: execucao?.source_key || null,
+    saldo_anterior: movimento ? Number(movimento?.saldo_anterior || 0) : null,
+    saldo_final: movimento ? Number(movimento?.saldo_final || 0) : null,
+    reason_code: execucao?.reason_code || null,
+    reason_message: execucao?.reason_message || null,
+    reused: Boolean(execucao?.reused),
+  };
+}
+
+function buildMockPaymentV2AuditRows(empresaId, limit = 100) {
+  const obrigacoes = readStorage('ObrigacaoFinanceira');
+  const cobrancas = readStorage('CobrancaFinanceira');
+  const movimentos = readStorage('CarteiraMovimento');
+
+  return readStorage('PagamentoV2Execucao')
+    .filter((item) => item?.empresa_id === empresaId)
+    .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime())
+    .slice(0, Math.max(1, Math.min(Number(limit) || 100, 500)))
+    .map((item) => {
+      const obrigacao = obrigacoes.find((entry) => entry?.id === item?.obrigacao_id);
+      const cobranca = cobrancas.find((entry) => entry?.id === item?.cobranca_financeira_id);
+      const movimento = movimentos.find((entry) => entry?.id === item?.carteira_movimento_id);
+
+      return {
+        execucao_id: item?.id || null,
+        empresa_id: item?.empresa_id || null,
+        carteira_conta_id: item?.carteira_conta_id || null,
+        obrigacao_id: item?.obrigacao_id || null,
+        obrigacao_status: obrigacao?.status || null,
+        cobranca_financeira_id: item?.cobranca_financeira_id || null,
+        cobranca_status: cobranca?.status || null,
+        carteira_movimento_id: item?.carteira_movimento_id || null,
+        movimento_tipo: movimento?.tipo || null,
+        operacao_idempotencia: item?.operacao_idempotencia || null,
+        source_key: item?.source_key || null,
+        forma_pagamento: item?.forma_pagamento || null,
+        origem_operacional: item?.origem_operacional || null,
+        valor_solicitado: Number(item?.valor_solicitado || 0),
+        classe_resultado: item?.classe_resultado || null,
+        reason_code: item?.reason_code || null,
+        reason_message: item?.reason_message || null,
+        created_date: item?.created_date || null,
+        metadata: item?.metadata || {},
+      };
+    });
+}
+
+function appendMockNote(existingValue, nextLine) {
+  const current = String(existingValue || '').trim();
+  const extra = String(nextLine || '').trim();
+  if (!current) return extra;
+  if (!extra) return current;
+  return `${current}\n${extra}`;
+}
+
+function persistMockPaymentV2Reversal(row = {}) {
+  const reversoes = readStorage('PagamentoV2Reversao');
+  const now = new Date().toISOString();
+  const existingIndex = reversoes.findIndex(
+    (item) => item?.empresa_id === row?.empresa_id && item?.operacao_idempotencia === row?.operacao_idempotencia,
+  );
+  const nextRow = {
+    id: row?.id || makeId(),
+    metadata: row?.metadata || {},
+    created_date: row?.created_date || now,
+    updated_date: now,
+    ...row,
+  };
+
+  if (existingIndex >= 0) {
+    reversoes[existingIndex] = {
+      ...reversoes[existingIndex],
+      ...nextRow,
+      id: reversoes[existingIndex]?.id || nextRow.id,
+      created_date: reversoes[existingIndex]?.created_date || nextRow.created_date,
+      updated_date: now,
+    };
+    writeStorage('PagamentoV2Reversao', reversoes);
+    return reversoes[existingIndex];
+  }
+
+  reversoes.push(nextRow);
+  writeStorage('PagamentoV2Reversao', reversoes);
+  return nextRow;
+}
+
+function buildMockPaymentV2ReversalResponse(reversao = {}, forcedClass = null) {
+  const movimento = reversao?.carteira_movimento_id
+    ? readStorage('CarteiraMovimento').find((item) => item?.id === reversao.carteira_movimento_id)
+    : null;
+
+  return {
+    reversao_id: reversao?.id || null,
+    classe_resultado: forcedClass || reversao?.classe_resultado || 'falha_controlada',
+    reversao_tipo: reversao?.reversao_tipo || null,
+    carteira_movimento_id: reversao?.carteira_movimento_id || null,
+    carteira_conta_id: reversao?.carteira_conta_id || null,
+    appointment_id: reversao?.appointment_id || null,
+    serviceprovided_id: reversao?.serviceprovided_id || null,
+    obrigacao_id: reversao?.obrigacao_id || null,
+    cobranca_financeira_id: reversao?.cobranca_financeira_id || null,
+    conta_receber_id: reversao?.conta_receber_id || null,
+    operacao_idempotencia: reversao?.operacao_idempotencia || null,
+    source_key: reversao?.source_key || null,
+    valor_estornado: Number(reversao?.valor_estornado || 0),
+    saldo_anterior: movimento ? Number(movimento?.saldo_anterior || 0) : null,
+    saldo_final: movimento ? Number(movimento?.saldo_final || 0) : null,
+    servico_realizado: reversao?.servico_realizado ?? null,
+    reason_code: reversao?.reason_code || null,
+    reason_message: reversao?.reason_message || null,
+    reused: Boolean(reversao?.reused),
+  };
+}
+
+function buildMockPaymentV2ReversalAuditRows(empresaId, limit = 100) {
+  const appointments = readStorage('Appointment');
+  const services = readStorage('ServiceProvided');
+  const obrigacoes = readStorage('ObrigacaoFinanceira');
+  const cobrancas = readStorage('CobrancaFinanceira');
+  const contasReceber = readStorage('ContaReceber');
+  const movimentos = readStorage('CarteiraMovimento');
+
+  return readStorage('PagamentoV2Reversao')
+    .filter((item) => item?.empresa_id === empresaId)
+    .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime())
+    .slice(0, Math.max(1, Math.min(Number(limit) || 100, 500)))
+    .map((item) => {
+      const appointment = appointments.find((entry) => entry?.id === item?.appointment_id);
+      const service = services.find((entry) => entry?.id === item?.serviceprovided_id);
+      const obrigacao = obrigacoes.find((entry) => entry?.id === item?.obrigacao_id);
+      const cobranca = cobrancas.find((entry) => entry?.id === item?.cobranca_financeira_id);
+      const contaReceber = contasReceber.find((entry) => entry?.id === item?.conta_receber_id);
+      const movimento = movimentos.find((entry) => entry?.id === item?.carteira_movimento_id);
+
+      return {
+        reversao_id: item?.id || null,
+        empresa_id: item?.empresa_id || null,
+        reversao_tipo: item?.reversao_tipo || null,
+        carteira_conta_id: item?.carteira_conta_id || null,
+        carteira_movimento_id: item?.carteira_movimento_id || null,
+        movimento_tipo: movimento?.tipo || null,
+        pagamento_v2_execucao_id: item?.pagamento_v2_execucao_id || null,
+        appointment_id: item?.appointment_id || null,
+        appointment_status: appointment?.status || null,
+        serviceprovided_id: item?.serviceprovided_id || null,
+        serviceprovided_status: service?.status || null,
+        serviceprovided_status_pagamento: service?.status_pagamento || null,
+        obrigacao_id: item?.obrigacao_id || null,
+        obrigacao_status: obrigacao?.status || null,
+        cobranca_financeira_id: item?.cobranca_financeira_id || null,
+        cobranca_status: cobranca?.status || null,
+        conta_receber_id: item?.conta_receber_id || null,
+        conta_receber_status: contaReceber?.status || null,
+        operacao_idempotencia: item?.operacao_idempotencia || null,
+        source_key: item?.source_key || null,
+        valor_estornado: Number(item?.valor_estornado || 0),
+        servico_realizado: item?.servico_realizado ?? null,
+        attachment_name: item?.attachment_name || null,
+        attachment_path: item?.attachment_path || null,
+        attachment_extension: item?.attachment_extension || null,
+        motivo: item?.motivo || null,
+        classe_resultado: item?.classe_resultado || null,
+        reason_code: item?.reason_code || null,
+        reason_message: item?.reason_message || null,
+        created_date: item?.created_date || null,
+        metadata: item?.metadata || {},
+      };
+    });
 }
 
 function buildMockCancellationSourceKey(obrigacaoId, origemCancelamento) {
@@ -2561,6 +2877,1390 @@ mockFunctions.financeFinancialAlertsV2 = async (payload = {}) => {
   ).slice(0, Math.max(1, Math.min(Number(payload?.limit || 100), 500)));
 };
 
+mockFunctions.financeWriteFlowMap = async (payload = {}) => {
+  const empresaId = payload?.empresa_id || getMockScopedUnitId();
+  return buildFinanceWriteFlowMap({
+    empresaId,
+    flags: getMockObservabilityFlags(empresaId),
+  });
+};
+
+mockFunctions.financeWriteGovernanceMatrix = async (payload = {}) => {
+  const empresaId = payload?.empresa_id || getMockScopedUnitId();
+  return buildFinanceWriteGovernanceMatrix({
+    empresaId,
+    flags: getMockObservabilityFlags(empresaId),
+  });
+};
+
+mockFunctions.financeHybridWriteAudit = async (payload = {}) => {
+  const empresaId = payload?.empresa_id || getMockScopedUnitId();
+  const periodStart = payload?.periodo_inicio || null;
+  const periodEnd = payload?.periodo_fim || null;
+  const limit = Math.max(1, Math.min(Number(payload?.limit || 200), 1000));
+  const coverageRows = buildLegacyReceivablesCoverage({
+    empresaId,
+    contasReceber: readStorage('ContaReceber'),
+    clients: readStorage('Client'),
+    walletAccounts: readStorage('CarteiraConta'),
+    transactions: readStorage('Transaction'),
+    scheduledTransactions: readStorage('ScheduledTransaction'),
+    recurringPackages: readStorage('RecurringPackage'),
+    obligations: readStorage('ObrigacaoFinanceira'),
+    charges: readStorage('CobrancaFinanceira'),
+    periodStart,
+    periodEnd,
+  });
+  const contaReceberById = Object.fromEntries(readStorage('ContaReceber').map((item) => [item?.id, item]));
+  const transactions = readStorage('Transaction').filter((item) => (item?.empresa_id || item?.meta?.empresa_id) === empresaId);
+  const scheduledTransactions = readStorage('ScheduledTransaction').filter((item) => item?.empresa_id === empresaId);
+  const obligations = readStorage('ObrigacaoFinanceira').filter((item) => item?.empresa_id === empresaId);
+  const charges = readStorage('CobrancaFinanceira').filter((item) => item?.empresa_id === empresaId);
+  const movements = readStorage('CarteiraMovimento').filter((item) => item?.empresa_id === empresaId);
+  const commissions = readStorage('ComissaoEvento').filter((item) => item?.empresa_id === empresaId);
+  const cancellations = readStorage('CancelamentoFinanceiro').filter((item) => item?.empresa_id === empresaId);
+  const walletAccounts = readStorage('CarteiraConta').filter((item) => item?.empresa_id === empresaId);
+
+  const rows = [
+    ...coverageRows.map((row) => {
+      const conta = contaReceberById[row.conta_receber_id] || {};
+      return {
+        event_date: conta?.created_date || (row?.data_recebimento ? `${row.data_recebimento}T12:00:00` : row?.vencimento ? `${row.vencimento}T12:00:00` : null),
+        write_domain: 'pagamento',
+        entity_type: 'conta_receber',
+        entity_id: row.conta_receber_id,
+        write_layer: 'legacy',
+        source_role: 'official_current',
+        empresa_id: row.conta_receber_empresa_id,
+        carteira_id: row.cliente_id,
+        carteira_conta_id: row.carteira_conta_id,
+        counterparty_entity_type: row.cobranca_id ? 'cobranca_financeira' : row.obrigacao_id ? 'obrigacao_financeira' : null,
+        counterparty_entity_id: row.cobranca_id || row.obrigacao_id || null,
+        status: row.status_legado,
+        amount: Number(row.valor || 0),
+        source_key: conta?.source_key || `legacy_conta_receber|${row.conta_receber_id}`,
+        origin_label: 'conta_receber',
+        hybrid_classification: row.classificacao,
+        operational_risk: row.classificacao === 'B' && row.considera_no_comparativo ? 'alta' : row.classificacao === 'C' ? 'media' : 'baixa',
+        payload: {
+          motivo_cobertura: row.motivo_cobertura,
+          considera_no_comparativo: row.considera_no_comparativo,
+          financial_behavior: row.financial_behavior || null,
+        },
+      };
+    }),
+    ...transactions.filter((item) => isInPeriod(item?.date || item?.data_transacao || item?.created_date, periodStart, periodEnd)).map((item) => ({
+      event_date: item?.data_transacao || item?.date || item?.created_date || null,
+      write_domain: 'pagamento',
+      entity_type: 'transaction',
+      entity_id: item?.id || null,
+      write_layer: 'legacy',
+      source_role: 'compatibility_historical',
+      empresa_id: item?.empresa_id || item?.meta?.empresa_id || null,
+      carteira_id: null,
+      carteira_conta_id: null,
+      counterparty_entity_type: null,
+      counterparty_entity_id: null,
+      status: item?.status || item?.tipo || 'registrada',
+      amount: Number(item?.valor ?? item?.value ?? 0),
+      source_key: item?.referencia || item?.id || null,
+      origin_label: 'transaction',
+      hybrid_classification: 'legado_historico',
+      operational_risk: 'media',
+      payload: {
+        tipo: item?.tipo || item?.type || null,
+        descricao: item?.descricao || item?.description || null,
+      },
+    })),
+    ...scheduledTransactions.filter((item) => isInPeriod(item?.due_date || item?.created_date, periodStart, periodEnd)).map((item) => ({
+      event_date: item?.due_date ? `${item.due_date}T12:00:00` : item?.created_date || null,
+      write_domain: 'cobranca',
+      entity_type: 'scheduledtransaction',
+      entity_id: item?.id || null,
+      write_layer: 'legacy',
+      source_role: 'compatibility_historical',
+      empresa_id: item?.empresa_id || null,
+      carteira_id: null,
+      carteira_conta_id: null,
+      counterparty_entity_type: null,
+      counterparty_entity_id: null,
+      status: item?.status || 'agendada',
+      amount: Number(item?.amount || 0),
+      source_key: item?.id || null,
+      origin_label: 'scheduledtransaction',
+      hybrid_classification: 'legado_historico',
+      operational_risk: 'media',
+      payload: {
+        descricao: item?.descricao || null,
+      },
+    })),
+    ...obligations.filter((item) => isInPeriod(item?.due_date || item?.created_date, periodStart, periodEnd)).map((item) => ({
+      event_date: item?.created_date || null,
+      write_domain: 'obrigacao',
+      entity_type: 'obrigacao_financeira',
+      entity_id: item?.id || null,
+      write_layer: 'v2',
+      source_role: item?.source_key?.startsWith('legacy_conta_receber|') ? 'compatibility_shadow' : 'official_v2',
+      empresa_id: item?.empresa_id || null,
+      carteira_id: item?.carteira_id || null,
+      carteira_conta_id: item?.carteira_conta_id || null,
+      counterparty_entity_type: 'cobranca_financeira',
+      counterparty_entity_id: null,
+      status: item?.status || null,
+      amount: Number(item?.valor_final ?? item?.valor_em_aberto ?? 0),
+      source_key: item?.source_key || null,
+      origin_label: item?.tipo_item || 'obrigacao_financeira',
+      hybrid_classification: item?.source_key?.startsWith('legacy_conta_receber|') ? 'shadow_legado_para_v2' : 'v2_oficial',
+      operational_risk: item?.source_key?.startsWith('legacy_conta_receber|') ? 'media' : 'baixa',
+      payload: {
+        due_date: item?.due_date || null,
+        valor_em_aberto: item?.valor_em_aberto || 0,
+      },
+    })),
+    ...charges.filter((item) => isInPeriod(item?.due_date || item?.created_date, periodStart, periodEnd)).map((item) => ({
+      event_date: item?.created_date || null,
+      write_domain: 'cobranca',
+      entity_type: 'cobranca_financeira',
+      entity_id: item?.id || null,
+      write_layer: 'v2',
+      source_role: item?.source_key?.startsWith('legacy_conta_receber|') ? 'compatibility_shadow' : 'official_v2',
+      empresa_id: item?.empresa_id || null,
+      carteira_id: null,
+      carteira_conta_id: item?.carteira_conta_id || null,
+      counterparty_entity_type: null,
+      counterparty_entity_id: null,
+      status: item?.status || null,
+      amount: Number(item?.valor_total ?? item?.valor_em_aberto ?? 0),
+      source_key: item?.source_key || null,
+      origin_label: 'cobranca_financeira',
+      hybrid_classification: item?.source_key?.startsWith('legacy_conta_receber|') ? 'shadow_legado_para_v2' : 'v2_oficial',
+      operational_risk: item?.source_key?.startsWith('legacy_conta_receber|') ? 'media' : 'baixa',
+      payload: {
+        due_date: item?.due_date || null,
+        valor_em_aberto: item?.valor_em_aberto || 0,
+      },
+    })),
+    ...movements.filter((item) => isInPeriod(item?.created_date, periodStart, periodEnd)).map((item) => ({
+      event_date: item?.created_date || null,
+      write_domain: 'carteira',
+      entity_type: 'carteira_movimento',
+      entity_id: item?.id || null,
+      write_layer: 'v2',
+      source_role: 'official_v2',
+      empresa_id: item?.empresa_id || null,
+      carteira_id: walletAccounts.find((account) => account?.id === item?.carteira_conta_id)?.carteira_id || null,
+      carteira_conta_id: item?.carteira_conta_id || null,
+      counterparty_entity_type: item?.obrigacao_id ? 'obrigacao_financeira' : null,
+      counterparty_entity_id: item?.obrigacao_id || null,
+      status: item?.tipo || null,
+      amount: Number(item?.valor || 0),
+      source_key: item?.operacao_idempotencia || item?.id || null,
+      origin_label: item?.origem || null,
+      hybrid_classification: 'v2_oficial',
+      operational_risk: item?.natureza === 'entrada' && !item?.obrigacao_id ? 'media' : 'baixa',
+      payload: {
+        natureza: item?.natureza || null,
+        transacao_id: item?.transacao_id || null,
+      },
+    })),
+    ...commissions.filter((item) => isInPeriod(item?.created_date, periodStart, periodEnd)).map((item) => ({
+      event_date: item?.created_date || null,
+      write_domain: 'comissao',
+      entity_type: 'comissao_evento',
+      entity_id: item?.id || null,
+      write_layer: 'v2',
+      source_role: 'official_v2',
+      empresa_id: item?.empresa_id || null,
+      carteira_id: null,
+      carteira_conta_id: null,
+      counterparty_entity_type: item?.obrigacao_id ? 'obrigacao_financeira' : null,
+      counterparty_entity_id: item?.obrigacao_id || null,
+      status: item?.status || null,
+      amount: Number(item?.valor_comissao || 0),
+      source_key: item?.source_key || item?.id || null,
+      origin_label: item?.origem || null,
+      hybrid_classification: 'v2_oficial',
+      operational_risk: ['estornada', 'parcialmente_estornada'].includes(item?.status) ? 'media' : 'baixa',
+      payload: {
+        vendedor_user_id: item?.vendedor_user_id || null,
+      },
+    })),
+    ...cancellations.filter((item) => isInPeriod(item?.created_date, periodStart, periodEnd)).map((item) => ({
+      event_date: item?.created_date || null,
+      write_domain: 'cancelamento',
+      entity_type: 'cancelamento_financeiro',
+      entity_id: item?.id || null,
+      write_layer: 'v2',
+      source_role: 'official_v2',
+      empresa_id: item?.empresa_id || null,
+      carteira_id: null,
+      carteira_conta_id: item?.carteira_conta_id || null,
+      counterparty_entity_type: item?.obrigacao_id ? 'obrigacao_financeira' : null,
+      counterparty_entity_id: item?.obrigacao_id || null,
+      status: item?.status || null,
+      amount: Number(item?.valor_multa || 0),
+      source_key: item?.source_key || item?.id || null,
+      origin_label: item?.origem_cancelamento || null,
+      hybrid_classification: 'v2_oficial',
+      operational_risk: item?.gerar_credito_compensatorio ? 'media' : 'baixa',
+      payload: {
+        gerar_credito_compensatorio: Boolean(item?.gerar_credito_compensatorio),
+      },
+    })),
+  ];
+
+  return rows
+    .sort((left, right) => new Date(right?.event_date || 0).getTime() - new Date(left?.event_date || 0).getTime())
+    .slice(0, limit);
+};
+
+mockFunctions.financeOperationalReconciliationMatrix = async (payload = {}) => {
+  const empresaId = payload?.empresa_id || getMockScopedUnitId();
+  const periodStart = payload?.periodo_inicio || null;
+  const periodEnd = payload?.periodo_fim || null;
+  const coverageRows = buildLegacyReceivablesCoverage({
+    empresaId,
+    contasReceber: readStorage('ContaReceber'),
+    clients: readStorage('Client'),
+    walletAccounts: readStorage('CarteiraConta'),
+    transactions: readStorage('Transaction'),
+    scheduledTransactions: readStorage('ScheduledTransaction'),
+    recurringPackages: readStorage('RecurringPackage'),
+    obligations: readStorage('ObrigacaoFinanceira'),
+    charges: readStorage('CobrancaFinanceira'),
+    periodStart,
+    periodEnd,
+  });
+  let summary = null;
+  try {
+    summary = await mockFunctions.financeCockpitV2Summary({
+      empresa_id: empresaId,
+      periodo_inicio: periodStart,
+      periodo_fim: periodEnd,
+    });
+    summary = {
+      ...summary,
+      cobrancas_vencidas_count: readStorage('CobrancaFinanceira')
+        .filter((item) => item?.empresa_id === empresaId)
+        .filter((item) => ['aberta', 'parcial', 'vencida'].includes(item?.status))
+        .filter((item) => item?.due_date && new Date(`${item.due_date}T12:00:00`) < new Date())
+        .length,
+    };
+  } catch {
+    summary = null;
+  }
+  const latestReconciliations = readStorage('CarteiraReconciliacao')
+    .filter((item) => item?.empresa_id === empresaId)
+    .reduce((acc, item) => {
+      const current = acc[item?.carteira_conta_id];
+      if (!current || new Date(item?.created_date || 0).getTime() > new Date(current?.created_date || 0).getTime()) {
+        acc[item?.carteira_conta_id] = item;
+      }
+      return acc;
+    }, {});
+
+  return buildOperationalReconciliationRows({
+    coverageRows,
+    cockpitSummary: summary,
+    walletDivergentCount: Object.values(latestReconciliations).filter((item) => item?.status === 'divergente').length,
+  });
+};
+
+mockFunctions.financeOperationalObservabilityContext = async (payload = {}) => {
+  const empresaId = payload?.empresa_id || getMockScopedUnitId();
+  const periodStart = payload?.periodo_inicio || null;
+  const periodEnd = payload?.periodo_fim || null;
+  const flags = getMockObservabilityFlags(empresaId);
+  const coverageRows = buildLegacyReceivablesCoverage({
+    empresaId,
+    contasReceber: readStorage('ContaReceber'),
+    clients: readStorage('Client'),
+    walletAccounts: readStorage('CarteiraConta'),
+    transactions: readStorage('Transaction'),
+    scheduledTransactions: readStorage('ScheduledTransaction'),
+    recurringPackages: readStorage('RecurringPackage'),
+    obligations: readStorage('ObrigacaoFinanceira'),
+    charges: readStorage('CobrancaFinanceira'),
+    periodStart,
+    periodEnd,
+  });
+  let compareRows = [];
+  try {
+    compareRows = await mockFunctions.financeCockpitV2Compare({
+      empresa_id: empresaId,
+      periodo_inicio: periodStart,
+      periodo_fim: periodEnd,
+    });
+  } catch {
+    compareRows = [];
+  }
+  let alertRows = [];
+  try {
+    alertRows = await mockFunctions.financeFinancialAlertsV2({
+      empresa_id: empresaId,
+      periodo_inicio: periodStart,
+      periodo_fim: periodEnd,
+      limit: 100,
+    });
+  } catch {
+    alertRows = [];
+  }
+  let summary = null;
+  try {
+    summary = await mockFunctions.financeCockpitV2Summary({
+      empresa_id: empresaId,
+      periodo_inicio: periodStart,
+      periodo_fim: periodEnd,
+    });
+  } catch {
+    summary = null;
+  }
+
+  return buildOperationalObservabilityContext({
+    empresaId,
+    flags,
+    coverageRows,
+    compareRows,
+    alertRows,
+    cockpitSummary: summary,
+    walletAccounts: readStorage('CarteiraConta').filter((item) => item?.empresa_id === empresaId),
+    obligations: readStorage('ObrigacaoFinanceira').filter((item) => item?.empresa_id === empresaId),
+    charges: readStorage('CobrancaFinanceira').filter((item) => item?.empresa_id === empresaId),
+    movements: readStorage('CarteiraMovimento').filter((item) => item?.empresa_id === empresaId),
+    reconciliations: readStorage('CarteiraReconciliacao').filter((item) => item?.empresa_id === empresaId),
+    commissions: readStorage('ComissaoEvento').filter((item) => item?.empresa_id === empresaId),
+    cancellations: readStorage('CancelamentoFinanceiro').filter((item) => item?.empresa_id === empresaId),
+    transactions: readStorage('Transaction').filter((item) => (item?.empresa_id || item?.meta?.empresa_id) === empresaId),
+    scheduledTransactions: readStorage('ScheduledTransaction').filter((item) => item?.empresa_id === empresaId),
+  });
+};
+
+mockFunctions.financePaymentV2Contract = async (payload = {}) => {
+  const empresaId = payload?.empresa_id || getMockScopedUnitId();
+  return buildPaymentV2Contract({
+    empresaId,
+    flags: getMockObservabilityFlags(empresaId),
+  });
+};
+
+mockFunctions.financePaymentV2Execute = async (payload = {}) => {
+  if (!String(payload?.empresa_id || '').trim()) {
+    throw new Error('p_empresa_id e obrigatorio.');
+  }
+  if (!String(payload?.operacao_idempotencia || '').trim()) {
+    throw new Error('p_operacao_idempotencia e obrigatorio.');
+  }
+
+  const empresaId = String(payload.empresa_id).trim();
+  const operacaoIdempotencia = String(payload.operacao_idempotencia).trim();
+  const existingExecution = readStorage('PagamentoV2Execucao').find(
+    (item) => item?.empresa_id === empresaId && item?.operacao_idempotencia === operacaoIdempotencia,
+  );
+
+  if (existingExecution) {
+    return buildMockPaymentV2Response(
+      { ...existingExecution, reused: true },
+      existingExecution?.classe_resultado === 'executado' ? 'idempotente_reutilizado' : existingExecution?.classe_resultado,
+    );
+  }
+
+  const persistRejectedExecution = ({
+    reasonCode,
+    reasonMessage,
+    carteiraContaId = null,
+    obrigacaoId = null,
+    cobrancaFinanceiraId = null,
+    rejectedAfterLock = false,
+  } = {}) => {
+    if (!carteiraContaId || !obrigacaoId) return null;
+    return persistMockPaymentV2Execution({
+      empresa_id: empresaId,
+      carteira_conta_id: carteiraContaId,
+      obrigacao_id: obrigacaoId,
+      cobranca_financeira_id: cobrancaFinanceiraId,
+      operacao_idempotencia: operacaoIdempotencia,
+      source_key: String(payload?.source_key || '').trim() || '__invalid__',
+      forma_pagamento: String(payload?.forma_pagamento || '').trim() || '__invalid__',
+      origem_operacional: String(payload?.origem_operacional || '').trim() || 'manual_operacional',
+      valor_solicitado: roundMockCurrency(payload?.valor),
+      data_pagamento: payload?.data_pagamento || new Date().toISOString().slice(0, 10),
+      classe_resultado: 'rejeitado_negocio',
+      reason_code: reasonCode,
+      reason_message: reasonMessage,
+      usuario_id: payload?.usuario_id || null,
+      metadata: {
+        ...(payload?.metadata || {}),
+        source: 'payment_v2_execute',
+        contract_scope: 'sprint9b1_cut1',
+        rejected_after_lock: Boolean(rejectedAfterLock),
+        rejected_before_lock: !rejectedAfterLock,
+      },
+    });
+  };
+
+  const buildRejectedResult = ({
+    reasonCode,
+    reasonMessage,
+    carteiraContaId = null,
+    obrigacaoId = null,
+    cobrancaFinanceiraId = null,
+    rejectedAfterLock = false,
+  } = {}) => {
+    const persisted = persistRejectedExecution({
+      reasonCode,
+      reasonMessage,
+      carteiraContaId,
+      obrigacaoId,
+      cobrancaFinanceiraId,
+      rejectedAfterLock,
+    });
+
+    return buildMockPaymentV2Response({
+      id: persisted?.id || null,
+      carteira_movimento_id: persisted?.carteira_movimento_id || null,
+      carteira_alocacao_id: persisted?.carteira_alocacao_id || null,
+      carteira_conta_id: persisted?.carteira_conta_id || payload?.carteira_conta_id || null,
+      obrigacao_id: persisted?.obrigacao_id || payload?.obrigacao_id || null,
+      cobranca_financeira_id: persisted?.cobranca_financeira_id || payload?.cobranca_financeira_id || null,
+      operacao_idempotencia: operacaoIdempotencia,
+      source_key: persisted?.source_key || String(payload?.source_key || '').trim() || null,
+      classe_resultado: 'rejeitado_negocio',
+      reason_code: reasonCode,
+      reason_message: reasonMessage,
+      reused: false,
+    }, 'rejeitado_negocio');
+  };
+
+  if (!getMockFlagValue('finance.payment_v2_write_enabled', empresaId)) {
+    return buildRejectedResult({
+      reasonCode: 'payment_v2_write_disabled',
+      reasonMessage: `Feature flag finance.payment_v2_write_enabled esta desligada para a empresa ${empresaId}.`,
+    });
+  }
+  if (!String(payload?.carteira_conta_id || '').trim()) {
+    return buildRejectedResult({
+      reasonCode: 'carteira_conta_required',
+      reasonMessage: 'p_carteira_conta_id e obrigatorio.',
+    });
+  }
+  if (!String(payload?.obrigacao_id || '').trim()) {
+    return buildRejectedResult({
+      reasonCode: 'obrigacao_required',
+      reasonMessage: 'p_obrigacao_id e obrigatorio.',
+    });
+  }
+  if (!String(payload?.source_key || '').trim()) {
+    return buildRejectedResult({
+      reasonCode: 'source_key_required',
+      reasonMessage: 'p_source_key e obrigatorio.',
+    });
+  }
+  if (roundMockCurrency(payload?.valor) <= 0) {
+    return buildRejectedResult({
+      reasonCode: 'valor_invalido',
+      reasonMessage: 'p_valor deve ser maior que zero.',
+    });
+  }
+  if (!payload?.data_pagamento) {
+    return buildRejectedResult({
+      reasonCode: 'data_pagamento_required',
+      reasonMessage: 'p_data_pagamento e obrigatorio.',
+    });
+  }
+  if (!String(payload?.forma_pagamento || '').trim()) {
+    return buildRejectedResult({
+      reasonCode: 'forma_pagamento_required',
+      reasonMessage: 'p_forma_pagamento e obrigatorio.',
+    });
+  }
+
+  const contas = readStorage('CarteiraConta');
+  const obrigacoes = readStorage('ObrigacaoFinanceira');
+  const cobrancas = readStorage('CobrancaFinanceira');
+  const cobrancaItens = readStorage('CobrancaItem');
+  const alocacoes = readStorage('CarteiraAlocacao');
+
+  const conta = contas.find(
+    (item) => item?.id === payload?.carteira_conta_id && item?.empresa_id === empresaId,
+  );
+  if (!conta) {
+    throw new Error(`carteira_conta ${payload?.carteira_conta_id} nao encontrada para a empresa ${empresaId}.`);
+  }
+
+  const obrigacaoIndex = obrigacoes.findIndex(
+    (item) => item?.id === payload?.obrigacao_id
+      && item?.empresa_id === empresaId
+      && item?.carteira_conta_id === payload?.carteira_conta_id,
+  );
+  if (obrigacaoIndex < 0) {
+    throw new Error(`obrigacao_financeira ${payload?.obrigacao_id} nao encontrada para a carteira ${payload?.carteira_conta_id}.`);
+  }
+
+  const obrigacao = obrigacoes[obrigacaoIndex];
+  const valorSolicitado = roundMockCurrency(payload?.valor);
+  const valorEmAbertoObrigacao = roundMockCurrency(obrigacao?.valor_em_aberto);
+
+  if (!['aberta', 'parcial', 'vencida'].includes(obrigacao?.status) || valorEmAbertoObrigacao <= 0) {
+    return buildRejectedResult({
+      reasonCode: 'obrigacao_not_payable',
+      reasonMessage: `Obrigacao ${obrigacao?.id} esta com status ${obrigacao?.status} e valor_em_aberto ${valorEmAbertoObrigacao}.`,
+      carteiraContaId: conta.id,
+      obrigacaoId: obrigacao.id,
+      rejectedAfterLock: true,
+    });
+  }
+
+  if (valorSolicitado !== valorEmAbertoObrigacao) {
+    return buildRejectedResult({
+      reasonCode: 'partial_payment_out_of_scope',
+      reasonMessage: `Primeiro corte exige quitacao integral da obrigacao. Valor solicitado ${valorSolicitado} difere do valor_em_aberto ${valorEmAbertoObrigacao}.`,
+      carteiraContaId: conta.id,
+      obrigacaoId: obrigacao.id,
+      rejectedAfterLock: true,
+    });
+  }
+
+  let cobranca = null;
+  if (String(payload?.cobranca_financeira_id || '').trim()) {
+    cobranca = cobrancas.find(
+      (item) => item?.id === payload?.cobranca_financeira_id
+        && item?.empresa_id === empresaId
+        && item?.carteira_conta_id === payload?.carteira_conta_id,
+    );
+
+    if (!cobranca) {
+      return buildRejectedResult({
+        reasonCode: 'charge_not_found',
+        reasonMessage: `cobranca_financeira ${payload?.cobranca_financeira_id} nao encontrada para a carteira ${payload?.carteira_conta_id}.`,
+        carteiraContaId: conta.id,
+        obrigacaoId: obrigacao.id,
+        rejectedAfterLock: true,
+      });
+    }
+
+    const itensDaCobranca = cobrancaItens.filter((item) => item?.cobranca_financeira_id === cobranca.id);
+    const itensDaObrigacao = itensDaCobranca.filter((item) => item?.obrigacao_id === obrigacao.id);
+    const valorEmAbertoCobranca = roundMockCurrency(cobranca?.valor_em_aberto);
+
+    if (itensDaObrigacao.length === 0) {
+      return buildRejectedResult({
+        reasonCode: 'charge_not_linked_to_obligation',
+        reasonMessage: `cobranca_financeira ${cobranca.id} nao esta vinculada a obrigacao ${obrigacao.id}.`,
+        carteiraContaId: conta.id,
+        obrigacaoId: obrigacao.id,
+        cobrancaFinanceiraId: cobranca.id,
+        rejectedAfterLock: true,
+      });
+    }
+
+    if (itensDaCobranca.length > 1) {
+      return buildRejectedResult({
+        reasonCode: 'multi_item_charge_out_of_scope',
+        reasonMessage: `Primeiro corte nao suporta cobranca com multiplas obrigacoes. cobranca_financeira ${cobranca.id} possui ${itensDaCobranca.length} itens.`,
+        carteiraContaId: conta.id,
+        obrigacaoId: obrigacao.id,
+        cobrancaFinanceiraId: cobranca.id,
+        rejectedAfterLock: true,
+      });
+    }
+
+    if (!['aberta', 'parcial', 'vencida'].includes(cobranca?.status) || valorEmAbertoCobranca <= 0) {
+      return buildRejectedResult({
+        reasonCode: 'charge_not_payable',
+        reasonMessage: `cobranca_financeira ${cobranca.id} esta com status ${cobranca?.status} e valor_em_aberto ${valorEmAbertoCobranca}.`,
+        carteiraContaId: conta.id,
+        obrigacaoId: obrigacao.id,
+        cobrancaFinanceiraId: cobranca.id,
+        rejectedAfterLock: true,
+      });
+    }
+
+    if (valorEmAbertoCobranca !== valorSolicitado) {
+      return buildRejectedResult({
+        reasonCode: 'charge_amount_mismatch',
+        reasonMessage: `Primeiro corte exige quitacao integral da cobranca. Valor solicitado ${valorSolicitado} difere do valor_em_aberto ${valorEmAbertoCobranca}.`,
+        carteiraContaId: conta.id,
+        obrigacaoId: obrigacao.id,
+        cobrancaFinanceiraId: cobranca.id,
+        rejectedAfterLock: true,
+      });
+    }
+  }
+
+  const walletResult = applyMockWalletOperationCore({
+    carteira_conta_id: conta.id,
+    operacao_idempotencia: operacaoIdempotencia,
+    tipo: 'credito',
+    natureza: 'entrada',
+    origem: 'payment_v2',
+    valor: valorSolicitado,
+    referencia_amigavel: `Pagamento V2 - ${obrigacao?.descricao || obrigacao?.id}`,
+    descricao: String(payload?.forma_pagamento || '').trim() || 'Pagamento V2',
+    orcamento_id: obrigacao?.orcamento_id || null,
+    appointment_id: obrigacao?.appointment_id || null,
+    obrigacao_id: obrigacao.id,
+    usuario_id: payload?.usuario_id || null,
+    metadata: {
+      ...(payload?.metadata || {}),
+      source: 'payment_v2_execute',
+      contract_scope: 'sprint9b1_cut1',
+      source_key: String(payload?.source_key || '').trim(),
+      forma_pagamento: String(payload?.forma_pagamento || '').trim(),
+      origem_operacional: String(payload?.origem_operacional || '').trim() || 'manual_operacional',
+      data_pagamento: payload?.data_pagamento,
+      cobranca_financeira_id: cobranca?.id || null,
+      authority_scope: 'payment_v2',
+    },
+    permitir_saldo_negativo: true,
+  });
+
+  const now = new Date().toISOString();
+  const alocacaoExistenteIndex = alocacoes.findIndex(
+    (item) => item?.carteira_movimento_id === walletResult?.movimento_id
+      && item?.obrigacao_id === obrigacao.id
+      && Number(item?.ordem_aplicada || 0) === 1,
+  );
+  const alocacaoPayload = {
+    id: alocacaoExistenteIndex >= 0 ? alocacoes[alocacaoExistenteIndex]?.id : makeId(),
+    empresa_id: empresaId,
+    carteira_conta_id: conta.id,
+    carteira_movimento_id: walletResult.movimento_id,
+    obrigacao_id: obrigacao.id,
+    valor_alocado: valorSolicitado,
+    ordem_aplicada: 1,
+    metadata: {
+      ...(payload?.metadata || {}),
+      source: 'payment_v2_execute',
+      contract_scope: 'sprint9b1_cut1',
+      operacao_idempotencia: operacaoIdempotencia,
+    },
+    created_date: alocacaoExistenteIndex >= 0 ? alocacoes[alocacaoExistenteIndex]?.created_date : now,
+    updated_date: now,
+  };
+
+  if (alocacaoExistenteIndex >= 0) {
+    alocacoes[alocacaoExistenteIndex] = alocacaoPayload;
+  } else {
+    alocacoes.push(alocacaoPayload);
+  }
+  writeStorage('CarteiraAlocacao', alocacoes);
+
+  obrigacoes[obrigacaoIndex] = {
+    ...obrigacao,
+    valor_em_aberto: 0,
+    status: 'quitada',
+    metadata: {
+      ...(obrigacao?.metadata || {}),
+      payment_v2: true,
+      payment_v2_last_execution_at: now,
+      payment_v2_operacao_idempotencia: operacaoIdempotencia,
+      payment_v2_source_key: String(payload?.source_key || '').trim(),
+      payment_v2_forma_pagamento: String(payload?.forma_pagamento || '').trim(),
+    },
+    updated_date: now,
+  };
+  writeStorage('ObrigacaoFinanceira', obrigacoes);
+
+  if (cobranca) {
+    const cobrancaIndex = cobrancas.findIndex((item) => item?.id === cobranca.id);
+    if (cobrancaIndex >= 0) {
+      cobrancas[cobrancaIndex] = {
+        ...cobranca,
+        valor_em_aberto: 0,
+        status: 'quitada',
+        metadata: {
+          ...(cobranca?.metadata || {}),
+          payment_v2: true,
+          payment_v2_last_execution_at: now,
+          payment_v2_operacao_idempotencia: operacaoIdempotencia,
+          payment_v2_source_key: String(payload?.source_key || '').trim(),
+        },
+        updated_date: now,
+      };
+      writeStorage('CobrancaFinanceira', cobrancas);
+    }
+  }
+
+  const execucao = persistMockPaymentV2Execution({
+    empresa_id: empresaId,
+    carteira_conta_id: conta.id,
+    obrigacao_id: obrigacao.id,
+    cobranca_financeira_id: cobranca?.id || null,
+    carteira_movimento_id: walletResult.movimento_id,
+    carteira_alocacao_id: alocacaoPayload.id,
+    operacao_idempotencia: operacaoIdempotencia,
+    source_key: String(payload?.source_key || '').trim(),
+    forma_pagamento: String(payload?.forma_pagamento || '').trim(),
+    origem_operacional: String(payload?.origem_operacional || '').trim() || 'manual_operacional',
+    valor_solicitado: valorSolicitado,
+    data_pagamento: payload?.data_pagamento,
+    classe_resultado: 'executado',
+    reason_code: null,
+    reason_message: null,
+    usuario_id: payload?.usuario_id || null,
+    metadata: {
+      ...(payload?.metadata || {}),
+      source: 'payment_v2_execute',
+      contract_scope: 'sprint9b1_cut1',
+      authority_scope: 'payment_v2',
+    },
+    reused: false,
+  });
+
+  return buildMockPaymentV2Response(execucao, 'executado');
+};
+
+mockFunctions.financePaymentV2ExecutionAudit = async (payload = {}) => {
+  const empresaId = payload?.empresa_id || getMockScopedUnitId();
+  return buildMockPaymentV2AuditRows(empresaId, payload?.limit || 100);
+};
+
+mockFunctions.financePaymentV2Reverse = async (payload = {}) => {
+  const empresaId = payload?.empresa_id || getMockScopedUnitId();
+  const operacaoIdempotencia = String(payload?.operacao_idempotencia || '').trim();
+  const reversaoTipo = String(payload?.reversao_tipo || '').trim().toLowerCase();
+  const sourceKey = String(payload?.source_key || '').trim();
+  const motivo = String(payload?.motivo || '').trim();
+  const attachmentName = String(payload?.attachment_name || '').trim();
+  const attachmentPath = String(payload?.attachment_path || '').trim();
+  const attachmentExtension = (attachmentName || attachmentPath).includes('.')
+    ? `.${(attachmentName || attachmentPath).split('.').pop().toLowerCase()}`
+    : '';
+  const allowedExtensions = new Set(['.pdf', '.doc', '.txt', '.img', '.jpg', '.png']);
+  const existingReversal = readStorage('PagamentoV2Reversao').find(
+    (item) => item?.empresa_id === empresaId && item?.operacao_idempotencia === operacaoIdempotencia,
+  );
+
+  if (!operacaoIdempotencia) {
+    throw new Error('p_operacao_idempotencia e obrigatorio.');
+  }
+
+  if (existingReversal) {
+    return buildMockPaymentV2ReversalResponse({
+      ...existingReversal,
+      reused: true,
+    }, existingReversal?.classe_resultado === 'executado' ? 'idempotente_reutilizado' : existingReversal?.classe_resultado);
+  }
+
+  const persistRejectedReversal = ({
+    reasonCode,
+    reasonMessage,
+    carteiraContaId = null,
+    appointmentId = null,
+    serviceProvidedId = null,
+    obrigacaoId = null,
+    cobrancaId = null,
+    contaReceberId = null,
+    valorEstornado = 0,
+    servicoRealizado = null,
+  } = {}) => persistMockPaymentV2Reversal({
+    empresa_id: empresaId,
+    carteira_conta_id: carteiraContaId || payload?.carteira_conta_id || null,
+    appointment_id: appointmentId,
+    serviceprovided_id: serviceProvidedId,
+    obrigacao_id: obrigacaoId,
+    cobranca_financeira_id: cobrancaId,
+    conta_receber_id: contaReceberId,
+    reversao_tipo: reversaoTipo || 'saldo',
+    operacao_idempotencia: operacaoIdempotencia || makeId(),
+    source_key: sourceKey || '__invalid__',
+    motivo: motivo || '__invalid__',
+    attachment_name: attachmentName || '__invalid__',
+    attachment_path: attachmentPath || '__invalid__',
+    attachment_extension: attachmentExtension || '__invalid__',
+    valor_estornado: roundMockCurrency(valorEstornado),
+    servico_realizado: servicoRealizado,
+    classe_resultado: 'rejeitado_negocio',
+    reason_code: reasonCode,
+    reason_message: reasonMessage,
+    usuario_id: payload?.usuario_id || null,
+    metadata: {
+      ...(payload?.metadata || {}),
+      source: 'payment_v2_reverse',
+      contract_scope: 'sprint9b1_cut2',
+      authority_scope: 'payment_v2_reversal',
+      reversal_scope: reversaoTipo || 'saldo',
+    },
+    reused: false,
+  });
+
+  const buildRejectedReversal = (options = {}) => buildMockPaymentV2ReversalResponse(
+    persistRejectedReversal(options),
+    'rejeitado_negocio',
+  );
+
+  if (!String(payload?.carteira_conta_id || '').trim()) {
+    return buildRejectedReversal({
+      reasonCode: 'carteira_conta_required',
+      reasonMessage: 'p_carteira_conta_id e obrigatorio.',
+    });
+  }
+
+  const contas = readStorage('CarteiraConta');
+  const contaIndex = contas.findIndex(
+    (item) => item?.id === payload?.carteira_conta_id && item?.empresa_id === empresaId,
+  );
+  if (contaIndex < 0) {
+    throw new Error(`carteira_conta ${payload?.carteira_conta_id} nao encontrada para a empresa ${empresaId}.`);
+  }
+
+  const conta = contas[contaIndex];
+
+  if (!getMockFlagValue('finance.payment_v2_reversal_enabled', empresaId)) {
+    return buildRejectedReversal({
+      reasonCode: 'payment_v2_reversal_disabled',
+      reasonMessage: `Feature flag finance.payment_v2_reversal_enabled esta desligada para a empresa ${empresaId}.`,
+      carteiraContaId: conta.id,
+    });
+  }
+  if (!['saldo', 'servico'].includes(reversaoTipo)) {
+    return buildRejectedReversal({
+      reasonCode: 'reversao_tipo_invalido',
+      reasonMessage: 'p_reversao_tipo deve ser saldo ou servico.',
+      carteiraContaId: conta.id,
+    });
+  }
+  if (!sourceKey) {
+    return buildRejectedReversal({
+      reasonCode: 'source_key_required',
+      reasonMessage: 'p_source_key e obrigatorio.',
+      carteiraContaId: conta.id,
+    });
+  }
+  if (!motivo) {
+    return buildRejectedReversal({
+      reasonCode: 'motivo_required',
+      reasonMessage: 'p_motivo e obrigatorio.',
+      carteiraContaId: conta.id,
+    });
+  }
+  if (!attachmentName) {
+    return buildRejectedReversal({
+      reasonCode: 'attachment_name_required',
+      reasonMessage: 'p_attachment_name e obrigatorio.',
+      carteiraContaId: conta.id,
+    });
+  }
+  if (!attachmentPath) {
+    return buildRejectedReversal({
+      reasonCode: 'attachment_path_required',
+      reasonMessage: 'p_attachment_path e obrigatorio.',
+      carteiraContaId: conta.id,
+    });
+  }
+  if (!allowedExtensions.has(attachmentExtension)) {
+    return buildRejectedReversal({
+      reasonCode: 'attachment_extension_invalid',
+      reasonMessage: `Extensao de anexo invalida: ${attachmentExtension || '<vazia>'}. Tipos aceitos: .pdf, .doc, .txt, .img, .jpg, .png.`,
+      carteiraContaId: conta.id,
+    });
+  }
+
+  if (reversaoTipo === 'saldo') {
+    const valor = roundMockCurrency(payload?.valor);
+    const saldoAtual = roundMockCurrency(conta?.saldo_atual);
+
+    if (valor <= 0) {
+      return buildRejectedReversal({
+        reasonCode: 'saldo_reversal_value_required',
+        reasonMessage: 'p_valor deve ser maior que zero para estorno de saldo.',
+        carteiraContaId: conta.id,
+      });
+    }
+    if (saldoAtual <= 0) {
+      return buildRejectedReversal({
+        reasonCode: 'saldo_positivo_indisponivel',
+        reasonMessage: 'Nao ha saldo positivo disponivel para estorno.',
+        carteiraContaId: conta.id,
+      });
+    }
+    if (valor > saldoAtual) {
+      return buildRejectedReversal({
+        reasonCode: 'saldo_reversal_exceeds_balance',
+        reasonMessage: `Valor solicitado para estorno (${valor}) excede o saldo positivo atual (${saldoAtual}).`,
+        carteiraContaId: conta.id,
+        valorEstornado: valor,
+      });
+    }
+
+    const walletResult = applyMockWalletOperationCore({
+      carteira_conta_id: conta.id,
+      operacao_idempotencia: operacaoIdempotencia,
+      tipo: 'estorno',
+      natureza: 'saida',
+      origem: 'payment_v2_reversal_saldo',
+      valor,
+      referencia_amigavel: 'Estorno de saldo - Payment V2',
+      descricao: motivo,
+      usuario_id: payload?.usuario_id || null,
+      metadata: {
+        ...(payload?.metadata || {}),
+        source: 'payment_v2_reverse',
+        contract_scope: 'sprint9b1_cut2',
+        authority_scope: 'payment_v2_reversal',
+        reversal_scope: 'saldo',
+        attachment_name: attachmentName,
+        attachment_path: attachmentPath,
+        attachment_extension: attachmentExtension,
+      },
+      permitir_saldo_negativo: false,
+    });
+
+    const reversao = persistMockPaymentV2Reversal({
+      empresa_id: empresaId,
+      carteira_conta_id: conta.id,
+      carteira_movimento_id: walletResult.movimento_id,
+      reversao_tipo: 'saldo',
+      operacao_idempotencia: operacaoIdempotencia,
+      source_key: sourceKey,
+      motivo,
+      attachment_name: attachmentName,
+      attachment_path: attachmentPath,
+      attachment_extension: attachmentExtension,
+      valor_estornado: valor,
+      classe_resultado: 'executado',
+      usuario_id: payload?.usuario_id || null,
+      metadata: {
+        ...(payload?.metadata || {}),
+        source: 'payment_v2_reverse',
+        contract_scope: 'sprint9b1_cut2',
+        authority_scope: 'payment_v2_reversal',
+        reversal_scope: 'saldo',
+      },
+      reused: false,
+    });
+
+    return buildMockPaymentV2ReversalResponse(reversao, 'executado');
+  }
+
+  const appointments = readStorage('Appointment');
+  const services = readStorage('ServiceProvided');
+  const obrigacoes = readStorage('ObrigacaoFinanceira');
+  const cobrancas = readStorage('CobrancaFinanceira');
+  const cobrancaItens = readStorage('CobrancaItem');
+  const contasReceber = readStorage('ContaReceber');
+  const checkins = readStorage('Checkin');
+  const execucoes = readStorage('PagamentoV2Execucao');
+
+  let serviceIndex = -1;
+  if (String(payload?.serviceprovided_id || '').trim()) {
+    serviceIndex = services.findIndex(
+      (item) => item?.id === payload?.serviceprovided_id && item?.empresa_id === empresaId,
+    );
+    if (serviceIndex < 0) {
+      return buildRejectedReversal({
+        reasonCode: 'serviceprovided_not_found',
+        reasonMessage: `serviceprovided ${payload?.serviceprovided_id} nao encontrado para a empresa ${empresaId}.`,
+        carteiraContaId: conta.id,
+      });
+    }
+  } else if (String(payload?.appointment_id || '').trim()) {
+    const matches = services.filter(
+      (item) => item?.empresa_id === empresaId && item?.appointment_id === payload?.appointment_id,
+    );
+    if (matches.length > 1) {
+      return buildRejectedReversal({
+        reasonCode: 'multiple_serviceprovided_for_appointment',
+        reasonMessage: `appointment ${payload?.appointment_id} possui multiplos servicesprovided. Informe p_serviceprovided_id explicitamente.`,
+        carteiraContaId: conta.id,
+      });
+    }
+    if (matches.length === 1) {
+      serviceIndex = services.findIndex((item) => item?.id === matches[0]?.id);
+    }
+  }
+
+  const service = serviceIndex >= 0 ? services[serviceIndex] : null;
+
+  let appointmentIndex = -1;
+  const appointmentId = String(payload?.appointment_id || service?.appointment_id || '').trim();
+  if (appointmentId) {
+    appointmentIndex = appointments.findIndex(
+      (item) => item?.id === appointmentId && item?.empresa_id === empresaId,
+    );
+    if (appointmentIndex < 0) {
+      return buildRejectedReversal({
+        reasonCode: 'appointment_not_found',
+        reasonMessage: `appointment ${appointmentId} nao encontrado para a empresa ${empresaId}.`,
+        carteiraContaId: conta.id,
+        serviceProvidedId: service?.id || null,
+      });
+    }
+  }
+
+  const appointment = appointmentIndex >= 0 ? appointments[appointmentIndex] : null;
+
+  let obrigacaoIndex = -1;
+  if (String(payload?.obrigacao_id || '').trim()) {
+    obrigacaoIndex = obrigacoes.findIndex(
+      (item) => item?.id === payload?.obrigacao_id
+        && item?.empresa_id === empresaId
+        && item?.carteira_conta_id === conta.id,
+    );
+    if (obrigacaoIndex < 0) {
+      return buildRejectedReversal({
+        reasonCode: 'obrigacao_not_found',
+        reasonMessage: `obrigacao_financeira ${payload?.obrigacao_id} nao encontrada para a empresa ${empresaId}.`,
+        carteiraContaId: conta.id,
+        appointmentId: appointment?.id || null,
+        serviceProvidedId: service?.id || null,
+      });
+    }
+  } else if (appointment?.id) {
+    obrigacaoIndex = obrigacoes.findIndex(
+      (item) => item?.empresa_id === empresaId
+        && item?.carteira_conta_id === conta.id
+        && item?.appointment_id === appointment.id,
+    );
+  }
+
+  const obrigacao = obrigacaoIndex >= 0 ? obrigacoes[obrigacaoIndex] : null;
+
+  let contaReceberIndex = -1;
+  if (String(payload?.conta_receber_id || '').trim()) {
+    contaReceberIndex = contasReceber.findIndex(
+      (item) => item?.id === payload?.conta_receber_id && item?.empresa_id === empresaId,
+    );
+    if (contaReceberIndex < 0) {
+      return buildRejectedReversal({
+        reasonCode: 'conta_receber_not_found',
+        reasonMessage: `conta_receber ${payload?.conta_receber_id} nao encontrada para a empresa ${empresaId}.`,
+        carteiraContaId: conta.id,
+        appointmentId: appointment?.id || null,
+        serviceProvidedId: service?.id || null,
+        obrigacaoId: obrigacao?.id || null,
+      });
+    }
+  } else if (appointment?.id) {
+    contaReceberIndex = contasReceber.findIndex(
+      (item) => item?.empresa_id === empresaId && item?.appointment_id === appointment.id,
+    );
+  }
+
+  const contaReceber = contaReceberIndex >= 0 ? contasReceber[contaReceberIndex] : null;
+
+  let cobrancaIndex = -1;
+  if (String(payload?.cobranca_financeira_id || '').trim()) {
+    cobrancaIndex = cobrancas.findIndex(
+      (item) => item?.id === payload?.cobranca_financeira_id
+        && item?.empresa_id === empresaId
+        && item?.carteira_conta_id === conta.id,
+    );
+    if (cobrancaIndex < 0) {
+      return buildRejectedReversal({
+        reasonCode: 'charge_not_found',
+        reasonMessage: `cobranca_financeira ${payload?.cobranca_financeira_id} nao encontrada para a empresa ${empresaId}.`,
+        carteiraContaId: conta.id,
+        appointmentId: appointment?.id || null,
+        serviceProvidedId: service?.id || null,
+        obrigacaoId: obrigacao?.id || null,
+        contaReceberId: contaReceber?.id || null,
+      });
+    }
+  } else if (obrigacao?.id) {
+    const linkedCharge = cobrancaItens.find((item) => item?.obrigacao_id === obrigacao.id);
+    if (linkedCharge) {
+      cobrancaIndex = cobrancas.findIndex((item) => item?.id === linkedCharge?.cobranca_financeira_id);
+    }
+  }
+
+  const cobranca = cobrancaIndex >= 0 ? cobrancas[cobrancaIndex] : null;
+
+  if (!service && !appointment && !obrigacao && !contaReceber) {
+    return buildRejectedReversal({
+      reasonCode: 'service_reversal_target_not_found',
+      reasonMessage: 'Nao foi possivel localizar servico, agendamento ou obrigacao para o estorno de servico.',
+      carteiraContaId: conta.id,
+    });
+  }
+
+  if (obrigacao?.status === 'cancelada' || obrigacao?.status === 'estornada') {
+    return buildRejectedReversal({
+      reasonCode: 'service_already_reversed',
+      reasonMessage: `Obrigacao ${obrigacao?.id} ja esta com status ${obrigacao?.status}.`,
+      carteiraContaId: conta.id,
+      appointmentId: appointment?.id || null,
+      serviceProvidedId: service?.id || null,
+      obrigacaoId: obrigacao?.id || null,
+      cobrancaId: cobranca?.id || null,
+      contaReceberId: contaReceber?.id || null,
+    });
+  }
+
+  const chargeItemsForCharge = cobranca
+    ? cobrancaItens.filter((item) => item?.cobranca_financeira_id === cobranca.id)
+    : [];
+  if (chargeItemsForCharge.length > 1) {
+    return buildRejectedReversal({
+      reasonCode: 'multi_charge_reversal_out_of_scope',
+      reasonMessage: `Cobranca ${cobranca?.id} possui ${chargeItemsForCharge.length} itens e o estorno de servico no corte atual exige cobranca de item unico.`,
+      carteiraContaId: conta.id,
+      appointmentId: appointment?.id || null,
+      serviceProvidedId: service?.id || null,
+      obrigacaoId: obrigacao?.id || null,
+      cobrancaId: cobranca?.id || null,
+      contaReceberId: contaReceber?.id || null,
+    });
+  }
+
+  const serviceValue = roundMockCurrency(
+    service?.valor_cobrado ?? service?.preco ?? contaReceber?.valor ?? obrigacao?.valor_final ?? obrigacao?.valor_original ?? appointment?.valor_previsto ?? 0,
+  );
+  if (serviceValue <= 0) {
+    return buildRejectedReversal({
+      reasonCode: 'service_value_not_found',
+      reasonMessage: 'Nao foi possivel determinar um valor positivo para o servico a ser estornado.',
+      carteiraContaId: conta.id,
+      appointmentId: appointment?.id || null,
+      serviceProvidedId: service?.id || null,
+      obrigacaoId: obrigacao?.id || null,
+      cobrancaId: cobranca?.id || null,
+      contaReceberId: contaReceber?.id || null,
+    });
+  }
+
+  const valorPago = obrigacao
+    ? roundMockCurrency(Math.max(roundMockCurrency(obrigacao?.valor_final) - roundMockCurrency(obrigacao?.valor_em_aberto), 0))
+    : 0;
+  const valorFinalObrigacao = roundMockCurrency(obrigacao?.valor_final ?? serviceValue);
+  if (valorPago > 0 && valorPago !== valorFinalObrigacao) {
+    return buildRejectedReversal({
+      reasonCode: 'partial_paid_service_reversal_out_of_scope',
+      reasonMessage: `Pagamento parcial nao esta no escopo do corte atual. Valor pago ${valorPago} difere do valor final ${valorFinalObrigacao}.`,
+      carteiraContaId: conta.id,
+      appointmentId: appointment?.id || null,
+      serviceProvidedId: service?.id || null,
+      obrigacaoId: obrigacao?.id || null,
+      cobrancaId: cobranca?.id || null,
+      contaReceberId: contaReceber?.id || null,
+      valorEstornado: valorPago,
+    });
+  }
+
+  const servicoRealizado = Boolean(
+    service?.checkin_id
+    || appointment?.linked_checkin_id
+    || checkins.some((item) =>
+      (item?.appointment_id === appointment?.id)
+      || (service?.checkin_id && item?.id === service.checkin_id)
+      || (appointment?.linked_checkin_id && item?.id === appointment.linked_checkin_id),
+    ),
+  );
+
+  if (valorPago > 0 && roundMockCurrency(conta?.saldo_atual) < valorPago) {
+    return buildRejectedReversal({
+      reasonCode: 'insufficient_positive_balance_for_service_reversal',
+      reasonMessage: `Saldo atual ${roundMockCurrency(conta?.saldo_atual)} insuficiente para estornar o servico no valor de ${valorPago}.`,
+      carteiraContaId: conta.id,
+      appointmentId: appointment?.id || null,
+      serviceProvidedId: service?.id || null,
+      obrigacaoId: obrigacao?.id || null,
+      cobrancaId: cobranca?.id || null,
+      contaReceberId: contaReceber?.id || null,
+      valorEstornado: valorPago,
+      servicoRealizado,
+    });
+  }
+
+  const paymentExecution = obrigacao?.id
+    ? execucoes
+      .filter((item) => item?.empresa_id === empresaId && item?.obrigacao_id === obrigacao.id && item?.classe_resultado === 'executado')
+      .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime())[0] || null
+    : null;
+
+  let walletResult = null;
+  if (valorPago > 0) {
+    walletResult = applyMockWalletOperationCore({
+      carteira_conta_id: conta.id,
+      operacao_idempotencia: operacaoIdempotencia,
+      tipo: 'estorno',
+      natureza: 'saida',
+      origem: 'payment_v2_reversal_servico',
+      valor: valorPago,
+      referencia_amigavel: 'Estorno de servico - Payment V2',
+      descricao: motivo,
+      appointment_id: appointment?.id || null,
+      obrigacao_id: obrigacao?.id || null,
+      usuario_id: payload?.usuario_id || null,
+      metadata: {
+        ...(payload?.metadata || {}),
+        source: 'payment_v2_reverse',
+        contract_scope: 'sprint9b1_cut2',
+        authority_scope: 'payment_v2_reversal',
+        reversal_scope: 'servico',
+        attachment_name: attachmentName,
+        attachment_path: attachmentPath,
+        attachment_extension: attachmentExtension,
+      },
+      permitir_saldo_negativo: false,
+    });
+  }
+
+  const now = new Date().toISOString();
+  const reversalNote = `[Payment V2 Reversal] ${motivo}`;
+
+  if (serviceIndex >= 0) {
+    if (servicoRealizado) {
+      services[serviceIndex] = {
+        ...service,
+        preco: 0,
+        valor_cobrado: 0,
+        status: 'estornado',
+        status_pagamento: 'pago',
+        estornado_em: now,
+        estornado_motivo: motivo,
+        observacoes: appendMockNote(service?.observacoes, reversalNote),
+        metadata: {
+          ...(service?.metadata || {}),
+          payment_v2_reversal: true,
+          payment_v2_reversal_at: now,
+          payment_v2_reversal_operacao_idempotencia: operacaoIdempotencia,
+          payment_v2_reversal_attachment_path: attachmentPath,
+          payment_v2_reversal_original_preco: roundMockCurrency(service?.preco),
+          payment_v2_reversal_original_valor_cobrado: roundMockCurrency(service?.valor_cobrado),
+        },
+        updated_date: now,
+      };
+      writeStorage('ServiceProvided', services);
+    } else {
+      services.splice(serviceIndex, 1);
+      writeStorage('ServiceProvided', services);
+    }
+  }
+
+  if (appointmentIndex >= 0) {
+    if (servicoRealizado) {
+      appointments[appointmentIndex] = {
+        ...appointment,
+        status: 'estornado',
+        observacoes: appendMockNote(appointment?.observacoes, reversalNote),
+        metadata: {
+          ...(appointment?.metadata || {}),
+          payment_v2_reversal: true,
+          payment_v2_reversal_at: now,
+          payment_v2_reversal_operacao_idempotencia: operacaoIdempotencia,
+          payment_v2_reversal_attachment_path: attachmentPath,
+        },
+        updated_date: now,
+      };
+      writeStorage('Appointment', appointments);
+    } else {
+      appointments.splice(appointmentIndex, 1);
+      writeStorage('Appointment', appointments);
+    }
+  }
+
+  if (obrigacaoIndex >= 0) {
+    obrigacoes[obrigacaoIndex] = {
+      ...obrigacao,
+      valor_original: 0,
+      valor_desconto: 0,
+      valor_multa: 0,
+      valor_final: 0,
+      valor_em_aberto: 0,
+      status: servicoRealizado || valorPago > 0 ? 'estornada' : 'cancelada',
+      metadata: {
+        ...(obrigacao?.metadata || {}),
+        payment_v2_reversal: true,
+        payment_v2_reversal_at: now,
+        payment_v2_reversal_operacao_idempotencia: operacaoIdempotencia,
+        payment_v2_reversal_original_valor_original: roundMockCurrency(obrigacao?.valor_original),
+        payment_v2_reversal_original_valor_final: roundMockCurrency(obrigacao?.valor_final),
+        payment_v2_reversal_original_valor_em_aberto: roundMockCurrency(obrigacao?.valor_em_aberto),
+        payment_v2_reversal_attachment_path: attachmentPath,
+        payment_v2_reversal_servico_realizado: servicoRealizado,
+      },
+      updated_date: now,
+      lock_version: Number(obrigacao?.lock_version || 0) + 1,
+    };
+    writeStorage('ObrigacaoFinanceira', obrigacoes);
+  }
+
+  if (cobrancaIndex >= 0) {
+    const cobranca = cobrancas[cobrancaIndex];
+    cobrancas[cobrancaIndex] = {
+      ...cobranca,
+      valor_total: 0,
+      valor_em_aberto: 0,
+      status: 'cancelada',
+      metadata: {
+        ...(cobranca?.metadata || {}),
+        payment_v2_reversal: true,
+        payment_v2_reversal_at: now,
+        payment_v2_reversal_operacao_idempotencia: operacaoIdempotencia,
+        payment_v2_reversal_original_valor_total: roundMockCurrency(cobranca?.valor_total),
+        payment_v2_reversal_original_valor_em_aberto: roundMockCurrency(cobranca?.valor_em_aberto),
+        payment_v2_reversal_attachment_path: attachmentPath,
+      },
+      updated_date: now,
+      lock_version: Number(cobranca?.lock_version || 0) + 1,
+    };
+    writeStorage('CobrancaFinanceira', cobrancas);
+  }
+
+  if (contaReceberIndex >= 0) {
+    const contaItem = contasReceber[contaReceberIndex];
+    contasReceber[contaReceberIndex] = {
+      ...contaItem,
+      valor: 0,
+      status: 'pago',
+      observacoes: appendMockNote(contaItem?.observacoes, reversalNote),
+      metadata: {
+        ...(contaItem?.metadata || {}),
+        payment_v2_reversal: true,
+        payment_v2_reversal_at: now,
+        payment_v2_reversal_operacao_idempotencia: operacaoIdempotencia,
+        payment_v2_reversal_original_valor: roundMockCurrency(contaItem?.valor),
+        payment_v2_reversal_attachment_path: attachmentPath,
+        payment_v2_reversal_servico_realizado: servicoRealizado,
+      },
+      updated_date: now,
+    };
+    writeStorage('ContaReceber', contasReceber);
+  }
+
+  const reversao = persistMockPaymentV2Reversal({
+    empresa_id: empresaId,
+    carteira_conta_id: conta.id,
+    pagamento_v2_execucao_id: paymentExecution?.id || null,
+    appointment_id: servicoRealizado ? (appointment?.id || null) : null,
+    serviceprovided_id: servicoRealizado ? (service?.id || null) : null,
+    obrigacao_id: obrigacao?.id || null,
+    cobranca_financeira_id: cobranca?.id || null,
+    conta_receber_id: contaReceber?.id || null,
+    carteira_movimento_id: walletResult?.movimento_id || null,
+    reversao_tipo: 'servico',
+    operacao_idempotencia: operacaoIdempotencia,
+    source_key: sourceKey,
+    motivo,
+    attachment_name: attachmentName,
+    attachment_path: attachmentPath,
+    attachment_extension: attachmentExtension,
+    valor_estornado: valorPago,
+    servico_realizado: servicoRealizado,
+    classe_resultado: 'executado',
+    usuario_id: payload?.usuario_id || null,
+    metadata: {
+      ...(payload?.metadata || {}),
+      source: 'payment_v2_reverse',
+      contract_scope: 'sprint9b1_cut2',
+      authority_scope: 'payment_v2_reversal',
+      reversal_scope: 'servico',
+      service_value_final: serviceValue,
+      original_appointment_id: appointment?.id || null,
+      original_serviceprovided_id: service?.id || null,
+    },
+    reused: false,
+  });
+
+  return buildMockPaymentV2ReversalResponse(reversao, 'executado');
+};
+
+mockFunctions.financePaymentV2ReversalAudit = async (payload = {}) => {
+  const empresaId = payload?.empresa_id || getMockScopedUnitId();
+  return buildMockPaymentV2ReversalAuditRows(empresaId, payload?.limit || 100);
+};
+
 const mockIntegrations = {
   Core: {
     SendEmail: async ({ to, subject, body }) => {
@@ -2625,6 +4325,8 @@ const createMockAuth = () => {
     email: 'dev@example.com',
     full_name: 'Dev User',
     empresa_id: 'empresa_demo',
+    company_role: null,
+    is_platform_admin: false,
     access_profile_permissions: [],
     pin_required_reset: false,
   };
@@ -2633,36 +4335,39 @@ const createMockAuth = () => {
     currentUser,
     isEnabled: () => false,
     requiresLogin: () => false,
-    getSession: async () => ({ user: currentUser }),
+    getSession: async () => ({ user: applyMockQaRole(currentUser) }),
     me: async () => {
-      const activeUnitId = getStoredActiveUnitId() || currentUser.empresa_id;
+      const hydratedUser = applyMockQaRole(currentUser);
+      const activeUnitId = getStoredActiveUnitId() || hydratedUser.empresa_id;
       const selectedUnitIds = getSelectedScopedUnitIds();
       return {
-        ...currentUser,
-        assigned_empresa_id: currentUser.empresa_id,
-        allowed_unit_ids: [currentUser.empresa_id],
+        ...hydratedUser,
+        assigned_empresa_id: hydratedUser.empresa_id,
+        allowed_unit_ids: [hydratedUser.empresa_id],
         active_unit_id: activeUnitId,
         selected_unit_ids: selectedUnitIds,
         unit_selection_mode: selectedUnitIds.length > 1 ? 'merged' : 'single',
         empresa_id: activeUnitId,
       };
     },
-    list: async () => [currentUser],
-    signInWithGoogle: async () => ({ provider: 'google', user: currentUser }),
-    exchangeCodeForSession: async () => ({ session: { user: currentUser }, user: currentUser }),
+    list: async () => [applyMockQaRole(currentUser)],
+    signInWithGoogle: async () => ({ provider: 'google', user: applyMockQaRole(currentUser) }),
+    exchangeCodeForSession: async () => ({ session: { user: applyMockQaRole(currentUser) }, user: applyMockQaRole(currentUser) }),
     signInWithPin: async () => {
       markDeviceTrustedForUser(currentUser);
-      return { ok: true, session: { user: currentUser }, user: currentUser };
+      const hydratedUser = applyMockQaRole(currentUser);
+      return { ok: true, session: { user: hydratedUser }, user: hydratedUser };
     },
     signInWithPinPairs: async () => {
       markDeviceTrustedForUser(currentUser);
-      return { ok: true, session: { user: currentUser }, user: currentUser };
+      const hydratedUser = applyMockQaRole(currentUser);
+      return { ok: true, session: { user: hydratedUser }, user: hydratedUser };
     },
     verifyCurrentDevicePin: async () => {
       markDeviceTrustedForUser(currentUser);
-      return { ok: true, user: currentUser };
+      return { ok: true, user: applyMockQaRole(currentUser) };
     },
-    isCurrentDeviceTrusted: (user) => isDeviceTrustedForUser(user || currentUser),
+    isCurrentDeviceTrusted: (user) => isDeviceTrustedForUser(user || applyMockQaRole(currentUser)),
     setPin: async () => {
       currentUser.pin_required_reset = false;
       currentUser.pin_bootstrap_status = 'definido';
@@ -3039,6 +4744,8 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     PackageBilling: 'package_billings',
     CarteiraConta: 'carteira_conta',
     CarteiraMovimento: 'carteira_movimento',
+    PagamentoV2Execucao: 'pagamento_v2_execucao',
+    PagamentoV2Reversao: 'pagamento_v2_reversao',
     CarteiraReconciliacao: 'carteira_reconciliacao',
     AutorizacaoFinanceira: 'autorizacao_financeira',
     CancelamentoFinanceiro: 'cancelamento_financeiro',
@@ -3657,6 +5364,131 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       });
       if (error) {
         throw toAppError(error, 'Erro ao carregar os alertas financeiros V2.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+    financeWriteFlowMap: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_write_flow_map', {
+        p_empresa_id: payload?.empresa_id || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar o mapa de fluxos de escrita financeira.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+    financeWriteGovernanceMatrix: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_write_governance_matrix', {
+        p_empresa_id: payload?.empresa_id || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar a matriz de governança da escrita financeira.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+    financeOperationalObservabilityContext: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_operational_observability_context', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_periodo_inicio: payload?.periodo_inicio || null,
+        p_periodo_fim: payload?.periodo_fim || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar o contexto de observabilidade financeira.');
+      }
+      return Array.isArray(data) ? (data[0] || null) : data;
+    },
+    financeHybridWriteAudit: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_hybrid_write_audit', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_periodo_inicio: payload?.periodo_inicio || null,
+        p_periodo_fim: payload?.periodo_fim || null,
+        p_limit: payload?.limit || 200,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar a trilha híbrida de escrita financeira.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+    financeOperationalReconciliationMatrix: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_operational_reconciliation_matrix', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_periodo_inicio: payload?.periodo_inicio || null,
+        p_periodo_fim: payload?.periodo_fim || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar a matriz de reconciliação operacional.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+    financePaymentV2Contract: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_payment_v2_contract', {
+        p_empresa_id: payload?.empresa_id || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar o contrato formal do Pagamento V2.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+    financePaymentV2Execute: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_payment_v2_execute', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_carteira_conta_id: payload?.carteira_conta_id || null,
+        p_obrigacao_id: payload?.obrigacao_id || null,
+        p_cobranca_financeira_id: payload?.cobranca_financeira_id || null,
+        p_operacao_idempotencia: payload?.operacao_idempotencia || null,
+        p_source_key: payload?.source_key || null,
+        p_valor: payload?.valor ?? null,
+        p_data_pagamento: payload?.data_pagamento || null,
+        p_forma_pagamento: payload?.forma_pagamento || null,
+        p_origem_operacional: payload?.origem_operacional || 'manual_operacional',
+        p_usuario_id: payload?.usuario_id || null,
+        p_metadata: payload?.metadata || {},
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao executar a liquidacao controlada do Payment V2.');
+      }
+      return Array.isArray(data) ? (data[0] || null) : data;
+    },
+    financePaymentV2ExecutionAudit: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_payment_v2_execution_audit', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_limit: payload?.limit || 100,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar a auditoria de execucao do Payment V2.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+    financePaymentV2Reverse: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_payment_v2_reverse', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_carteira_conta_id: payload?.carteira_conta_id || null,
+        p_reversao_tipo: payload?.reversao_tipo || null,
+        p_operacao_idempotencia: payload?.operacao_idempotencia || null,
+        p_source_key: payload?.source_key || null,
+        p_motivo: payload?.motivo || null,
+        p_attachment_name: payload?.attachment_name || null,
+        p_attachment_path: payload?.attachment_path || null,
+        p_valor: payload?.valor ?? null,
+        p_appointment_id: payload?.appointment_id || null,
+        p_serviceprovided_id: payload?.serviceprovided_id || null,
+        p_obrigacao_id: payload?.obrigacao_id || null,
+        p_cobranca_financeira_id: payload?.cobranca_financeira_id || null,
+        p_conta_receber_id: payload?.conta_receber_id || null,
+        p_usuario_id: payload?.usuario_id || null,
+        p_metadata: payload?.metadata || {},
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao executar o estorno controlado do Payment V2.');
+      }
+      return Array.isArray(data) ? (data[0] || null) : data;
+    },
+    financePaymentV2ReversalAudit: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_payment_v2_reversal_audit', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_limit: payload?.limit || 100,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao carregar a auditoria de estorno do Payment V2.');
       }
       return Array.isArray(data) ? data : [];
     },

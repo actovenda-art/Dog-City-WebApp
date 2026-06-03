@@ -1,6 +1,6 @@
 import PropTypes from "prop-types";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Carteira, Dog, Responsavel, User } from "@/api/entities";
+import { Carteira, ContaReceber, Dog, Responsavel, User } from "@/api/entities";
 import { clientRegistration } from "@/api/functions";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -45,6 +45,8 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import FinancialOperationalAlert from "@/components/finance/FinancialOperationalAlert";
+import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -583,6 +585,7 @@ export default function Perfis() {
   const [dogs, setDogs] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
+  const [contasReceber, setContasReceber] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -609,16 +612,18 @@ export default function Perfis() {
     if (showLoader) setIsLoading(true);
 
     try {
-      const [dogsData, responsaveisData, carteirasData, me] = await Promise.all([
+      const [dogsData, responsaveisData, carteirasData, contasData, me] = await Promise.all([
         Dog.list("-created_date", 1000),
         Responsavel.list("-created_date", 1000),
         Carteira.list("-created_date", 1000),
+        ContaReceber.listAll ? ContaReceber.listAll("-created_date", 1000, 10000) : ContaReceber.list("-created_date", 5000),
         User.me().catch(() => null),
       ]);
 
       setDogs(dogsData || []);
       setResponsaveis(responsaveisData || []);
       setCarteiras(carteirasData || []);
+      setContasReceber(contasData || []);
       setCurrentUser(me);
       return true;
     } catch (error) {
@@ -659,6 +664,10 @@ export default function Perfis() {
   }, [location.search]);
 
   const dogMap = useMemo(() => buildDogMap(dogs), [dogs]);
+  const carteiraFinancialStatusMap = useMemo(
+    () => buildFinancialOperationalStatusMap(contasReceber),
+    [contasReceber],
+  );
 
   const dogResponsaveisMap = useMemo(() => {
     const nextMap = {};
@@ -803,6 +812,10 @@ export default function Perfis() {
   const viewingCarteira = useMemo(
     () => carteirasView.find((item) => item.id === viewingCarteiraId) || null,
     [carteirasView, viewingCarteiraId]
+  );
+  const viewingCarteiraFinancialStatus = useMemo(
+    () => getFinancialOperationalStatus(carteiraFinancialStatusMap, viewingCarteira?.id || null),
+    [carteiraFinancialStatusMap, viewingCarteira?.id],
   );
   const availableCarteirasForLink = useMemo(() => {
     const linkedDogIds = new Set(selectedLinkResponsavel?.linkedDogIds || []);
@@ -1848,6 +1861,11 @@ export default function Perfis() {
                 <ProfileDetailField label="CPF/CNPJ" value={viewingCarteira.cpf_cnpj || "Não informado"} />
                 <ProfileDetailField label="Vencimento" value={viewingCarteira.vencimento_planos ? `Dia ${viewingCarteira.vencimento_planos}` : "Não informado"} />
               </div>
+
+              <FinancialOperationalAlert
+                status={viewingCarteiraFinancialStatus}
+                title="Situação financeira atual"
+              />
 
               <div className="rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-500">Cães vinculados</p>

@@ -36,6 +36,7 @@ import Cockpit from "./Cockpit";
 import ControleGerencial from "./ControleGerencial";
 import Escalacao from "./Escalacao";
 import ContasReceber from "./ContasReceber";
+import CarteirasFinanceiras from "./CarteirasFinanceiras";
 import PedidosInternos from "./PedidosInternos";
 import Movimentacoes from "./Movimentacoes";
 import Receitas from "./Receitas";
@@ -72,6 +73,7 @@ const PAGES = {
   ControleGerencial,
   Escalacao,
   ContasReceber,
+  CarteirasFinanceiras,
   PedidosInternos,
   Movimentacoes,
   Receitas,

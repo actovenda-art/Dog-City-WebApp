@@ -224,6 +224,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
       title: "Financeiro",
       icon: Wallet,
       items: [
+        { title: "Carteiras", url: createPageUrl("CarteirasFinanceiras"), icon: Wallet },
         { title: "Transações", url: createPageUrl("Movimentacoes"), icon: DollarSign },
         { title: "Receitas", url: createPageUrl("Receitas"), icon: TrendingUp },
         { title: "Despesas", url: createPageUrl("Despesas"), icon: TrendingUp },

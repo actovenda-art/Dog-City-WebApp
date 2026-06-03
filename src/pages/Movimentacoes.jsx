@@ -14,6 +14,7 @@ import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import {
   AppConfig,
   Appointment,
+  Carteira,
   ContaReceber,
   CobrancaFinanceira,
   Dog,
@@ -591,7 +592,41 @@ function getOperationalStatusClass(tone) {
   return "border-emerald-200 bg-emerald-50 text-emerald-700";
 }
 
-export default function Movimentacoes() {
+function buildWalletAdminAccounts(accounts = [], carteiras = []) {
+  const normalizedAccounts = (accounts || []).map((account) => ({
+    ...account,
+    carteira_selection_id: account?.carteira_conta_id || `conta:${account?.carteira_id || account?.id || "wallet"}`,
+    has_wallet_account: Boolean(account?.carteira_conta_id),
+  }));
+
+  const accountedCarteiraIds = new Set(
+    normalizedAccounts
+      .map((account) => account?.carteira_id || null)
+      .filter(Boolean),
+  );
+
+  const virtualCarteiras = (carteiras || [])
+    .filter((carteira) => carteira?.ativo !== false)
+    .filter((carteira) => !accountedCarteiraIds.has(carteira?.id))
+    .map((carteira) => ({
+      carteira_selection_id: `virtual:${carteira?.id}`,
+      carteira_conta_id: null,
+      carteira_id: carteira?.id || null,
+      carteira_nome: carteira?.nome_razao_social || carteira?.nome_fantasia || "Responsável financeiro",
+      carteira_codigo: carteira?.cpf_cnpj || carteira?.celular || carteira?.email || null,
+      saldo_atual: 0,
+      movimento_count: 0,
+      ultimo_movimento_em: null,
+      latest_reconciliation_status: "sem_conta",
+      has_wallet_account: false,
+    }));
+
+  return [...normalizedAccounts, ...virtualCarteiras].sort((left, right) =>
+    String(left?.carteira_nome || "").localeCompare(String(right?.carteira_nome || ""), "pt-BR", { sensitivity: "base" }),
+  );
+}
+
+export default function Movimentacoes({ walletOnly = false }) {
   const [movimentacoes, setMovimentacoes] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [currentBalance, setCurrentBalance] = useState(null);
@@ -759,18 +794,24 @@ export default function Movimentacoes() {
     let isMounted = true;
 
     const initializePage = async () => {
-      applyCachedSnapshot();
+      if (!walletOnly) {
+        applyCachedSnapshot();
+      }
       try {
         const me = await User.me();
         if (!isMounted) return;
         setCurrentUser(me || null);
-        applyCachedSnapshot(me?.empresa_id || null);
-        await loadData(me || null);
+        if (!walletOnly) {
+          applyCachedSnapshot(me?.empresa_id || null);
+          await loadData(me || null);
+        }
       } catch (error) {
         console.warn("Não foi possível carregar o usuário atual:", error);
         if (isMounted) {
-          applyCachedSnapshot();
-          await loadData(null);
+          if (!walletOnly) {
+            applyCachedSnapshot();
+            await loadData(null);
+          }
         }
       }
     };
@@ -780,7 +821,7 @@ export default function Movimentacoes() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [walletOnly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -892,26 +933,33 @@ export default function Movimentacoes() {
         return;
       }
 
-      const [accounts, auditRows] = await Promise.all([
+      const [accounts, auditRows, carteiras] = await Promise.all([
         financeWalletAdminReadAccounts({ empresa_id: userProfile.empresa_id }),
         nextFlags.balanceReadEnabled
           ? financeWalletAdminAuditAccounts({ empresa_id: userProfile.empresa_id })
           : Promise.resolve([]),
+        readEntityCollection(Carteira, { sort: "nome_razao_social", pageSize: 500, maxRows: 2000 }),
       ]);
 
-      const normalizedAccounts = Array.isArray(accounts) ? accounts : [];
+      const normalizedAccounts = buildWalletAdminAccounts(
+        Array.isArray(accounts) ? accounts : [],
+        Array.isArray(carteiras) ? carteiras : [],
+      );
       setWalletAccounts(normalizedAccounts);
       setWalletAuditRows(Array.isArray(auditRows) ? auditRows : []);
 
-      const nextSelectedWalletId = normalizedAccounts.some((item) => item.carteira_conta_id === preferredWalletAccountId)
+      const nextSelectedWallet = normalizedAccounts.find((item) => item.carteira_selection_id === preferredWalletAccountId)
+        || normalizedAccounts[0]
+        || null;
+      const nextSelectedWalletId = normalizedAccounts.some((item) => item.carteira_selection_id === preferredWalletAccountId)
         ? preferredWalletAccountId
-        : (normalizedAccounts[0]?.carteira_conta_id || "");
+        : (nextSelectedWallet?.carteira_selection_id || "");
       setSelectedWalletAccountId(nextSelectedWalletId);
 
-      if (nextFlags.movementsEnabled && nextSelectedWalletId) {
+      if (nextFlags.movementsEnabled && nextSelectedWallet?.carteira_conta_id) {
         const recentMovements = await financeWalletAdminReadMovements({
           empresa_id: userProfile.empresa_id,
-          carteira_conta_id: nextSelectedWalletId,
+          carteira_conta_id: nextSelectedWallet.carteira_conta_id,
           limit: 20,
         });
         setWalletRecentMovements(Array.isArray(recentMovements) ? recentMovements : []);
@@ -1017,6 +1065,9 @@ export default function Movimentacoes() {
     }
   };
 
+  const selectedWalletAccount = walletAccounts.find((item) => item.carteira_selection_id === selectedWalletAccountId) || null;
+  const selectedWalletRuntimeAccountId = selectedWalletAccount?.carteira_conta_id || "";
+
   useEffect(() => {
     if (!currentUser?.empresa_id) return;
     loadWalletAdminData(currentUser);
@@ -1025,15 +1076,15 @@ export default function Movimentacoes() {
   useEffect(() => {
     if (!currentUser?.empresa_id) return;
     if (!walletFlags.movementsEnabled) return;
-    if (!selectedWalletAccountId) {
+    if (!selectedWalletRuntimeAccountId) {
       setWalletRecentMovements([]);
       return;
     }
-    loadWalletMovements(selectedWalletAccountId, currentUser);
-  }, [currentUser?.empresa_id, walletFlags.movementsEnabled, selectedWalletAccountId]);
+    loadWalletMovements(selectedWalletRuntimeAccountId, currentUser);
+  }, [currentUser?.empresa_id, selectedWalletRuntimeAccountId, walletFlags.movementsEnabled]);
 
   useEffect(() => {
-    if (!currentUser?.empresa_id || !selectedWalletAccountId) {
+    if (!currentUser?.empresa_id || !selectedWalletRuntimeAccountId) {
       setWalletReceivables([]);
       setWalletOperationalContext({
         appointments: [],
@@ -1046,8 +1097,8 @@ export default function Movimentacoes() {
       setWalletOperationalHistory([]);
       return;
     }
-    loadWalletOperationalHistory(selectedWalletAccountId, currentUser);
-  }, [currentUser?.empresa_id, selectedWalletAccountId]);
+    loadWalletOperationalHistory(selectedWalletRuntimeAccountId, currentUser);
+  }, [currentUser?.empresa_id, selectedWalletRuntimeAccountId]);
 
   const normalizedMovements = React.useMemo(
     () =>
@@ -1130,8 +1181,7 @@ export default function Movimentacoes() {
   const saldoAtual = hasOfficialBalance ? currentBalance : null;
   const saldoAtualDisplay = hasOfficialBalance ? formatCurrency(currentBalance) : "—";
   const walletReadEnabled = walletFlags.balanceReadEnabled || walletFlags.movementsEnabled;
-  const selectedWalletAccount = walletAccounts.find((item) => item.carteira_conta_id === selectedWalletAccountId) || null;
-  const selectedWalletAudit = walletAuditRows.find((item) => item.carteira_conta_id === selectedWalletAccountId) || null;
+  const selectedWalletAudit = walletAuditRows.find((item) => item.carteira_conta_id === selectedWalletRuntimeAccountId) || null;
   const walletFinancialStatusMap = useMemo(
     () => buildFinancialOperationalStatusMap(walletReceivables),
     [walletReceivables],
@@ -1142,7 +1192,7 @@ export default function Movimentacoes() {
   );
   const walletReversalServiceOptions = useMemo(
     () => buildWalletReversalServiceOptions({
-      walletAccountId: walletReversalForm.carteira_conta_id || selectedWalletAccountId,
+      walletAccountId: walletReversalForm.carteira_conta_id || selectedWalletRuntimeAccountId,
       appointments: walletOperationalContext.appointments,
       services: walletOperationalContext.services,
       obligations: walletOperationalContext.obligations,
@@ -1151,7 +1201,7 @@ export default function Movimentacoes() {
       dogs: walletOperationalContext.dogs,
     }),
     [
-      selectedWalletAccountId,
+      selectedWalletRuntimeAccountId,
       walletOperationalContext.accountsReceivable,
       walletOperationalContext.appointments,
       walletOperationalContext.charges,
@@ -1192,7 +1242,7 @@ export default function Movimentacoes() {
     const defaultNatureza = tipo === "credito_manual" || tipo === "entrada_direcionada" ? "entrada" : "entrada";
     setWalletActionMessage(null);
     setWalletOperationForm({
-      carteira_conta_id: options.carteira_conta_id || selectedWalletAccountId || "",
+      carteira_conta_id: options.carteira_conta_id || selectedWalletRuntimeAccountId || "",
       tipo,
       natureza: options.natureza || defaultNatureza,
       valor: options.valor != null ? String(options.valor).replace(".", ",") : "",
@@ -1209,7 +1259,7 @@ export default function Movimentacoes() {
     setWalletActionMessage(null);
     setWalletReversalForm({
       ...EMPTY_WALLET_REVERSAL_FORM,
-      carteira_conta_id: options.carteira_conta_id || selectedWalletAccountId || "",
+      carteira_conta_id: options.carteira_conta_id || selectedWalletRuntimeAccountId || "",
       reversao_tipo: options.reversao_tipo || "servico",
     });
     setShowWalletReversalModal(true);
@@ -1227,7 +1277,7 @@ export default function Movimentacoes() {
     setWalletReversalUploading(true);
     try {
       const empresaId = currentUser?.empresa_id || "empresa-default";
-      const walletAccountId = walletReversalForm.carteira_conta_id || selectedWalletAccountId || "carteira";
+      const walletAccountId = walletReversalForm.carteira_conta_id || selectedWalletRuntimeAccountId || "carteira";
       const safeName = `${Date.now()}_${sanitizeUploadFileName(file.name)}`;
       const path = `${empresaId}/financeiro/payment-v2-reversal/${walletAccountId}/${safeName}`;
       const { file_key } = await UploadPrivateFile({ file, path });
@@ -1283,12 +1333,12 @@ export default function Movimentacoes() {
   };
 
   const handleWalletReconcile = async () => {
-    if (!selectedWalletAccountId || !currentUser?.empresa_id) return;
+    if (!selectedWalletRuntimeAccountId || !currentUser?.empresa_id) return;
     setWalletLoading(true);
     setWalletActionMessage(null);
     try {
       const result = await financeWalletReconcileAccount({
-        carteira_conta_id: selectedWalletAccountId,
+        carteira_conta_id: selectedWalletRuntimeAccountId,
         usuario_id: currentUser?.id || null,
       });
       await loadWalletAdminData(currentUser, selectedWalletAccountId);
@@ -1648,22 +1698,31 @@ export default function Movimentacoes() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Transações</h1>
+            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
+              {walletOnly ? "Carteiras financeiras" : "Transações"}
+            </h1>
+            {walletOnly ? (
+              <p className="mt-1 text-sm text-slate-500">
+                Consulte o extrato e a trilha operacional de cada responsável financeiro em uma página dedicada do Financeiro.
+              </p>
+            ) : null}
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing} className="h-9 rounded-full px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""} sm:mr-2 sm:h-4 sm:w-4`} />
-              {isRefreshing ? "Atualizando..." : "Atualizar extrato"}
-            </Button>
-            <Button onClick={() => openModal()} className="h-9 rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:px-4 sm:text-sm">
-              <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
-              Nova movimentação manual
-            </Button>
-          </div>
+          {!walletOnly ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing} className="h-9 rounded-full px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""} sm:mr-2 sm:h-4 sm:w-4`} />
+                {isRefreshing ? "Atualizando..." : "Atualizar extrato"}
+              </Button>
+              <Button onClick={() => openModal()} className="h-9 rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:px-4 sm:text-sm">
+                <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+                Nova movimentação manual
+              </Button>
+            </div>
+          ) : null}
         </div>
 
-        {refreshResult && (
+        {!walletOnly && refreshResult && (
           <Card className={`mb-6 ${refreshResult.success ? "border-blue-200 bg-blue-50" : "border-red-200 bg-red-50"}`}>
             <CardContent className="p-4">
               <p className={`font-semibold ${refreshResult.success ? "text-blue-900" : "text-red-900"}`}>
@@ -1685,7 +1744,8 @@ export default function Movimentacoes() {
           </Card>
         )}
 
-        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+        {!walletOnly ? (
+          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
           <StatCard
             label="Entradas"
             value={formatCurrency(entradasCardValue)}
@@ -1723,9 +1783,10 @@ export default function Movimentacoes() {
             helper={movementPeriodLabel ? `Período: ${movementPeriodLabel}` : "Quantidade exibida"}
             isBlurred={isSummaryLoading}
           />
-        </div>
+          </div>
+        ) : null}
 
-        {walletReadEnabled && (
+        {walletOnly && walletReadEnabled ? (
           <Card className="mb-6 border-slate-200 bg-white">
             <CardContent className="space-y-4 p-4 sm:p-5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1735,7 +1796,9 @@ export default function Movimentacoes() {
                     <Badge variant="outline">Leitura controlada</Badge>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
-                    Bloco administrativo temporário para auditoria de saldo e movimentos, sem substituir o fluxo principal.
+                    {walletOnly
+                      ? "Consulte o extrato administrativo e a trilha operacional de cada responsável financeiro em uma superfície dedicada do Financeiro."
+                      : "Bloco administrativo temporário para auditoria de saldo e movimentos, sem substituir o fluxo principal."}
                   </p>
                 </div>
 
@@ -1752,8 +1815,8 @@ export default function Movimentacoes() {
                   {canManageWalletOperations ? (
                     <Button
                       variant="outline"
-                      onClick={() => openWalletReversalModal({ carteira_conta_id: selectedWalletAccountId })}
-                      disabled={!selectedWalletAccountId}
+                      onClick={() => openWalletReversalModal({ carteira_conta_id: selectedWalletRuntimeAccountId })}
+                      disabled={!selectedWalletRuntimeAccountId}
                       className="h-9 rounded-full border-red-200 bg-red-50 px-3 text-xs text-red-700 hover:bg-red-100 sm:text-sm"
                     >
                       <Undo2 className="mr-1.5 h-3.5 w-3.5" />
@@ -1787,7 +1850,7 @@ export default function Movimentacoes() {
                       </Button>
                     </>
                   )}
-                  {walletFlags.balanceReadEnabled && selectedWalletAccountId && (
+                  {walletFlags.balanceReadEnabled && selectedWalletRuntimeAccountId && (
                     <Button
                       variant="outline"
                       onClick={handleWalletReconcile}
@@ -1824,7 +1887,7 @@ export default function Movimentacoes() {
                       </SelectTrigger>
                       <SelectContent>
                         {walletAccounts.map((account) => (
-                          <SelectItem key={account.carteira_conta_id} value={account.carteira_conta_id}>
+                          <SelectItem key={account.carteira_selection_id} value={account.carteira_selection_id}>
                             {account.carteira_nome}
                           </SelectItem>
                         ))}
@@ -1835,16 +1898,16 @@ export default function Movimentacoes() {
                   <div className="space-y-3">
                     {walletAccounts.length === 0 ? (
                       <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-                        Nenhuma conta de carteira disponível para a leitura administrativa atual.
+                        Nenhum responsável financeiro foi encontrado para esta unidade.
                       </div>
                     ) : (
                       walletAccounts.map((account) => {
-                        const isSelected = account.carteira_conta_id === selectedWalletAccountId;
+                        const isSelected = account.carteira_selection_id === selectedWalletAccountId;
                         return (
                           <button
-                            key={account.carteira_conta_id}
+                            key={account.carteira_selection_id}
                             type="button"
-                            onClick={() => setSelectedWalletAccountId(account.carteira_conta_id)}
+                            onClick={() => setSelectedWalletAccountId(account.carteira_selection_id)}
                             className={`w-full rounded-2xl border p-4 text-left transition ${
                               isSelected
                                 ? "border-blue-300 bg-blue-50"
@@ -1861,7 +1924,9 @@ export default function Movimentacoes() {
                                 ) : null}
                               </div>
                               <Badge variant={account.latest_reconciliation_status === "divergente" ? "destructive" : "outline"}>
-                                {account.latest_reconciliation_status === "divergente" ? "Divergente" : "Auditável"}
+                                {account.has_wallet_account
+                                  ? (account.latest_reconciliation_status === "divergente" ? "Divergente" : "Auditável")
+                                  : "Sem conta operacional"}
                               </Badge>
                             </div>
                             <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
@@ -1912,7 +1977,13 @@ export default function Movimentacoes() {
                         title="Situação financeira do responsável"
                       />
 
-                      {walletFlags.movementsEnabled ? (
+                      {!selectedWalletAccount.has_wallet_account ? (
+                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                          Este responsável financeiro ainda não possui uma conta operacional de carteira vinculada. A leitura do extrato V2 e as ações de carteira aparecem automaticamente assim que a conta estiver disponível no financeiro.
+                        </div>
+                      ) : null}
+
+                      {walletFlags.movementsEnabled && selectedWalletAccount.has_wallet_account ? (
                         <div className="space-y-4">
                           <div className="rounded-2xl border border-slate-200 bg-white">
                             <div className="border-b border-slate-100 px-4 py-3">
@@ -2114,77 +2185,85 @@ export default function Movimentacoes() {
               </div>
             </CardContent>
           </Card>
-        )}
+        ) : walletOnly ? (
+          <Card className="mb-6 border-dashed border-slate-300 bg-white">
+            <CardContent className="p-6 text-sm text-slate-500">
+              A leitura administrativa de carteiras ainda está desligada por feature flag nesta unidade.
+            </CardContent>
+          </Card>
+        ) : null}
 
-        <Card className="mb-6 border-gray-200 bg-white">
-          <CardContent className="p-3 sm:p-4">
-            <SearchFiltersToolbar
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-              searchPlaceholder="Buscar por titular, método, banco ou transação ID"
-              hasActiveFilters={Boolean(searchTerm || tipoFiltro !== "all" || dataInicial || dataFinal)}
-              onClear={() => {
-                setSearchTerm("");
-                setTipoFiltro("all");
-                setDataInicial("");
-                setDataFinal("");
-              }}
-              filters={[
-                {
-                  id: "type",
-                  label: "Tipo",
-                  icon: ListFilter,
-                  active: tipoFiltro !== "all",
-                  content: (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Tipo de movimentação</p>
-                      <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Tipo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          <SelectItem value="entrada">Entradas</SelectItem>
-                          <SelectItem value="saida">Saídas</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ),
-                },
-                {
-                  id: "period",
-                  label: "Período",
-                  icon: Calendar,
-                  active: Boolean(dataInicial || dataFinal),
-                  content: (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período da transação</p>
-                      <DateRangePickerInput
-                        startValue={dataInicial}
-                        endValue={dataFinal}
-                        onStartChange={setDataInicial}
-                        onEndChange={setDataFinal}
-                      />
-                    </div>
-                  ),
-                },
-              ]}
-              searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
-            />
-          </CardContent>
-        </Card>
-
-        <div className="space-y-3">
-          {filtered.length === 0 ? (
-            <Card className="border-gray-200 bg-white">
-              <CardContent className="p-12 text-center text-gray-500">
-                {isInitialLoading ? "Carregando movimentações..." : "Nenhuma movimentação encontrada."}
+        {!walletOnly ? (
+          <>
+            <Card className="mb-6 border-gray-200 bg-white">
+              <CardContent className="p-3 sm:p-4">
+                <SearchFiltersToolbar
+                  searchTerm={searchTerm}
+                  onSearchChange={setSearchTerm}
+                  searchPlaceholder="Buscar por titular, método, banco ou transação ID"
+                  hasActiveFilters={Boolean(searchTerm || tipoFiltro !== "all" || dataInicial || dataFinal)}
+                  onClear={() => {
+                    setSearchTerm("");
+                    setTipoFiltro("all");
+                    setDataInicial("");
+                    setDataFinal("");
+                  }}
+                  filters={[
+                    {
+                      id: "type",
+                      label: "Tipo",
+                      icon: ListFilter,
+                      active: tipoFiltro !== "all",
+                      content: (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Tipo de movimentação</p>
+                          <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Todos</SelectItem>
+                              <SelectItem value="entrada">Entradas</SelectItem>
+                              <SelectItem value="saida">Saídas</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ),
+                    },
+                    {
+                      id: "period",
+                      label: "Período",
+                      icon: Calendar,
+                      active: Boolean(dataInicial || dataFinal),
+                      content: (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período da transação</p>
+                          <DateRangePickerInput
+                            startValue={dataInicial}
+                            endValue={dataFinal}
+                            onStartChange={setDataInicial}
+                            onEndChange={setDataFinal}
+                          />
+                        </div>
+                      ),
+                    },
+                  ]}
+                  searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
+                />
               </CardContent>
             </Card>
-          ) : (
-            <>
-              {visibleMovements.map((movement) => (
-              <Card key={movement.id} className="border-gray-200 bg-white">
+
+            <div className="space-y-3">
+              {filtered.length === 0 ? (
+                <Card className="border-gray-200 bg-white">
+                  <CardContent className="p-12 text-center text-gray-500">
+                    {isInitialLoading ? "Carregando movimentações..." : "Nenhuma movimentação encontrada."}
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  {visibleMovements.map((movement) => (
+                  <Card key={movement.id} className="border-gray-200 bg-white">
                 <CardContent className="flex flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:flex-row lg:items-center">
                   <div className={`flex h-10 w-10 items-center justify-center rounded-full sm:h-12 sm:w-12 ${movement.tipo === "entrada" ? "bg-green-100" : "bg-red-100"}`}>
                     {movement.tipo === "entrada" ? (
@@ -2238,14 +2317,14 @@ export default function Movimentacoes() {
                   </div>
 
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    {walletFlags.movementsEnabled && canManageWalletOperations && movement.tipo === "entrada" && (
+                    {walletOnly && walletFlags.movementsEnabled && canManageWalletOperations && movement.tipo === "entrada" && (
                       <Button
                         variant="outline"
                         size="sm"
                         className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm"
                         onClick={() =>
                           openWalletOperationModal("entrada_direcionada", {
-                            carteira_conta_id: selectedWalletAccountId,
+                            carteira_conta_id: selectedWalletRuntimeAccountId,
                             valor: Math.abs(movement.valor || 0),
                             referencia_amigavel: `Entrada direcionada - ${movement.contraparte || movement.referenciaFinanceira || movement.id}`,
                             observacao: `Origem do extrato: ${movement.id}`,
@@ -2253,7 +2332,7 @@ export default function Movimentacoes() {
                             transacao_id: movement.id,
                           })
                         }
-                        disabled={!selectedWalletAccountId}
+                        disabled={!selectedWalletRuntimeAccountId}
                       >
                         Direcionar para carteira
                       </Button>
@@ -2283,28 +2362,30 @@ export default function Movimentacoes() {
               </Card>
               ))}
 
-              {hasMoreMovements && (
-                <Card className="border-dashed border-gray-300 bg-white">
-                  <CardContent className="flex flex-col items-center gap-3 p-5 text-center">
-                    <p className="text-sm text-gray-500">
-                      Exibindo {visibleMovements.length} de {filtered.length} movimentações encontradas.
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={() => setVisibleCount((current) => current + MOVEMENTS_PAGE_SIZE)}
-                    >
-                      Carregar mais
-                    </Button>
-                  </CardContent>
-                </Card>
+                  {hasMoreMovements && (
+                    <Card className="border-dashed border-gray-300 bg-white">
+                      <CardContent className="flex flex-col items-center gap-3 p-5 text-center">
+                        <p className="text-sm text-gray-500">
+                          Exibindo {visibleMovements.length} de {filtered.length} movimentações encontradas.
+                        </p>
+                        <Button
+                          variant="outline"
+                          onClick={() => setVisibleCount((current) => current + MOVEMENTS_PAGE_SIZE)}
+                        >
+                          Carregar mais
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </div>
+            </div>
+          </>
+        ) : null}
       </div>
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="w-[95vw] max-w-[720px]">
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[720px] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingItem ? "Editar movimentação" : "Nova movimentação manual"}</DialogTitle>
             <DialogDescription>
@@ -2436,7 +2517,7 @@ export default function Movimentacoes() {
                   <SelectValue placeholder="Selecione a carteira" />
                 </SelectTrigger>
                 <SelectContent>
-                  {walletAccounts.map((account) => (
+                  {walletAccounts.filter((account) => account.has_wallet_account).map((account) => (
                     <SelectItem key={account.carteira_conta_id} value={account.carteira_conta_id}>
                       {account.carteira_nome}
                     </SelectItem>
@@ -2564,7 +2645,7 @@ export default function Movimentacoes() {
       </Dialog>
 
       <Dialog open={showWalletReversalModal} onOpenChange={setShowWalletReversalModal}>
-        <DialogContent className="w-[95vw] max-w-[760px]">
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[760px] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Estorno operacional do novo financeiro</DialogTitle>
             <DialogDescription>
@@ -2593,7 +2674,7 @@ export default function Movimentacoes() {
                   <SelectValue placeholder="Selecione a carteira do responsável" />
                 </SelectTrigger>
                 <SelectContent>
-                  {walletAccounts.map((account) => (
+                  {walletAccounts.filter((account) => account.has_wallet_account).map((account) => (
                     <SelectItem key={account.carteira_conta_id} value={account.carteira_conta_id}>
                       {account.carteira_nome}
                     </SelectItem>

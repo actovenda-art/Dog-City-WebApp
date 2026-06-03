@@ -3,7 +3,11 @@ set value = jsonb_build_object('enabled', true),
     updated_date = now()
 where key in (
   'finance.wallet_account_enabled',
+  'finance.wallet_balance_read_enabled',
   'finance.wallet_ledger_enabled',
+  'finance.wallet_movements_enabled',
+  'finance.wallet_manual_adjustments_enabled',
+  'finance.manual_credit_enabled',
   'finance.cockpit_v2_enabled',
   'finance.cockpit_v2_compare_enabled',
   'finance.financial_alerts_v2_enabled',

@@ -2498,7 +2498,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       </Dialog>
 
       <Dialog open={showWalletOperationModal} onOpenChange={setShowWalletOperationModal}>
-        <DialogContent className="w-[95vw] max-w-[720px]">
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[720px] overflow-hidden">
           <DialogHeader>
             <DialogTitle>{WALLET_OPERATION_LABELS[walletOperationForm.tipo] || "Operação de carteira"}</DialogTitle>
             <DialogDescription>
@@ -2506,7 +2506,8 @@ export default function Movimentacoes({ walletOnly = false }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
+          <div className="max-h-[calc(90vh-180px)] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
             <div className="md:col-span-2">
               <Label>Responsável financeiro destino *</Label>
               <Select
@@ -2631,9 +2632,10 @@ export default function Movimentacoes({ walletOnly = false }) {
               <p><span className="font-medium text-slate-900">Usuário:</span> {currentUser?.full_name || currentUser?.name || currentUser?.email || "Sessão atual"}</p>
               <p className="mt-1"><span className="font-medium text-slate-900">Data/hora:</span> {new Date().toLocaleString("pt-BR")}</p>
             </div>
+            </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 border-t border-slate-200 pt-4">
             <Button variant="outline" onClick={() => setShowWalletOperationModal(false)}>
               Cancelar
             </Button>
@@ -2645,7 +2647,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       </Dialog>
 
       <Dialog open={showWalletReversalModal} onOpenChange={setShowWalletReversalModal}>
-        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[760px] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[760px] overflow-hidden">
           <DialogHeader>
             <DialogTitle>Estorno operacional do novo financeiro</DialogTitle>
             <DialogDescription>
@@ -2653,7 +2655,8 @@ export default function Movimentacoes({ walletOnly = false }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
+          <div className="max-h-[calc(90vh-180px)] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
             <div className="md:col-span-2">
               <Label>Responsável financeiro / cliente *</Label>
               <Select
@@ -2820,9 +2823,10 @@ export default function Movimentacoes({ walletOnly = false }) {
                 A flag de estorno do Payment V2 segue desligada. O fluxo visual está pronto, mas o envio operacional permanece bloqueado até abertura formal de ativação.
               </div>
             ) : null}
+            </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 border-t border-slate-200 pt-4">
             <Button variant="outline" onClick={() => setShowWalletReversalModal(false)}>
               Cancelar
             </Button>

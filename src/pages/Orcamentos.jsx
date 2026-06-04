@@ -18,9 +18,11 @@ import { differenceInDays } from "date-fns";
 import OrcamentoCaoForm from "@/components/orcamento/OrcamentoCaoForm";
 import OrcamentosHistoricoPanel from "@/components/orcamento/OrcamentosHistoricoPanel";
 import OrcamentoResumo from "@/components/orcamento/OrcamentoResumo";
+import { canViewSensitivePersonalData } from "@/lib/access-control";
 import { findEntityByReference } from "@/lib/entity-identifiers";
 import { buildBudgetPreviewItems } from "@/lib/finance-budget";
 import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
+import { maskCpfCnpj, maskPhone, maskSensitiveValue } from "@/lib/privacy";
 import { financePreviewBudgetConsumption, financeWalletBudgetReadContext } from "@/api/functions";
 
 const PRECOS_PADRAO = {
@@ -536,6 +538,10 @@ export default function Orcamentos() {
   const [sellerSchedules, setSellerSchedules] = useState([]);
   const [selectedSellerId, setSelectedSellerId] = useState("");
   const [commissionPercentualInput, setCommissionPercentualInput] = useState("");
+  const canRevealSensitiveData = useMemo(
+    () => canViewSensitivePersonalData(currentUser),
+    [currentUser],
+  );
 
   useEffect(() => {
     loadData();
@@ -1246,7 +1252,9 @@ export default function Orcamentos() {
                               Responsáveis: {responsaveisDoCliente.map((responsavel) => responsavel.nome_completo).join(", ")}
                             </p>
                           ) : null}
-                          <p className="text-sm text-gray-500">{cliente.celular} • {cliente.cpf_cnpj}</p>
+                          <p className="text-sm text-gray-500">
+                            {maskSensitiveValue(cliente.celular || "", maskPhone, canRevealSensitiveData) || "Telefone não informado"} • {maskSensitiveValue(cliente.cpf_cnpj || "", maskCpfCnpj, canRevealSensitiveData) || "CPF/CNPJ não informado"}
+                          </p>
                         </div>
                         <Badge variant="outline">{numCaes} cão(es)</Badge>
                       </div>
@@ -1333,7 +1341,7 @@ export default function Orcamentos() {
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                   <p className="mb-1 text-sm font-medium text-gray-600">Cliente</p>
                   <p className="font-semibold text-gray-900">{clienteSelecionado.nome_razao_social}</p>
-                  <p className="text-sm text-gray-500">{clienteSelecionado.celular}</p>
+                  <p className="text-sm text-gray-500">{maskSensitiveValue(clienteSelecionado.celular || "", maskPhone, canRevealSensitiveData) || "Telefone não informado"}</p>
                 </div>
               )}
 

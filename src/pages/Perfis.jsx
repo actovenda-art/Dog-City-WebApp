@@ -7,6 +7,8 @@ import { createPageUrl } from "@/utils";
 import { validateCpfWithGov } from "@/lib/cpf-validation";
 import { findEntityByReference, getInternalEntityReference } from "@/lib/entity-identifiers";
 import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
+import { canViewSensitivePersonalData } from "@/lib/access-control";
+import { maskCpfCnpj, maskEmail, maskPhone, maskSensitiveValue } from "@/lib/privacy";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -667,6 +669,10 @@ export default function Perfis() {
   const carteiraFinancialStatusMap = useMemo(
     () => buildFinancialOperationalStatusMap(contasReceber),
     [contasReceber],
+  );
+  const canRevealSensitiveData = useMemo(
+    () => canViewSensitivePersonalData(currentUser),
+    [currentUser],
   );
 
   const dogResponsaveisMap = useMemo(() => {
@@ -1697,7 +1703,13 @@ export default function Perfis() {
                           </div>
                           <div className="min-w-0">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Telefone</p>
-                            <p className="truncate text-sm text-gray-600">{responsavel.celular || responsavel.celular_alternativo || "Telefone não informado"}</p>
+                            <p className="truncate text-sm text-gray-600">
+                              {maskSensitiveValue(
+                                responsavel.celular || responsavel.celular_alternativo || "",
+                                maskPhone,
+                                canRevealSensitiveData,
+                              ) || "Telefone não informado"}
+                            </p>
                           </div>
                           <div className="hidden justify-self-end text-gray-400 md:block">
                             <ChevronRight className="h-4 w-4" />
@@ -1737,7 +1749,9 @@ export default function Perfis() {
                           </div>
                           <div className="min-w-0">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Telefone</p>
-                            <p className="truncate text-sm text-gray-600">{carteira.celular || "Telefone não informado"}</p>
+                            <p className="truncate text-sm text-gray-600">
+                              {maskSensitiveValue(carteira.celular || "", maskPhone, canRevealSensitiveData) || "Telefone não informado"}
+                            </p>
                           </div>
                           <div className="hidden justify-self-end text-gray-400 md:block">
                             <ChevronRight className="h-4 w-4" />
@@ -1766,10 +1780,10 @@ export default function Perfis() {
             <div className="space-y-5">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <ProfileDetailField label="Como gostaria de ser chamado" value={viewingResponsavel.como_gostaria_de_ser_chamado || "Não informado"} />
-                <ProfileDetailField label="Telefone principal" value={viewingResponsavel.celular || "Não informado"} />
-                <ProfileDetailField label="Telefone alternativo" value={viewingResponsavel.celular_alternativo || "Não informado"} />
-                <ProfileDetailField label="CPF" value={viewingResponsavel.cpf || "Não informado"} />
-                <ProfileDetailField label="Email" value={viewingResponsavel.email || "Não informado"} />
+                <ProfileDetailField label="Telefone principal" value={maskSensitiveValue(viewingResponsavel.celular || "", maskPhone, canRevealSensitiveData) || "Não informado"} />
+                <ProfileDetailField label="Telefone alternativo" value={maskSensitiveValue(viewingResponsavel.celular_alternativo || "", maskPhone, canRevealSensitiveData) || "Não informado"} />
+                <ProfileDetailField label="CPF" value={maskSensitiveValue(viewingResponsavel.cpf || "", maskCpfCnpj, canRevealSensitiveData) || "Não informado"} />
+                <ProfileDetailField label="Email" value={maskSensitiveValue(viewingResponsavel.email || "", maskEmail, canRevealSensitiveData) || "Não informado"} />
               </div>
 
               <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
@@ -1856,9 +1870,9 @@ export default function Perfis() {
           {viewingCarteira ? (
             <div className="space-y-5">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <ProfileDetailField label="Telefone" value={viewingCarteira.celular || "Não informado"} />
-                <ProfileDetailField label="Email" value={viewingCarteira.email || "Não informado"} />
-                <ProfileDetailField label="CPF/CNPJ" value={viewingCarteira.cpf_cnpj || "Não informado"} />
+                <ProfileDetailField label="Telefone" value={maskSensitiveValue(viewingCarteira.celular || "", maskPhone, canRevealSensitiveData) || "Não informado"} />
+                <ProfileDetailField label="Email" value={maskSensitiveValue(viewingCarteira.email || "", maskEmail, canRevealSensitiveData) || "Não informado"} />
+                <ProfileDetailField label="CPF/CNPJ" value={maskSensitiveValue(viewingCarteira.cpf_cnpj || "", maskCpfCnpj, canRevealSensitiveData) || "Não informado"} />
                 <ProfileDetailField label="Vencimento" value={viewingCarteira.vencimento_planos ? `Dia ${viewingCarteira.vencimento_planos}` : "Não informado"} />
               </div>
 
@@ -2240,8 +2254,8 @@ export default function Perfis() {
                   {selectedLinkResponsavel?.nome_completo || "Responsável não encontrado"}
                 </p>
                 <div className="mt-1 space-y-1 text-sm text-gray-600">
-                  <p>{selectedLinkResponsavel?.cpf || "CPF não informado"}</p>
-                  <p>{selectedLinkResponsavel?.email || "Email não informado"}</p>
+                  <p>{maskSensitiveValue(selectedLinkResponsavel?.cpf || "", maskCpfCnpj, canRevealSensitiveData) || "CPF não informado"}</p>
+                  <p>{maskSensitiveValue(selectedLinkResponsavel?.email || "", maskEmail, canRevealSensitiveData) || "Email não informado"}</p>
                 </div>
               </div>
             </div>
@@ -2297,9 +2311,9 @@ export default function Perfis() {
                                 {carteira.nome_razao_social || "Sem nome"}
                               </p>
                               <div className="mt-1 space-y-1 text-xs text-gray-600">
-                                <p>{carteira.cpf_cnpj || "CPF/CNPJ não informado"}</p>
-                                <p className="truncate">{carteira.email || "Email não informado"}</p>
-                                <p>{carteira.celular || "Celular não informado"}</p>
+                                <p>{maskSensitiveValue(carteira.cpf_cnpj || "", maskCpfCnpj, canRevealSensitiveData) || "CPF/CNPJ não informado"}</p>
+                                <p className="truncate">{maskSensitiveValue(carteira.email || "", maskEmail, canRevealSensitiveData) || "Email não informado"}</p>
+                                <p>{maskSensitiveValue(carteira.celular || "", maskPhone, canRevealSensitiveData) || "Celular não informado"}</p>
                               </div>
                             </div>
                             {isSelected ? (

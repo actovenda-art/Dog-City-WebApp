@@ -798,7 +798,6 @@ function buildWalletAdminAccounts(accounts = [], carteiras = []) {
 export default function Movimentacoes({ walletOnly = false }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const appliedTransactionFilterRef = React.useRef(false);
   const [movimentacoes, setMovimentacoes] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [currentBalance, setCurrentBalance] = useState(null);
@@ -1000,10 +999,9 @@ export default function Movimentacoes({ walletOnly = false }) {
   }, [walletOnly]);
 
   useEffect(() => {
-    if (walletOnly || appliedTransactionFilterRef.current) return;
+    if (walletOnly) return;
     if (!walletTransactionFilter) return;
     setSearchTerm(walletTransactionFilter);
-    appliedTransactionFilterRef.current = true;
   }, [walletOnly, walletTransactionFilter]);
 
   useEffect(() => {

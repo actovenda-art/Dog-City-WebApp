@@ -206,6 +206,12 @@ export function getDefaultHomePage(user) {
   return "Perfis";
 }
 
+export function canViewSensitivePersonalData(user) {
+  if (!user) return false;
+  if (user.is_platform_admin || user.company_role === "platform_admin") return true;
+  return isManagerialProfile(user);
+}
+
 function permissionMatches(granted, required) {
   const normalizedGranted = normalizePermission(granted);
   const normalizedRequired = normalizePermission(required);

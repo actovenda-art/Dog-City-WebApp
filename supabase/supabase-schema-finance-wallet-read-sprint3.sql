@@ -347,6 +347,9 @@ returns table (
   descricao text,
   saldo_anterior numeric,
   saldo_final numeric,
+  orcamento_id text,
+  recurring_package_id text,
+  appointment_id text,
   transacao_id text,
   usuario_id text,
   created_date timestamptz
@@ -380,6 +383,9 @@ begin
     cm.descricao,
     cm.saldo_anterior,
     cm.saldo_final,
+    cm.orcamento_id,
+    null::text as recurring_package_id,
+    cm.appointment_id,
     cm.transacao_id,
     cm.usuario_id,
     cm.created_date

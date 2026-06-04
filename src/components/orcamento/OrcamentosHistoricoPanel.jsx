@@ -65,8 +65,9 @@ import {
 } from "@/lib/attendance";
 import { buildShadowFinanceItemsFromOrcamento, resolveShadowChargeDueDate } from "@/lib/finance-shadow";
 import { buildBudgetPreviewItems, resolveRecurringPackageFinancialBehavior } from "@/lib/finance-budget";
-import { isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
+import { canViewSensitivePersonalData, isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
 import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
+import { formatAddressParts, maskAddressParts, maskCpfCnpj, maskPhone, maskSensitiveValue } from "@/lib/privacy";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -601,6 +602,7 @@ export default function OrcamentosHistoricoPanel({
     || isManagerialProfile(currentUser)
     || isCommercialProfile(currentUser),
   );
+  const canRevealSensitiveData = canViewSensitivePersonalData(currentUser);
 
   const canManageFinancialCancellation = canAuthorizeBudgetFinancially;
   const selectedBudgetPayments = React.useMemo(
@@ -2302,22 +2304,26 @@ export default function OrcamentosHistoricoPanel({
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">Responsável financeiro</p>
                   <p className="mt-1 font-semibold text-slate-900">{selectedBudgetCarteira?.nome_razao_social || "Não vinculado"}</p>
-                  <p className="mt-1 text-xs text-slate-500">{selectedBudgetCarteira?.cpf_cnpj || "CPF/CNPJ não informado"}</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {[
+                    {maskSensitiveValue(selectedBudgetCarteira?.cpf_cnpj || "", maskCpfCnpj, canRevealSensitiveData) || "CPF/CNPJ não informado"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {(canRevealSensitiveData ? formatAddressParts : maskAddressParts)([
                       selectedBudgetCarteira?.street,
                       selectedBudgetCarteira?.numero_residencia,
                       selectedBudgetCarteira?.neighborhood,
                       selectedBudgetCarteira?.city,
                       selectedBudgetCarteira?.state,
                       selectedBudgetCarteira?.cep,
-                    ].filter(Boolean).join(" • ") || "Endereço da carteira incompleto"}
+                    ]) || "Endereço da carteira incompleto"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">Contato da cobrança</p>
                   <p className="mt-1 font-semibold text-slate-900">{selectedBudgetResponsavel?.nome_completo || "Não localizado"}</p>
-                  <p className="mt-1 text-xs text-slate-500">{selectedBudgetResponsavel?.celular || selectedBudgetCarteira?.celular || "Telefone não informado"}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {maskSensitiveValue(selectedBudgetResponsavel?.celular || selectedBudgetCarteira?.celular || "", maskPhone, canRevealSensitiveData) || "Telefone não informado"}
+                  </p>
                   <p className="mt-1 text-[11px] text-slate-400">
                     {selectedBudgetResponsavel?.source === "responsavel"
                       ? "Fallback: responsável vinculado aos cães do orçamento."

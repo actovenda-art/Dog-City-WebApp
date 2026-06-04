@@ -758,6 +758,29 @@ function resolveTokenCacheKey(clientId: string, scope: string, tokenAuthMode: st
   return [clientId, scope, tokenAuthMode].join("::");
 }
 
+function buildInterApi401Hint(config: IntegrationConfig, parsed: Record<string, unknown>) {
+  const rawMessage = JSON.stringify(parsed).toLowerCase();
+  if (!rawMessage.includes("login/senha inválido") && !rawMessage.includes("acesso negado")) {
+    return null;
+  }
+
+  const accountNumber = sanitizeText(
+    firstDefined(
+      getConfigValue(config, "conta_corrente"),
+      getConfigValue(config, "account_number"),
+      (config.extra_headers || {})["x-conta-corrente"],
+    ),
+  ).replace(/\D/g, "");
+
+  return [
+    "O Banco Inter respondeu 401 na API de cobrança.",
+    "Pelos cenários oficiais do Inter, isso normalmente indica uma destas causas:",
+    "1. client_id/client_secret e certificado não pertencem à mesma integração;",
+    "2. a conta utilizada não está liberada para requisições via API de cobrança;",
+    accountNumber ? `3. confira se a conta corrente configurada (${accountNumber}) é exatamente a conta habilitada para a integração.` : "3. confira se a conta corrente configurada é exatamente a conta habilitada para a integração.",
+  ].join(" ");
+}
+
 function getCachedInterToken(cacheKey: string) {
   const cached = interTokenCache.get(cacheKey);
   if (!cached) return null;
@@ -1281,6 +1304,10 @@ async function createChargeForBudget(config: IntegrationConfig, payload: Record<
   }
 
   if (!response.ok) {
+    const authHint = response.status === 401 ? buildInterApi401Hint(config, parsed) : null;
+    if (authHint) {
+      throw new Error(`Falha ao emitir cobrança no Banco Inter (${response.status}): ${authHint}`);
+    }
     throw new Error(`Falha ao emitir cobrança no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
   }
 
@@ -1313,6 +1340,10 @@ async function fetchChargeForBudget(config: IntegrationConfig, codigoSolicitacao
   }
 
   if (!response.ok) {
+    const authHint = response.status === 401 ? buildInterApi401Hint(config, parsed) : null;
+    if (authHint) {
+      throw new Error(`Falha ao consultar cobrança no Banco Inter (${response.status}): ${authHint}`);
+    }
     throw new Error(`Falha ao consultar cobrança no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
   }
 
@@ -1346,6 +1377,10 @@ async function fetchChargePdfForBudget(config: IntegrationConfig, codigoSolicita
   }
 
   if (!response.ok) {
+    const authHint = response.status === 401 ? buildInterApi401Hint(config, parsed) : null;
+    if (authHint) {
+      throw new Error(`Falha ao baixar PDF da cobrança no Banco Inter (${response.status}): ${authHint}`);
+    }
     throw new Error(`Falha ao baixar PDF da cobrança no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
   }
 
@@ -1452,6 +1487,12 @@ async function ensureChargeWebhookConfigured(config: IntegrationConfig) {
 
   if (!response.ok && response.status !== 204) {
     const rawText = await response.text();
+    if (response.status === 401) {
+      const authHint = buildInterApi401Hint(config, { raw: rawText });
+      if (authHint) {
+        throw new Error(`Não foi possível configurar o webhook da cobrança no Banco Inter (${response.status}): ${authHint}`);
+      }
+    }
     throw new Error(`Não foi possível configurar o webhook da cobrança no Banco Inter (${response.status}): ${rawText}`);
   }
 

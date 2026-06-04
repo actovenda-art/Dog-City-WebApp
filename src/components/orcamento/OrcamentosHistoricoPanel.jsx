@@ -879,8 +879,22 @@ export default function OrcamentosHistoricoPanel({
       showFeedback("Orçamento incompleto", "Selecione um orçamento com responsável financeiro vinculado antes de emitir a cobrança.", "warning");
       return;
     }
-    if (!selectedBudgetResponsavel?.nome_completo || !selectedBudgetResponsavel?.cpf || !selectedBudgetResponsavel?.celular) {
-      showFeedback("Responsável incompleto", "O responsável vinculado ao orçamento precisa ter nome, CPF e celular preenchidos para emissão do boleto.", "warning");
+    const billingPhone = selectedBudgetResponsavel?.celular || selectedBudgetCarteira?.celular || "";
+    const missingFields = [];
+    if (!selectedBudgetResponsavel?.nome_completo) missingFields.push("nome do responsável financeiro");
+    if (!selectedBudgetResponsavel?.cpf) missingFields.push("CPF/CNPJ do responsável financeiro");
+    if (!billingPhone) missingFields.push("telefone do responsável financeiro");
+    if (!selectedBudgetCarteira?.street) missingFields.push("rua da carteira");
+    if (!selectedBudgetCarteira?.city) missingFields.push("cidade da carteira");
+    if (!selectedBudgetCarteira?.state) missingFields.push("UF da carteira");
+    if (!selectedBudgetCarteira?.cep) missingFields.push("CEP da carteira");
+
+    if (missingFields.length > 0) {
+      showFeedback(
+        "Responsável financeiro incompleto",
+        `Preencha ${missingFields.join(", ")} antes de emitir a cobrança pelo Banco Inter.`,
+        "warning",
+      );
       return;
     }
 
@@ -896,7 +910,13 @@ export default function OrcamentosHistoricoPanel({
         responsavel_nome: selectedBudgetResponsavel.nome_completo,
         responsavel_cpf_cnpj: selectedBudgetResponsavel.cpf,
         responsavel_email: selectedBudgetResponsavel.email || selectedBudgetCarteira.email || "",
-        responsavel_telefone: selectedBudgetResponsavel.celular || selectedBudgetCarteira.celular || "",
+        responsavel_telefone: billingPhone,
+        responsavel_cep: selectedBudgetCarteira.cep || "",
+        responsavel_endereco: selectedBudgetCarteira.street || "",
+        responsavel_numero: selectedBudgetCarteira.numero_residencia || "",
+        responsavel_bairro: selectedBudgetCarteira.neighborhood || "",
+        responsavel_cidade: selectedBudgetCarteira.city || "",
+        responsavel_uf: selectedBudgetCarteira.state || "",
         valor: Number(selectedOrcamento.valor_total || 0),
         data_vencimento: selectedOrcamento.data_validade || format(new Date(), "yyyy-MM-dd"),
         metodo: "boleto_bancario",
@@ -2182,6 +2202,16 @@ export default function OrcamentosHistoricoPanel({
                   <p className="text-xs text-slate-500">Responsável financeiro</p>
                   <p className="mt-1 font-semibold text-slate-900">{selectedBudgetCarteira?.nome_razao_social || "Não vinculado"}</p>
                   <p className="mt-1 text-xs text-slate-500">{selectedBudgetCarteira?.cpf_cnpj || "CPF/CNPJ não informado"}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {[
+                      selectedBudgetCarteira?.street,
+                      selectedBudgetCarteira?.numero_residencia,
+                      selectedBudgetCarteira?.neighborhood,
+                      selectedBudgetCarteira?.city,
+                      selectedBudgetCarteira?.state,
+                      selectedBudgetCarteira?.cep,
+                    ].filter(Boolean).join(" • ") || "Endereço da carteira incompleto"}
+                  </p>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">Responsável para contato</p>

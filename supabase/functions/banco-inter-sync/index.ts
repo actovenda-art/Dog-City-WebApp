@@ -1106,17 +1106,40 @@ function inferPagadorTipo(cpfCnpj: string) {
   return cpfCnpj.length > 11 ? "JURIDICA" : "FISICA";
 }
 
+function normalizeChargePhone(value: unknown) {
+  const digits = sanitizeText(value).replace(/\D/g, "");
+  if (!digits) return undefined;
+  if (digits.length <= 9) return digits;
+  return digits.slice(-9);
+}
+
+function normalizeChargeCep(value: unknown) {
+  const digits = sanitizeText(value).replace(/\D/g, "");
+  return digits || undefined;
+}
+
 function buildChargeIssuePayload(payload: Record<string, unknown>) {
   const payerName = sanitizeText(payload.responsavel_nome);
   const payerDocument = normalizeCpfCnpj(payload.responsavel_cpf_cnpj);
   const dueDate = sanitizeText(payload.data_vencimento);
   const amount = Number(payload.valor || 0);
   const seuNumero = sanitizeText(payload.seu_numero || `orc${sanitizeText(payload.orcamento_id).replace(/[^a-zA-Z0-9]/g, "").slice(-11)}`);
+  const payerStreet = sanitizeText(payload.responsavel_endereco);
+  const payerNumber = sanitizeText(payload.responsavel_numero);
+  const payerCity = sanitizeText(payload.responsavel_cidade);
+  const payerState = sanitizeText(payload.responsavel_uf).toUpperCase();
+  const payerZip = normalizeChargeCep(payload.responsavel_cep);
+  const payerNeighborhood = sanitizeText(payload.responsavel_bairro) || undefined;
+  const payerPhone = normalizeChargePhone(payload.responsavel_telefone);
+  const payerAddress = [payerStreet, payerNumber].filter(Boolean).join(", ");
 
   if (!payerName) throw new Error("Nome do responsável financeiro é obrigatório para emitir a cobrança.");
   if (!payerDocument || ![11, 14].includes(payerDocument.length)) throw new Error("CPF/CNPJ válido do responsável financeiro é obrigatório para emitir a cobrança.");
   if (!dueDate) throw new Error("Data de vencimento é obrigatória para emitir a cobrança.");
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("Valor do orçamento deve ser maior que zero para emitir a cobrança.");
+  if (!payerStreet || !payerCity || !payerState || !payerZip) {
+    throw new Error("Endereço completo da carteira (rua, cidade, UF e CEP) é obrigatório para emitir a cobrança no Banco Inter.");
+  }
 
   return {
     seuNumero,
@@ -1128,7 +1151,12 @@ function buildChargeIssuePayload(payload: Record<string, unknown>) {
       nome: payerName,
       cpfCnpj: payerDocument,
       email: sanitizeText(payload.responsavel_email) || undefined,
-      telefone: sanitizeText(payload.responsavel_telefone).replace(/\D/g, "") || undefined,
+      telefone: payerPhone,
+      cep: payerZip,
+      cidade: payerCity,
+      uf: payerState,
+      endereco: payerAddress,
+      bairro: payerNeighborhood,
     },
     mensagem: {
       linha1: sanitizeText(payload.mensagem_linha_1 || `Orçamento ${sanitizeText(payload.orcamento_id)}`),

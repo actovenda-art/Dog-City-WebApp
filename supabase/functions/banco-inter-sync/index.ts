@@ -1207,12 +1207,44 @@ function normalizeChargeCep(value: unknown) {
   return digits || undefined;
 }
 
+function buildBudgetChargePayerFingerprint(source: Record<string, unknown>) {
+  return JSON.stringify({
+    nome: sanitizeText(source.responsavel_nome),
+    cpf_cnpj: normalizeCpfCnpj(source.responsavel_cpf_cnpj),
+    email: sanitizeText(source.responsavel_email),
+    telefone: sanitizeText(source.responsavel_telefone),
+    cep: normalizeChargeCep(source.responsavel_cep),
+    endereco: sanitizeText(source.responsavel_endereco),
+    numero: sanitizeText(source.responsavel_numero),
+    bairro: sanitizeText(source.responsavel_bairro),
+    cidade: sanitizeText(source.responsavel_cidade),
+    uf: sanitizeText(source.responsavel_uf).toUpperCase(),
+  });
+}
+
+function buildBudgetChargeSeuNumero(orcamentoId: string, uniqueSuffix = "") {
+  const cleanBudgetId = sanitizeText(orcamentoId).replace(/[^a-zA-Z0-9]/g, "");
+  const suffix = sanitizeText(uniqueSuffix).replace(/[^a-zA-Z0-9]/g, "");
+  if (!suffix) {
+    return `orc${cleanBudgetId.slice(-11)}`;
+  }
+  return `orc${cleanBudgetId.slice(-7)}${suffix.slice(-4)}`;
+}
+
+function mapInterChargeStatus(situacao: string) {
+  const normalized = sanitizeText(situacao).toUpperCase();
+  if (normalized === "RECEBIDO") return "recebido";
+  if (["BAIXADO", "CANCELADO", "CANCELADA"].includes(normalized)) return "baixado";
+  if (normalized === "EXPIRADO") return "expirado";
+  return "emitido";
+}
+
 function buildChargeIssuePayload(payload: Record<string, unknown>) {
   const payerName = sanitizeText(payload.responsavel_nome);
   const payerDocument = normalizeCpfCnpj(payload.responsavel_cpf_cnpj);
   const dueDate = sanitizeText(payload.data_vencimento);
   const amount = Number(payload.valor || 0);
-  const seuNumero = sanitizeText(payload.seu_numero || `orc${sanitizeText(payload.orcamento_id).replace(/[^a-zA-Z0-9]/g, "").slice(-11)}`);
+  const seuNumero = sanitizeText(payload.seu_numero || buildBudgetChargeSeuNumero(sanitizeText(payload.orcamento_id)));
   const payerStreet = sanitizeText(payload.responsavel_endereco);
   const payerNumber = sanitizeText(payload.responsavel_numero);
   const payerCity = sanitizeText(payload.responsavel_cidade);
@@ -3151,12 +3183,20 @@ Deno.serve(async (request) => {
       if (!orcamentoId) {
         return jsonResponse({ error: "orcamento_id é obrigatório para emitir a cobrança." }, 400);
       }
-      if (metodo !== "boleto_bancario") {
-        return jsonResponse({ error: "Nesta fase, somente boleto bancário com Pix do Banco Inter está habilitado." }, 400);
-      }
+    if (metodo !== "boleto_bancario") {
+      return jsonResponse({ error: "Nesta fase, somente boleto bancário com Pix do Banco Inter está habilitado." }, 400);
+    }
 
       const existingRow = await loadLatestBudgetPaymentByBudget(orcamentoId, metodo);
-      if (existingRow?.codigo_solicitacao && !["cancelado", "expirado"].includes(sanitizeText(existingRow.status).toLowerCase())) {
+      const requestedPayerFingerprint = buildBudgetChargePayerFingerprint(payload);
+      const existingPayerFingerprint = existingRow?.metadata && typeof existingRow.metadata === "object"
+        ? sanitizeText((existingRow.metadata as Record<string, unknown>).payer_fingerprint)
+        : "";
+      const canReuseExistingCharge = existingRow?.codigo_solicitacao
+        && !["cancelado", "expirado"].includes(sanitizeText(existingRow.status).toLowerCase())
+        && existingPayerFingerprint === requestedPayerFingerprint;
+
+      if (canReuseExistingCharge) {
         return jsonResponse({
           ok: true,
           payment: existingRow,
@@ -3170,10 +3210,17 @@ Deno.serve(async (request) => {
         console.warn("banco-inter-sync webhook configuration warning", serializeError(webhookError));
       }
 
-      const charge = await createChargeForBudget(config, payload);
+      const payloadToIssue = !canReuseExistingCharge && existingRow?.codigo_solicitacao
+        ? {
+          ...payload,
+          seu_numero: buildBudgetChargeSeuNumero(orcamentoId, Date.now().toString()),
+        }
+        : payload;
+
+      const charge = await createChargeForBudget(config, payloadToIssue);
       const now = new Date().toISOString();
       const row = await saveBudgetPaymentRow({
-        id: sanitizeText(existingRow?.id) || crypto.randomUUID(),
+        id: !canReuseExistingCharge && existingRow?.codigo_solicitacao ? crypto.randomUUID() : (sanitizeText(existingRow?.id) || crypto.randomUUID()),
         empresa_id: sanitizeText(payload.empresa_id || config.empresa_id),
         orcamento_id: orcamentoId,
         carteira_id: sanitizeText(payload.carteira_id),
@@ -3181,7 +3228,7 @@ Deno.serve(async (request) => {
         responsavel_id: sanitizeText(payload.responsavel_id) || null,
         provider: "banco_inter",
         metodo,
-        status: charge.situacao === "RECEBIDO" ? "recebido" : "emitido",
+        status: mapInterChargeStatus(charge.situacao),
         valor: Number(charge.valorNominal || payload.valor || 0),
         seu_numero: charge.seuNumero || sanitizeText(payload.seu_numero) || null,
         codigo_solicitacao: charge.codigoSolicitacao || null,
@@ -3191,22 +3238,30 @@ Deno.serve(async (request) => {
         codigo_barras: charge.codigoBarras || null,
         pix_copia_cola: charge.pixCopiaECola || null,
         pdf_disponivel: Boolean(charge.codigoSolicitacao),
-        valor_recebido: charge.situacao === "RECEBIDO" ? Number(charge.valorNominal || payload.valor || 0) : 0,
-        pago_em: charge.situacao === "RECEBIDO" ? now : null,
+        valor_recebido: sanitizeText(charge.situacao).toUpperCase() === "RECEBIDO" ? Number(charge.valorNominal || payload.valor || 0) : 0,
+        pago_em: sanitizeText(charge.situacao).toUpperCase() === "RECEBIDO" ? now : null,
         created_by_user_id: sanitizeText(payload.usuario_id) || null,
         metadata: {
           responsavel_nome: sanitizeText(payload.responsavel_nome),
           responsavel_cpf_cnpj: normalizeCpfCnpj(payload.responsavel_cpf_cnpj),
           responsavel_email: sanitizeText(payload.responsavel_email),
           responsavel_telefone: sanitizeText(payload.responsavel_telefone),
+          responsavel_cep: normalizeChargeCep(payload.responsavel_cep),
+          responsavel_endereco: sanitizeText(payload.responsavel_endereco),
+          responsavel_numero: sanitizeText(payload.responsavel_numero),
+          responsavel_bairro: sanitizeText(payload.responsavel_bairro),
+          responsavel_cidade: sanitizeText(payload.responsavel_cidade),
+          responsavel_uf: sanitizeText(payload.responsavel_uf).toUpperCase(),
+          payer_fingerprint: requestedPayerFingerprint,
           vencimento: sanitizeText(payload.data_vencimento),
           charge_snapshot: charge,
+          reissued_from_payment_id: !canReuseExistingCharge && existingRow?.codigo_solicitacao ? sanitizeText(existingRow.id) : null,
         },
-        created_date: sanitizeText(existingRow?.created_date) || now,
+        created_date: !canReuseExistingCharge && existingRow?.codigo_solicitacao ? now : (sanitizeText(existingRow?.created_date) || now),
         updated_date: now,
       });
 
-      const finalizedRow = charge.situacao === "RECEBIDO" ? await applyBudgetPaymentToWallet(row) : row;
+      const finalizedRow = sanitizeText(charge.situacao).toUpperCase() === "RECEBIDO" ? await applyBudgetPaymentToWallet(row) : row;
       return jsonResponse({
         ok: true,
         payment: finalizedRow,
@@ -3230,21 +3285,24 @@ Deno.serve(async (request) => {
 
       const charge = await fetchChargeForBudget(config, sanitizeText(existingRow.codigo_solicitacao));
       const now = new Date().toISOString();
+      const mappedStatus = mapInterChargeStatus(charge.situacao);
+      const isReceived = sanitizeText(charge.situacao).toUpperCase() === "RECEBIDO";
+      const isChargeActive = mappedStatus === "emitido";
       const refreshedRow = await saveBudgetPaymentRow({
         ...existingRow,
-        status: charge.situacao === "RECEBIDO" ? "recebido" : existingRow.status || "emitido",
+        status: mappedStatus,
         valor: Number(charge.valorNominal || existingRow.valor || 0),
         seu_numero: charge.seuNumero || existingRow.seu_numero || null,
         nosso_numero: charge.nossoNumero || existingRow.nosso_numero || null,
         txid: charge.txid || existingRow.txid || null,
-        linha_digitavel: charge.linhaDigitavel || existingRow.linha_digitavel || null,
-        codigo_barras: charge.codigoBarras || existingRow.codigo_barras || null,
-        pix_copia_cola: charge.pixCopiaECola || existingRow.pix_copia_cola || null,
-        pdf_disponivel: Boolean(charge.codigoSolicitacao || existingRow.codigo_solicitacao),
-        valor_recebido: charge.situacao === "RECEBIDO"
+        linha_digitavel: isChargeActive ? (charge.linhaDigitavel || existingRow.linha_digitavel || null) : null,
+        codigo_barras: isChargeActive ? (charge.codigoBarras || existingRow.codigo_barras || null) : null,
+        pix_copia_cola: isChargeActive ? (charge.pixCopiaECola || existingRow.pix_copia_cola || null) : null,
+        pdf_disponivel: isChargeActive ? Boolean(charge.codigoSolicitacao || existingRow.codigo_solicitacao) : false,
+        valor_recebido: isReceived
           ? Number(charge.valorNominal || existingRow.valor || 0)
           : Number(existingRow.valor_recebido || 0),
-        pago_em: charge.situacao === "RECEBIDO" ? (existingRow.pago_em || now) : existingRow.pago_em || null,
+        pago_em: isReceived ? (existingRow.pago_em || now) : existingRow.pago_em || null,
         metadata: {
           ...(existingRow.metadata && typeof existingRow.metadata === "object" ? existingRow.metadata : {}),
           charge_snapshot: charge,
@@ -3252,7 +3310,7 @@ Deno.serve(async (request) => {
         updated_date: now,
       });
 
-      const finalizedRow = charge.situacao === "RECEBIDO" ? await applyBudgetPaymentToWallet(refreshedRow) : refreshedRow;
+      const finalizedRow = isReceived ? await applyBudgetPaymentToWallet(refreshedRow) : refreshedRow;
       return jsonResponse({
         ok: true,
         payment: finalizedRow,

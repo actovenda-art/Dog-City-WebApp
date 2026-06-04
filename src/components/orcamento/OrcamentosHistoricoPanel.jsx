@@ -95,6 +95,34 @@ function formatTimeValue(value) {
   return value ? String(value).slice(0, 5) : "";
 }
 
+function normalizeBudgetChargeStatus(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (["recebido"].includes(normalized)) return "recebido";
+  if (["baixado", "cancelado", "cancelada"].includes(normalized)) return "baixado";
+  if (["expirado"].includes(normalized)) return "expirado";
+  return "emitido";
+}
+
+function isBudgetChargeActive(status) {
+  return normalizeBudgetChargeStatus(status) === "emitido";
+}
+
+function getBudgetChargeStatusBadgeClass(status) {
+  const normalized = normalizeBudgetChargeStatus(status);
+  if (normalized === "recebido") return "bg-emerald-100 text-emerald-700";
+  if (normalized === "baixado") return "bg-amber-100 text-amber-800";
+  if (normalized === "expirado") return "bg-rose-100 text-rose-700";
+  return "bg-blue-100 text-blue-700";
+}
+
+function getBudgetChargeStatusLabel(status) {
+  const normalized = normalizeBudgetChargeStatus(status);
+  if (normalized === "recebido") return "Recebido";
+  if (normalized === "baixado") return "Baixado";
+  if (normalized === "expirado") return "Expirado";
+  return "Emitido";
+}
+
 function combineDateTimeLocal(date, time) {
   if (!date) return null;
   const normalizedTime = (time || "09:00").slice(0, 5);
@@ -583,6 +611,19 @@ export default function OrcamentosHistoricoPanel({
     () => selectedBudgetPayments.find((item) => item?.metodo === "boleto_bancario") || null,
     [selectedBudgetPayments],
   );
+  const activeBudgetBoletoStatus = React.useMemo(
+    () => normalizeBudgetChargeStatus(activeBudgetBoleto?.status),
+    [activeBudgetBoleto?.status],
+  );
+  const shouldShowBudgetChargeDetails = React.useMemo(
+    () => isBudgetChargeActive(activeBudgetBoleto?.status),
+    [activeBudgetBoleto?.status],
+  );
+  const issueBudgetChargeButtonLabel = React.useMemo(() => {
+    if (isIssuingBudgetPayment) return "Solicitando...";
+    if (["baixado", "expirado"].includes(activeBudgetBoletoStatus)) return "Emitir nova cobrança";
+    return "Solicitar boleto bancário";
+  }, [isIssuingBudgetPayment, activeBudgetBoletoStatus]);
   const selectedBudgetCarteira = React.useMemo(
     () => carteiras.find((item) => item?.id === selectedOrcamento?.cliente_id) || null,
     [carteiras, selectedOrcamento?.cliente_id],
@@ -968,14 +1009,18 @@ export default function OrcamentosHistoricoPanel({
     }
   }
 
-  async function refreshBudgetChargeStatus() {
-    if (!activeBudgetBoleto?.id) return;
-    setIsRefreshingBudgetPayment(true);
+  const lastSilentBudgetRefreshRef = React.useRef("");
+
+  async function syncBudgetChargeStatus({ silent = false, paymentId = activeBudgetBoleto?.id } = {}) {
+    if (!paymentId) return null;
+    if (!silent) {
+      setIsRefreshingBudgetPayment(true);
+    }
     try {
       const response = await bancoInter({
         action: "refreshBudgetChargeStatus",
         empresa_id: currentUser?.empresa_id || selectedOrcamento?.empresa_id || null,
-        orcamento_pagamento_id: activeBudgetBoleto.id,
+        orcamento_pagamento_id: paymentId,
       });
 
       if (response?.payment) {
@@ -985,18 +1030,30 @@ export default function OrcamentosHistoricoPanel({
         });
       }
 
-      showFeedback(
-        "Cobrança atualizada",
-        response?.payment?.status === "recebido"
-          ? "Pagamento confirmado. A carteira vinculada foi atualizada diretamente."
-          : "A cobrança foi atualizada com o status mais recente do Banco Inter.",
-        "success",
-      );
+      if (!silent) {
+        showFeedback(
+          "Cobrança atualizada",
+          response?.payment?.status === "recebido"
+            ? "Pagamento confirmado. A carteira vinculada foi atualizada diretamente."
+            : "A cobrança foi atualizada com o status mais recente do Banco Inter.",
+          "success",
+        );
+      }
+      return response?.payment || null;
     } catch (error) {
-      showFeedback("Não foi possível atualizar a cobrança", error?.message || "Falha ao consultar o status mais recente no Banco Inter.", "error");
+      if (!silent) {
+        showFeedback("Não foi possível atualizar a cobrança", error?.message || "Falha ao consultar o status mais recente no Banco Inter.", "error");
+      }
+      return null;
     } finally {
-      setIsRefreshingBudgetPayment(false);
+      if (!silent) {
+        setIsRefreshingBudgetPayment(false);
+      }
     }
+  }
+
+  async function refreshBudgetChargeStatus() {
+    return syncBudgetChargeStatus({ silent: false });
   }
 
   async function downloadBudgetChargePdf() {
@@ -1026,6 +1083,20 @@ export default function OrcamentosHistoricoPanel({
       setIsDownloadingBudgetPayment(false);
     }
   }
+
+  useEffect(() => {
+    if (!paymentDialogOpen || !activeBudgetBoleto?.id) return;
+    const refreshKey = `${selectedOrcamento?.id || ""}:${activeBudgetBoleto.id}:${activeBudgetBoleto.updated_date || activeBudgetBoleto.created_date || ""}`;
+    if (lastSilentBudgetRefreshRef.current === refreshKey) return;
+    lastSilentBudgetRefreshRef.current = refreshKey;
+    syncBudgetChargeStatus({ silent: true, paymentId: activeBudgetBoleto.id });
+  }, [
+    paymentDialogOpen,
+    activeBudgetBoleto?.id,
+    activeBudgetBoleto?.updated_date,
+    activeBudgetBoleto?.created_date,
+    selectedOrcamento?.id,
+  ]);
 
   function openOrcamentoDetail(orcamento) {
     try {
@@ -2277,8 +2348,8 @@ export default function OrcamentosHistoricoPanel({
                         </p>
                       </div>
                       {activeBudgetBoleto ? (
-                        <Badge className={activeBudgetBoleto.status === "recebido" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}>
-                          {activeBudgetBoleto.status === "recebido" ? "Recebido" : "Emitido"}
+                        <Badge className={getBudgetChargeStatusBadgeClass(activeBudgetBoletoStatus)}>
+                          {getBudgetChargeStatusLabel(activeBudgetBoletoStatus)}
                         </Badge>
                       ) : (
                         <Badge variant="outline">Ainda não emitido</Badge>
@@ -2287,42 +2358,48 @@ export default function OrcamentosHistoricoPanel({
 
                     <div className="mt-4 flex flex-wrap gap-2">
                       <Button onClick={issueBudgetCharge} disabled={isIssuingBudgetPayment}>
-                        {isIssuingBudgetPayment ? "Solicitando..." : "Solicitar boleto bancário"}
+                        {issueBudgetChargeButtonLabel}
                       </Button>
                       <Button variant="outline" onClick={refreshBudgetChargeStatus} disabled={!activeBudgetBoleto?.id || isRefreshingBudgetPayment}>
                         <RefreshCw className="mr-2 h-4 w-4" />
                         {isRefreshingBudgetPayment ? "Atualizando..." : "Atualizar situação"}
                       </Button>
-                      <Button variant="outline" onClick={downloadBudgetChargePdf} disabled={!activeBudgetBoleto?.id || !activeBudgetBoleto?.pdf_disponivel || isDownloadingBudgetPayment}>
+                      <Button variant="outline" onClick={downloadBudgetChargePdf} disabled={!activeBudgetBoleto?.id || !activeBudgetBoleto?.pdf_disponivel || !shouldShowBudgetChargeDetails || isDownloadingBudgetPayment}>
                         <Download className="mr-2 h-4 w-4" />
                         {isDownloadingBudgetPayment ? "Preparando PDF..." : "Baixar PDF"}
                       </Button>
                     </div>
                   </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Código de barras</Label>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                        {activeBudgetBoleto?.codigo_barras || "Disponível após a emissão do boleto."}
+                  {shouldShowBudgetChargeDetails ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Código de barras</Label>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                          {activeBudgetBoleto?.codigo_barras || "Disponível após a emissão do boleto."}
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => copyPaymentValue(activeBudgetBoleto?.codigo_barras, "Código de barras")} disabled={!activeBudgetBoleto?.codigo_barras}>
+                          <Copy className="mr-2 h-4 w-4" />
+                          Copiar código de barras
+                        </Button>
                       </div>
-                      <Button variant="outline" size="sm" onClick={() => copyPaymentValue(activeBudgetBoleto?.codigo_barras, "Código de barras")} disabled={!activeBudgetBoleto?.codigo_barras}>
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copiar código de barras
-                      </Button>
-                    </div>
 
-                    <div className="space-y-2">
-                      <Label>Linha digitável</Label>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                        {activeBudgetBoleto?.linha_digitavel || "Disponível após a emissão do boleto."}
+                      <div className="space-y-2">
+                        <Label>Linha digitável</Label>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                          {activeBudgetBoleto?.linha_digitavel || "Disponível após a emissão do boleto."}
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => copyPaymentValue(activeBudgetBoleto?.linha_digitavel, "Linha digitável")} disabled={!activeBudgetBoleto?.linha_digitavel}>
+                          <Copy className="mr-2 h-4 w-4" />
+                          Copiar linha digitável
+                        </Button>
                       </div>
-                      <Button variant="outline" size="sm" onClick={() => copyPaymentValue(activeBudgetBoleto?.linha_digitavel, "Linha digitável")} disabled={!activeBudgetBoleto?.linha_digitavel}>
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copiar linha digitável
-                      </Button>
                     </div>
-                  </div>
+                  ) : activeBudgetBoleto ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                      Esta cobrança não está mais ativa no Banco Inter. Os dados do boleto e do Pix foram ocultados para evitar reutilização indevida.
+                    </div>
+                  ) : null}
                 </TabsContent>
 
                 <TabsContent value="pix" className="space-y-4 pt-4">
@@ -2333,16 +2410,22 @@ export default function OrcamentosHistoricoPanel({
                     </p>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Pix copia e cola</Label>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 break-all">
-                      {activeBudgetBoleto?.pix_copia_cola || "Disponível após a emissão do boleto bancário."}
+                  {shouldShowBudgetChargeDetails ? (
+                    <div className="space-y-2">
+                      <Label>Pix copia e cola</Label>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 break-all">
+                        {activeBudgetBoleto?.pix_copia_cola || "Disponível após a emissão do boleto bancário."}
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => copyPaymentValue(activeBudgetBoleto?.pix_copia_cola, "Pix copia e cola")} disabled={!activeBudgetBoleto?.pix_copia_cola}>
+                        <Copy className="mr-2 h-4 w-4" />
+                        Copiar Pix
+                      </Button>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => copyPaymentValue(activeBudgetBoleto?.pix_copia_cola, "Pix copia e cola")} disabled={!activeBudgetBoleto?.pix_copia_cola}>
-                      <Copy className="mr-2 h-4 w-4" />
-                      Copiar Pix
-                    </Button>
-                  </div>
+                  ) : (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                      O Pix desta cobrança não está mais disponível porque o boleto foi baixado, cancelado, expirado ou já não está ativo no Banco Inter.
+                    </div>
+                  )}
 
                   <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                     Assim que o responsável pagar por Pix ou pelo boleto, use <strong>Atualizar situação</strong> na aba do boleto para buscar o status mais recente e aplicar a recarga diretamente na carteira.

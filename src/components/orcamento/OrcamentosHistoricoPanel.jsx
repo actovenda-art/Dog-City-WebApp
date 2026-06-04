@@ -588,9 +588,32 @@ export default function OrcamentosHistoricoPanel({
     [carteiras, selectedOrcamento?.cliente_id],
   );
   const selectedBudgetResponsavel = React.useMemo(() => {
+    const carteiraContact = selectedBudgetCarteira?.contato_orcamentos || {};
+    const carteiraContactName = String(carteiraContact?.nome || "").trim() || String(selectedBudgetCarteira?.nome_razao_social || "").trim();
+    const carteiraContactPhone = String(carteiraContact?.celular || "").trim() || String(selectedBudgetCarteira?.celular || "").trim();
+    const carteiraContactEmail = String(carteiraContact?.email || "").trim() || String(selectedBudgetCarteira?.email || "").trim();
+    const carteiraDocument = String(selectedBudgetCarteira?.cpf_cnpj || "").trim();
+
+    if (selectedBudgetCarteira?.id && (carteiraContactName || carteiraContactPhone || carteiraContactEmail || carteiraDocument)) {
+      return {
+        id: selectedBudgetCarteira.id,
+        nome_completo: carteiraContactName,
+        cpf: carteiraDocument,
+        email: carteiraContactEmail,
+        celular: carteiraContactPhone,
+        source: "carteira",
+      };
+    }
+
     const dogIds = (selectedOrcamento?.caes || []).map((cao) => cao?.dog_id).filter(Boolean);
-    return getLinkedResponsaveisForDogIds(responsaveis, dogIds)[0] || null;
-  }, [responsaveis, selectedOrcamento]);
+    const linkedResponsavel = getLinkedResponsaveisForDogIds(responsaveis, dogIds)[0] || null;
+    return linkedResponsavel
+      ? {
+        ...linkedResponsavel,
+        source: "responsavel",
+      }
+      : null;
+  }, [responsaveis, selectedOrcamento, selectedBudgetCarteira]);
 
   function resetBudgetFinancialDrafts() {
     setBudgetFinanceContext(null);
@@ -2221,9 +2244,14 @@ export default function OrcamentosHistoricoPanel({
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Responsável para contato</p>
+                  <p className="text-xs text-slate-500">Contato da cobrança</p>
                   <p className="mt-1 font-semibold text-slate-900">{selectedBudgetResponsavel?.nome_completo || "Não localizado"}</p>
                   <p className="mt-1 text-xs text-slate-500">{selectedBudgetResponsavel?.celular || selectedBudgetCarteira?.celular || "Telefone não informado"}</p>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    {selectedBudgetResponsavel?.source === "responsavel"
+                      ? "Fallback: responsável vinculado aos cães do orçamento."
+                      : "Usando os dados da carteira vinculada ao orçamento."}
+                  </p>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">Valor aprovado</p>

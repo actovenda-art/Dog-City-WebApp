@@ -15,7 +15,9 @@ const DEFAULT_EXTRATO_PDF_PATHS = [
   "/banking/v2/extrato/arquivo",
 ];
 const DEFAULT_BALANCE_PATHS = ["/banking/v2/saldo", "/banking/v1/saldo"];
-const DEFAULT_SCOPE = "extrato.read saldo.read";
+const DEFAULT_BANKING_SCOPE = "extrato.read saldo.read";
+const DEFAULT_CHARGE_READ_SCOPE = "boleto-cobranca.read";
+const DEFAULT_CHARGE_WRITE_SCOPE = "boleto-cobranca.write";
 const DEFAULT_CHARGE_PATH = "/cobranca/v3/cobrancas";
 
 type IntegrationConfig = {
@@ -700,7 +702,46 @@ async function createHttpClient(config: IntegrationConfig) {
   });
 }
 
-async function getAccessToken(config: IntegrationConfig) {
+function normalizeScope(scope: string | null | undefined) {
+  return String(scope || "")
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function resolveScopedTokenScope(
+  config: IntegrationConfig,
+  options: {
+    scopeConfigKey?: string;
+    fallbackScope?: string;
+  } = {},
+) {
+  const configuredScoped = sanitizeText(
+    options.scopeConfigKey ? getConfigValue(config, options.scopeConfigKey) : null,
+  );
+  if (configuredScoped) return normalizeScope(configuredScoped);
+
+  const configuredGeneric = sanitizeText(getConfigValue(config, "scope"));
+  if (!options.scopeConfigKey && configuredGeneric) return normalizeScope(configuredGeneric);
+
+  return normalizeScope(options.fallbackScope || "");
+}
+
+function buildScopeRegistrationHint(scope: string, parsed: Record<string, unknown>) {
+  const rawMessage = JSON.stringify(parsed).toLowerCase();
+  if (!rawMessage.includes("requested scope is not registered for this client")) return null;
+  return `O client_id do Banco Inter não possui o scope '${scope}' habilitado. Ative esse scope no Portal do Desenvolvedor Inter para a aplicação usada nesta integração.`;
+}
+
+async function getAccessToken(
+  config: IntegrationConfig,
+  options: {
+    scopeConfigKey?: string;
+    fallbackScope?: string;
+    actionLabel?: string;
+  } = {},
+) {
   const clientId = sanitizeText(getConfigValue(config, "client_id"));
   const clientSecret = sanitizeText(getConfigValue(config, "client_secret"));
 
@@ -708,7 +749,10 @@ async function getAccessToken(config: IntegrationConfig) {
     throw new Error("client_id e client_secret sao obrigatorios para o Banco Inter.");
   }
 
-  const scope = sanitizeText(getConfigValue(config, "scope"), DEFAULT_SCOPE);
+  const scope = resolveScopedTokenScope(config, {
+    scopeConfigKey: options.scopeConfigKey,
+    fallbackScope: options.fallbackScope || DEFAULT_BANKING_SCOPE,
+  });
   const tokenUrl = sanitizeText(config.token_url || getConfigValue(config, "token_url"), DEFAULT_TOKEN_URL);
   const configuredTokenAuthMode = sanitizeText(getConfigValue(config, "token_auth_mode"), "auto").toLowerCase();
   const httpClient = await createHttpClient(config);
@@ -751,6 +795,11 @@ async function getAccessToken(config: IntegrationConfig) {
     }
 
     if (!response.ok) {
+      const scopeHint = buildScopeRegistrationHint(scope, parsed);
+      if (scopeHint) {
+        errors.push(`${tokenAuthMode}:${response.status}:${scopeHint}`);
+        continue;
+      }
       errors.push(`${tokenAuthMode}:${response.status}:${JSON.stringify(parsed)}`);
       continue;
     }
@@ -764,7 +813,8 @@ async function getAccessToken(config: IntegrationConfig) {
     return { accessToken, httpClient, tokenResponse: parsed, tokenStatus: response.status };
   }
 
-  throw new Error(`Falha ao autenticar no Banco Inter: ${errors.join(" | ")}`);
+  const actionLabel = options.actionLabel ? `${options.actionLabel}: ` : "";
+  throw new Error(`Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${errors.join(" | ")}`);
 }
 
 async function fetchExtrato(
@@ -1110,7 +1160,11 @@ function normalizeChargeApiResponse(raw: Record<string, unknown> = {}) {
 }
 
 async function createChargeForBudget(config: IntegrationConfig, payload: Record<string, unknown>) {
-  const { accessToken, httpClient } = await getAccessToken(config);
+  const { accessToken, httpClient } = await getAccessToken(config, {
+    scopeConfigKey: "charge_write_scope",
+    fallbackScope: DEFAULT_CHARGE_WRITE_SCOPE,
+    actionLabel: "emitir cobrança",
+  });
   const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
   const chargePath = sanitizeText(getConfigValue(config, "charge_path"), DEFAULT_CHARGE_PATH);
   const url = new URL(chargePath, apiBaseUrl);
@@ -1140,7 +1194,11 @@ async function createChargeForBudget(config: IntegrationConfig, payload: Record<
 }
 
 async function fetchChargeForBudget(config: IntegrationConfig, codigoSolicitacao: string) {
-  const { accessToken, httpClient } = await getAccessToken(config);
+  const { accessToken, httpClient } = await getAccessToken(config, {
+    scopeConfigKey: "charge_read_scope",
+    fallbackScope: DEFAULT_CHARGE_READ_SCOPE,
+    actionLabel: "consultar cobrança",
+  });
   const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
   const chargePath = sanitizeText(getConfigValue(config, "charge_path"), DEFAULT_CHARGE_PATH);
   const url = new URL(`${chargePath}/${codigoSolicitacao}`, apiBaseUrl);
@@ -1168,7 +1226,11 @@ async function fetchChargeForBudget(config: IntegrationConfig, codigoSolicitacao
 }
 
 async function fetchChargePdfForBudget(config: IntegrationConfig, codigoSolicitacao: string) {
-  const { accessToken, httpClient } = await getAccessToken(config);
+  const { accessToken, httpClient } = await getAccessToken(config, {
+    scopeConfigKey: "charge_read_scope",
+    fallbackScope: DEFAULT_CHARGE_READ_SCOPE,
+    actionLabel: "baixar PDF da cobrança",
+  });
   const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
   const chargePath = sanitizeText(getConfigValue(config, "charge_path"), DEFAULT_CHARGE_PATH);
   const url = new URL(`${chargePath}/${codigoSolicitacao}/pdf`, apiBaseUrl);
@@ -1276,7 +1338,11 @@ async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
 }
 
 async function ensureChargeWebhookConfigured(config: IntegrationConfig) {
-  const { accessToken, httpClient } = await getAccessToken(config);
+  const { accessToken, httpClient } = await getAccessToken(config, {
+    scopeConfigKey: "charge_write_scope",
+    fallbackScope: DEFAULT_CHARGE_WRITE_SCOPE,
+    actionLabel: "configurar webhook de cobrança",
+  });
   const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
   const chargePath = sanitizeText(getConfigValue(config, "charge_path"), DEFAULT_CHARGE_PATH);
   const webhookUrl = `${supabaseUrl}/functions/v1/banco-inter-sync`;

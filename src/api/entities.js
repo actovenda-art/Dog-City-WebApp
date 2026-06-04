@@ -38,6 +38,8 @@ export const AutorizacaoFinanceira = appClient.entities.AutorizacaoFinanceira;
 
 export const CancelamentoFinanceiro = appClient.entities.CancelamentoFinanceiro;
 
+export const OrcamentoPagamento = appClient.entities.OrcamentoPagamento;
+
 export const FinanceSnapshot = appClient.entities.FinanceSnapshot;
 
 export const FinanceSnapshotDelta = appClient.entities.FinanceSnapshotDelta;

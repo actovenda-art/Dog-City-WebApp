@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, IntegracaoConfig, Orcamento, RecurringPackage, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, IntegracaoConfig, Orcamento, OrcamentoPagamento, RecurringPackage, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
 import {
+  bancoInter,
   financeApproveBudgetWithAuthorization,
   financeProcessBudgetCancellationV2,
   financePreviewBudgetConsumption,
@@ -18,6 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import OrcamentoAgendamentoEditorDialog from "@/components/orcamento/OrcamentoAgendamentoEditorDialog";
@@ -34,8 +36,14 @@ import {
   Filter,
   Download,
   CheckCircle,
+  Copy,
   XCircle,
   Clock,
+  CreditCard,
+  Landmark,
+  RefreshCw,
+  ReceiptText,
+  QrCode,
   Send,
   MessageSquareText,
   Pencil,
@@ -66,6 +74,10 @@ function formatCurrency(value) {
 
 function formatDate(value) {
   return value ? format(new Date(value), "dd/MM/yyyy", { locale: ptBR }) : "-";
+}
+
+function normalizeDigits(value) {
+  return String(value || "").replace(/\D/g, "");
 }
 
 function formatTime(value) {
@@ -529,6 +541,12 @@ export default function OrcamentosHistoricoPanel({
   const [cancellationReason, setCancellationReason] = useState("");
   const [approvalWhatsappSlot, setApprovalWhatsappSlot] = useState("manual");
   const [isSendingApproval, setIsSendingApproval] = useState(false);
+  const [budgetPayments, setBudgetPayments] = useState([]);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentTab, setPaymentTab] = useState("boleto");
+  const [isIssuingBudgetPayment, setIsIssuingBudgetPayment] = useState(false);
+  const [isRefreshingBudgetPayment, setIsRefreshingBudgetPayment] = useState(false);
+  const [isDownloadingBudgetPayment, setIsDownloadingBudgetPayment] = useState(false);
   const financialStatusMap = React.useMemo(
     () => buildFinancialOperationalStatusMap(contasReceber),
     [contasReceber],
@@ -557,6 +575,22 @@ export default function OrcamentosHistoricoPanel({
   );
 
   const canManageFinancialCancellation = canAuthorizeBudgetFinancially;
+  const selectedBudgetPayments = React.useMemo(
+    () => budgetPayments.filter((item) => item?.orcamento_id === selectedOrcamento?.id),
+    [budgetPayments, selectedOrcamento?.id],
+  );
+  const activeBudgetBoleto = React.useMemo(
+    () => selectedBudgetPayments.find((item) => item?.metodo === "boleto_bancario") || null,
+    [selectedBudgetPayments],
+  );
+  const selectedBudgetCarteira = React.useMemo(
+    () => carteiras.find((item) => item?.id === selectedOrcamento?.cliente_id) || null,
+    [carteiras, selectedOrcamento?.cliente_id],
+  );
+  const selectedBudgetResponsavel = React.useMemo(() => {
+    const dogIds = (selectedOrcamento?.caes || []).map((cao) => cao?.dog_id).filter(Boolean);
+    return getLinkedResponsaveisForDogIds(responsaveis, dogIds)[0] || null;
+  }, [responsaveis, selectedOrcamento]);
 
   function resetBudgetFinancialDrafts() {
     setBudgetFinanceContext(null);
@@ -693,7 +727,7 @@ export default function OrcamentosHistoricoPanel({
   async function loadData() {
     setIsLoading(true);
     try {
-      const [orcData, dogsData, carteirasData, recurringPackagesData, responsaveisData, precosData, currentUser, integracoesData, receivableRows] = await Promise.all([
+      const [orcData, dogsData, carteirasData, recurringPackagesData, responsaveisData, precosData, currentUser, integracoesData, receivableRows, budgetPaymentRows] = await Promise.all([
         Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
@@ -703,6 +737,7 @@ export default function OrcamentosHistoricoPanel({
         User.me(),
         IntegracaoConfig.list("-created_date", 100),
         ContaReceber.listAll("-created_date", 1000, 10000),
+        OrcamentoPagamento.list("-created_date", 1000).catch(() => []),
       ]);
       setOrcamentos(orcData || []);
       setDogs(dogsData || []);
@@ -713,6 +748,7 @@ export default function OrcamentosHistoricoPanel({
       setCurrentUser(currentUser || null);
       setPrecos(buildPricingConfig(precosData || [], currentUser?.empresa_id || null));
       setWhatsappConfigs((integracoesData || []).filter((item) => (item.provider || item.nome) === "whatsapp_web"));
+      setBudgetPayments(budgetPaymentRows || []);
     } catch (error) {
       console.error("Erro ao carregar histÃ³rico de orÃ§amentos:", error);
     }
@@ -816,6 +852,128 @@ export default function OrcamentosHistoricoPanel({
       showFeedback("Não foi possível solicitar a aprovação", error?.message || "Falha ao preparar a aprovação autenticada do responsável.", "error");
     } finally {
       setIsSendingApproval(false);
+    }
+  }
+
+  function openBudgetPaymentDialog() {
+    if (!selectedOrcamento?.id) return;
+    setPaymentTab("boleto");
+    setPaymentDialogOpen(true);
+  }
+
+  async function copyPaymentValue(value, label) {
+    if (!value) {
+      showFeedback("Nada para copiar", `Ainda não existe ${label.toLowerCase()} disponível para esta cobrança.`, "warning");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(String(value));
+      showFeedback("Copiado", `${label} copiado para a área de transferência.`, "success");
+    } catch (error) {
+      showFeedback("Não foi possível copiar", error?.message || `Falha ao copiar ${label.toLowerCase()}.`, "error");
+    }
+  }
+
+  async function issueBudgetCharge() {
+    if (!selectedOrcamento?.id || !selectedBudgetCarteira?.id) {
+      showFeedback("Orçamento incompleto", "Selecione um orçamento com responsável financeiro vinculado antes de emitir a cobrança.", "warning");
+      return;
+    }
+    if (!selectedBudgetResponsavel?.nome_completo || !selectedBudgetResponsavel?.cpf || !selectedBudgetResponsavel?.celular) {
+      showFeedback("Responsável incompleto", "O responsável vinculado ao orçamento precisa ter nome, CPF e celular preenchidos para emissão do boleto.", "warning");
+      return;
+    }
+
+    setIsIssuingBudgetPayment(true);
+    try {
+      const response = await bancoInter({
+        action: "issueBudgetCharge",
+        empresa_id: currentUser?.empresa_id || selectedOrcamento?.empresa_id || null,
+        orcamento_id: selectedOrcamento.id,
+        carteira_id: selectedBudgetCarteira.id,
+        carteira_conta_id: budgetFinanceContext?.carteira_conta_id || null,
+        responsavel_id: selectedBudgetResponsavel.id,
+        responsavel_nome: selectedBudgetResponsavel.nome_completo,
+        responsavel_cpf_cnpj: selectedBudgetResponsavel.cpf,
+        responsavel_email: selectedBudgetResponsavel.email || selectedBudgetCarteira.email || "",
+        responsavel_telefone: selectedBudgetResponsavel.celular || selectedBudgetCarteira.celular || "",
+        valor: Number(selectedOrcamento.valor_total || 0),
+        data_vencimento: selectedOrcamento.data_validade || format(new Date(), "yyyy-MM-dd"),
+        metodo: "boleto_bancario",
+        usuario_id: currentUser?.id || null,
+      });
+
+      if (response?.payment) {
+        setBudgetPayments((current) => {
+          const others = current.filter((item) => item?.id !== response.payment.id);
+          return [response.payment, ...others];
+        });
+      }
+
+      showFeedback("Cobrança emitida", "O boleto com Pix foi emitido e já pode ser compartilhado com o responsável financeiro.", "success");
+    } catch (error) {
+      showFeedback("Não foi possível emitir a cobrança", error?.message || "Revise a integração com o Banco Inter e tente novamente.", "error");
+    } finally {
+      setIsIssuingBudgetPayment(false);
+    }
+  }
+
+  async function refreshBudgetChargeStatus() {
+    if (!activeBudgetBoleto?.id) return;
+    setIsRefreshingBudgetPayment(true);
+    try {
+      const response = await bancoInter({
+        action: "refreshBudgetChargeStatus",
+        empresa_id: currentUser?.empresa_id || selectedOrcamento?.empresa_id || null,
+        orcamento_pagamento_id: activeBudgetBoleto.id,
+      });
+
+      if (response?.payment) {
+        setBudgetPayments((current) => {
+          const others = current.filter((item) => item?.id !== response.payment.id);
+          return [response.payment, ...others];
+        });
+      }
+
+      showFeedback(
+        "Cobrança atualizada",
+        response?.payment?.status === "recebido"
+          ? "Pagamento confirmado. A carteira vinculada foi atualizada diretamente."
+          : "A cobrança foi atualizada com o status mais recente do Banco Inter.",
+        "success",
+      );
+    } catch (error) {
+      showFeedback("Não foi possível atualizar a cobrança", error?.message || "Falha ao consultar o status mais recente no Banco Inter.", "error");
+    } finally {
+      setIsRefreshingBudgetPayment(false);
+    }
+  }
+
+  async function downloadBudgetChargePdf() {
+    if (!activeBudgetBoleto?.id) return;
+    setIsDownloadingBudgetPayment(true);
+    try {
+      const response = await bancoInter({
+        action: "downloadBudgetChargePdf",
+        empresa_id: currentUser?.empresa_id || selectedOrcamento?.empresa_id || null,
+        orcamento_pagamento_id: activeBudgetBoleto.id,
+      });
+
+      const pdfBase64 = response?.pdf;
+      if (!pdfBase64) {
+        throw new Error("O Banco Inter não retornou o PDF desta cobrança.");
+      }
+
+      const link = document.createElement("a");
+      link.href = `data:application/pdf;base64,${pdfBase64}`;
+      link.download = response?.file_name || `boleto-orcamento-${selectedOrcamento?.id || "dog-city"}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      showFeedback("Não foi possível baixar o PDF", error?.message || "Falha ao preparar o PDF do boleto.", "error");
+    } finally {
+      setIsDownloadingBudgetPayment(false);
     }
   }
 
@@ -1978,6 +2136,16 @@ export default function OrcamentosHistoricoPanel({
               <Link2 className="mr-2 h-4 w-4" />
               Solicitar aprovação
             </Button>
+            {selectedOrcamento?.status === "aprovado" ? (
+              <Button
+                variant="outline"
+                onClick={openBudgetPaymentDialog}
+                disabled={!selectedOrcamento?.id || !selectedOrcamento?.cliente_id}
+              >
+                <ReceiptText className="mr-2 h-4 w-4" />
+                Pagamento
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               onClick={() => openAppointmentsEditor(selectedOrcamento)}
@@ -1993,6 +2161,147 @@ export default function OrcamentosHistoricoPanel({
             >
               <Save className="mr-2 h-4 w-4" />
               {isSavingStatus ? "Salvando..." : "Salvar alterações"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="max-h-[92vh] w-[95vw] max-w-[820px] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Pagamento do orçamento</DialogTitle>
+            <DialogDescription>
+              Emita e acompanhe os dados de pagamento do responsável financeiro sem sair do orçamento aprovado.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[calc(92vh-170px)] overflow-y-auto pr-1">
+            <div className="space-y-4 py-2">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">Responsável financeiro</p>
+                  <p className="mt-1 font-semibold text-slate-900">{selectedBudgetCarteira?.nome_razao_social || "Não vinculado"}</p>
+                  <p className="mt-1 text-xs text-slate-500">{selectedBudgetCarteira?.cpf_cnpj || "CPF/CNPJ não informado"}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">Responsável para contato</p>
+                  <p className="mt-1 font-semibold text-slate-900">{selectedBudgetResponsavel?.nome_completo || "Não localizado"}</p>
+                  <p className="mt-1 text-xs text-slate-500">{selectedBudgetResponsavel?.celular || selectedBudgetCarteira?.celular || "Telefone não informado"}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">Valor aprovado</p>
+                  <p className="mt-1 font-semibold text-emerald-700">{formatCurrency(selectedOrcamento?.valor_total || 0)}</p>
+                  <p className="mt-1 text-xs text-slate-500">Vencimento: {formatDate(selectedOrcamento?.data_validade)}</p>
+                </div>
+              </div>
+
+              <Tabs value={paymentTab} onValueChange={setPaymentTab}>
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="boleto"><Landmark className="mr-2 h-4 w-4" />Boleto bancário</TabsTrigger>
+                  <TabsTrigger value="pix"><QrCode className="mr-2 h-4 w-4" />Pix ou Transferência</TabsTrigger>
+                  <TabsTrigger value="cartao"><CreditCard className="mr-2 h-4 w-4" />Cartão</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="boleto" className="space-y-4 pt-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Cobrança boleto + Pix do Banco Inter</p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Emitimos um único documento com boleto bancário e Pix copia e cola, usando os dados do responsável financeiro vinculados ao orçamento.
+                        </p>
+                      </div>
+                      {activeBudgetBoleto ? (
+                        <Badge className={activeBudgetBoleto.status === "recebido" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}>
+                          {activeBudgetBoleto.status === "recebido" ? "Recebido" : "Emitido"}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">Ainda não emitido</Badge>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button onClick={issueBudgetCharge} disabled={isIssuingBudgetPayment}>
+                        {isIssuingBudgetPayment ? "Solicitando..." : "Solicitar boleto bancário"}
+                      </Button>
+                      <Button variant="outline" onClick={refreshBudgetChargeStatus} disabled={!activeBudgetBoleto?.id || isRefreshingBudgetPayment}>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        {isRefreshingBudgetPayment ? "Atualizando..." : "Atualizar situação"}
+                      </Button>
+                      <Button variant="outline" onClick={downloadBudgetChargePdf} disabled={!activeBudgetBoleto?.id || !activeBudgetBoleto?.pdf_disponivel || isDownloadingBudgetPayment}>
+                        <Download className="mr-2 h-4 w-4" />
+                        {isDownloadingBudgetPayment ? "Preparando PDF..." : "Baixar PDF"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Código de barras</Label>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        {activeBudgetBoleto?.codigo_barras || "Disponível após a emissão do boleto."}
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => copyPaymentValue(activeBudgetBoleto?.codigo_barras, "Código de barras")} disabled={!activeBudgetBoleto?.codigo_barras}>
+                        <Copy className="mr-2 h-4 w-4" />
+                        Copiar código de barras
+                      </Button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Linha digitável</Label>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        {activeBudgetBoleto?.linha_digitavel || "Disponível após a emissão do boleto."}
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => copyPaymentValue(activeBudgetBoleto?.linha_digitavel, "Linha digitável")} disabled={!activeBudgetBoleto?.linha_digitavel}>
+                        <Copy className="mr-2 h-4 w-4" />
+                        Copiar linha digitável
+                      </Button>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="pix" className="space-y-4 pt-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <p className="text-sm font-semibold text-slate-900">Pix ou transferência</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      O Pix copia e cola nasce junto com o boleto. Para transferência manual, a equipe financeira pode usar os mesmos dados do documento emitido.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Pix copia e cola</Label>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 break-all">
+                      {activeBudgetBoleto?.pix_copia_cola || "Disponível após a emissão do boleto bancário."}
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => copyPaymentValue(activeBudgetBoleto?.pix_copia_cola, "Pix copia e cola")} disabled={!activeBudgetBoleto?.pix_copia_cola}>
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copiar Pix
+                    </Button>
+                  </div>
+
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    Assim que o responsável pagar por Pix ou pelo boleto, use <strong>Atualizar situação</strong> na aba do boleto para buscar o status mais recente e aplicar a recarga diretamente na carteira.
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="cartao" className="space-y-4 pt-4">
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    A aba de cartão já está reservada no fluxo operacional, mas a captura em cartão depende de um gateway específico e não faz parte desta integração com o Banco Inter. O orçamento pode seguir com boleto bancário ou Pix agora, sem bloquear a operação.
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              {activeBudgetBoleto?.credited_wallet_movement_id ? (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                  Pagamento confirmado e aplicado na carteira vinculada. Movimento financeiro: <strong>{activeBudgetBoleto.credited_wallet_movement_id}</strong>.
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 border-t pt-4">
+            <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>

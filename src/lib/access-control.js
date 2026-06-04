@@ -20,6 +20,7 @@ const PAGE_ACCESS_REQUIREMENTS = {
   PedidosInternos: ["platform:*", "empresa:*", "empresa:update", "tarefas:*", "tarefas:read", "tarefas:update"],
 
   Movimentacoes: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
+  CarteirasFinanceiras: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
   Receitas: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
   Despesas: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
   ContasPagar: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],

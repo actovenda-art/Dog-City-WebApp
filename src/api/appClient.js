@@ -96,6 +96,7 @@ const UNIT_SCOPED_ENTITIES = new Set([
   'CarteiraReconciliacao',
   'AutorizacaoFinanceira',
   'CancelamentoFinanceiro',
+  'OrcamentoPagamento',
   'ObrigacaoFinanceira',
   'CobrancaFinanceira',
   'CobrancaItem',
@@ -528,6 +529,7 @@ const defaultEntities = {};
   'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
   'RecurringPackage', 'PackageSession', 'PackageCredit', 'PackageBilling', 'CarteiraConta',
   'CarteiraMovimento', 'PagamentoV2Execucao', 'PagamentoV2Reversao', 'CarteiraReconciliacao', 'AutorizacaoFinanceira', 'CancelamentoFinanceiro',
+  'OrcamentoPagamento',
   'ObrigacaoFinanceira', 'CobrancaFinanceira', 'CobrancaItem', 'ComissaoEvento',
   'FinanceSnapshot', 'FinanceSnapshotDelta', 'AuditLog',
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
@@ -1285,13 +1287,195 @@ function buildMockCancellationResult(row = {}) {
   };
 }
 
+const MOCK_INTER_CHARGE_PDF_BASE64 = "JVBERi0xLjQKMSAwIG9iago8PC9UeXBlIC9DYXRhbG9nIC9QYWdlcyAyIDAgUj4+CmVuZG9iagoyIDAgb2JqCjw8L1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDE+PgplbmRvYmoKMyAwIG9iago8PC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgL01lZGlhQm94IFswIDAgMzAwIDE0NF0gL0NvbnRlbnRzIDQgMCBSIC9SZXNvdXJjZXMgPDwvRm9udCA8PC9GMSA1IDAgUj4+Pj4+PgplbmRvYmoKNCAwIG9iago8PC9MZW5ndGggNzI+PgpzdHJlYW0KQlQgL0YxIDE0IFRmIDM2IDEwNCBUZCAoRG9nIENpdHkgLSBCb2xldG8gZGUgVGVzdGUpIFRqIFQqIChVc2UgZXN0ZSBQREYgYXBlbmFzIHBhcmEgUUEuKSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2E+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDEwIDAwMDAwIG4gCjAwMDAwMDAwNjAgMDAwMDAgbiAKMDAwMDAwMDExNyAwMDAwMCBuIAowMDAwMDAwMjQzIDAwMDAwIG4gCjAwMDAwMDAzNjYgMDAwMDAgbiAKdHJhaWxlcgo8PC9Sb290IDEgMCBSIC9TaXplIDY+PgpzdGFydHhyZWYKNDU0CiUlRU9G";
+
+function generateMockChargeCode(length = 44) {
+  const digits = Array.from({ length }, () => Math.floor(Math.random() * 10));
+  return digits.join('');
+}
+
+function formatMockChargeLine(barcode) {
+  const source = String(barcode || '').replace(/\D/g, '').padEnd(47, '0').slice(0, 47);
+  return `${source.slice(0, 5)}.${source.slice(5, 10)} ${source.slice(10, 15)}.${source.slice(15, 21)} ${source.slice(21, 26)}.${source.slice(26, 32)} ${source.slice(32, 33)} ${source.slice(33)}`.trim();
+}
+
+function buildMockBudgetChargePix(codigoSolicitacao) {
+  return `00020101021226760014BR.GOV.BCB.PIX2554mock.pix.dogcity/${codigoSolicitacao}5204000053039865802BR5920DOG CITY BRASIL6009SAO PAULO62070503***6304ABCD`;
+}
+
+function getMockBudgetPaymentRows(orcamentoId) {
+  return readStorage('OrcamentoPagamento')
+    .filter((item) => !orcamentoId || item?.orcamento_id === orcamentoId)
+    .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime());
+}
+
+function buildMockBudgetPaymentResponse(row = {}) {
+  return {
+    ok: true,
+    payment: row,
+    cobranca: {
+      codigoSolicitacao: row?.codigo_solicitacao || null,
+      seuNumero: row?.seu_numero || null,
+      situacao: row?.status_inter || row?.status || null,
+      valorNominal: Number(row?.valor || 0),
+    },
+    boleto: {
+      nossoNumero: row?.nosso_numero || null,
+      codigoBarras: row?.codigo_barras || null,
+      linhaDigitavel: row?.linha_digitavel || null,
+    },
+    pix: {
+      txid: row?.txid || null,
+      pixCopiaECola: row?.pix_copia_cola || null,
+    },
+  };
+}
+
+function resolveMockWalletAccountForCarteira(carteiraId, empresaId = null) {
+  return readStorage('CarteiraConta').find((item) =>
+    item?.carteira_id === carteiraId && (!empresaId || item?.empresa_id === empresaId)
+  ) || null;
+}
+
+function applyMockBudgetPaymentToWallet(row = {}) {
+  if (row?.credited_wallet_movement_id || !row?.carteira_conta_id) return row;
+
+  const walletResult = applyMockWalletOperationCore({
+    carteira_conta_id: row.carteira_conta_id,
+    operacao_idempotencia: `orcamento_pagamento|${row.id}|recebido`,
+    tipo: 'entrada_direcionada',
+    natureza: 'entrada',
+    origem: 'orcamento_pagamento_boleto',
+    valor: Number(row?.valor_recebido || row?.valor || 0),
+    referencia_amigavel: `Recarga do orçamento ${row?.orcamento_id || ''}`.trim(),
+    descricao: `Cobrança do orçamento ${row?.orcamento_id || ''}`.trim(),
+    transacao_id: row?.codigo_solicitacao || row?.txid || row?.id || null,
+    usuario_id: row?.created_by_user_id || null,
+    metadata: {
+      orcamento_pagamento_id: row.id,
+      orcamento_id: row.orcamento_id || null,
+      source: 'orcamento_pagamento_recebido',
+    },
+    permitir_saldo_negativo: true,
+  });
+
+  return {
+    ...row,
+    credited_wallet_movement_id: walletResult?.movimento_id || null,
+    creditado_em: new Date().toISOString(),
+  };
+}
+
 const mockFunctions = {
   notificacoesOrcamento: async (payload) => {
     console.info('[mock] notificacoesOrcamento called with', payload);
     return { ok: true };
   },
-  bancoInter: async (payload) => {
+  bancoInter: async (payload = {}) => {
     console.info('[mock] bancoInter called with', payload);
+    if (payload?.action === 'issueBudgetCharge') {
+      const orcamentoId = String(payload?.orcamento_id || '').trim();
+      const carteiraId = String(payload?.carteira_id || '').trim();
+      const empresaId = String(payload?.empresa_id || '').trim() || getMockScopedUnitId();
+      const responsavelId = String(payload?.responsavel_id || '').trim() || null;
+      const valor = Number(payload?.valor || 0);
+      const metodo = String(payload?.metodo || 'boleto_bancario').trim() || 'boleto_bancario';
+
+      if (!orcamentoId) throw new Error('orcamento_id é obrigatório para emitir a cobrança do orçamento.');
+      if (!carteiraId) throw new Error('carteira_id é obrigatório para emitir a cobrança do orçamento.');
+      if (!Number.isFinite(valor) || valor <= 0) throw new Error('valor precisa ser maior que zero para emitir a cobrança do orçamento.');
+
+      const rows = readStorage('OrcamentoPagamento');
+      const existing = rows.find((item) =>
+        item?.orcamento_id === orcamentoId
+        && item?.empresa_id === empresaId
+        && item?.metodo === metodo
+        && !['cancelado', 'expirado'].includes(String(item?.status || '').toLowerCase())
+      );
+      if (existing) {
+        return buildMockBudgetPaymentResponse(existing);
+      }
+
+      const walletAccount = resolveMockWalletAccountForCarteira(carteiraId, empresaId);
+      const codigoSolicitacao = crypto.randomUUID();
+      const codigoBarras = generateMockChargeCode(44);
+      const now = new Date().toISOString();
+      const row = {
+        id: makeId(),
+        empresa_id: empresaId,
+        orcamento_id: orcamentoId,
+        carteira_id: carteiraId,
+        carteira_conta_id: walletAccount?.id || null,
+        responsavel_id: responsavelId,
+        provider: 'banco_inter',
+        metodo,
+        status: 'emitido',
+        status_inter: 'A_RECEBER',
+        valor,
+        seu_numero: `orc${String(orcamentoId).replace(/[^a-zA-Z0-9]/g, '').slice(-11) || makeId().slice(-11)}`,
+        codigo_solicitacao: codigoSolicitacao,
+        nosso_numero: generateMockChargeCode(12),
+        txid: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+        linha_digitavel: formatMockChargeLine(codigoBarras),
+        codigo_barras: codigoBarras,
+        pix_copia_cola: buildMockBudgetChargePix(codigoSolicitacao),
+        pdf_disponivel: true,
+        pago_em: null,
+        valor_recebido: 0,
+        credited_wallet_movement_id: null,
+        creditado_em: null,
+        created_by_user_id: payload?.usuario_id || null,
+        metadata: {
+          responsavel_nome: payload?.responsavel_nome || '',
+          responsavel_cpf_cnpj: payload?.responsavel_cpf_cnpj || '',
+          responsavel_email: payload?.responsavel_email || '',
+          responsavel_telefone: payload?.responsavel_telefone || '',
+          vencimento: payload?.data_vencimento || null,
+          mock_pdf_base64: MOCK_INTER_CHARGE_PDF_BASE64,
+        },
+        created_date: now,
+        updated_date: now,
+      };
+      rows.push(row);
+      writeStorage('OrcamentoPagamento', rows);
+      return buildMockBudgetPaymentResponse(row);
+    }
+
+    if (payload?.action === 'refreshBudgetChargeStatus') {
+      const paymentId = String(payload?.orcamento_pagamento_id || '').trim();
+      const rows = readStorage('OrcamentoPagamento');
+      const index = rows.findIndex((item) => item?.id === paymentId || item?.codigo_solicitacao === paymentId);
+      if (index < 0) throw new Error('Cobrança do orçamento não localizada.');
+
+      let row = rows[index];
+      if ((payload?.simulate_payment || row?.metadata?.mock_auto_paid) && !row?.pago_em) {
+        row = {
+          ...row,
+          status: 'recebido',
+          status_inter: 'RECEBIDO',
+          pago_em: new Date().toISOString(),
+          valor_recebido: Number(row?.valor || 0),
+          updated_date: new Date().toISOString(),
+        };
+        row = applyMockBudgetPaymentToWallet(row);
+        rows[index] = row;
+        writeStorage('OrcamentoPagamento', rows);
+      }
+
+      return buildMockBudgetPaymentResponse(rows[index]);
+    }
+
+    if (payload?.action === 'downloadBudgetChargePdf') {
+      const paymentId = String(payload?.orcamento_pagamento_id || '').trim();
+      const row = readStorage('OrcamentoPagamento').find((item) => item?.id === paymentId || item?.codigo_solicitacao === paymentId);
+      if (!row) throw new Error('Cobrança do orçamento não localizada.');
+      return {
+        ok: true,
+        file_name: `boleto-orcamento-${row.orcamento_id || row.id}.pdf`,
+        pdf: row?.metadata?.mock_pdf_base64 || MOCK_INTER_CHARGE_PDF_BASE64,
+      };
+    }
+
     if (payload?.action === 'test') {
       return { success: true, message: 'Mock Banco Inter conectado.' };
     }
@@ -4749,6 +4933,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     CarteiraReconciliacao: 'carteira_reconciliacao',
     AutorizacaoFinanceira: 'autorizacao_financeira',
     CancelamentoFinanceiro: 'cancelamento_financeiro',
+    OrcamentoPagamento: 'orcamento_pagamento',
     ObrigacaoFinanceira: 'obrigacao_financeira',
     CobrancaFinanceira: 'cobranca_financeira',
     CobrancaItem: 'cobranca_item',

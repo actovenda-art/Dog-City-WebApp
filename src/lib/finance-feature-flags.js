@@ -23,6 +23,11 @@ export const FINANCE_FEATURE_FLAGS = {
   cockpitV2CompareEnabled: "finance.cockpit_v2_compare_enabled",
   financialAlertsV2Enabled: "finance.financial_alerts_v2_enabled",
   legacyCockpitFinanceDisabled: "finance.legacy_cockpit_finance_disabled",
+  operationalObservabilityEnabled: "finance.operational_observability_enabled",
+  writeGovernanceEnabled: "finance.write_governance_enabled",
+  paymentV2ContractEnabled: "finance.payment_v2_contract_enabled",
+  paymentV2WriteEnabled: "finance.payment_v2_write_enabled",
+  paymentV2ReversalEnabled: "finance.payment_v2_reversal_enabled",
 };
 
 export function getFinanceFeatureFlagValue(configs = [], key, empresaId = null) {

@@ -16,6 +16,7 @@ const DEFAULT_EXTRATO_PDF_PATHS = [
 ];
 const DEFAULT_BALANCE_PATHS = ["/banking/v2/saldo", "/banking/v1/saldo"];
 const DEFAULT_SCOPE = "extrato.read saldo.read";
+const DEFAULT_CHARGE_PATH = "/cobranca/v3/cobrancas";
 
 type IntegrationConfig = {
   id: string;
@@ -1013,6 +1014,329 @@ async function fetchBalance(
   }
 
   throw new Error(`Falha ao consultar saldo no Banco Inter: ${errors.join(" | ")}`);
+}
+
+function buildChargeHeaders(
+  config: IntegrationConfig,
+  accessToken: string,
+  accept = "application/json",
+) {
+  const extraHeaders = (config.extra_headers || getConfigValue<Record<string, unknown>>(config, "extra_headers") || {}) as Record<string, unknown>;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: accept,
+    "Content-Type": "application/json",
+  };
+
+  const contaCorrente = sanitizeText(
+    firstDefined(
+      getConfigValue(config, "conta_corrente"),
+      getConfigValue(config, "account_number"),
+      extraHeaders["x-conta-corrente"],
+    ),
+  );
+  if (contaCorrente) {
+    headers["x-conta-corrente"] = contaCorrente.replace(/\D/g, "");
+  }
+
+  Object.entries(extraHeaders).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && key !== "x-conta-corrente") {
+      headers[key] = String(value);
+    }
+  });
+
+  return headers;
+}
+
+function normalizeCpfCnpj(value: unknown) {
+  return sanitizeText(value).replace(/\D/g, "");
+}
+
+function inferPagadorTipo(cpfCnpj: string) {
+  return cpfCnpj.length > 11 ? "JURIDICA" : "FISICA";
+}
+
+function buildChargeIssuePayload(payload: Record<string, unknown>) {
+  const payerName = sanitizeText(payload.responsavel_nome);
+  const payerDocument = normalizeCpfCnpj(payload.responsavel_cpf_cnpj);
+  const dueDate = sanitizeText(payload.data_vencimento);
+  const amount = Number(payload.valor || 0);
+  const seuNumero = sanitizeText(payload.seu_numero || `orc${sanitizeText(payload.orcamento_id).replace(/[^a-zA-Z0-9]/g, "").slice(-11)}`);
+
+  if (!payerName) throw new Error("Nome do responsável financeiro é obrigatório para emitir a cobrança.");
+  if (!payerDocument || ![11, 14].includes(payerDocument.length)) throw new Error("CPF/CNPJ válido do responsável financeiro é obrigatório para emitir a cobrança.");
+  if (!dueDate) throw new Error("Data de vencimento é obrigatória para emitir a cobrança.");
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Valor do orçamento deve ser maior que zero para emitir a cobrança.");
+
+  return {
+    seuNumero,
+    valorNominal: Number(amount.toFixed(2)),
+    dataVencimento: dueDate,
+    numDiasAgenda: Number(payload.num_dias_agenda || 0),
+    pagador: {
+      tipoPessoa: inferPagadorTipo(payerDocument),
+      nome: payerName,
+      cpfCnpj: payerDocument,
+      email: sanitizeText(payload.responsavel_email) || undefined,
+      telefone: sanitizeText(payload.responsavel_telefone).replace(/\D/g, "") || undefined,
+    },
+    mensagem: {
+      linha1: sanitizeText(payload.mensagem_linha_1 || `Orçamento ${sanitizeText(payload.orcamento_id)}`),
+      linha2: sanitizeText(payload.mensagem_linha_2 || "Dog City Brasil"),
+    },
+    formasRecebimento: ["BOLETO", "PIX"],
+  };
+}
+
+function normalizeChargeApiResponse(raw: Record<string, unknown> = {}) {
+  const cobranca = (raw.cobranca && typeof raw.cobranca === "object" ? raw.cobranca : raw) as Record<string, unknown>;
+  const boleto = (raw.boleto && typeof raw.boleto === "object" ? raw.boleto : {}) as Record<string, unknown>;
+  const pix = (raw.pix && typeof raw.pix === "object" ? raw.pix : {}) as Record<string, unknown>;
+
+  return {
+    cobranca,
+    boleto,
+    pix,
+    codigoSolicitacao: sanitizeText(firstDefined(cobranca.codigoSolicitacao, raw.codigoSolicitacao)),
+    situacao: sanitizeText(firstDefined(cobranca.situacao, raw.situacao, raw.status), "EM_PROCESSAMENTO"),
+    seuNumero: sanitizeText(firstDefined(cobranca.seuNumero, raw.seuNumero)),
+    valorNominal: toNumber(firstDefined(cobranca.valorNominal, raw.valorNominal)),
+    nossoNumero: sanitizeText(firstDefined(boleto.nossoNumero, raw.nossoNumero)),
+    codigoBarras: sanitizeText(firstDefined(boleto.codigoBarras, raw.codigoBarras)),
+    linhaDigitavel: sanitizeText(firstDefined(boleto.linhaDigitavel, raw.linhaDigitavel)),
+    txid: sanitizeText(firstDefined(pix.txid, raw.txid)),
+    pixCopiaECola: sanitizeText(firstDefined(pix.pixCopiaECola, raw.pixCopiaECola)),
+  };
+}
+
+async function createChargeForBudget(config: IntegrationConfig, payload: Record<string, unknown>) {
+  const { accessToken, httpClient } = await getAccessToken(config);
+  const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
+  const chargePath = sanitizeText(getConfigValue(config, "charge_path"), DEFAULT_CHARGE_PATH);
+  const url = new URL(chargePath, apiBaseUrl);
+  const body = buildChargeIssuePayload(payload);
+  const headers = buildChargeHeaders(config, accessToken);
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    client: httpClient,
+  });
+
+  const rawText = await response.text();
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    parsed = { raw: rawText };
+  }
+
+  if (!response.ok) {
+    throw new Error(`Falha ao emitir cobrança no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
+  }
+
+  return normalizeChargeApiResponse(parsed);
+}
+
+async function fetchChargeForBudget(config: IntegrationConfig, codigoSolicitacao: string) {
+  const { accessToken, httpClient } = await getAccessToken(config);
+  const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
+  const chargePath = sanitizeText(getConfigValue(config, "charge_path"), DEFAULT_CHARGE_PATH);
+  const url = new URL(`${chargePath}/${codigoSolicitacao}`, apiBaseUrl);
+  const headers = buildChargeHeaders(config, accessToken);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers,
+    client: httpClient,
+  });
+
+  const rawText = await response.text();
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    parsed = { raw: rawText };
+  }
+
+  if (!response.ok) {
+    throw new Error(`Falha ao consultar cobrança no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
+  }
+
+  return normalizeChargeApiResponse(parsed);
+}
+
+async function fetchChargePdfForBudget(config: IntegrationConfig, codigoSolicitacao: string) {
+  const { accessToken, httpClient } = await getAccessToken(config);
+  const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
+  const chargePath = sanitizeText(getConfigValue(config, "charge_path"), DEFAULT_CHARGE_PATH);
+  const url = new URL(`${chargePath}/${codigoSolicitacao}/pdf`, apiBaseUrl);
+  const headers = buildChargeHeaders(config, accessToken);
+  headers.Accept = "application/json";
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers,
+    client: httpClient,
+  });
+
+  const rawText = await response.text();
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    parsed = { raw: rawText };
+  }
+
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar PDF da cobrança no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
+  }
+
+  const pdf = sanitizeText(firstDefined(parsed.pdf, parsed.arquivo, parsed.file));
+  if (!pdf) {
+    throw new Error("O Banco Inter não retornou o PDF da cobrança.");
+  }
+  return pdf;
+}
+
+async function loadBudgetPaymentRow(id: string) {
+  const { data, error } = await supabase
+    .from("orcamento_pagamento")
+    .select("*")
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function loadLatestBudgetPaymentByBudget(orcamentoId: string, metodo: string) {
+  const { data, error } = await supabase
+    .from("orcamento_pagamento")
+    .select("*")
+    .eq("orcamento_id", orcamentoId)
+    .eq("metodo", metodo)
+    .order("created_date", { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+  return data?.[0] || null;
+}
+
+async function saveBudgetPaymentRow(row: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from("orcamento_pagamento")
+    .upsert([row], { onConflict: "id" })
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || row;
+}
+
+async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
+  if (row.credited_wallet_movement_id || !row.carteira_conta_id) return row;
+
+  const operacaoIdempotencia = `orcamento_pagamento|${sanitizeText(row.id)}|recebido`;
+  const amount = toNumber(firstDefined(row.valor_recebido, row.valor));
+  if (amount <= 0) return row;
+
+  const { data, error } = await supabase.rpc("finance_wallet_admin_apply_operation", {
+    p_carteira_conta_id: row.carteira_conta_id,
+    p_operacao_idempotencia: operacaoIdempotencia,
+    p_tipo: "entrada_direcionada",
+    p_natureza: "entrada",
+    p_valor: amount,
+    p_referencia_amigavel: `Recarga do orçamento ${sanitizeText(row.orcamento_id)}`,
+    p_motivo: "Recarga de carteira por pagamento do orçamento",
+    p_observacao: `Cobrança recebida via Banco Inter (${sanitizeText(row.codigo_solicitacao)})`,
+    p_origem: "orcamento_pagamento_banco_inter",
+    p_transacao_id: sanitizeText(firstDefined(row.codigo_solicitacao, row.txid, row.id)) || null,
+    p_usuario_id: sanitizeText(row.created_by_user_id) || null,
+    p_metadata: {
+      orcamento_pagamento_id: row.id,
+      orcamento_id: row.orcamento_id,
+      provider: row.provider,
+      metodo: row.metodo,
+    },
+  });
+
+  if (error) throw error;
+  const resultRow = Array.isArray(data) ? (data[0] || null) : data;
+  if (!resultRow?.movimento_id) return row;
+
+  return saveBudgetPaymentRow({
+    ...row,
+    credited_wallet_movement_id: resultRow.movimento_id,
+    creditado_em: new Date().toISOString(),
+    updated_date: new Date().toISOString(),
+  });
+}
+
+async function ensureChargeWebhookConfigured(config: IntegrationConfig) {
+  const { accessToken, httpClient } = await getAccessToken(config);
+  const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
+  const chargePath = sanitizeText(getConfigValue(config, "charge_path"), DEFAULT_CHARGE_PATH);
+  const webhookUrl = `${supabaseUrl}/functions/v1/banco-inter-sync`;
+  const url = new URL(`${chargePath}/webhook`, apiBaseUrl);
+  const headers = buildChargeHeaders(config, accessToken);
+
+  const response = await fetch(url.toString(), {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ webhookUrl }),
+    client: httpClient,
+  });
+
+  if (!response.ok && response.status !== 204) {
+    const rawText = await response.text();
+    throw new Error(`Não foi possível configurar o webhook da cobrança no Banco Inter (${response.status}): ${rawText}`);
+  }
+
+  return webhookUrl;
+}
+
+async function processBudgetChargeWebhookEvent(event: Record<string, unknown>) {
+  const codigoSolicitacao = sanitizeText(event.codigoSolicitacao);
+  if (!codigoSolicitacao) return null;
+
+  const { data, error } = await supabase
+    .from("orcamento_pagamento")
+    .select("*")
+    .eq("codigo_solicitacao", codigoSolicitacao)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const now = new Date().toISOString();
+  const situacao = sanitizeText(event.situacao, sanitizeText(data.status_inter || data.status));
+  const updatedRow = await saveBudgetPaymentRow({
+    ...data,
+    status: situacao === "RECEBIDO" ? "recebido" : data.status,
+    status_inter: situacao,
+    nosso_numero: sanitizeText(event.nossoNumero, sanitizeText(data.nosso_numero)) || null,
+    codigo_barras: sanitizeText(event.codigoBarras, sanitizeText(data.codigo_barras)) || null,
+    linha_digitavel: sanitizeText(event.linhaDigitavel, sanitizeText(data.linha_digitavel)) || null,
+    txid: sanitizeText(event.txid, sanitizeText(data.txid)) || null,
+    pix_copia_cola: sanitizeText(event.pixCopiaECola, sanitizeText(data.pix_copia_cola)) || null,
+    valor_recebido: situacao === "RECEBIDO"
+      ? toNumber(firstDefined(event.valorTotalRecebido, data.valor_recebido, data.valor))
+      : Number(data.valor_recebido || 0),
+    pago_em: situacao === "RECEBIDO" ? (sanitizeText(event.dataHoraSituacao) || data.pago_em || now) : data.pago_em || null,
+    metadata: {
+      ...(data.metadata && typeof data.metadata === "object" ? data.metadata : {}),
+      webhook_last_event: event,
+    },
+    updated_date: now,
+  });
+
+  return situacao === "RECEBIDO"
+    ? applyBudgetPaymentToWallet(updatedRow)
+    : updatedRow;
 }
 
 async function normalizeTransactions(
@@ -2543,6 +2867,10 @@ Deno.serve(async (request) => {
 
   try {
     const payload = await request.json().catch(() => ({}));
+    if (Array.isArray(payload) && payload.every((item) => item && typeof item === "object" && "codigoSolicitacao" in item)) {
+      const results = await Promise.all(payload.map((item) => processBudgetChargeWebhookEvent(item as Record<string, unknown>)));
+      return jsonResponse({ ok: true, processed: results.filter(Boolean).length });
+    }
     const action = sanitizeText(payload.action, "syncDue");
 
     if (action === "syncDue") {
@@ -2613,8 +2941,150 @@ Deno.serve(async (request) => {
           empresaIdOverride: sanitizeText(payload.empresa_id),
           movementId: sanitizeText(payload.movement_id),
         });
-        return jsonResponse(data, 200);
+      return jsonResponse(data, 200);
+    }
+
+    if (action === "issueBudgetCharge") {
+      const orcamentoId = sanitizeText(payload.orcamento_id);
+      const metodo = sanitizeText(payload.metodo, "boleto_bancario");
+      if (!orcamentoId) {
+        return jsonResponse({ error: "orcamento_id é obrigatório para emitir a cobrança." }, 400);
       }
+      if (metodo !== "boleto_bancario") {
+        return jsonResponse({ error: "Nesta fase, somente boleto bancário com Pix do Banco Inter está habilitado." }, 400);
+      }
+
+      const existingRow = await loadLatestBudgetPaymentByBudget(orcamentoId, metodo);
+      if (existingRow?.codigo_solicitacao && !["cancelado", "expirado"].includes(sanitizeText(existingRow.status).toLowerCase())) {
+        return jsonResponse({
+          ok: true,
+          payment: existingRow,
+          reused: true,
+        });
+      }
+
+      try {
+        await ensureChargeWebhookConfigured(config);
+      } catch (webhookError) {
+        console.warn("banco-inter-sync webhook configuration warning", serializeError(webhookError));
+      }
+
+      const charge = await createChargeForBudget(config, payload);
+      const now = new Date().toISOString();
+      const row = await saveBudgetPaymentRow({
+        id: sanitizeText(existingRow?.id) || crypto.randomUUID(),
+        empresa_id: sanitizeText(payload.empresa_id || config.empresa_id),
+        orcamento_id: orcamentoId,
+        carteira_id: sanitizeText(payload.carteira_id),
+        carteira_conta_id: sanitizeText(payload.carteira_conta_id) || null,
+        responsavel_id: sanitizeText(payload.responsavel_id) || null,
+        provider: "banco_inter",
+        metodo,
+        status: charge.situacao === "RECEBIDO" ? "recebido" : "emitido",
+        valor: Number(charge.valorNominal || payload.valor || 0),
+        seu_numero: charge.seuNumero || sanitizeText(payload.seu_numero) || null,
+        codigo_solicitacao: charge.codigoSolicitacao || null,
+        nosso_numero: charge.nossoNumero || null,
+        txid: charge.txid || null,
+        linha_digitavel: charge.linhaDigitavel || null,
+        codigo_barras: charge.codigoBarras || null,
+        pix_copia_cola: charge.pixCopiaECola || null,
+        pdf_disponivel: Boolean(charge.codigoSolicitacao),
+        valor_recebido: charge.situacao === "RECEBIDO" ? Number(charge.valorNominal || payload.valor || 0) : 0,
+        pago_em: charge.situacao === "RECEBIDO" ? now : null,
+        created_by_user_id: sanitizeText(payload.usuario_id) || null,
+        metadata: {
+          responsavel_nome: sanitizeText(payload.responsavel_nome),
+          responsavel_cpf_cnpj: normalizeCpfCnpj(payload.responsavel_cpf_cnpj),
+          responsavel_email: sanitizeText(payload.responsavel_email),
+          responsavel_telefone: sanitizeText(payload.responsavel_telefone),
+          vencimento: sanitizeText(payload.data_vencimento),
+          charge_snapshot: charge,
+        },
+        created_date: sanitizeText(existingRow?.created_date) || now,
+        updated_date: now,
+      });
+
+      const finalizedRow = charge.situacao === "RECEBIDO" ? await applyBudgetPaymentToWallet(row) : row;
+      return jsonResponse({
+        ok: true,
+        payment: finalizedRow,
+        cobranca: charge.cobranca,
+        boleto: charge.boleto,
+        pix: charge.pix,
+        reused: false,
+      });
+    }
+
+    if (action === "refreshBudgetChargeStatus") {
+      const paymentId = sanitizeText(payload.orcamento_pagamento_id);
+      if (!paymentId) {
+        return jsonResponse({ error: "orcamento_pagamento_id é obrigatório para atualizar a cobrança." }, 400);
+      }
+
+      const existingRow = await loadBudgetPaymentRow(paymentId);
+      if (!existingRow?.codigo_solicitacao) {
+        return jsonResponse({ error: "Cobrança do orçamento não localizada." }, 404);
+      }
+
+      const charge = await fetchChargeForBudget(config, sanitizeText(existingRow.codigo_solicitacao));
+      const now = new Date().toISOString();
+      const refreshedRow = await saveBudgetPaymentRow({
+        ...existingRow,
+        status: charge.situacao === "RECEBIDO" ? "recebido" : existingRow.status || "emitido",
+        valor: Number(charge.valorNominal || existingRow.valor || 0),
+        seu_numero: charge.seuNumero || existingRow.seu_numero || null,
+        nosso_numero: charge.nossoNumero || existingRow.nosso_numero || null,
+        txid: charge.txid || existingRow.txid || null,
+        linha_digitavel: charge.linhaDigitavel || existingRow.linha_digitavel || null,
+        codigo_barras: charge.codigoBarras || existingRow.codigo_barras || null,
+        pix_copia_cola: charge.pixCopiaECola || existingRow.pix_copia_cola || null,
+        pdf_disponivel: Boolean(charge.codigoSolicitacao || existingRow.codigo_solicitacao),
+        valor_recebido: charge.situacao === "RECEBIDO"
+          ? Number(charge.valorNominal || existingRow.valor || 0)
+          : Number(existingRow.valor_recebido || 0),
+        pago_em: charge.situacao === "RECEBIDO" ? (existingRow.pago_em || now) : existingRow.pago_em || null,
+        metadata: {
+          ...(existingRow.metadata && typeof existingRow.metadata === "object" ? existingRow.metadata : {}),
+          charge_snapshot: charge,
+        },
+        updated_date: now,
+      });
+
+      const finalizedRow = charge.situacao === "RECEBIDO" ? await applyBudgetPaymentToWallet(refreshedRow) : refreshedRow;
+      return jsonResponse({
+        ok: true,
+        payment: finalizedRow,
+        cobranca: charge.cobranca,
+        boleto: charge.boleto,
+        pix: charge.pix,
+      });
+    }
+
+    if (action === "downloadBudgetChargePdf") {
+      const paymentId = sanitizeText(payload.orcamento_pagamento_id);
+      if (!paymentId) {
+        return jsonResponse({ error: "orcamento_pagamento_id é obrigatório para baixar o PDF." }, 400);
+      }
+
+      const existingRow = await loadBudgetPaymentRow(paymentId);
+      if (!existingRow?.codigo_solicitacao) {
+        return jsonResponse({ error: "Cobrança do orçamento não localizada." }, 404);
+      }
+
+      const pdf = await fetchChargePdfForBudget(config, sanitizeText(existingRow.codigo_solicitacao));
+      await saveBudgetPaymentRow({
+        ...existingRow,
+        pdf_disponivel: true,
+        updated_date: new Date().toISOString(),
+      });
+
+      return jsonResponse({
+        ok: true,
+        file_name: `boleto-orcamento-${sanitizeText(existingRow.orcamento_id) || existingRow.id}.pdf`,
+        pdf,
+      });
+    }
 
     if (action === "buscarExtrato" || action === "syncNow") {
       const data = await runSyncForConfig(config, {

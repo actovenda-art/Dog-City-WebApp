@@ -31,6 +31,26 @@ const EMPTY_PROFILE = {
   ativo: true,
 };
 
+const GESTOR_PROFILE_PRESET = {
+  codigo: "gestor",
+  nome: "Gestor",
+  descricao: "Acesso total a uma única unidade, incluindo operação, comercial, financeiro, usuários e branding local, sem privilégios de administração central.",
+  escopo: "empresa",
+  permissoesSelecionadas: [
+    "usuarios:*",
+    "empresa:*",
+    "branding:*",
+    "agenda:*",
+    "checkin:*",
+    "dogs:*",
+    "orcamentos:*",
+    "financeiro:*",
+    "precos:*",
+    "tarefas:*",
+  ],
+  ativo: true,
+};
+
 const DEFAULT_BRANDING = {
   companyName: "",
   logoUrl: "",
@@ -671,6 +691,19 @@ export default function AdministracaoSistema() {
       permissoesSelecionadas: permissionSplit.selected,
       ativo: profile.ativo !== false,
     } : EMPTY_PROFILE);
+    setShowProfileModal(true);
+  }
+
+  function openProfilePreset(preset) {
+    setEditingProfile(null);
+    setProfileForm({
+      codigo: preset.codigo,
+      nome: preset.nome,
+      descricao: preset.descricao,
+      escopo: preset.escopo,
+      permissoesSelecionadas: [...preset.permissoesSelecionadas].sort(),
+      ativo: preset.ativo !== false,
+    });
     setShowProfileModal(true);
   }
 
@@ -1479,6 +1512,9 @@ export default function AdministracaoSistema() {
                   <Button type="button" variant="outline" onClick={handleExportAllProfiles} disabled={!profiles.length}>
                     <Download className="w-4 h-4 mr-2" />
                     Exportar perfis
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => openProfilePreset(GESTOR_PROFILE_PRESET)}>
+                    Perfil Gestor
                   </Button>
                   <Button onClick={() => openProfileModal()} className="bg-blue-600 hover:bg-blue-700 text-white">
                     Novo perfil

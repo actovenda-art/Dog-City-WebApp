@@ -18,6 +18,7 @@ export const PAGE_ROUTES: Record<string, string> = {
     ControleGerencial: "controle-gerencial",
     Escalacao: "escalacao",
     ContasReceber: "contas-receber",
+    CarteirasFinanceiras: "carteiras-financeiras",
     PedidosInternos: "pedidos-internos",
     Movimentacoes: "movimentacoes",
     Receitas: "receitas",

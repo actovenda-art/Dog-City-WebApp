@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Carteira, ExtratoBancario, Receita } from "@/api/entities";
+import { Carteira, CarteiraConta, ExtratoBancario, Receita, User } from "@/api/entities";
+import { financeWalletAdminApplyOperation } from "@/api/functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,8 @@ export default function Receitas() {
   const [receitas, setReceitas] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
+  const [walletAccounts, setWalletAccounts] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -62,14 +65,18 @@ export default function Receitas() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [receitaRows, transactionResult, carteiraRows] = await Promise.all([
+      const [receitaRows, transactionResult, carteiraRows, walletAccountRows, currentUserData] = await Promise.all([
         Receita.list("-data", 1000),
         ExtratoBancario.queryAll({ eq: { tipo: "entrada" }, sort: "-data_movimento", pageSize: 500, maxRows: 5000 }),
         Carteira.list("nome_razao_social", 1000),
+        CarteiraConta.list("-created_date", 1000),
+        User.me(),
       ]);
       setReceitas(receitaRows || []);
       setTransactions(transactionResult?.data || []);
       setCarteiras((carteiraRows || []).filter((item) => item?.ativo !== false));
+      setWalletAccounts(walletAccountRowsFilter(walletAccountRows || []));
+      setCurrentUser(currentUserData || null);
     } catch (error) {
       console.error("Erro ao carregar receitas:", error);
     } finally {
@@ -93,6 +100,11 @@ export default function Receitas() {
   const selectedCarteira = useMemo(
     () => carteiras.find((item) => item.id === formData.carteira_id) || null,
     [carteiras, formData.carteira_id],
+  );
+
+  const selectedWalletAccount = useMemo(
+    () => walletAccounts.find((item) => item?.carteira_id === formData.carteira_id) || null,
+    [walletAccounts, formData.carteira_id],
   );
 
   const availableTransactions = useMemo(
@@ -176,17 +188,43 @@ export default function Receitas() {
       alert("Selecione uma carteira válida.");
       return;
     }
+    if (!selectedWalletAccount?.id) {
+      alert("A carteira selecionada ainda não possui conta operacional para receber a recarga.");
+      return;
+    }
 
     setIsSaving(true);
     try {
+      const recargaDescription = formData.descricao.trim();
+      const recargaObservation = formData.observacoes.trim() || `Recarga vinculada à transação ${formData.transacao_id}.`;
+
       await Receita.create({
         data: formData.data,
-        descricao: formData.descricao.trim(),
+        descricao: recargaDescription,
         valor: numericValue,
-        observacoes: formData.observacoes.trim() || null,
+        observacoes: recargaObservation,
         carteira_id: selectedCarteira.id,
         carteira_nome: selectedCarteira.nome_razao_social || null,
         transacao_id: formData.transacao_id,
+      });
+
+      await financeWalletAdminApplyOperation({
+        carteira_conta_id: selectedWalletAccount.id,
+        operacao_idempotencia: `receita|${selectedCarteira.id}|${formData.transacao_id}`,
+        tipo: "entrada_direcionada",
+        natureza: "entrada",
+        valor: numericValue,
+        referencia_amigavel: recargaDescription,
+        motivo: "Recarga de carteira vinculada ao extrato bancário",
+        observacao: recargaObservation,
+        origem: "receitas_manual_link",
+        transacao_id: formData.transacao_id,
+        usuario_id: currentUser?.id || null,
+        metadata: {
+          source: "receitas_page_manual_top_up",
+          carteira_id: selectedCarteira.id,
+          carteira_nome: selectedCarteira.nome_razao_social || null,
+        },
       });
 
       await ExtratoBancario.update(formData.transacao_id, {
@@ -456,4 +494,8 @@ export default function Receitas() {
       </Dialog>
     </div>
   );
+}
+
+function walletAccountRowsFilter(rows = []) {
+  return (rows || []).filter((item) => item?.ativo !== false);
 }

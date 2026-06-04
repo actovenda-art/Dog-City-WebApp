@@ -26,7 +26,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
+import FinancialOperationalAlert from "@/components/finance/FinancialOperationalAlert";
 import { AlertTriangle, Calendar, ClipboardList, RefreshCw, Tag } from "lucide-react";
+import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -43,7 +45,7 @@ function formatDateTime(value) {
 
 function formatAppointmentPeriod(appointment) {
   const startDateKey = getAppointmentDateKey(appointment);
-  if (!startDateKey) return "-";
+  if (!startDateKey) return "";
 
   if (appointment?.service_type !== "hospedagem") {
     return formatDate(startDateKey);
@@ -55,6 +57,12 @@ function formatAppointmentPeriod(appointment) {
   }
 
   return `${formatDate(startDateKey)} até ${formatDate(endDateKey)}`;
+}
+
+function formatOwnerAppointmentLine(ownerName, appointment) {
+  const safeOwnerName = ownerName || "Responsável não identificado";
+  const period = formatAppointmentPeriod(appointment);
+  return period ? `${safeOwnerName} • ${period}` : safeOwnerName;
 }
 
 function addDays(dateKey, days) {
@@ -87,6 +95,7 @@ export default function Agendamentos() {
   const [orcamentos, setOrcamentos] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
+  const [contasReceber, setContasReceber] = useState([]);
   const [checkins, setCheckins] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDate, setFilterDate] = useState("");
@@ -101,7 +110,49 @@ export default function Agendamentos() {
 
   const dogsById = useMemo(() => Object.fromEntries(dogs.map((dog) => [dog.id, dog])), [dogs]);
   const orcamentosById = useMemo(() => Object.fromEntries(orcamentos.map((orcamento) => [orcamento.id, orcamento])), [orcamentos]);
-  const ownerByDogId = useMemo(() => buildDogOwnerIndex(carteiras, []), [carteiras]);
+  const ownerByDogId = useMemo(() => {
+    const baseIndex = buildDogOwnerIndex(carteiras, []);
+    const dogKeys = [1, 2, 3, 4, 5, 6, 7, 8].map((index) => `dog_id_${index}`);
+    const mergedIndex = { ...baseIndex };
+    const carteirasById = Object.fromEntries(
+      (carteiras || []).map((carteira) => [carteira?.id, carteira]),
+    );
+
+    (carteiras || []).forEach((carteira) => {
+      dogKeys.forEach((key) => {
+        const dogId = carteira?.[key];
+        if (!dogId) return;
+        const existing = mergedIndex[dogId] || {};
+        mergedIndex[dogId] = {
+          ...existing,
+          cliente_id: existing?.cliente_id || carteira.id || null,
+          id: existing?.id || carteira.id || null,
+        };
+      });
+    });
+
+    (dogs || []).forEach((dog) => {
+      const dogId = dog?.id;
+      const carteira = carteirasById[dog?.cliente_id];
+      if (!dogId || !carteira) return;
+
+      const existing = mergedIndex[dogId] || {};
+      mergedIndex[dogId] = {
+        nome: existing?.nome || carteira.nome_razao_social || carteira.nome_fantasia || "Carteira",
+        celular: existing?.celular || carteira.celular || "",
+        email: existing?.email || carteira.email || "",
+        tipo: existing?.tipo || "carteira",
+        cliente_id: existing?.cliente_id || carteira.id || null,
+        id: existing?.id || carteira.id || null,
+      };
+    });
+
+    return mergedIndex;
+  }, [carteiras, dogs]);
+  const financialStatusMap = useMemo(
+    () => buildFinancialOperationalStatusMap(contasReceber),
+    [contasReceber],
+  );
   const visibleAppointments = useMemo(
     () => filterAppointmentsByApprovedOrcamentos(appointments, orcamentosById),
     [appointments, orcamentosById]
@@ -116,13 +167,14 @@ export default function Agendamentos() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [me, appointmentRows, orcamentoRows, dogRows, carteiraRows, checkinRows] = await Promise.all([
+      const [me, appointmentRows, orcamentoRows, dogRows, carteiraRows, checkinRows, contaRows] = await Promise.all([
         User.me(),
         Appointment.listAll("-created_date", 1000, 5000),
         Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 1000),
         Carteira.list("-created_date", 500),
         Checkin.listAll("-created_date", 1000, 5000),
+        ContaReceber.listAll ? ContaReceber.listAll("-created_date", 1000, 10000) : ContaReceber.list("-created_date", 5000),
       ]);
       setCurrentUser(me || null);
       setAppointments(appointmentRows || []);
@@ -130,6 +182,7 @@ export default function Agendamentos() {
       setDogs((dogRows || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteiraRows || []).filter((item) => item.ativo !== false));
       setCheckins(checkinRows || []);
+      setContasReceber(contaRows || []);
     } catch (error) {
       console.error("Erro ao carregar agendamentos:", error);
     }
@@ -376,7 +429,7 @@ export default function Agendamentos() {
                           {dog?.nome || "Cão"} - {getServiceLabel(appointment.service_type)}
                         </p>
                         <p className="mt-1 text-sm text-gray-600">
-                          {owner.nome || "Responsável não identificado"} - {formatAppointmentPeriod(appointment)}
+                          {formatOwnerAppointmentLine(owner.nome, appointment)}
                         </p>
                         <p className="mt-2 text-sm text-rose-900">
                           {meta.checkin_id ? "Existe check-in aberto sem check-out. Revise no Registrador antes de confirmar a falta." : "Não houve check-in/check-out registrado para esse atendimento."}
@@ -424,7 +477,7 @@ export default function Agendamentos() {
                           {dog?.nome || "Cão"} • {getServiceLabel(appointment.service_type)}
                         </p>
                         <p className="mt-1 text-sm text-gray-600">
-                          {owner.nome || "Responsável não identificado"} • {formatAppointmentPeriod(appointment)}
+                          {formatOwnerAppointmentLine(owner.nome, appointment)}
                         </p>
                       </div>
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -527,6 +580,10 @@ export default function Agendamentos() {
           {filteredAppointments.map((appointment) => {
             const dog = dogsById[appointment.dog_id];
             const owner = ownerByDogId[appointment.dog_id] || {};
+            const ownerFinancialStatus = getFinancialOperationalStatus(
+              financialStatusMap,
+              owner?.cliente_id || owner?.id || null,
+            );
             return (
               <Card
                 key={appointment.id}
@@ -547,11 +604,19 @@ export default function Agendamentos() {
                         </Badge>
                       </div>
                       <p className="mt-1 text-xs text-gray-600 sm:text-sm">
-                        {owner.nome || "Responsável não identificado"} • {formatAppointmentPeriod(appointment)}
+                        {formatOwnerAppointmentLine(owner.nome, appointment)}
                       </p>
                       <p className="mt-1 text-xs text-gray-500">
                         {getAppointmentSourceLabel(appointment)}
                       </p>
+                      {!shouldHideOperationalAlerts && appointment.source_type === "manual_registrador" && ownerFinancialStatus.isIrregular ? (
+                        <FinancialOperationalAlert
+                          status={ownerFinancialStatus}
+                          title="Aviso financeiro"
+                          variant="compact"
+                          className="mt-3"
+                        />
+                      ) : null}
                     </div>
                     {!shouldHideOperationalAlerts && appointment.source_type === "manual_registrador" && appointment.charge_type === "pendente_comercial" && (
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -621,7 +686,7 @@ export default function Agendamentos() {
                   <Badge className="bg-blue-100 text-blue-700">Avulso</Badge>
                 </div>
                 <p className="mt-2 text-sm text-gray-600">
-                  {(ownerByDogId[selectedAppointment.dog_id] || {}).nome || "Responsável não identificado"} • {formatAppointmentPeriod(selectedAppointment)}
+                  {formatOwnerAppointmentLine((ownerByDogId[selectedAppointment.dog_id] || {}).nome, selectedAppointment)}
                 </p>
               </div>
 
@@ -677,7 +742,7 @@ export default function Agendamentos() {
                   <Badge className="bg-blue-100 text-blue-700">{getChargeTypeLabel(selectedAppointment.charge_type)}</Badge>
                 </div>
                 <p className="mt-2 text-sm text-gray-600">
-                  {(ownerByDogId[selectedAppointment.dog_id] || {}).nome || "Responsável não identificado"} • {formatAppointmentPeriod(selectedAppointment)}
+                  {formatOwnerAppointmentLine((ownerByDogId[selectedAppointment.dog_id] || {}).nome, selectedAppointment)}
                 </p>
               </div>
 

@@ -1,13 +1,28 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import {
   bancoInter,
+  financePaymentV2ExecutionAudit,
+  financePaymentV2Reverse,
+  financePaymentV2ReversalAudit,
   financeWalletAdminApplyOperation,
   financeWalletAdminAuditAccounts,
   financeWalletAdminReadAccounts,
   financeWalletAdminReadMovements,
   financeWalletReconcileAccount,
 } from "@/api/functions";
-import { AppConfig, ExtratoBancario, User } from "@/api/entities";
+import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
+import {
+  AppConfig,
+  Appointment,
+  Carteira,
+  ContaReceber,
+  CobrancaFinanceira,
+  Dog,
+  ExtratoBancario,
+  ObrigacaoFinanceira,
+  ServiceProvided,
+  User,
+} from "@/api/entities";
 import PropTypes from "prop-types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,18 +39,25 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
   Calendar,
+  CheckCircle2,
+  ChevronDown,
   FileText,
+  FileWarning,
   ListFilter,
   Pencil,
   Plus,
   RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
   Trash2,
+  Undo2,
   Wallet,
 } from "lucide-react";
 import {
@@ -49,6 +71,8 @@ import {
 } from "@/utils/finance";
 import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
 import { isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
+import FinancialOperationalAlert from "@/components/finance/FinancialOperationalAlert";
+import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 
 const EMPTY_FORM = {
   data_hora_transacao: "",
@@ -73,6 +97,23 @@ const EMPTY_WALLET_OPERATION_FORM = {
   transacao_id: "",
 };
 
+const EMPTY_WALLET_REVERSAL_FORM = {
+  carteira_conta_id: "",
+  reversao_tipo: "servico",
+  valor: "",
+  motivo: "",
+  appointment_id: "",
+  serviceprovided_id: "",
+  obrigacao_id: "",
+  cobranca_financeira_id: "",
+  conta_receber_id: "",
+  attachment_name: "",
+  attachment_path: "",
+  attachment_extension: "",
+  attachment_display_name: "",
+  confirmation_checked: false,
+};
+
 const WALLET_OPERATION_LABELS = {
   credito_manual: "Crédito manual",
   ajuste_manual: "Ajuste manual",
@@ -82,6 +123,11 @@ const WALLET_OPERATION_LABELS = {
 
 const MOVEMENTS_PAGE_SIZE = 50;
 const MOVEMENT_CACHE_KEY = "movimentacoes:last-overview";
+const OPERATIONAL_HISTORY_LIMIT = 100;
+const OPEN_FINANCIAL_STATUSES = new Set(["aberta", "parcial", "vencida", "pendente"]);
+const CLOSED_FINANCIAL_STATUSES = new Set(["quitada", "cancelada", "estornada", "pago"]);
+const REVERSAL_ATTACHMENT_ACCEPT = ".pdf,.doc,.txt,.img,.jpg,.png";
+const REVERSAL_ALLOWED_EXTENSIONS = new Set([".pdf", ".doc", ".txt", ".img", ".jpg", ".png"]);
 
 function readMovementsCache() {
   if (typeof window === "undefined") return null;
@@ -116,11 +162,50 @@ function parseCurrencyInput(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+async function readEntityCollection(entity, { sort = "-updated_date", pageSize = 500, maxRows = 2000 } = {}) {
+  if (!entity) return [];
+
+  if (entity.queryAll) {
+    const response = await entity.queryAll({ sort, pageSize, maxRows, count: false });
+    return Array.isArray(response?.data) ? response.data : (response || []);
+  }
+
+  if (entity.listAll) {
+    return entity.listAll(sort, pageSize, maxRows);
+  }
+
+  if (entity.list) {
+    return entity.list(sort, maxRows);
+  }
+
+  return [];
+}
+
 function buildWalletOperationIdempotency(tipo) {
   const randomToken = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   return `wallet_admin|${tipo}|${randomToken}`;
+}
+
+function buildWalletReversalIdempotency(reversaoTipo) {
+  const randomToken = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  return `payment_v2_reversal|${reversaoTipo}|${randomToken}`;
+}
+
+function sanitizeUploadFileName(filename) {
+  return String(filename || "arquivo")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
+}
+
+function getFileExtension(filename) {
+  const normalized = String(filename || "").trim().toLowerCase();
+  if (!normalized.includes(".")) return "";
+  return `.${normalized.split(".").pop()}`;
 }
 
 function formatPeriodLabelWithDays(summary) {
@@ -142,6 +227,273 @@ function formatPeriodLabelWithDays(summary) {
   }
 
   return formatMovementDateTime(summary.oldest_movement_date || summary.newest_movement_date);
+}
+
+function normalizeDateOnly(value) {
+  if (!value) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const isoDateMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoDateMatch) return isoDateMatch[1];
+
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function calculateOperationalSituation({ dueDate, statuses = [] } = {}) {
+  const normalizedDueDate = normalizeDateOnly(dueDate);
+  const normalizedStatuses = (statuses || []).map((status) => String(status || "").toLowerCase());
+  const hasOpenStatus = normalizedStatuses.some((status) => OPEN_FINANCIAL_STATUSES.has(status));
+  const hasClosedStatus = normalizedStatuses.some((status) => CLOSED_FINANCIAL_STATUSES.has(status));
+
+  if (!normalizedDueDate || !hasOpenStatus) {
+    return {
+      label: "Regular",
+      tone: "regular",
+      helper: hasClosedStatus ? "Sem pendência em aberto." : "Sem atraso crítico identificado.",
+    };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(`${normalizedDueDate}T00:00:00`);
+  if (Number.isNaN(due.getTime())) {
+    return { label: "Regular", tone: "regular", helper: "Vencimento indisponível." };
+  }
+
+  const diffInDays = Math.floor((today.getTime() - due.getTime()) / 86400000);
+  if (diffInDays > 5) {
+    return {
+      label: "Irregular",
+      tone: "irregular",
+      helper: `Atraso superior a 5 dias (${diffInDays} dias).`,
+    };
+  }
+
+  return {
+    label: "Regular",
+    tone: "regular",
+    helper: diffInDays > 0 ? `Atraso dentro da tolerância visual (${diffInDays} dias).` : "Dentro do prazo financeiro.",
+  };
+}
+
+function resolveEventDogName({ appointment, service, dogsById }) {
+  const directName = appointment?.metadata?.dog_nome
+    || service?.metadata?.dog_nome
+    || appointment?.dog_nome
+    || service?.dog_nome
+    || appointment?.pet_name
+    || service?.pet_name
+    || null;
+  if (directName) return directName;
+
+  const dogId = appointment?.dog_id || service?.dog_id || appointment?.pet_id || service?.pet_id || null;
+  if (dogId && dogsById.get(dogId)?.nome) {
+    return dogsById.get(dogId).nome;
+  }
+
+  return "Cão não informado";
+}
+
+function resolveEventServiceLabel({ appointment, service, obrigacao, cobranca, fallback = "Serviço" }) {
+  return appointment?.service_type
+    || service?.service_type
+    || service?.servico
+    || obrigacao?.descricao
+    || cobranca?.descricao
+    || fallback;
+}
+
+function buildOperationalHistoryRows({
+  walletAccountId,
+  executionRows = [],
+  reversalRows = [],
+  appointments = [],
+  services = [],
+  obligations = [],
+  charges = [],
+  accountsReceivable = [],
+  dogs = [],
+}) {
+  if (!walletAccountId) return [];
+
+  const appointmentsById = new Map((appointments || []).map((item) => [item?.id, item]));
+  const servicesById = new Map((services || []).map((item) => [item?.id, item]));
+  const servicesByAppointmentId = new Map(
+    (services || [])
+      .filter((item) => item?.appointment_id)
+      .map((item) => [item.appointment_id, item]),
+  );
+  const obligationsById = new Map((obligations || []).map((item) => [item?.id, item]));
+  const chargesById = new Map((charges || []).map((item) => [item?.id, item]));
+  const accountsReceivableById = new Map((accountsReceivable || []).map((item) => [item?.id, item]));
+  const dogsById = new Map((dogs || []).map((item) => [item?.id, item]));
+
+  const paymentRows = (executionRows || [])
+    .filter((row) => row?.carteira_conta_id === walletAccountId)
+    .map((row) => {
+      const obrigacao = obligationsById.get(row?.obrigacao_id) || null;
+      const cobranca = chargesById.get(row?.cobranca_financeira_id) || null;
+      const appointment = appointmentsById.get(obrigacao?.appointment_id) || null;
+      const service = servicesByAppointmentId.get(appointment?.id) || null;
+      const dueDate = obrigacao?.due_date || cobranca?.due_date || null;
+      const situation = calculateOperationalSituation({
+        dueDate,
+        statuses: [row?.obrigacao_status, row?.cobranca_status],
+      });
+
+      return {
+        id: `payment-${row?.execucao_id}`,
+        type: "payment",
+        title: "Pagamento registrado",
+        badgeLabel: row?.classe_resultado === "idempotente_reutilizado" ? "Retry reaproveitado" : "Pagamento V2",
+        badgeTone: row?.classe_resultado === "idempotente_reutilizado" ? "outline" : "payment",
+        eventDate: row?.created_date || null,
+        serviceLabel: resolveEventServiceLabel({ appointment, service, obrigacao, cobranca, fallback: "Pagamento" }),
+        dogName: resolveEventDogName({ appointment, service, dogsById }),
+        amount: Number(row?.valor_solicitado || 0),
+        dueDate,
+        statusLabel: situation.label,
+        statusTone: situation.tone,
+        statusHelper: situation.helper,
+        details: {
+          tipo: row?.forma_pagamento || "Não informado",
+          origem: row?.origem_operacional || "Não informada",
+          obrigacaoStatus: row?.obrigacao_status || "—",
+          cobrancaStatus: row?.cobranca_status || "—",
+          sourceKey: row?.source_key || "—",
+          operacaoIdempotencia: row?.operacao_idempotencia || "—",
+          reasonMessage: row?.reason_message || null,
+        },
+      };
+    });
+
+  const reversalHistoryRows = (reversalRows || [])
+    .filter((row) => row?.carteira_conta_id === walletAccountId)
+    .map((row) => {
+      const appointmentId = row?.appointment_id || row?.metadata?.original_appointment_id || null;
+      const serviceId = row?.serviceprovided_id || row?.metadata?.original_serviceprovided_id || null;
+      const appointment = appointmentsById.get(appointmentId) || null;
+      const service = servicesById.get(serviceId) || servicesByAppointmentId.get(appointmentId) || null;
+      const obrigacao = obligationsById.get(row?.obrigacao_id) || null;
+      const cobranca = chargesById.get(row?.cobranca_financeira_id) || null;
+      const contaReceber = accountsReceivableById.get(row?.conta_receber_id) || null;
+
+      return {
+        id: `reversal-${row?.reversao_id}`,
+        type: "reversal",
+        title: row?.reversao_tipo === "saldo" ? "Estorno de saldo" : "Estorno de serviço",
+        badgeLabel: row?.reversao_tipo === "saldo" ? "Estorno" : "Estornado",
+        badgeTone: "reversal",
+        eventDate: row?.created_date || null,
+        serviceLabel: row?.reversao_tipo === "saldo"
+          ? "Saldo em carteira"
+          : resolveEventServiceLabel({ appointment, service, obrigacao, cobranca, fallback: "Estorno de serviço" }),
+        dogName: row?.reversao_tipo === "saldo" ? "Responsável financeiro" : resolveEventDogName({ appointment, service, dogsById }),
+        amount: Number(row?.valor_estornado || 0),
+        dueDate: obrigacao?.due_date || cobranca?.due_date || contaReceber?.vencimento || null,
+        statusLabel: "Regular",
+        statusTone: "regular",
+        statusHelper: row?.servico_realizado ? "Serviço mantido para trilha histórica." : "Serviço não realizado removido conforme contrato.",
+        details: {
+          tipo: row?.reversao_tipo || "—",
+          motivo: row?.motivo || "—",
+          executor: row?.metadata?.executed_by_label || row?.metadata?.initiated_by_label || "—",
+          attachmentName: row?.attachment_name || "—",
+          attachmentPath: row?.attachment_path || "",
+          attachmentExtension: row?.attachment_extension || "—",
+          obrigacaoStatus: row?.obrigacao_status || "—",
+          cobrancaStatus: row?.cobranca_status || "—",
+          contaReceberStatus: row?.conta_receber_status || "—",
+          sourceKey: row?.source_key || "—",
+          operacaoIdempotencia: row?.operacao_idempotencia || "—",
+          servicoRealizado: row?.servico_realizado ? "Sim" : "Não",
+          reasonMessage: row?.reason_message || null,
+        },
+      };
+    });
+
+  return [...paymentRows, ...reversalHistoryRows].sort(
+    (left, right) => new Date(left?.eventDate || 0).getTime() - new Date(right?.eventDate || 0).getTime(),
+  );
+}
+
+function buildWalletReversalServiceOptions({
+  walletAccountId,
+  appointments = [],
+  services = [],
+  obligations = [],
+  charges = [],
+  accountsReceivable = [],
+  dogs = [],
+}) {
+  if (!walletAccountId) return [];
+
+  const appointmentsById = new Map((appointments || []).map((item) => [item?.id, item]));
+  const servicesByAppointmentId = new Map(
+    (services || [])
+      .filter((item) => item?.appointment_id)
+      .map((item) => [item.appointment_id, item]),
+  );
+  const chargesById = new Map((charges || []).map((item) => [item?.id, item]));
+  const receivablesByAppointmentId = new Map(
+    (accountsReceivable || [])
+      .filter((item) => item?.appointment_id)
+      .map((item) => [item.appointment_id, item]),
+  );
+  const dogsById = new Map((dogs || []).map((item) => [item?.id, item]));
+
+  return (obligations || [])
+    .filter((item) => item?.carteira_conta_id === walletAccountId)
+    .filter((item) => !["cancelada", "estornada"].includes(String(item?.status || "").toLowerCase()))
+    .map((obrigacao) => {
+      const appointment = appointmentsById.get(obrigacao?.appointment_id) || null;
+      const service = servicesByAppointmentId.get(obrigacao?.appointment_id) || null;
+      const charge = chargesById.get(obrigacao?.cobranca_financeira_id) || null;
+      const receivable = receivablesByAppointmentId.get(obrigacao?.appointment_id) || null;
+      const dogName = resolveEventDogName({ appointment, service, dogsById });
+      const serviceLabel = resolveEventServiceLabel({ appointment, service, obrigacao, cobranca: charge, fallback: "Serviço" });
+      const serviceRealized = Boolean(
+        service?.checkin_id
+        || appointment?.linked_checkin_id
+        || appointment?.checkin_id
+        || String(service?.status || "").toLowerCase() === "concluido"
+        || String(appointment?.status || "").toLowerCase() === "concluido",
+      );
+      const value = Number(
+        service?.valor_cobrado
+        ?? service?.preco
+        ?? receivable?.valor
+        ?? obrigacao?.valor_final
+        ?? obrigacao?.valor_original
+        ?? 0,
+      );
+
+      return {
+        key: obrigacao?.id || appointment?.id || service?.id || receivable?.id || Math.random().toString(36).slice(2),
+        obrigacao_id: obrigacao?.id || "",
+        appointment_id: appointment?.id || "",
+        serviceprovided_id: service?.id || "",
+        cobranca_financeira_id: charge?.id || "",
+        conta_receber_id: receivable?.id || "",
+        service_label: serviceLabel,
+        dog_name: dogName,
+        due_date: obrigacao?.due_date || charge?.due_date || receivable?.vencimento || null,
+        value,
+        status: obrigacao?.status || "—",
+        service_realized: serviceRealized,
+        helper: serviceRealized
+          ? "Serviço realizado: ficará zerado, Estornado e Pago."
+          : "Serviço não realizado: poderá ser removido conforme contrato.",
+      };
+    })
+    .sort((left, right) => {
+      const leftDate = left?.due_date ? new Date(`${left.due_date}T00:00:00`).getTime() : 0;
+      const rightDate = right?.due_date ? new Date(`${right.due_date}T00:00:00`).getTime() : 0;
+      return rightDate - leftDate;
+    });
 }
 
 function normalizeMovementSummary(summary) {
@@ -229,7 +581,52 @@ StatCard.propTypes = {
   isBlurred: PropTypes.bool,
 };
 
-export default function Movimentacoes() {
+function getOperationalBadgeClass(tone) {
+  if (tone === "reversal") return "border-red-200 bg-red-50 text-red-700";
+  if (tone === "payment") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+function getOperationalStatusClass(tone) {
+  if (tone === "irregular") return "border-red-200 bg-red-50 text-red-700";
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
+function buildWalletAdminAccounts(accounts = [], carteiras = []) {
+  const normalizedAccounts = (accounts || []).map((account) => ({
+    ...account,
+    carteira_selection_id: account?.carteira_conta_id || `conta:${account?.carteira_id || account?.id || "wallet"}`,
+    has_wallet_account: Boolean(account?.carteira_conta_id),
+  }));
+
+  const accountedCarteiraIds = new Set(
+    normalizedAccounts
+      .map((account) => account?.carteira_id || null)
+      .filter(Boolean),
+  );
+
+  const virtualCarteiras = (carteiras || [])
+    .filter((carteira) => carteira?.ativo !== false)
+    .filter((carteira) => !accountedCarteiraIds.has(carteira?.id))
+    .map((carteira) => ({
+      carteira_selection_id: `virtual:${carteira?.id}`,
+      carteira_conta_id: null,
+      carteira_id: carteira?.id || null,
+      carteira_nome: carteira?.nome_razao_social || carteira?.nome_fantasia || "Responsável financeiro",
+      carteira_codigo: carteira?.cpf_cnpj || carteira?.celular || carteira?.email || null,
+      saldo_atual: 0,
+      movimento_count: 0,
+      ultimo_movimento_em: null,
+      latest_reconciliation_status: "sem_conta",
+      has_wallet_account: false,
+    }));
+
+  return [...normalizedAccounts, ...virtualCarteiras].sort((left, right) =>
+    String(left?.carteira_nome || "").localeCompare(String(right?.carteira_nome || ""), "pt-BR", { sensitivity: "base" }),
+  );
+}
+
+export default function Movimentacoes({ walletOnly = false }) {
   const [movimentacoes, setMovimentacoes] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [currentBalance, setCurrentBalance] = useState(null);
@@ -257,16 +654,33 @@ export default function Movimentacoes() {
     movementsEnabled: false,
     manualAdjustmentsEnabled: false,
     manualCreditEnabled: false,
+    paymentV2WriteEnabled: false,
+    paymentV2ReversalEnabled: false,
   });
   const [walletAccounts, setWalletAccounts] = useState([]);
   const [walletAuditRows, setWalletAuditRows] = useState([]);
   const [walletRecentMovements, setWalletRecentMovements] = useState([]);
+  const [walletOperationalHistory, setWalletOperationalHistory] = useState([]);
+  const [walletReceivables, setWalletReceivables] = useState([]);
+  const [walletOperationalContext, setWalletOperationalContext] = useState({
+    appointments: [],
+    services: [],
+    obligations: [],
+    charges: [],
+    accountsReceivable: [],
+    dogs: [],
+  });
   const [selectedWalletAccountId, setSelectedWalletAccountId] = useState("");
   const [walletLoading, setWalletLoading] = useState(false);
+  const [walletHistoryLoading, setWalletHistoryLoading] = useState(false);
   const [walletSaving, setWalletSaving] = useState(false);
   const [walletActionMessage, setWalletActionMessage] = useState(null);
   const [showWalletOperationModal, setShowWalletOperationModal] = useState(false);
   const [walletOperationForm, setWalletOperationForm] = useState({ ...EMPTY_WALLET_OPERATION_FORM });
+  const [showWalletReversalModal, setShowWalletReversalModal] = useState(false);
+  const [walletReversalForm, setWalletReversalForm] = useState({ ...EMPTY_WALLET_REVERSAL_FORM });
+  const [walletReversalUploading, setWalletReversalUploading] = useState(false);
+  const [walletReversalSaving, setWalletReversalSaving] = useState(false);
 
   const applyCachedSnapshot = (expectedEmpresaId = null) => {
     const cached = readMovementsCache();
@@ -380,18 +794,24 @@ export default function Movimentacoes() {
     let isMounted = true;
 
     const initializePage = async () => {
-      applyCachedSnapshot();
+      if (!walletOnly) {
+        applyCachedSnapshot();
+      }
       try {
         const me = await User.me();
         if (!isMounted) return;
         setCurrentUser(me || null);
-        applyCachedSnapshot(me?.empresa_id || null);
-        await loadData(me || null);
+        if (!walletOnly) {
+          applyCachedSnapshot(me?.empresa_id || null);
+          await loadData(me || null);
+        }
       } catch (error) {
         console.warn("Não foi possível carregar o usuário atual:", error);
         if (isMounted) {
-          applyCachedSnapshot();
-          await loadData(null);
+          if (!walletOnly) {
+            applyCachedSnapshot();
+            await loadData(null);
+          }
         }
       }
     };
@@ -401,7 +821,7 @@ export default function Movimentacoes() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [walletOnly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -452,12 +872,16 @@ export default function Movimentacoes() {
         movementsEnabled: false,
         manualAdjustmentsEnabled: false,
         manualCreditEnabled: false,
+        paymentV2WriteEnabled: false,
+        paymentV2ReversalEnabled: false,
       });
       return {
         balanceReadEnabled: false,
         movementsEnabled: false,
         manualAdjustmentsEnabled: false,
         manualCreditEnabled: false,
+        paymentV2WriteEnabled: false,
+        paymentV2ReversalEnabled: false,
       };
     }
 
@@ -472,6 +896,8 @@ export default function Movimentacoes() {
       movementsEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.walletMovementsEnabled, userProfile.empresa_id),
       manualAdjustmentsEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.walletManualAdjustmentsEnabled, userProfile.empresa_id),
       manualCreditEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.manualCreditEnabled, userProfile.empresa_id),
+      paymentV2WriteEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.paymentV2WriteEnabled, userProfile.empresa_id),
+      paymentV2ReversalEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.paymentV2ReversalEnabled, userProfile.empresa_id),
     };
     setWalletFlags(nextFlags);
     return nextFlags;
@@ -482,6 +908,14 @@ export default function Movimentacoes() {
       setWalletAccounts([]);
       setWalletAuditRows([]);
       setWalletRecentMovements([]);
+      setWalletOperationalContext({
+        appointments: [],
+        services: [],
+        obligations: [],
+        charges: [],
+        accountsReceivable: [],
+        dogs: [],
+      });
       setSelectedWalletAccountId("");
       return;
     }
@@ -499,26 +933,33 @@ export default function Movimentacoes() {
         return;
       }
 
-      const [accounts, auditRows] = await Promise.all([
+      const [accounts, auditRows, carteiras] = await Promise.all([
         financeWalletAdminReadAccounts({ empresa_id: userProfile.empresa_id }),
         nextFlags.balanceReadEnabled
           ? financeWalletAdminAuditAccounts({ empresa_id: userProfile.empresa_id })
           : Promise.resolve([]),
+        readEntityCollection(Carteira, { sort: "nome_razao_social", pageSize: 500, maxRows: 2000 }),
       ]);
 
-      const normalizedAccounts = Array.isArray(accounts) ? accounts : [];
+      const normalizedAccounts = buildWalletAdminAccounts(
+        Array.isArray(accounts) ? accounts : [],
+        Array.isArray(carteiras) ? carteiras : [],
+      );
       setWalletAccounts(normalizedAccounts);
       setWalletAuditRows(Array.isArray(auditRows) ? auditRows : []);
 
-      const nextSelectedWalletId = normalizedAccounts.some((item) => item.carteira_conta_id === preferredWalletAccountId)
+      const nextSelectedWallet = normalizedAccounts.find((item) => item.carteira_selection_id === preferredWalletAccountId)
+        || normalizedAccounts[0]
+        || null;
+      const nextSelectedWalletId = normalizedAccounts.some((item) => item.carteira_selection_id === preferredWalletAccountId)
         ? preferredWalletAccountId
-        : (normalizedAccounts[0]?.carteira_conta_id || "");
+        : (nextSelectedWallet?.carteira_selection_id || "");
       setSelectedWalletAccountId(nextSelectedWalletId);
 
-      if (nextFlags.movementsEnabled && nextSelectedWalletId) {
+      if (nextFlags.movementsEnabled && nextSelectedWallet?.carteira_conta_id) {
         const recentMovements = await financeWalletAdminReadMovements({
           empresa_id: userProfile.empresa_id,
-          carteira_conta_id: nextSelectedWalletId,
+          carteira_conta_id: nextSelectedWallet.carteira_conta_id,
           limit: 20,
         });
         setWalletRecentMovements(Array.isArray(recentMovements) ? recentMovements : []);
@@ -558,6 +999,75 @@ export default function Movimentacoes() {
     }
   };
 
+  const loadWalletOperationalHistory = async (walletAccountId, userProfile = currentUser) => {
+    if (!userProfile?.empresa_id || !walletAccountId) {
+      setWalletOperationalContext({
+        appointments: [],
+        services: [],
+        obligations: [],
+        charges: [],
+        accountsReceivable: [],
+        dogs: [],
+      });
+      setWalletOperationalHistory([]);
+      return;
+    }
+
+    setWalletHistoryLoading(true);
+    try {
+      const [executionRows, reversalRows, appointments, services, obligations, charges, accountsReceivable, dogs] = await Promise.all([
+        financePaymentV2ExecutionAudit({ empresa_id: userProfile.empresa_id, limit: OPERATIONAL_HISTORY_LIMIT }),
+        financePaymentV2ReversalAudit({ empresa_id: userProfile.empresa_id, limit: OPERATIONAL_HISTORY_LIMIT }),
+        readEntityCollection(Appointment, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(ServiceProvided, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(ObrigacaoFinanceira, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(CobrancaFinanceira, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(ContaReceber, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(Dog, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+      ]);
+
+      const nextHistory = buildOperationalHistoryRows({
+        walletAccountId,
+        executionRows: Array.isArray(executionRows) ? executionRows : [],
+        reversalRows: Array.isArray(reversalRows) ? reversalRows : [],
+        appointments: Array.isArray(appointments) ? appointments : [],
+        services: Array.isArray(services) ? services : [],
+        obligations: Array.isArray(obligations) ? obligations : [],
+        charges: Array.isArray(charges) ? charges : [],
+        accountsReceivable: Array.isArray(accountsReceivable) ? accountsReceivable : [],
+        dogs: Array.isArray(dogs) ? dogs : [],
+      });
+
+      setWalletReceivables(Array.isArray(accountsReceivable) ? accountsReceivable : []);
+      setWalletOperationalContext({
+        appointments: Array.isArray(appointments) ? appointments : [],
+        services: Array.isArray(services) ? services : [],
+        obligations: Array.isArray(obligations) ? obligations : [],
+        charges: Array.isArray(charges) ? charges : [],
+        accountsReceivable: Array.isArray(accountsReceivable) ? accountsReceivable : [],
+        dogs: Array.isArray(dogs) ? dogs : [],
+      });
+      setWalletOperationalHistory(nextHistory);
+    } catch (error) {
+      console.warn("Não foi possível carregar a trilha operacional do Payment/Estorno V2:", error);
+      setWalletReceivables([]);
+      setWalletOperationalContext({
+        appointments: [],
+        services: [],
+        obligations: [],
+        charges: [],
+        accountsReceivable: [],
+        dogs: [],
+      });
+      setWalletOperationalHistory([]);
+    } finally {
+      setWalletHistoryLoading(false);
+    }
+  };
+
+  const selectedWalletAccount = walletAccounts.find((item) => item.carteira_selection_id === selectedWalletAccountId) || null;
+  const selectedWalletRuntimeAccountId = selectedWalletAccount?.carteira_conta_id || "";
+
   useEffect(() => {
     if (!currentUser?.empresa_id) return;
     loadWalletAdminData(currentUser);
@@ -566,12 +1076,29 @@ export default function Movimentacoes() {
   useEffect(() => {
     if (!currentUser?.empresa_id) return;
     if (!walletFlags.movementsEnabled) return;
-    if (!selectedWalletAccountId) {
+    if (!selectedWalletRuntimeAccountId) {
       setWalletRecentMovements([]);
       return;
     }
-    loadWalletMovements(selectedWalletAccountId, currentUser);
-  }, [currentUser?.empresa_id, walletFlags.movementsEnabled, selectedWalletAccountId]);
+    loadWalletMovements(selectedWalletRuntimeAccountId, currentUser);
+  }, [currentUser?.empresa_id, selectedWalletRuntimeAccountId, walletFlags.movementsEnabled]);
+
+  useEffect(() => {
+    if (!currentUser?.empresa_id || !selectedWalletRuntimeAccountId) {
+      setWalletReceivables([]);
+      setWalletOperationalContext({
+        appointments: [],
+        services: [],
+        obligations: [],
+        charges: [],
+        accountsReceivable: [],
+        dogs: [],
+      });
+      setWalletOperationalHistory([]);
+      return;
+    }
+    loadWalletOperationalHistory(selectedWalletRuntimeAccountId, currentUser);
+  }, [currentUser?.empresa_id, selectedWalletRuntimeAccountId]);
 
   const normalizedMovements = React.useMemo(
     () =>
@@ -654,8 +1181,40 @@ export default function Movimentacoes() {
   const saldoAtual = hasOfficialBalance ? currentBalance : null;
   const saldoAtualDisplay = hasOfficialBalance ? formatCurrency(currentBalance) : "—";
   const walletReadEnabled = walletFlags.balanceReadEnabled || walletFlags.movementsEnabled;
-  const selectedWalletAccount = walletAccounts.find((item) => item.carteira_conta_id === selectedWalletAccountId) || null;
-  const selectedWalletAudit = walletAuditRows.find((item) => item.carteira_conta_id === selectedWalletAccountId) || null;
+  const selectedWalletAudit = walletAuditRows.find((item) => item.carteira_conta_id === selectedWalletRuntimeAccountId) || null;
+  const walletFinancialStatusMap = useMemo(
+    () => buildFinancialOperationalStatusMap(walletReceivables),
+    [walletReceivables],
+  );
+  const selectedWalletFinancialStatus = useMemo(
+    () => getFinancialOperationalStatus(walletFinancialStatusMap, selectedWalletAccount?.carteira_id || null),
+    [selectedWalletAccount?.carteira_id, walletFinancialStatusMap],
+  );
+  const walletReversalServiceOptions = useMemo(
+    () => buildWalletReversalServiceOptions({
+      walletAccountId: walletReversalForm.carteira_conta_id || selectedWalletRuntimeAccountId,
+      appointments: walletOperationalContext.appointments,
+      services: walletOperationalContext.services,
+      obligations: walletOperationalContext.obligations,
+      charges: walletOperationalContext.charges,
+      accountsReceivable: walletOperationalContext.accountsReceivable,
+      dogs: walletOperationalContext.dogs,
+    }),
+    [
+      selectedWalletRuntimeAccountId,
+      walletOperationalContext.accountsReceivable,
+      walletOperationalContext.appointments,
+      walletOperationalContext.charges,
+      walletOperationalContext.dogs,
+      walletOperationalContext.obligations,
+      walletOperationalContext.services,
+      walletReversalForm.carteira_conta_id,
+    ],
+  );
+  const selectedWalletReversalServiceOption = useMemo(
+    () => walletReversalServiceOptions.find((item) => item.obrigacao_id === walletReversalForm.obrigacao_id) || null,
+    [walletReversalForm.obrigacao_id, walletReversalServiceOptions],
+  );
 
   const refreshStoredSummary = async (userProfile = currentUser) => {
     try {
@@ -683,7 +1242,7 @@ export default function Movimentacoes() {
     const defaultNatureza = tipo === "credito_manual" || tipo === "entrada_direcionada" ? "entrada" : "entrada";
     setWalletActionMessage(null);
     setWalletOperationForm({
-      carteira_conta_id: options.carteira_conta_id || selectedWalletAccountId || "",
+      carteira_conta_id: options.carteira_conta_id || selectedWalletRuntimeAccountId || "",
       tipo,
       natureza: options.natureza || defaultNatureza,
       valor: options.valor != null ? String(options.valor).replace(".", ",") : "",
@@ -696,13 +1255,90 @@ export default function Movimentacoes() {
     setShowWalletOperationModal(true);
   };
 
+  const openWalletReversalModal = (options = {}) => {
+    setWalletActionMessage(null);
+    setWalletReversalForm({
+      ...EMPTY_WALLET_REVERSAL_FORM,
+      carteira_conta_id: options.carteira_conta_id || selectedWalletRuntimeAccountId || "",
+      reversao_tipo: options.reversao_tipo || "servico",
+    });
+    setShowWalletReversalModal(true);
+  };
+
+  const handleWalletReversalAttachmentUpload = async (file) => {
+    if (!file) return;
+
+    const extension = getFileExtension(file.name);
+    if (!REVERSAL_ALLOWED_EXTENSIONS.has(extension)) {
+      alert("Tipo de anexo inválido. Tipos aceitos: pdf, doc, txt, img, jpg e png.");
+      return;
+    }
+
+    setWalletReversalUploading(true);
+    try {
+      const empresaId = currentUser?.empresa_id || "empresa-default";
+      const walletAccountId = walletReversalForm.carteira_conta_id || selectedWalletRuntimeAccountId || "carteira";
+      const safeName = `${Date.now()}_${sanitizeUploadFileName(file.name)}`;
+      const path = `${empresaId}/financeiro/payment-v2-reversal/${walletAccountId}/${safeName}`;
+      const { file_key } = await UploadPrivateFile({ file, path });
+      setWalletReversalForm((prev) => ({
+        ...prev,
+        attachment_name: file.name,
+        attachment_display_name: file.name,
+        attachment_path: file_key,
+        attachment_extension: extension,
+      }));
+    } catch (error) {
+      alert(error?.message || "Não foi possível enviar o anexo do estorno.");
+    } finally {
+      setWalletReversalUploading(false);
+    }
+  };
+
+  const handleOpenPrivateAttachment = async (path) => {
+    if (!path) return;
+    try {
+      const signed = await CreateFileSignedUrl({ path, expires: 3600 });
+      const url = signed?.signedUrl || signed?.url;
+      if (!url) return;
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      alert(error?.message || "Não foi possível abrir o anexo.");
+    }
+  };
+
+  const handleWalletReversalTypeChange = (value) => {
+    setWalletReversalForm((prev) => ({
+      ...prev,
+      reversao_tipo: value,
+      valor: value === "saldo" ? prev.valor : "",
+      appointment_id: value === "servico" ? prev.appointment_id : "",
+      serviceprovided_id: value === "servico" ? prev.serviceprovided_id : "",
+      obrigacao_id: value === "servico" ? prev.obrigacao_id : "",
+      cobranca_financeira_id: value === "servico" ? prev.cobranca_financeira_id : "",
+      conta_receber_id: value === "servico" ? prev.conta_receber_id : "",
+    }));
+  };
+
+  const handleWalletReversalServiceSelect = (obrigacaoId) => {
+    const option = walletReversalServiceOptions.find((item) => item.obrigacao_id === obrigacaoId) || null;
+    setWalletReversalForm((prev) => ({
+      ...prev,
+      obrigacao_id: option?.obrigacao_id || "",
+      appointment_id: option?.appointment_id || "",
+      serviceprovided_id: option?.serviceprovided_id || "",
+      cobranca_financeira_id: option?.cobranca_financeira_id || "",
+      conta_receber_id: option?.conta_receber_id || "",
+    }));
+  };
+
   const handleWalletReconcile = async () => {
-    if (!selectedWalletAccountId || !currentUser?.empresa_id) return;
+    if (!selectedWalletRuntimeAccountId || !currentUser?.empresa_id) return;
     setWalletLoading(true);
     setWalletActionMessage(null);
     try {
       const result = await financeWalletReconcileAccount({
-        carteira_conta_id: selectedWalletAccountId,
+        carteira_conta_id: selectedWalletRuntimeAccountId,
         usuario_id: currentUser?.id || null,
       });
       await loadWalletAdminData(currentUser, selectedWalletAccountId);
@@ -771,6 +1407,91 @@ export default function Movimentacoes() {
       });
     } finally {
       setWalletSaving(false);
+    }
+  };
+
+  const handleWalletReversalSave = async () => {
+    if (!walletReversalForm.carteira_conta_id) {
+      alert("Selecione o responsável financeiro do estorno.");
+      return;
+    }
+
+    if (!walletReversalForm.motivo.trim()) {
+      alert("Informe o motivo do estorno.");
+      return;
+    }
+
+    if (!walletReversalForm.attachment_path || !walletReversalForm.attachment_name) {
+      alert("Anexe um documento obrigatório para continuar.");
+      return;
+    }
+
+    if (!walletReversalForm.confirmation_checked) {
+      alert("Confirme a revisão final do estorno antes de continuar.");
+      return;
+    }
+
+    if (walletReversalForm.reversao_tipo === "saldo" && !walletReversalForm.valor) {
+      alert("Informe o valor do estorno de saldo.");
+      return;
+    }
+
+    if (walletReversalForm.reversao_tipo === "servico" && !walletReversalForm.obrigacao_id) {
+      alert("Selecione o serviço/agendamento que será estornado.");
+      return;
+    }
+
+    setWalletReversalSaving(true);
+    setWalletActionMessage(null);
+    try {
+      const result = await financePaymentV2Reverse({
+        empresa_id: currentUser?.empresa_id || null,
+        carteira_conta_id: walletReversalForm.carteira_conta_id,
+        reversao_tipo: walletReversalForm.reversao_tipo,
+        operacao_idempotencia: buildWalletReversalIdempotency(walletReversalForm.reversao_tipo),
+        source_key: `movimentacoes_ui_${walletReversalForm.reversao_tipo}`,
+        motivo: walletReversalForm.motivo.trim(),
+        attachment_name: walletReversalForm.attachment_name,
+        attachment_path: walletReversalForm.attachment_path,
+        valor: walletReversalForm.reversao_tipo === "saldo" ? parseCurrencyInput(walletReversalForm.valor) : null,
+        appointment_id: walletReversalForm.reversao_tipo === "servico" ? walletReversalForm.appointment_id || null : null,
+        serviceprovided_id: walletReversalForm.reversao_tipo === "servico" ? walletReversalForm.serviceprovided_id || null : null,
+        obrigacao_id: walletReversalForm.reversao_tipo === "servico" ? walletReversalForm.obrigacao_id || null : null,
+        cobranca_financeira_id: walletReversalForm.reversao_tipo === "servico" ? walletReversalForm.cobranca_financeira_id || null : null,
+        conta_receber_id: walletReversalForm.reversao_tipo === "servico" ? walletReversalForm.conta_receber_id || null : null,
+        usuario_id: currentUser?.id || null,
+        metadata: {
+          initiated_from: "movimentacoes_operacional_reversal_flow",
+          initiated_at: new Date().toISOString(),
+          executed_by_label: currentUser?.full_name || currentUser?.name || currentUser?.email || "Sessão atual",
+        },
+      });
+
+      await loadWalletAdminData(currentUser, walletReversalForm.carteira_conta_id);
+      await loadWalletOperationalHistory(walletReversalForm.carteira_conta_id, currentUser);
+
+      if (result?.classe_resultado === "executado" || result?.classe_resultado === "idempotente_reutilizado") {
+        setShowWalletReversalModal(false);
+        setWalletReversalForm({ ...EMPTY_WALLET_REVERSAL_FORM });
+        setWalletActionMessage({
+          type: "success",
+          message: walletReversalForm.reversao_tipo === "saldo"
+            ? "Estorno de saldo registrado no fluxo operacional do novo financeiro."
+            : "Estorno de serviço registrado no fluxo operacional do novo financeiro.",
+        });
+      } else {
+        setWalletActionMessage({
+          type: "warning",
+          message: result?.reason_message || "O estorno foi recusado pelo contrato operacional atual.",
+        });
+      }
+    } catch (error) {
+      setWalletActionMessage({
+        type: "error",
+        message: error?.message || "Não foi possível registrar o estorno operacional.",
+      });
+    } finally {
+      setWalletReversalSaving(false);
     }
   };
 
@@ -977,22 +1698,31 @@ export default function Movimentacoes() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Transações</h1>
+            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
+              {walletOnly ? "Carteiras financeiras" : "Transações"}
+            </h1>
+            {walletOnly ? (
+              <p className="mt-1 text-sm text-slate-500">
+                Consulte o extrato e a trilha operacional de cada responsável financeiro em uma página dedicada do Financeiro.
+              </p>
+            ) : null}
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing} className="h-9 rounded-full px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""} sm:mr-2 sm:h-4 sm:w-4`} />
-              {isRefreshing ? "Atualizando..." : "Atualizar extrato"}
-            </Button>
-            <Button onClick={() => openModal()} className="h-9 rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:px-4 sm:text-sm">
-              <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
-              Nova movimentação manual
-            </Button>
-          </div>
+          {!walletOnly ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing} className="h-9 rounded-full px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""} sm:mr-2 sm:h-4 sm:w-4`} />
+                {isRefreshing ? "Atualizando..." : "Atualizar extrato"}
+              </Button>
+              <Button onClick={() => openModal()} className="h-9 rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:px-4 sm:text-sm">
+                <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+                Nova movimentação manual
+              </Button>
+            </div>
+          ) : null}
         </div>
 
-        {refreshResult && (
+        {!walletOnly && refreshResult && (
           <Card className={`mb-6 ${refreshResult.success ? "border-blue-200 bg-blue-50" : "border-red-200 bg-red-50"}`}>
             <CardContent className="p-4">
               <p className={`font-semibold ${refreshResult.success ? "text-blue-900" : "text-red-900"}`}>
@@ -1014,7 +1744,8 @@ export default function Movimentacoes() {
           </Card>
         )}
 
-        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+        {!walletOnly ? (
+          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
           <StatCard
             label="Entradas"
             value={formatCurrency(entradasCardValue)}
@@ -1052,9 +1783,10 @@ export default function Movimentacoes() {
             helper={movementPeriodLabel ? `Período: ${movementPeriodLabel}` : "Quantidade exibida"}
             isBlurred={isSummaryLoading}
           />
-        </div>
+          </div>
+        ) : null}
 
-        {walletReadEnabled && (
+        {walletOnly && walletReadEnabled ? (
           <Card className="mb-6 border-slate-200 bg-white">
             <CardContent className="space-y-4 p-4 sm:p-5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1064,7 +1796,9 @@ export default function Movimentacoes() {
                     <Badge variant="outline">Leitura controlada</Badge>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
-                    Bloco administrativo temporário para auditoria de saldo e movimentos, sem substituir o fluxo principal.
+                    {walletOnly
+                      ? "Consulte o extrato administrativo e a trilha operacional de cada responsável financeiro em uma superfície dedicada do Financeiro."
+                      : "Bloco administrativo temporário para auditoria de saldo e movimentos, sem substituir o fluxo principal."}
                   </p>
                 </div>
 
@@ -1078,6 +1812,17 @@ export default function Movimentacoes() {
                     <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${walletLoading ? "animate-spin" : ""}`} />
                     Atualizar carteira
                   </Button>
+                  {canManageWalletOperations ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => openWalletReversalModal({ carteira_conta_id: selectedWalletRuntimeAccountId })}
+                      disabled={!selectedWalletRuntimeAccountId}
+                      className="h-9 rounded-full border-red-200 bg-red-50 px-3 text-xs text-red-700 hover:bg-red-100 sm:text-sm"
+                    >
+                      <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                      Novo estorno V2
+                    </Button>
+                  ) : null}
                   {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations && (
                     <>
                       {walletFlags.manualCreditEnabled ? (
@@ -1105,7 +1850,7 @@ export default function Movimentacoes() {
                       </Button>
                     </>
                   )}
-                  {walletFlags.balanceReadEnabled && selectedWalletAccountId && (
+                  {walletFlags.balanceReadEnabled && selectedWalletRuntimeAccountId && (
                     <Button
                       variant="outline"
                       onClick={handleWalletReconcile}
@@ -1142,7 +1887,7 @@ export default function Movimentacoes() {
                       </SelectTrigger>
                       <SelectContent>
                         {walletAccounts.map((account) => (
-                          <SelectItem key={account.carteira_conta_id} value={account.carteira_conta_id}>
+                          <SelectItem key={account.carteira_selection_id} value={account.carteira_selection_id}>
                             {account.carteira_nome}
                           </SelectItem>
                         ))}
@@ -1153,16 +1898,16 @@ export default function Movimentacoes() {
                   <div className="space-y-3">
                     {walletAccounts.length === 0 ? (
                       <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-                        Nenhuma conta de carteira disponível para a leitura administrativa atual.
+                        Nenhum responsável financeiro foi encontrado para esta unidade.
                       </div>
                     ) : (
                       walletAccounts.map((account) => {
-                        const isSelected = account.carteira_conta_id === selectedWalletAccountId;
+                        const isSelected = account.carteira_selection_id === selectedWalletAccountId;
                         return (
                           <button
-                            key={account.carteira_conta_id}
+                            key={account.carteira_selection_id}
                             type="button"
-                            onClick={() => setSelectedWalletAccountId(account.carteira_conta_id)}
+                            onClick={() => setSelectedWalletAccountId(account.carteira_selection_id)}
                             className={`w-full rounded-2xl border p-4 text-left transition ${
                               isSelected
                                 ? "border-blue-300 bg-blue-50"
@@ -1179,7 +1924,9 @@ export default function Movimentacoes() {
                                 ) : null}
                               </div>
                               <Badge variant={account.latest_reconciliation_status === "divergente" ? "destructive" : "outline"}>
-                                {account.latest_reconciliation_status === "divergente" ? "Divergente" : "Auditável"}
+                                {account.has_wallet_account
+                                  ? (account.latest_reconciliation_status === "divergente" ? "Divergente" : "Auditável")
+                                  : "Sem conta operacional"}
                               </Badge>
                             </div>
                             <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
@@ -1225,58 +1972,202 @@ export default function Movimentacoes() {
                         />
                       </div>
 
-                      {walletFlags.movementsEnabled ? (
-                        <div className="rounded-2xl border border-slate-200 bg-white">
-                          <div className="border-b border-slate-100 px-4 py-3">
-                            <h3 className="font-semibold text-slate-900">Últimos movimentos</h3>
-                            <p className="mt-1 text-sm text-slate-500">
-                              Origem, referência e saldo antes/depois, sem timeline final nesta sprint.
-                            </p>
-                          </div>
-                          <div className="divide-y divide-slate-100">
-                            {walletRecentMovements.length === 0 ? (
-                              <div className="px-4 py-6 text-sm text-slate-500">Nenhum movimento encontrado para a carteira selecionada.</div>
-                            ) : (
-                              walletRecentMovements.map((movement) => (
-                                <div key={movement.movimento_id} className="grid grid-cols-1 gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_140px_180px]">
-                                  <div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <p className="font-medium text-slate-900">
-                                        {WALLET_OPERATION_LABELS[movement.tipo] || movement.tipo}
-                                      </p>
-                                      <Badge variant="outline">{movement.origem}</Badge>
-                                      <Badge className={movement.natureza === "entrada" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
-                                        {movement.natureza === "entrada" ? "Entrada" : "Saída"}
-                                      </Badge>
-                                    </div>
-                                    <p className="mt-1 text-sm text-slate-600">{movement.referencia_amigavel}</p>
-                                    {movement.descricao ? (
-                                      <p className="mt-1 text-sm text-slate-500">{movement.descricao}</p>
-                                    ) : null}
-                                    <p className="mt-2 text-xs text-slate-400">
-                                      {new Date(movement.created_date).toLocaleString("pt-BR")}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Valor</p>
-                                    <p className={`mt-1 text-base font-semibold ${movement.natureza === "entrada" ? "text-green-700" : "text-red-600"}`}>
-                                      {movement.natureza === "entrada" ? "+" : "-"}
-                                      {formatCurrency(movement.valor)}
-                                    </p>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-3 text-sm">
-                                    <div>
-                                      <p className="text-slate-500">Saldo anterior</p>
-                                      <p className="mt-1 font-medium text-slate-900">{formatCurrency(movement.saldo_anterior)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-slate-500">Saldo final</p>
-                                      <p className="mt-1 font-medium text-slate-900">{formatCurrency(movement.saldo_final)}</p>
-                                    </div>
-                                  </div>
+                      <FinancialOperationalAlert
+                        status={selectedWalletFinancialStatus}
+                        title="Situação financeira do responsável"
+                      />
+
+                      {!selectedWalletAccount.has_wallet_account ? (
+                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                          Este responsável financeiro ainda não possui uma conta operacional de carteira vinculada. A leitura do extrato V2 e as ações de carteira aparecem automaticamente assim que a conta estiver disponível no financeiro.
+                        </div>
+                      ) : null}
+
+                      {walletFlags.movementsEnabled && selectedWalletAccount.has_wallet_account ? (
+                        <div className="space-y-4">
+                          <div className="rounded-2xl border border-slate-200 bg-white">
+                            <div className="border-b border-slate-100 px-4 py-3">
+                              <h3 className="font-semibold text-slate-900">Fluxo financeiro operacional</h3>
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <Badge
+                                  variant="outline"
+                                  className={walletFlags.paymentV2WriteEnabled
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-slate-200 bg-slate-50 text-slate-600"}
+                                >
+                                  <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+                                  Payment V2 {walletFlags.paymentV2WriteEnabled ? "ativo" : "desligado"}
+                                </Badge>
+                                <Badge
+                                  variant="outline"
+                                  className={walletFlags.paymentV2ReversalEnabled
+                                    ? "border-red-200 bg-red-50 text-red-700"
+                                    : "border-slate-200 bg-slate-50 text-slate-600"}
+                                >
+                                  <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                                  Estorno V2 {walletFlags.paymentV2ReversalEnabled ? "ativo" : "desligado"}
+                                </Badge>
+                              </div>
+                              <p className="mt-2 text-sm text-slate-500">
+                                Timeline operacional contínua do novo financeiro, em ordem cronológica, sem abrir rollout.
+                              </p>
+                            </div>
+                            <div className="divide-y divide-slate-100">
+                              {walletHistoryLoading ? (
+                                <div className="px-4 py-6 text-sm text-slate-500">Carregando histórico operacional do Payment V2 e Estorno V2...</div>
+                              ) : walletOperationalHistory.length === 0 ? (
+                                <div className="px-4 py-6 text-sm text-slate-500">
+                                  Nenhum evento operacional do Payment V2 ou Estorno V2 foi encontrado para a carteira selecionada. Quando houver pagamento ou estorno V2 auditável, ele aparecerá aqui.
                                 </div>
-                              ))
-                            )}
+                              ) : (
+                                walletOperationalHistory.map((event) => (
+                                  <details key={event.id} className="group px-4 py-4">
+                                    <summary className="cursor-pointer list-none">
+                                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <p className="font-medium text-slate-900">{event.title}</p>
+                                            <Badge variant="outline" className={getOperationalBadgeClass(event.badgeTone)}>
+                                              {event.type === "reversal" ? (
+                                                <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                                              ) : (
+                                                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                                              )}
+                                              {event.badgeLabel}
+                                            </Badge>
+                                            <Badge variant="outline" className={getOperationalStatusClass(event.statusTone)}>
+                                              {event.statusTone === "irregular" ? (
+                                                <ShieldAlert className="mr-1.5 h-3.5 w-3.5" />
+                                              ) : (
+                                                <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+                                              )}
+                                              {event.statusLabel}
+                                              {event.statusTone === "irregular" ? " (>5 dias)" : ""}
+                                            </Badge>
+                                          </div>
+                                          <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+                                            <p><span className="font-medium text-slate-900">Serviço:</span> {event.serviceLabel}</p>
+                                            <p><span className="font-medium text-slate-900">Cão:</span> {event.dogName}</p>
+                                            <p><span className="font-medium text-slate-900">Vencimento:</span> {event.dueDate ? new Date(`${event.dueDate}T00:00:00`).toLocaleDateString("pt-BR") : "—"}</p>
+                                            <p><span className="font-medium text-slate-900">Data:</span> {event.eventDate ? new Date(event.eventDate).toLocaleString("pt-BR") : "—"}</p>
+                                          </div>
+                                          <p className="mt-2 text-sm text-slate-500">{event.statusHelper}</p>
+                                        </div>
+
+                                        <div className="flex items-center justify-between gap-3 lg:flex-col lg:items-end">
+                                          <div className="text-left lg:text-right">
+                                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Valor</p>
+                                            <p className={`mt-1 text-base font-semibold ${event.type === "reversal" ? "text-red-600" : "text-emerald-700"}`}>
+                                              {event.type === "reversal" ? "-" : "+"}
+                                              {formatCurrency(event.amount)}
+                                            </p>
+                                          </div>
+                                          <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500 transition group-open:bg-slate-100">
+                                            Ver histórico
+                                            <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </summary>
+
+                                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                      <div className="grid grid-cols-1 gap-3 text-sm text-slate-600 md:grid-cols-2 xl:grid-cols-3">
+                                        <p><span className="font-medium text-slate-900">Tipo:</span> {event.details.tipo || "—"}</p>
+                                        <p><span className="font-medium text-slate-900">Origem:</span> {event.details.origem || "—"}</p>
+                                        <p><span className="font-medium text-slate-900">Source key:</span> {event.details.sourceKey || "—"}</p>
+                                        <p><span className="font-medium text-slate-900">Idempotência:</span> {event.details.operacaoIdempotencia || "—"}</p>
+                                        <p><span className="font-medium text-slate-900">Obrigação:</span> {event.details.obrigacaoStatus || "—"}</p>
+                                        <p><span className="font-medium text-slate-900">Cobrança:</span> {event.details.cobrancaStatus || "—"}</p>
+                                        {event.type === "reversal" ? (
+                                          <>
+                                            <p><span className="font-medium text-slate-900">Motivo:</span> {event.details.motivo || "—"}</p>
+                                            <p><span className="font-medium text-slate-900">Executor:</span> {event.details.executor || "—"}</p>
+                                            <p><span className="font-medium text-slate-900">Anexo:</span> {event.details.attachmentName || "—"}</p>
+                                          <p><span className="font-medium text-slate-900">Extensão:</span> {event.details.attachmentExtension || "—"}</p>
+                                          <p><span className="font-medium text-slate-900">Conta a receber:</span> {event.details.contaReceberStatus || "—"}</p>
+                                          <p><span className="font-medium text-slate-900">Serviço realizado:</span> {event.details.servicoRealizado || "—"}</p>
+                                        </>
+                                      ) : null}
+                                    </div>
+                                    {event.type === "reversal" && event.details.attachmentPath ? (
+                                      <div className="mt-3">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm"
+                                          onClick={() => handleOpenPrivateAttachment(event.details.attachmentPath)}
+                                        >
+                                          <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                          Abrir anexo
+                                        </Button>
+                                      </div>
+                                    ) : null}
+                                    {event.details.reasonMessage ? (
+                                        <div className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                          <FileWarning className="mt-0.5 h-4 w-4 shrink-0" />
+                                          <p>{event.details.reasonMessage}</p>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </details>
+                                ))
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="rounded-2xl border border-slate-200 bg-white">
+                            <div className="border-b border-slate-100 px-4 py-3">
+                              <h3 className="font-semibold text-slate-900">Últimos movimentos</h3>
+                              <p className="mt-1 text-sm text-slate-500">
+                                Origem, referência e saldo antes/depois, sem timeline final nesta sprint.
+                              </p>
+                            </div>
+                            <div className="divide-y divide-slate-100">
+                              {walletRecentMovements.length === 0 ? (
+                                <div className="px-4 py-6 text-sm text-slate-500">Nenhum movimento administrativo foi encontrado para a carteira selecionada nesta leitura controlada.</div>
+                              ) : (
+                                walletRecentMovements.map((movement) => (
+                                  <div key={movement.movimento_id} className="grid grid-cols-1 gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_140px_180px]">
+                                    <div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <p className="font-medium text-slate-900">
+                                          {WALLET_OPERATION_LABELS[movement.tipo] || movement.tipo}
+                                        </p>
+                                        <Badge variant="outline">{movement.origem}</Badge>
+                                        <Badge className={movement.natureza === "entrada" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
+                                          {movement.natureza === "entrada" ? "Entrada" : "Saída"}
+                                        </Badge>
+                                      </div>
+                                      <p className="mt-1 text-sm text-slate-600">{movement.referencia_amigavel}</p>
+                                      {movement.descricao ? (
+                                        <p className="mt-1 text-sm text-slate-500">{movement.descricao}</p>
+                                      ) : null}
+                                      <p className="mt-2 text-xs text-slate-400">
+                                        {new Date(movement.created_date).toLocaleString("pt-BR")}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Valor</p>
+                                      <p className={`mt-1 text-base font-semibold ${movement.natureza === "entrada" ? "text-green-700" : "text-red-600"}`}>
+                                        {movement.natureza === "entrada" ? "+" : "-"}
+                                        {formatCurrency(movement.valor)}
+                                      </p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 text-sm">
+                                      <div>
+                                        <p className="text-slate-500">Saldo anterior</p>
+                                        <p className="mt-1 font-medium text-slate-900">{formatCurrency(movement.saldo_anterior)}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-slate-500">Saldo final</p>
+                                        <p className="mt-1 font-medium text-slate-900">{formatCurrency(movement.saldo_final)}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
                           </div>
                         </div>
                       ) : (
@@ -1294,77 +2185,85 @@ export default function Movimentacoes() {
               </div>
             </CardContent>
           </Card>
-        )}
+        ) : walletOnly ? (
+          <Card className="mb-6 border-dashed border-slate-300 bg-white">
+            <CardContent className="p-6 text-sm text-slate-500">
+              A leitura administrativa de carteiras ainda está desligada por feature flag nesta unidade.
+            </CardContent>
+          </Card>
+        ) : null}
 
-        <Card className="mb-6 border-gray-200 bg-white">
-          <CardContent className="p-3 sm:p-4">
-            <SearchFiltersToolbar
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-              searchPlaceholder="Buscar por titular, método, banco ou transação ID"
-              hasActiveFilters={Boolean(searchTerm || tipoFiltro !== "all" || dataInicial || dataFinal)}
-              onClear={() => {
-                setSearchTerm("");
-                setTipoFiltro("all");
-                setDataInicial("");
-                setDataFinal("");
-              }}
-              filters={[
-                {
-                  id: "type",
-                  label: "Tipo",
-                  icon: ListFilter,
-                  active: tipoFiltro !== "all",
-                  content: (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Tipo de movimentação</p>
-                      <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Tipo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          <SelectItem value="entrada">Entradas</SelectItem>
-                          <SelectItem value="saida">Saídas</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ),
-                },
-                {
-                  id: "period",
-                  label: "Período",
-                  icon: Calendar,
-                  active: Boolean(dataInicial || dataFinal),
-                  content: (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período da transação</p>
-                      <DateRangePickerInput
-                        startValue={dataInicial}
-                        endValue={dataFinal}
-                        onStartChange={setDataInicial}
-                        onEndChange={setDataFinal}
-                      />
-                    </div>
-                  ),
-                },
-              ]}
-              searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
-            />
-          </CardContent>
-        </Card>
-
-        <div className="space-y-3">
-          {filtered.length === 0 ? (
-            <Card className="border-gray-200 bg-white">
-              <CardContent className="p-12 text-center text-gray-500">
-                {isInitialLoading ? "Carregando movimentações..." : "Nenhuma movimentação encontrada."}
+        {!walletOnly ? (
+          <>
+            <Card className="mb-6 border-gray-200 bg-white">
+              <CardContent className="p-3 sm:p-4">
+                <SearchFiltersToolbar
+                  searchTerm={searchTerm}
+                  onSearchChange={setSearchTerm}
+                  searchPlaceholder="Buscar por titular, método, banco ou transação ID"
+                  hasActiveFilters={Boolean(searchTerm || tipoFiltro !== "all" || dataInicial || dataFinal)}
+                  onClear={() => {
+                    setSearchTerm("");
+                    setTipoFiltro("all");
+                    setDataInicial("");
+                    setDataFinal("");
+                  }}
+                  filters={[
+                    {
+                      id: "type",
+                      label: "Tipo",
+                      icon: ListFilter,
+                      active: tipoFiltro !== "all",
+                      content: (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Tipo de movimentação</p>
+                          <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Todos</SelectItem>
+                              <SelectItem value="entrada">Entradas</SelectItem>
+                              <SelectItem value="saida">Saídas</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ),
+                    },
+                    {
+                      id: "period",
+                      label: "Período",
+                      icon: Calendar,
+                      active: Boolean(dataInicial || dataFinal),
+                      content: (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Período da transação</p>
+                          <DateRangePickerInput
+                            startValue={dataInicial}
+                            endValue={dataFinal}
+                            onStartChange={setDataInicial}
+                            onEndChange={setDataFinal}
+                          />
+                        </div>
+                      ),
+                    },
+                  ]}
+                  searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
+                />
               </CardContent>
             </Card>
-          ) : (
-            <>
-              {visibleMovements.map((movement) => (
-              <Card key={movement.id} className="border-gray-200 bg-white">
+
+            <div className="space-y-3">
+              {filtered.length === 0 ? (
+                <Card className="border-gray-200 bg-white">
+                  <CardContent className="p-12 text-center text-gray-500">
+                    {isInitialLoading ? "Carregando movimentações..." : "Nenhuma movimentação encontrada."}
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  {visibleMovements.map((movement) => (
+                  <Card key={movement.id} className="border-gray-200 bg-white">
                 <CardContent className="flex flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:flex-row lg:items-center">
                   <div className={`flex h-10 w-10 items-center justify-center rounded-full sm:h-12 sm:w-12 ${movement.tipo === "entrada" ? "bg-green-100" : "bg-red-100"}`}>
                     {movement.tipo === "entrada" ? (
@@ -1418,14 +2317,14 @@ export default function Movimentacoes() {
                   </div>
 
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    {walletFlags.movementsEnabled && canManageWalletOperations && movement.tipo === "entrada" && (
+                    {walletOnly && walletFlags.movementsEnabled && canManageWalletOperations && movement.tipo === "entrada" && (
                       <Button
                         variant="outline"
                         size="sm"
                         className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm"
                         onClick={() =>
                           openWalletOperationModal("entrada_direcionada", {
-                            carteira_conta_id: selectedWalletAccountId,
+                            carteira_conta_id: selectedWalletRuntimeAccountId,
                             valor: Math.abs(movement.valor || 0),
                             referencia_amigavel: `Entrada direcionada - ${movement.contraparte || movement.referenciaFinanceira || movement.id}`,
                             observacao: `Origem do extrato: ${movement.id}`,
@@ -1433,7 +2332,7 @@ export default function Movimentacoes() {
                             transacao_id: movement.id,
                           })
                         }
-                        disabled={!selectedWalletAccountId}
+                        disabled={!selectedWalletRuntimeAccountId}
                       >
                         Direcionar para carteira
                       </Button>
@@ -1463,28 +2362,30 @@ export default function Movimentacoes() {
               </Card>
               ))}
 
-              {hasMoreMovements && (
-                <Card className="border-dashed border-gray-300 bg-white">
-                  <CardContent className="flex flex-col items-center gap-3 p-5 text-center">
-                    <p className="text-sm text-gray-500">
-                      Exibindo {visibleMovements.length} de {filtered.length} movimentações encontradas.
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={() => setVisibleCount((current) => current + MOVEMENTS_PAGE_SIZE)}
-                    >
-                      Carregar mais
-                    </Button>
-                  </CardContent>
-                </Card>
+                  {hasMoreMovements && (
+                    <Card className="border-dashed border-gray-300 bg-white">
+                      <CardContent className="flex flex-col items-center gap-3 p-5 text-center">
+                        <p className="text-sm text-gray-500">
+                          Exibindo {visibleMovements.length} de {filtered.length} movimentações encontradas.
+                        </p>
+                        <Button
+                          variant="outline"
+                          onClick={() => setVisibleCount((current) => current + MOVEMENTS_PAGE_SIZE)}
+                        >
+                          Carregar mais
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </div>
+            </div>
+          </>
+        ) : null}
       </div>
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="w-[95vw] max-w-[720px]">
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[720px] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingItem ? "Editar movimentação" : "Nova movimentação manual"}</DialogTitle>
             <DialogDescription>
@@ -1597,7 +2498,7 @@ export default function Movimentacoes() {
       </Dialog>
 
       <Dialog open={showWalletOperationModal} onOpenChange={setShowWalletOperationModal}>
-        <DialogContent className="w-[95vw] max-w-[720px]">
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[720px] overflow-hidden">
           <DialogHeader>
             <DialogTitle>{WALLET_OPERATION_LABELS[walletOperationForm.tipo] || "Operação de carteira"}</DialogTitle>
             <DialogDescription>
@@ -1605,7 +2506,8 @@ export default function Movimentacoes() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
+          <div className="max-h-[calc(90vh-180px)] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
             <div className="md:col-span-2">
               <Label>Responsável financeiro destino *</Label>
               <Select
@@ -1616,7 +2518,7 @@ export default function Movimentacoes() {
                   <SelectValue placeholder="Selecione a carteira" />
                 </SelectTrigger>
                 <SelectContent>
-                  {walletAccounts.map((account) => (
+                  {walletAccounts.filter((account) => account.has_wallet_account).map((account) => (
                     <SelectItem key={account.carteira_conta_id} value={account.carteira_conta_id}>
                       {account.carteira_nome}
                     </SelectItem>
@@ -1730,14 +2632,210 @@ export default function Movimentacoes() {
               <p><span className="font-medium text-slate-900">Usuário:</span> {currentUser?.full_name || currentUser?.name || currentUser?.email || "Sessão atual"}</p>
               <p className="mt-1"><span className="font-medium text-slate-900">Data/hora:</span> {new Date().toLocaleString("pt-BR")}</p>
             </div>
+            </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 border-t border-slate-200 pt-4">
             <Button variant="outline" onClick={() => setShowWalletOperationModal(false)}>
               Cancelar
             </Button>
             <Button onClick={handleWalletOperationSave} disabled={walletSaving}>
               {walletSaving ? "Salvando..." : "Registrar movimento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showWalletReversalModal} onOpenChange={setShowWalletReversalModal}>
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[760px] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Estorno operacional do novo financeiro</DialogTitle>
+            <DialogDescription>
+              Fluxo visual dedicado de estorno, separado do pagamento, já alinhado ao contrato do Payment V2 sem abrir ativação operacional.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[calc(90vh-180px)] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <Label>Responsável financeiro / cliente *</Label>
+              <Select
+                value={walletReversalForm.carteira_conta_id}
+                onValueChange={(value) =>
+                  setWalletReversalForm((prev) => ({
+                    ...prev,
+                    carteira_conta_id: value,
+                    appointment_id: "",
+                    serviceprovided_id: "",
+                    obrigacao_id: "",
+                    cobranca_financeira_id: "",
+                    conta_receber_id: "",
+                  }))
+                }
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Selecione a carteira do responsável" />
+                </SelectTrigger>
+                <SelectContent>
+                  {walletAccounts.filter((account) => account.has_wallet_account).map((account) => (
+                    <SelectItem key={account.carteira_conta_id} value={account.carteira_conta_id}>
+                      {account.carteira_nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>O que será estornado? *</Label>
+              <Select value={walletReversalForm.reversao_tipo} onValueChange={handleWalletReversalTypeChange}>
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="saldo">Saldo</SelectItem>
+                  <SelectItem value="servico">Serviço</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Usuário executor</Label>
+              <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
+                {currentUser?.full_name || currentUser?.name || currentUser?.email || "Sessão atual"}
+              </div>
+            </div>
+
+            {walletReversalForm.reversao_tipo === "saldo" ? (
+              <div>
+                <Label>Valor do estorno *</Label>
+                <Input
+                  className="mt-2"
+                  value={walletReversalForm.valor}
+                  onChange={(event) => setWalletReversalForm((prev) => ({ ...prev, valor: event.target.value }))}
+                  placeholder="0,00"
+                />
+              </div>
+            ) : (
+              <div className="md:col-span-2">
+                <Label>Agendamento / serviço elegível *</Label>
+                <Select
+                  value={walletReversalForm.obrigacao_id}
+                  onValueChange={handleWalletReversalServiceSelect}
+                  disabled={!walletReversalForm.carteira_conta_id || walletReversalServiceOptions.length === 0}
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder="Selecione o serviço que será estornado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {walletReversalServiceOptions.map((option) => (
+                      <SelectItem key={option.key} value={option.obrigacao_id}>
+                        {`${option.service_label} - ${option.dog_name} - ${formatCurrency(option.value)}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedWalletReversalServiceOption ? (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <p><span className="font-medium text-slate-900">Serviço:</span> {selectedWalletReversalServiceOption.service_label}</p>
+                      <p><span className="font-medium text-slate-900">Cão:</span> {selectedWalletReversalServiceOption.dog_name}</p>
+                      <p><span className="font-medium text-slate-900">Valor atual:</span> {formatCurrency(selectedWalletReversalServiceOption.value)}</p>
+                      <p><span className="font-medium text-slate-900">Vencimento:</span> {selectedWalletReversalServiceOption.due_date ? new Date(`${selectedWalletReversalServiceOption.due_date}T00:00:00`).toLocaleDateString("pt-BR") : "—"}</p>
+                    </div>
+                    <p className="mt-2">{selectedWalletReversalServiceOption.helper}</p>
+                  </div>
+                ) : walletReversalForm.carteira_conta_id ? (
+                  <p className="mt-2 text-sm text-slate-500">
+                    {walletReversalServiceOptions.length === 0
+                      ? "Nenhum serviço elegível foi encontrado para a carteira selecionada."
+                      : "Selecione um serviço para carregar os detalhes do estorno."}
+                  </p>
+                ) : null}
+              </div>
+            )}
+
+            <div className="md:col-span-2">
+              <Label>Motivo do estorno *</Label>
+              <Textarea
+                className="mt-2"
+                rows={4}
+                value={walletReversalForm.motivo}
+                onChange={(event) => setWalletReversalForm((prev) => ({ ...prev, motivo: event.target.value }))}
+                placeholder="Explique o motivo do estorno em texto livre."
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <Label>Anexo obrigatório *</Label>
+              <div className="mt-2 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <Input
+                  type="file"
+                  accept={REVERSAL_ATTACHMENT_ACCEPT}
+                  onChange={(event) => handleWalletReversalAttachmentUpload(event.target.files?.[0])}
+                  disabled={walletReversalUploading}
+                />
+                <p className="text-xs text-slate-500">
+                  Tipos aceitos: pdf, doc, txt, img, jpg e png.
+                </p>
+                {walletReversalForm.attachment_path ? (
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                    <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">
+                      Anexo carregado
+                    </Badge>
+                    <span>{walletReversalForm.attachment_display_name || walletReversalForm.attachment_name}</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 rounded-full px-3 text-[11px] sm:text-sm"
+                      onClick={() => handleOpenPrivateAttachment(walletReversalForm.attachment_path)}
+                    >
+                      <FileText className="mr-1.5 h-3.5 w-3.5" />
+                      Ver anexo
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+              <p className="text-sm font-medium text-slate-900">Confirmação final</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Revise o tipo de estorno, o motivo e o anexo antes de registrar. Este fluxo continua pronto para futura ativação, mas permanece com rollback por flag preservado.
+              </p>
+              <div className="mt-4 flex items-start gap-3">
+                <Checkbox
+                  id="wallet-reversal-confirmation"
+                  checked={walletReversalForm.confirmation_checked}
+                  onCheckedChange={(checked) =>
+                    setWalletReversalForm((prev) => ({ ...prev, confirmation_checked: Boolean(checked) }))
+                  }
+                />
+                <Label htmlFor="wallet-reversal-confirmation" className="cursor-pointer text-sm font-normal leading-5 text-slate-600">
+                  Confirmo que revisei cliente, tipo de estorno, motivo, anexo e impacto esperado no histórico financeiro.
+                </Label>
+              </div>
+            </div>
+
+            {!walletFlags.paymentV2ReversalEnabled ? (
+              <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                A flag de estorno do Payment V2 segue desligada. O fluxo visual está pronto, mas o envio operacional permanece bloqueado até abertura formal de ativação.
+              </div>
+            ) : null}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 border-t border-slate-200 pt-4">
+            <Button variant="outline" onClick={() => setShowWalletReversalModal(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleWalletReversalSave}
+              disabled={walletReversalSaving || walletReversalUploading || !walletFlags.paymentV2ReversalEnabled}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {walletReversalSaving ? "Registrando..." : "Confirmar estorno"}
             </Button>
           </DialogFooter>
         </DialogContent>

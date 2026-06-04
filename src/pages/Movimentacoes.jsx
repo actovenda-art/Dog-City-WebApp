@@ -10,6 +10,7 @@ import {
   financeWalletAdminReadMovements,
   financeWalletReconcileAccount,
 } from "@/api/functions";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import {
   AppConfig,
@@ -20,6 +21,8 @@ import {
   Dog,
   ExtratoBancario,
   ObrigacaoFinanceira,
+  Orcamento,
+  RecurringPackage,
   ServiceProvided,
   User,
 } from "@/api/entities";
@@ -69,10 +72,13 @@ import {
   normalizeMovement,
   toDateInputValue,
 } from "@/utils/finance";
+import { createPageUrl } from "@/utils";
 import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
 import { isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
 import FinancialOperationalAlert from "@/components/finance/FinancialOperationalAlert";
 import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
+import { getInternalEntityReference } from "@/lib/entity-identifiers";
+import { getAppointmentDateKey } from "@/lib/attendance";
 
 const EMPTY_FORM = {
   data_hora_transacao: "",
@@ -496,6 +502,169 @@ function buildWalletReversalServiceOptions({
     });
 }
 
+function formatWalletStatementDate(value) {
+  const normalized = normalizeDateOnly(value);
+  if (!normalized) return "—";
+  return new Date(`${normalized}T00:00:00`).toLocaleDateString("pt-BR");
+}
+
+function buildWalletCreditTransactionCandidates(transaction) {
+  const metadata = transaction?.metadata_financeira && typeof transaction.metadata_financeira === "object"
+    ? transaction.metadata_financeira
+    : {};
+
+  return [
+    transaction?.id,
+    transaction?.transacao_id,
+    transaction?.referencia,
+    transaction?.reference,
+    transaction?.codigo_solicitacao,
+    transaction?.raw_data?.codigoSolicitacao,
+    transaction?.raw_data?.solicitacaoId,
+    metadata?.codigo_solicitacao,
+    metadata?.txid,
+  ]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+}
+
+function resolveWalletCreditTransaction({ movement, transactions = [] }) {
+  const targetReference = String(movement?.transacao_id || "").trim();
+  if (!targetReference) return null;
+
+  const directMatch = (transactions || []).find((transaction) =>
+    buildWalletCreditTransactionCandidates(transaction).includes(targetReference),
+  );
+  if (directMatch) return directMatch;
+
+  const nearestByAmount = (transactions || [])
+    .filter((transaction) => String(transaction?.tipo || "").toLowerCase() === "entrada")
+    .filter((transaction) => Math.abs(Number(transaction?.valor || 0) - Number(movement?.valor || 0)) < 0.009)
+    .sort((left, right) => {
+      const leftDate = Math.abs(new Date(left?.data_hora_transacao || left?.data_movimento || left?.data || 0).getTime() - new Date(movement?.created_date || 0).getTime());
+      const rightDate = Math.abs(new Date(right?.data_hora_transacao || right?.data_movimento || right?.data || 0).getTime() - new Date(movement?.created_date || 0).getTime());
+      return leftDate - rightDate;
+    });
+
+  return nearestByAmount[0] || null;
+}
+
+function resolveWalletCreditPaymentMethod({ movement, transaction }) {
+  const normalizedTransaction = transaction ? normalizeMovement(transaction) : null;
+  const method = normalizedTransaction?.tipoDetalhado && normalizedTransaction.tipoDetalhado !== "-"
+    ? normalizedTransaction.tipoDetalhado
+    : normalizedTransaction?.metodo;
+
+  if (String(movement?.origem || "").trim() === "orcamento_pagamento_banco_inter") {
+    return method ? `${method} via boleto bancário` : "Pix via boleto bancário";
+  }
+
+  return method || movement?.origem || "Forma não informada";
+}
+
+function buildWalletStatementRows({
+  walletAccountId,
+  movements = [],
+  transactions = [],
+  appointments = [],
+  services = [],
+  obligations = [],
+  charges = [],
+  accountsReceivable = [],
+  dogs = [],
+  budgets = [],
+  recurringPackages = [],
+}) {
+  if (!walletAccountId) {
+    return { debitRows: [], creditRows: [] };
+  }
+
+  const appointmentsById = new Map((appointments || []).map((item) => [item?.id, item]));
+  const servicesByAppointmentId = new Map(
+    (services || [])
+      .filter((item) => item?.appointment_id)
+      .map((item) => [item.appointment_id, item]),
+  );
+  const dogsById = new Map((dogs || []).map((item) => [item?.id, item]));
+  const chargesById = new Map((charges || []).map((item) => [item?.id, item]));
+  const receivablesByAppointmentId = new Map(
+    (accountsReceivable || [])
+      .filter((item) => item?.appointment_id)
+      .map((item) => [item.appointment_id, item]),
+  );
+  const budgetsById = new Map((budgets || []).map((item) => [item?.id, item]));
+  const recurringPackagesById = new Map((recurringPackages || []).map((item) => [item?.id, item]));
+
+  const debitRows = (obligations || [])
+    .filter((item) => item?.carteira_conta_id === walletAccountId)
+    .filter((item) => !["cancelada", "estornada"].includes(String(item?.status || "").toLowerCase()))
+    .map((obrigacao) => {
+      const appointment = appointmentsById.get(obrigacao?.appointment_id) || null;
+      const service = servicesByAppointmentId.get(obrigacao?.appointment_id) || null;
+      const charge = chargesById.get(obrigacao?.cobranca_financeira_id) || null;
+      const receivable = receivablesByAppointmentId.get(obrigacao?.appointment_id) || null;
+      const dogName = resolveEventDogName({ appointment, service, dogsById });
+      const appointmentDate = getAppointmentDateKey(appointment) || obrigacao?.metadata?.appointment_date || null;
+      const budget = obrigacao?.orcamento_id ? budgetsById.get(obrigacao.orcamento_id) : null;
+      const recurringPackage = obrigacao?.recurring_package_id ? recurringPackagesById.get(obrigacao.recurring_package_id) : null;
+      const referenceRecord = budget || recurringPackage || null;
+      const referenceType = budget ? "orcamento" : recurringPackage ? "pacote" : null;
+      const referenceId = budget?.id || recurringPackage?.id || null;
+      const referenceCode = referenceRecord ? getInternalEntityReference(referenceRecord) : null;
+
+      return {
+        id: `debit-${obrigacao?.id}`,
+        appointmentId: appointment?.id || obrigacao?.appointment_id || null,
+        appointmentDate,
+        serviceLabel: resolveEventServiceLabel({ appointment, service, obrigacao, cobranca: charge, fallback: "Serviço" }),
+        dogName,
+        dueDate: obrigacao?.due_date || charge?.due_date || receivable?.vencimento || null,
+        amount: Number(
+          receivable?.valor
+          ?? obrigacao?.valor_final
+          ?? obrigacao?.valor_original
+          ?? obrigacao?.valor_em_aberto
+          ?? service?.valor_cobrado
+          ?? service?.preco
+          ?? 0,
+        ),
+        referenceType,
+        referenceId,
+        referenceCode,
+        referenceLabel: referenceType === "pacote" ? "Pacote" : "Orçamento",
+      };
+    })
+    .sort((left, right) => {
+      const leftDate = new Date(`${normalizeDateOnly(left?.appointmentDate || left?.dueDate) || "1970-01-01"}T00:00:00`).getTime();
+      const rightDate = new Date(`${normalizeDateOnly(right?.appointmentDate || right?.dueDate) || "1970-01-01"}T00:00:00`).getTime();
+      return rightDate - leftDate;
+    });
+
+  const creditRows = (movements || [])
+    .filter((movement) => movement?.carteira_conta_id === walletAccountId)
+    .filter((movement) => String(movement?.natureza || "").toLowerCase() === "entrada")
+    .filter((movement) => String(movement?.tipo || "").trim() === "entrada_direcionada" || Boolean(movement?.transacao_id))
+    .map((movement) => {
+      const transaction = resolveWalletCreditTransaction({ movement, transactions });
+      const normalizedTransaction = transaction ? normalizeMovement(transaction) : null;
+      const transactionLookup = normalizedTransaction?.id || String(movement?.transacao_id || movement?.referencia_amigavel || "").trim() || null;
+
+      return {
+        id: `credit-${movement?.movimento_id}`,
+        movementId: movement?.movimento_id || null,
+        transactionId: normalizedTransaction?.id || null,
+        transactionLookup,
+        receivedDate: normalizedTransaction?.dataHora || normalizedTransaction?.data_movimento || normalizedTransaction?.data || movement?.created_date || null,
+        counterparty: normalizedTransaction?.contraparte || movement?.descricao || movement?.referencia_amigavel || "Contraparte não informada",
+        amount: Number(movement?.valor || 0),
+        paymentMethod: resolveWalletCreditPaymentMethod({ movement, transaction }),
+      };
+    })
+    .sort((left, right) => new Date(right?.receivedDate || 0).getTime() - new Date(left?.receivedDate || 0).getTime());
+
+  return { debitRows, creditRows };
+}
+
 function normalizeMovementSummary(summary) {
   if (!summary || typeof summary !== "object") return null;
 
@@ -627,6 +796,9 @@ function buildWalletAdminAccounts(accounts = [], carteiras = []) {
 }
 
 export default function Movimentacoes({ walletOnly = false }) {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const appliedTransactionFilterRef = React.useRef(false);
   const [movimentacoes, setMovimentacoes] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [currentBalance, setCurrentBalance] = useState(null);
@@ -669,6 +841,9 @@ export default function Movimentacoes({ walletOnly = false }) {
     charges: [],
     accountsReceivable: [],
     dogs: [],
+    budgets: [],
+    recurringPackages: [],
+    transactions: [],
   });
   const [selectedWalletAccountId, setSelectedWalletAccountId] = useState("");
   const [walletLoading, setWalletLoading] = useState(false);
@@ -681,6 +856,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletReversalForm, setWalletReversalForm] = useState({ ...EMPTY_WALLET_REVERSAL_FORM });
   const [walletReversalUploading, setWalletReversalUploading] = useState(false);
   const [walletReversalSaving, setWalletReversalSaving] = useState(false);
+  const walletTransactionFilter = searchParams.get("transacaoId") || searchParams.get("search") || "";
 
   const applyCachedSnapshot = (expectedEmpresaId = null) => {
     const cached = readMovementsCache();
@@ -824,6 +1000,13 @@ export default function Movimentacoes({ walletOnly = false }) {
   }, [walletOnly]);
 
   useEffect(() => {
+    if (walletOnly || appliedTransactionFilterRef.current) return;
+    if (!walletTransactionFilter) return;
+    setSearchTerm(walletTransactionFilter);
+    appliedTransactionFilterRef.current = true;
+  }, [walletOnly, walletTransactionFilter]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadLiveBalance() {
@@ -915,6 +1098,9 @@ export default function Movimentacoes({ walletOnly = false }) {
         charges: [],
         accountsReceivable: [],
         dogs: [],
+        budgets: [],
+        recurringPackages: [],
+        transactions: [],
       });
       setSelectedWalletAccountId("");
       return;
@@ -960,7 +1146,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         const recentMovements = await financeWalletAdminReadMovements({
           empresa_id: userProfile.empresa_id,
           carteira_conta_id: nextSelectedWallet.carteira_conta_id,
-          limit: 20,
+          limit: 100,
         });
         setWalletRecentMovements(Array.isArray(recentMovements) ? recentMovements : []);
       } else {
@@ -988,7 +1174,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       const recentMovements = await financeWalletAdminReadMovements({
         empresa_id: userProfile.empresa_id,
         carteira_conta_id: walletAccountId,
-        limit: 20,
+        limit: 100,
       });
       setWalletRecentMovements(Array.isArray(recentMovements) ? recentMovements : []);
     } catch (error) {
@@ -1008,6 +1194,9 @@ export default function Movimentacoes({ walletOnly = false }) {
         charges: [],
         accountsReceivable: [],
         dogs: [],
+        budgets: [],
+        recurringPackages: [],
+        transactions: [],
       });
       setWalletOperationalHistory([]);
       return;
@@ -1015,7 +1204,7 @@ export default function Movimentacoes({ walletOnly = false }) {
 
     setWalletHistoryLoading(true);
     try {
-      const [executionRows, reversalRows, appointments, services, obligations, charges, accountsReceivable, dogs] = await Promise.all([
+      const [executionRows, reversalRows, appointments, services, obligations, charges, accountsReceivable, dogs, budgets, recurringPackages, transactions] = await Promise.all([
         financePaymentV2ExecutionAudit({ empresa_id: userProfile.empresa_id, limit: OPERATIONAL_HISTORY_LIMIT }),
         financePaymentV2ReversalAudit({ empresa_id: userProfile.empresa_id, limit: OPERATIONAL_HISTORY_LIMIT }),
         readEntityCollection(Appointment, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
@@ -1024,6 +1213,9 @@ export default function Movimentacoes({ walletOnly = false }) {
         readEntityCollection(CobrancaFinanceira, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
         readEntityCollection(ContaReceber, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
         readEntityCollection(Dog, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(Orcamento, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(RecurringPackage, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(ExtratoBancario, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
       ]);
 
       const nextHistory = buildOperationalHistoryRows({
@@ -1046,6 +1238,9 @@ export default function Movimentacoes({ walletOnly = false }) {
         charges: Array.isArray(charges) ? charges : [],
         accountsReceivable: Array.isArray(accountsReceivable) ? accountsReceivable : [],
         dogs: Array.isArray(dogs) ? dogs : [],
+        budgets: Array.isArray(budgets) ? budgets : [],
+        recurringPackages: Array.isArray(recurringPackages) ? recurringPackages : [],
+        transactions: Array.isArray(transactions) ? transactions : [],
       });
       setWalletOperationalHistory(nextHistory);
     } catch (error) {
@@ -1058,6 +1253,9 @@ export default function Movimentacoes({ walletOnly = false }) {
         charges: [],
         accountsReceivable: [],
         dogs: [],
+        budgets: [],
+        recurringPackages: [],
+        transactions: [],
       });
       setWalletOperationalHistory([]);
     } finally {
@@ -1093,6 +1291,9 @@ export default function Movimentacoes({ walletOnly = false }) {
         charges: [],
         accountsReceivable: [],
         dogs: [],
+        budgets: [],
+        recurringPackages: [],
+        transactions: [],
       });
       setWalletOperationalHistory([]);
       return;
@@ -1113,11 +1314,15 @@ export default function Movimentacoes({ walletOnly = false }) {
       normalizedMovements.filter((item) => {
         const movementDate = getMovementComparableDate(item);
         const searchBase = [
+          item.id,
+          item.transacao_id,
+          item.codigoContraparte,
           item.contraparte,
           item.metodo,
           item.referenciaFinanceira,
           item.bancoContraparte,
           item.descricaoOriginal,
+          item.vinculo_financeiro,
           item.data_movimento,
           item.data,
           formatMovementDateTime(item),
@@ -1190,6 +1395,34 @@ export default function Movimentacoes({ walletOnly = false }) {
     () => getFinancialOperationalStatus(walletFinancialStatusMap, selectedWalletAccount?.carteira_id || null),
     [selectedWalletAccount?.carteira_id, walletFinancialStatusMap],
   );
+  const walletStatementRows = useMemo(
+    () => buildWalletStatementRows({
+      walletAccountId: selectedWalletRuntimeAccountId,
+      movements: walletRecentMovements,
+      transactions: walletOperationalContext.transactions,
+      appointments: walletOperationalContext.appointments,
+      services: walletOperationalContext.services,
+      obligations: walletOperationalContext.obligations,
+      charges: walletOperationalContext.charges,
+      accountsReceivable: walletOperationalContext.accountsReceivable,
+      dogs: walletOperationalContext.dogs,
+      budgets: walletOperationalContext.budgets,
+      recurringPackages: walletOperationalContext.recurringPackages,
+    }),
+    [
+      selectedWalletRuntimeAccountId,
+      walletRecentMovements,
+      walletOperationalContext.transactions,
+      walletOperationalContext.appointments,
+      walletOperationalContext.services,
+      walletOperationalContext.obligations,
+      walletOperationalContext.charges,
+      walletOperationalContext.accountsReceivable,
+      walletOperationalContext.dogs,
+      walletOperationalContext.budgets,
+      walletOperationalContext.recurringPackages,
+    ],
+  );
   const walletReversalServiceOptions = useMemo(
     () => buildWalletReversalServiceOptions({
       walletAccountId: walletReversalForm.carteira_conta_id || selectedWalletRuntimeAccountId,
@@ -1215,6 +1448,26 @@ export default function Movimentacoes({ walletOnly = false }) {
     () => walletReversalServiceOptions.find((item) => item.obrigacao_id === walletReversalForm.obrigacao_id) || null,
     [walletReversalForm.obrigacao_id, walletReversalServiceOptions],
   );
+
+  const openWalletStatementReference = (row) => {
+    if (!row?.referenceId || !row?.referenceType) return;
+    if (row.referenceType === "pacote") {
+      navigate(`${createPageUrl("PlanosConfig")}?packageId=${encodeURIComponent(row.referenceId)}`);
+      return;
+    }
+    navigate(`${createPageUrl("Orcamentos")}?orcamentoId=${encodeURIComponent(row.referenceId)}`);
+  };
+
+  const openWalletStatementAppointment = (appointmentId) => {
+    if (!appointmentId) return;
+    navigate(`${createPageUrl("Agendamentos")}?review=${encodeURIComponent(appointmentId)}`);
+  };
+
+  const openWalletStatementTransaction = (row) => {
+    const targetRef = String(row?.transactionId || row?.transactionLookup || "").trim();
+    if (!targetRef) return;
+    navigate(`${createPageUrl("Movimentacoes")}?search=${encodeURIComponent(targetRef)}`);
+  };
 
   const refreshStoredSummary = async (userProfile = currentUser) => {
     try {
@@ -2118,55 +2371,133 @@ export default function Movimentacoes({ walletOnly = false }) {
 
                           <div className="rounded-2xl border border-slate-200 bg-white">
                             <div className="border-b border-slate-100 px-4 py-3">
-                              <h3 className="font-semibold text-slate-900">Últimos movimentos</h3>
+                              <h3 className="font-semibold text-slate-900">Extrato da carteira</h3>
                               <p className="mt-1 text-sm text-slate-500">
-                                Origem, referência e saldo antes/depois, sem timeline final nesta sprint.
+                                Débitos vindos de agendamentos e pacotes recorrentes, e créditos vindos de recebimentos vinculados à carteira.
                               </p>
                             </div>
-                            <div className="divide-y divide-slate-100">
-                              {walletRecentMovements.length === 0 ? (
-                                <div className="px-4 py-6 text-sm text-slate-500">Nenhum movimento administrativo foi encontrado para a carteira selecionada nesta leitura controlada.</div>
-                              ) : (
-                                walletRecentMovements.map((movement) => (
-                                  <div key={movement.movimento_id} className="grid grid-cols-1 gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_140px_180px]">
-                                    <div>
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <p className="font-medium text-slate-900">
-                                          {WALLET_OPERATION_LABELS[movement.tipo] || movement.tipo}
-                                        </p>
-                                        <Badge variant="outline">{movement.origem}</Badge>
-                                        <Badge className={movement.natureza === "entrada" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
-                                          {movement.natureza === "entrada" ? "Entrada" : "Saída"}
-                                        </Badge>
-                                      </div>
-                                      <p className="mt-1 text-sm text-slate-600">{movement.referencia_amigavel}</p>
-                                      {movement.descricao ? (
-                                        <p className="mt-1 text-sm text-slate-500">{movement.descricao}</p>
-                                      ) : null}
-                                      <p className="mt-2 text-xs text-slate-400">
-                                        {new Date(movement.created_date).toLocaleString("pt-BR")}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Valor</p>
-                                      <p className={`mt-1 text-base font-semibold ${movement.natureza === "entrada" ? "text-green-700" : "text-red-600"}`}>
-                                        {movement.natureza === "entrada" ? "+" : "-"}
-                                        {formatCurrency(movement.valor)}
-                                      </p>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3 text-sm">
-                                      <div>
-                                        <p className="text-slate-500">Saldo anterior</p>
-                                        <p className="mt-1 font-medium text-slate-900">{formatCurrency(movement.saldo_anterior)}</p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500">Saldo final</p>
-                                        <p className="mt-1 font-medium text-slate-900">{formatCurrency(movement.saldo_final)}</p>
-                                      </div>
-                                    </div>
+                            <div className="space-y-4 p-4">
+                              <div className="rounded-2xl border border-slate-200">
+                                <div className="border-b border-slate-100 px-4 py-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <h4 className="font-medium text-slate-900">Débitos na carteira</h4>
+                                    <Badge variant="outline">{walletStatementRows.debitRows.length}</Badge>
                                   </div>
-                                ))
-                              )}
+                                  <p className="mt-1 text-sm text-slate-500">
+                                    Data do agendamento, serviço, cão, vencimento, valor e código do orçamento ou pacote.
+                                  </p>
+                                </div>
+                                <div className="divide-y divide-slate-100">
+                                  {walletStatementRows.debitRows.length === 0 ? (
+                                    <div className="px-4 py-6 text-sm text-slate-500">
+                                      Nenhum débito operacional foi encontrado para a carteira selecionada.
+                                    </div>
+                                  ) : (
+                                    walletStatementRows.debitRows.map((row) => (
+                                      <div key={row.id} className="grid grid-cols-1 gap-3 px-4 py-4 xl:grid-cols-[140px_minmax(0,1.1fr)_140px_130px_170px]">
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Data do agendamento</p>
+                                          {row.appointmentId ? (
+                                            <Button
+                                              type="button"
+                                              variant="link"
+                                              className="mt-1 h-auto p-0 text-left text-sm font-medium text-blue-700"
+                                              onClick={() => openWalletStatementAppointment(row.appointmentId)}
+                                            >
+                                              {formatWalletStatementDate(row.appointmentDate)}
+                                            </Button>
+                                          ) : (
+                                            <p className="mt-1 text-sm font-medium text-slate-900">{formatWalletStatementDate(row.appointmentDate)}</p>
+                                          )}
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                          <div>
+                                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Serviço</p>
+                                            <p className="mt-1 text-sm font-medium text-slate-900">{row.serviceLabel}</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Cão</p>
+                                            <p className="mt-1 text-sm font-medium text-slate-900">{row.dogName}</p>
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Vencimento</p>
+                                          <p className="mt-1 text-sm font-medium text-slate-900">{formatWalletStatementDate(row.dueDate)}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Valor</p>
+                                          <p className="mt-1 text-sm font-semibold text-red-600">-{formatCurrency(row.amount)}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Código do orçamento/pacote</p>
+                                          {row.referenceId && row.referenceCode ? (
+                                            <Button
+                                              type="button"
+                                              variant="link"
+                                              className="mt-1 h-auto p-0 text-left text-sm font-medium text-blue-700"
+                                              onClick={() => openWalletStatementReference(row)}
+                                            >
+                                              {row.referenceCode}
+                                            </Button>
+                                          ) : (
+                                            <p className="mt-1 text-sm font-medium text-slate-900">—</p>
+                                          )}
+                                          {row.referenceId && row.referenceCode ? (
+                                            <p className="mt-1 text-xs text-slate-500">{row.referenceLabel}</p>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="rounded-2xl border border-slate-200">
+                                <div className="border-b border-slate-100 px-4 py-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <h4 className="font-medium text-slate-900">Créditos na carteira</h4>
+                                    <Badge variant="outline">{walletStatementRows.creditRows.length}</Badge>
+                                  </div>
+                                  <p className="mt-1 text-sm text-slate-500">
+                                    Recebimentos vindos de transações vinculadas à carteira. Clique em qualquer linha para abrir a transação.
+                                  </p>
+                                </div>
+                                <div className="divide-y divide-slate-100">
+                                  {walletStatementRows.creditRows.length === 0 ? (
+                                    <div className="px-4 py-6 text-sm text-slate-500">
+                                      Nenhum recebimento vinculado à carteira foi encontrado nesta leitura.
+                                    </div>
+                                  ) : (
+                                    walletStatementRows.creditRows.map((row) => (
+                                      <button
+                                        key={row.id}
+                                        type="button"
+                                        onClick={() => openWalletStatementTransaction(row)}
+                                        className="grid w-full grid-cols-1 gap-3 px-4 py-4 text-left transition hover:bg-slate-50 xl:grid-cols-[150px_minmax(0,1fr)_130px_220px]"
+                                      >
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Data de recebimento</p>
+                                          <p className="mt-1 text-sm font-medium text-slate-900">
+                                            {row.receivedDate ? new Date(row.receivedDate).toLocaleDateString("pt-BR") : "—"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Contraparte</p>
+                                          <p className="mt-1 text-sm font-medium text-slate-900">{row.counterparty}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Valor</p>
+                                          <p className="mt-1 text-sm font-semibold text-emerald-700">+{formatCurrency(row.amount)}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Forma de pagamento</p>
+                                          <p className="mt-1 text-sm font-medium text-slate-900">{row.paymentMethod}</p>
+                                        </div>
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>

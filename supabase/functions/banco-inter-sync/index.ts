@@ -1459,15 +1459,58 @@ async function saveBudgetPaymentRow(row: Record<string, unknown>) {
   return data || row;
 }
 
+async function ensureWalletAccountForBudget(empresaId: string, carteiraId: string) {
+  const normalizedEmpresaId = sanitizeText(empresaId);
+  const normalizedCarteiraId = sanitizeText(carteiraId);
+  if (!normalizedEmpresaId || !normalizedCarteiraId) return null;
+
+  const { data: existingAccount, error: existingError } = await supabase
+    .from("carteira_conta")
+    .select("id, empresa_id, carteira_id")
+    .eq("empresa_id", normalizedEmpresaId)
+    .eq("carteira_id", normalizedCarteiraId)
+    .order("created_date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existingAccount?.id) return sanitizeText(existingAccount.id);
+
+  const now = new Date().toISOString();
+  const { data: createdAccount, error: createError } = await supabase
+    .from("carteira_conta")
+    .insert([{
+      empresa_id: normalizedEmpresaId,
+      carteira_id: normalizedCarteiraId,
+      saldo_atual: 0,
+      saldo_negativo_autorizado: false,
+      ativo: true,
+      observacoes_financeiras: "Conta criada automaticamente pelo fluxo de cobrança do orçamento.",
+      created_date: now,
+      updated_date: now,
+    }])
+    .select("id")
+    .maybeSingle();
+
+  if (createError) throw createError;
+  return sanitizeText(createdAccount?.id) || null;
+}
+
 async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
-  if (row.credited_wallet_movement_id || !row.carteira_conta_id) return row;
+  if (row.credited_wallet_movement_id) return row;
+
+  const ensuredWalletAccountId = sanitizeText(row.carteira_conta_id) || await ensureWalletAccountForBudget(
+    sanitizeText(row.empresa_id),
+    sanitizeText(row.carteira_id),
+  );
+  if (!ensuredWalletAccountId) return row;
 
   const operacaoIdempotencia = `orcamento_pagamento|${sanitizeText(row.id)}|recebido`;
   const amount = toNumber(firstDefined(row.valor_recebido, row.valor));
   if (amount <= 0) return row;
 
   const { data, error } = await supabase.rpc("finance_wallet_admin_apply_operation", {
-    p_carteira_conta_id: row.carteira_conta_id,
+    p_carteira_conta_id: ensuredWalletAccountId,
     p_operacao_idempotencia: operacaoIdempotencia,
     p_tipo: "entrada_direcionada",
     p_natureza: "entrada",
@@ -1492,6 +1535,7 @@ async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
 
   return saveBudgetPaymentRow({
     ...row,
+    carteira_conta_id: ensuredWalletAccountId,
     credited_wallet_movement_id: resultRow.movimento_id,
     creditado_em: new Date().toISOString(),
     updated_date: new Date().toISOString(),
@@ -3217,6 +3261,11 @@ Deno.serve(async (request) => {
         }
         : payload;
 
+      const ensuredWalletAccountId = sanitizeText(payload.carteira_conta_id) || await ensureWalletAccountForBudget(
+        sanitizeText(payload.empresa_id || config.empresa_id),
+        sanitizeText(payload.carteira_id),
+      );
+
       const charge = await createChargeForBudget(config, payloadToIssue);
       const now = new Date().toISOString();
       const row = await saveBudgetPaymentRow({
@@ -3224,7 +3273,7 @@ Deno.serve(async (request) => {
         empresa_id: sanitizeText(payload.empresa_id || config.empresa_id),
         orcamento_id: orcamentoId,
         carteira_id: sanitizeText(payload.carteira_id),
-        carteira_conta_id: sanitizeText(payload.carteira_conta_id) || null,
+        carteira_conta_id: ensuredWalletAccountId,
         responsavel_id: sanitizeText(payload.responsavel_id) || null,
         provider: "banco_inter",
         metodo,

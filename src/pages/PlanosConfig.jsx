@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { addDays, addMonths, addWeeks, differenceInCalendarDays, endOfMonth, format, getDay, isSameDay, isSameMonth, isWeekend, nextDay, parseISO, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -744,6 +745,8 @@ function buildRecurringPackagePayloadFromPlan(plan) {
 }
 
 export default function PlanosConfig() {
+  const [searchParams] = useSearchParams();
+  const openedPackageFromQueryRef = useRef("");
   const [plans, setPlans] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
@@ -785,6 +788,21 @@ export default function PlanosConfig() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const requestedPackageId = String(searchParams.get("packageId") || "").trim();
+    if (!requestedPackageId || !prepaidPackages.length) return;
+    if (openedPackageFromQueryRef.current === requestedPackageId) return;
+
+    const targetPackage = prepaidPackages.find((item) =>
+      String(item?.id || "").trim() === requestedPackageId
+      || String(item?.codigo || "").trim() === requestedPackageId,
+    );
+
+    if (!targetPackage) return;
+    setSelectedPrepaidPackage(targetPackage);
+    openedPackageFromQueryRef.current = requestedPackageId;
+  }, [prepaidPackages, searchParams]);
 
   useEffect(() => {
     if (isLoading || isPrepaidSilentSyncRunningRef.current) return;

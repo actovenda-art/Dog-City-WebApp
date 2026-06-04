@@ -932,7 +932,14 @@ export default function OrcamentosHistoricoPanel({
 
       showFeedback("Cobrança emitida", "O boleto com Pix foi emitido e já pode ser compartilhado com o responsável financeiro.", "success");
     } catch (error) {
-      showFeedback("Não foi possível emitir a cobrança", error?.message || "Revise a integração com o Banco Inter e tente novamente.", "error");
+      const errorMessage = error?.message || "Revise a integração com o Banco Inter e tente novamente.";
+      showFeedback(
+        "Não foi possível emitir a cobrança",
+        errorMessage.includes("(429)")
+          ? "O Banco Inter limitou temporariamente a autenticação da integração. Aguarde alguns instantes e tente emitir novamente."
+          : errorMessage,
+        "error",
+      );
     } finally {
       setIsIssuingBudgetPayment(false);
     }

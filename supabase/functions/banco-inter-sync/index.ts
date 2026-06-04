@@ -19,6 +19,15 @@ const DEFAULT_BANKING_SCOPE = "extrato.read saldo.read";
 const DEFAULT_CHARGE_READ_SCOPE = "boleto-cobranca.read";
 const DEFAULT_CHARGE_WRITE_SCOPE = "boleto-cobranca.write";
 const DEFAULT_CHARGE_PATH = "/cobranca/v3/cobrancas";
+const INTER_TOKEN_CACHE_TTL_MS = 55 * 60 * 1000;
+
+const interTokenCache = new Map<string, {
+  accessToken: string;
+  httpClient: Deno.HttpClient;
+  tokenResponse: Record<string, unknown>;
+  tokenStatus: number;
+  expiresAt: number;
+}>();
 
 type IntegrationConfig = {
   id: string;
@@ -734,6 +743,39 @@ function buildScopeRegistrationHint(scope: string, parsed: Record<string, unknow
   return `O client_id do Banco Inter não possui o scope '${scope}' habilitado. Ative esse scope no Portal do Desenvolvedor Inter para a aplicação usada nesta integração.`;
 }
 
+function buildTokenRateLimitHint(scope: string, parsed: Record<string, unknown>) {
+  const rawMessage = JSON.stringify(parsed).toLowerCase();
+  if (!rawMessage.includes("429")) {
+    const values = Object.values(parsed).map((value) => String(value).toLowerCase());
+    if (!values.some((value) => value.includes("too many") || value.includes("rate limit"))) {
+      return null;
+    }
+  }
+  return `O Banco Inter limitou temporariamente a geração do token para o scope '${scope}'. Vamos reutilizar tokens em cache quando possível, mas pode ser necessário aguardar alguns instantes antes de tentar novamente.`;
+}
+
+function resolveTokenCacheKey(clientId: string, scope: string, tokenAuthMode: string) {
+  return [clientId, scope, tokenAuthMode].join("::");
+}
+
+function getCachedInterToken(cacheKey: string) {
+  const cached = interTokenCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    interTokenCache.delete(cacheKey);
+    return null;
+  }
+  return cached;
+}
+
+function resolveTokenCacheTtl(parsed: Record<string, unknown>) {
+  const expiresInSeconds = Number(firstDefined(parsed.expires_in, parsed.expira_em, parsed.expires));
+  if (Number.isFinite(expiresInSeconds) && expiresInSeconds > 120) {
+    return Math.max((expiresInSeconds - 60) * 1000, 60 * 1000);
+  }
+  return INTER_TOKEN_CACHE_TTL_MS;
+}
+
 async function getAccessToken(
   config: IntegrationConfig,
   options: {
@@ -755,13 +797,24 @@ async function getAccessToken(
   });
   const tokenUrl = sanitizeText(config.token_url || getConfigValue(config, "token_url"), DEFAULT_TOKEN_URL);
   const configuredTokenAuthMode = sanitizeText(getConfigValue(config, "token_auth_mode"), "auto").toLowerCase();
-  const httpClient = await createHttpClient(config);
   const modes = configuredTokenAuthMode === "auto"
     ? ["basic", "body"]
     : [configuredTokenAuthMode];
   const errors: string[] = [];
 
   for (const tokenAuthMode of modes) {
+    const cacheKey = resolveTokenCacheKey(clientId, scope, tokenAuthMode);
+    const cachedToken = getCachedInterToken(cacheKey);
+    if (cachedToken) {
+      return {
+        accessToken: cachedToken.accessToken,
+        httpClient: cachedToken.httpClient,
+        tokenResponse: cachedToken.tokenResponse,
+        tokenStatus: cachedToken.tokenStatus,
+      };
+    }
+
+    const httpClient = await createHttpClient(config);
     const formData = new URLSearchParams();
     formData.set("grant_type", "client_credentials");
     if (scope) formData.set("scope", scope);
@@ -800,6 +853,11 @@ async function getAccessToken(
         errors.push(`${tokenAuthMode}:${response.status}:${scopeHint}`);
         continue;
       }
+      const rateLimitHint = response.status === 429 ? buildTokenRateLimitHint(scope, parsed) : null;
+      if (rateLimitHint) {
+        errors.push(`${tokenAuthMode}:${response.status}:${rateLimitHint}`);
+        continue;
+      }
       errors.push(`${tokenAuthMode}:${response.status}:${JSON.stringify(parsed)}`);
       continue;
     }
@@ -809,6 +867,14 @@ async function getAccessToken(
       errors.push(`${tokenAuthMode}:${response.status}:sem access_token`);
       continue;
     }
+
+    interTokenCache.set(cacheKey, {
+      accessToken,
+      httpClient,
+      tokenResponse: parsed,
+      tokenStatus: response.status,
+      expiresAt: Date.now() + resolveTokenCacheTtl(parsed),
+    });
 
     return { accessToken, httpClient, tokenResponse: parsed, tokenStatus: response.status };
   }

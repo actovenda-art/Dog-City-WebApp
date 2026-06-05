@@ -57,10 +57,6 @@ export const Schedule = appClient.entities.Schedule || appClient.entities.Appoin
 
 export const ServiceProvided = appClient.entities.ServiceProvided;
 
-export const Transaction = appClient.entities.Transaction;
-
-export const ScheduledTransaction = appClient.entities.ScheduledTransaction;
-
 export const Replacement = appClient.entities.Replacement;
 
 export const PlanConfig = appClient.entities.PlanConfig;

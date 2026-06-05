@@ -424,7 +424,7 @@ as $$
         'cockpit_v2/relatorios_v2',
         'legado_conta_receber',
         'obrigacao_financeira/cobranca_financeira/carteira_movimento',
-        'conta_receber, transaction, scheduledtransaction',
+        'conta_receber',
         'hibrido_critico',
         'legado',
         'alto',
@@ -616,71 +616,10 @@ as $$
         'considera_no_comparativo', cov.considera_no_comparativo,
         'precisa_virar_obrigacao_v2', cov.precisa_virar_obrigacao_v2,
         'precisa_virar_cobranca_v2', cov.precisa_virar_cobranca_v2,
-        'transaction_id', cov.transaction_id,
-        'scheduledtransaction_id', cov.scheduledtransaction_id,
         'financial_behavior', cov.financial_behavior
       ) as payload
     from coverage cov
     left join public.conta_receber cr on cr.id = cov.conta_receber_id
-
-    union all
-
-    select
-      coalesce(t.data_transacao::timestamptz, t.created_date) as event_date,
-      'pagamento'::text,
-      'transaction'::text,
-      t.id,
-      'legacy'::text,
-      'compatibility_historical'::text,
-      coalesce(t.empresa_id, t.meta->>'empresa_id') as empresa_id,
-      null::text,
-      null::text,
-      null::text,
-      null::text,
-      coalesce(t.status, t.tipo, 'registrada') as status,
-      round(coalesce(t.valor, 0), 2),
-      coalesce(t.referencia, t.id),
-      'transaction'::text,
-      'legado_historico'::text,
-      'media'::text,
-      jsonb_build_object(
-        'tipo', t.tipo,
-        'descricao', null,
-        'referencia', t.referencia
-      ) as payload
-    from public."transaction" t
-    where coalesce(t.empresa_id, t.meta->>'empresa_id') = p_empresa_id
-      and (p_periodo_inicio is null or t.data_transacao::date >= p_periodo_inicio)
-      and (p_periodo_fim is null or t.data_transacao::date <= p_periodo_fim)
-
-    union all
-
-    select
-      coalesce(st.schedule_date::timestamptz, st.created_date) as event_date,
-      'cobranca'::text,
-      'scheduledtransaction'::text,
-      st.id,
-      'legacy'::text,
-      'compatibility_historical'::text,
-      st.empresa_id,
-      null::text,
-      null::text,
-      null::text,
-      null::text,
-      coalesce(st.status, 'agendada') as status,
-      round(coalesce(st.valor, 0), 2),
-      st.id,
-      'scheduledtransaction'::text,
-      'legado_historico'::text,
-      'media'::text,
-      jsonb_build_object(
-        'descricao', st.descricao,
-        'schedule_date', st.schedule_date
-      ) as payload
-    from public.scheduledtransaction st
-    where st.empresa_id = p_empresa_id
-      and (p_periodo_inicio is null or st.schedule_date >= p_periodo_inicio)
-      and (p_periodo_fim is null or st.schedule_date <= p_periodo_fim)
 
     union all
 
@@ -1409,7 +1348,7 @@ begin
         'legado_preservado',
         'obrigatorio',
         'media',
-        'Durante o rollout, conta_receber/transaction/scheduledtransaction continuam preservados para compatibilidade e rollback.',
+        'Durante o rollout, conta_receber continua preservado para compatibilidade e rollback.',
         null,
         jsonb_build_object(
           'empresa_id', p_empresa_id,

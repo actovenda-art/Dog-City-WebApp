@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Transaction,
-  ScheduledTransaction,
+  ExtratoBancario,
   Appointment,
   ServiceProvided,
   Replacement,
@@ -188,7 +187,6 @@ function getOpenLancamentoAmount(item) {
 
 export default function Cockpit() {
   const [transactions, setTransactions] = useState([]);
-  const [scheduled, setScheduled] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [servicesProvided, setServicesProvided] = useState([]);
   const [replacements, setReplacements] = useState([]);
@@ -230,7 +228,6 @@ export default function Cockpit() {
     try {
       const [
         transData,
-        schedData,
         apptsData,
         servData,
         replData,
@@ -244,8 +241,7 @@ export default function Cockpit() {
         configsData,
         me,
       ] = await Promise.all([
-        Transaction.list("-date", 1000),
-        ScheduledTransaction.list("-due_date", 500),
+        ExtratoBancario.listAll("-data_movimento", 1000, 20000),
         Appointment.list("-date", 1000),
         ServiceProvided.list("-date", 1000),
         Replacement.list("-created_date", 500),
@@ -267,7 +263,6 @@ export default function Cockpit() {
       );
 
       setTransactions(transData || []);
-      setScheduled(schedData || []);
       setAppointments(filterAppointmentsByApprovedOrcamentos(apptsData || [], approvedOrcamentosById));
       setServicesProvided(servData || []);
       setReplacements(replData || []);
@@ -414,17 +409,17 @@ export default function Cockpit() {
     [activeProviderCheckins, providersById],
   );
 
-  const totalEntradas = transactions.filter((t) => t.type === "entrada").reduce((acc, t) => acc + (t.value || 0), 0);
-  const totalSaidas = transactions.filter((t) => t.type === "saida").reduce((acc, t) => acc + (t.value || 0), 0);
+  const totalEntradas = transactions.filter((t) => t.tipo === "entrada").reduce((acc, t) => acc + (Number(t.valor) || 0), 0);
+  const totalSaidas = transactions.filter((t) => t.tipo === "saida").reduce((acc, t) => acc + (Number(t.valor) || 0), 0);
   const saldo = totalEntradas - totalSaidas;
   const margemLiquida = totalEntradas > 0 ? ((saldo / totalEntradas) * 100).toFixed(1) : 0;
 
-  const pendentesReceber = scheduled
-    .filter((s) => s.status === "pendente" && s.type === "entrada")
-    .reduce((acc, s) => acc + (s.value || 0), 0);
-  const pendentesPagar = scheduled
-    .filter((s) => s.status === "pendente" && s.type === "saida")
-    .reduce((acc, s) => acc + (s.value || 0), 0);
+  const pendentesReceber = lancamentos
+    .filter((item) => isOpenLancamento(item) && item.tipo === "receita")
+    .reduce((acc, item) => acc + getOpenLancamentoAmount(item), 0);
+  const pendentesPagar = lancamentos
+    .filter((item) => isOpenLancamento(item) && item.tipo === "despesa")
+    .reduce((acc, item) => acc + getOpenLancamentoAmount(item), 0);
 
   const agendamentosHoje = appointments.filter((appointment) => doesAppointmentOccurOnDate(appointment, hoje)).length;
   const servicosHoje = servicesProvided.filter((item) => item.date === hoje).length;
@@ -444,16 +439,16 @@ export default function Cockpit() {
       const end = endOfMonth(date);
       const entradasMes = transactions
         .filter((t) => {
-          const d = new Date(t.date);
-          return t.type === "entrada" && d >= start && d <= end;
+          const d = new Date(t.data_movimento || t.data || t.created_date);
+          return t.tipo === "entrada" && d >= start && d <= end;
         })
-        .reduce((acc, t) => acc + (t.value || 0), 0);
+        .reduce((acc, t) => acc + (Number(t.valor) || 0), 0);
       const saidasMes = transactions
         .filter((t) => {
-          const d = new Date(t.date);
-          return t.type === "saida" && d >= start && d <= end;
+          const d = new Date(t.data_movimento || t.data || t.created_date);
+          return t.tipo === "saida" && d >= start && d <= end;
         })
-        .reduce((acc, t) => acc + (t.value || 0), 0);
+        .reduce((acc, t) => acc + (Number(t.valor) || 0), 0);
       months.push({
         mes: format(date, "MMM/yy", { locale: ptBR }),
         entradas: entradasMes,

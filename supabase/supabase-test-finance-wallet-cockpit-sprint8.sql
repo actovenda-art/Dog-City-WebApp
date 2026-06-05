@@ -68,11 +68,11 @@ begin
   )
   on conflict (id) do nothing;
 
-  insert into public."transaction" (
-    id, referencia, valor, tipo, status, data_transacao, meta, created_date, updated_date
+  insert into public.extratobancario (
+    id, descricao, valor, tipo, status, data_movimento, empresa_id, created_date, updated_date
   )
   values (
-    v_transaction_id, 'Recebimento legado S8', 200, 'entrada', 'concluida', now(), jsonb_build_object('empresa_id', v_empresa_id), now(), now()
+    v_transaction_id, 'Recebimento legado S8', 200, 'entrada', 'concluida', current_date, v_empresa_id, now(), now()
   )
   on conflict (id) do nothing;
 

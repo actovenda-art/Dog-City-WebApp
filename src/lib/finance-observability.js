@@ -231,7 +231,7 @@ export function buildFinanceWriteGovernanceMatrix({ empresaId = null, flags = {}
       leitura_oficial: "cockpit_v2/relatorios_v2",
       escrita_oficial: "legado_conta_receber",
       compatibilidade: "obrigacao_financeira/cobranca_financeira/carteira_movimento",
-      legado_coexistente: "conta_receber, transaction, scheduledtransaction",
+      legado_coexistente: "conta_receber",
       status_dominio: "hibrido_critico",
       fonte_oficial_atual: "legado",
       risco_operacional: "alto",
@@ -394,7 +394,7 @@ export function buildPaymentV2Contract({ empresaId = null, flags = {} } = {}) {
       rule_key: "legado_preservado",
       status: "obrigatorio",
       severity: "media",
-      description: "Durante o rollout, conta_receber/transaction/scheduledtransaction continuam preservados para compatibilidade e rollback.",
+      description: "Durante o rollout, conta_receber continua preservado para compatibilidade e rollback.",
       blocked_by: null,
       payload: { empresa_id: empresaId, flags: normalizedFlags },
     },
@@ -424,8 +424,6 @@ export function buildLegacyReceivablesCoverage({
   contasReceber = [],
   clients = [],
   walletAccounts = [],
-  transactions = [],
-  scheduledTransactions = [],
   recurringPackages = [],
   obligations = [],
   charges = [],
@@ -438,12 +436,6 @@ export function buildLegacyReceivablesCoverage({
     .map((item) => {
       const walletAccount = (walletAccounts || []).find((account) =>
         account?.empresa_id === empresaId && account?.carteira_id === item?.cliente_id,
-      ) || null;
-      const matchingTransaction = (transactions || []).find((tx) =>
-        tx?.referencia === item?.id || tx?.reference === item?.id || tx?.conta_receber_id === item?.id,
-      ) || null;
-      const matchingScheduled = (scheduledTransactions || []).find((st) =>
-        st?.empresa_id === item?.empresa_id && safeIncludes(st?.descricao, item?.servico),
       ) || null;
       const recurringPackage = (recurringPackages || []).find((pkg) =>
         pkg?.client_id === item?.cliente_id
@@ -510,10 +502,10 @@ export function buildLegacyReceivablesCoverage({
         vencimento: item?.vencimento || null,
         data_recebimento: item?.data_recebimento || null,
         status_legado: item?.status || null,
-        transaction_id: matchingTransaction?.id || null,
-        transaction_status: matchingTransaction?.status || null,
-        scheduledtransaction_id: matchingScheduled?.id || null,
-        scheduledtransaction_status: matchingScheduled?.status || null,
+        transaction_id: null,
+        transaction_status: null,
+        scheduledtransaction_id: null,
+        scheduledtransaction_status: null,
         carteira_conta_id: walletAccount?.id || null,
         recurring_package_id: recurringPackage?.id || null,
         financial_behavior: financialBehavior,
@@ -621,8 +613,6 @@ export function buildOperationalObservabilityContext({
   reconciliations = [],
   commissions = [],
   cancellations = [],
-  transactions = [],
-  scheduledTransactions = [],
 } = {}) {
   const summary = cockpitSummary || {};
   const rows = Array.isArray(coverageRows) ? coverageRows : [];
@@ -636,7 +626,7 @@ export function buildOperationalObservabilityContext({
     write_governance_enabled: Boolean(flags.write_governance_enabled),
     payment_v2_contract_enabled: Boolean(flags.payment_v2_contract_enabled),
     hybrid_write_events_count: rows.filter((item) => item?.classificacao === "B").length,
-    legacy_only_events_count: rows.filter((item) => ["B", "C"].includes(item?.classificacao)).length + (transactions || []).length + (scheduledTransactions || []).length,
+    legacy_only_events_count: rows.filter((item) => ["B", "C"].includes(item?.classificacao)).length,
     v2_only_events_count: (obligations || []).length + (charges || []).length + (movements || []).length + (commissions || []).length + (cancellations || []).length,
     legacy_receivables_total: rows.length,
     legacy_receivables_open_count: rows.filter((item) => item?.status_legado !== "pago" && !item?.data_recebimento).length,

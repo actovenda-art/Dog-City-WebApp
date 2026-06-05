@@ -38,6 +38,5 @@ order by key, empresa_id nulls first;
 
 -- 6. Confirmação de que nenhuma tabela legada foi esvaziada por Sprint 8
 select
-  (select count(*) from public."transaction") as legacy_transactions_total,
-  (select count(*) from public.scheduledtransaction) as legacy_scheduled_total,
+  (select count(*) from public.extratobancario) as bank_transactions_total,
   (select count(*) from public.conta_receber) as legacy_conta_receber_total;

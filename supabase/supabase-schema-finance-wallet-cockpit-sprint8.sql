@@ -355,10 +355,10 @@ as $$
       cr.vencimento,
       cr.data_recebimento,
       cr.status as status_legado,
-      tx.id as transaction_id,
-      tx.status as transaction_status,
-      st.id as scheduledtransaction_id,
-      st.status as scheduledtransaction_status,
+      null::text as transaction_id,
+      null::text as transaction_status,
+      null::text as scheduledtransaction_id,
+      null::text as scheduledtransaction_status,
       cc.id as carteira_conta_id,
       rp.id as recurring_package_id,
       rp.financial_behavior
@@ -367,11 +367,6 @@ as $$
       on c.id = cr.cliente_id
     left join public.carteira_conta cc
       on cc.carteira_id = cr.cliente_id
-    left join public."transaction" tx
-      on tx.referencia = cr.id
-    left join public.scheduledtransaction st
-      on st.empresa_id is not distinct from cr.empresa_id
-     and lower(coalesce(st.descricao, '')) like '%' || lower(coalesce(cr.servico, '')) || '%'
     left join public.recurring_packages rp
       on rp.client_id = cr.cliente_id
      and rp.pet_id is not distinct from cr.dog_id
@@ -536,11 +531,11 @@ begin
 
   select round(coalesce(sum(coalesce(t.valor, 0)), 0), 2)
     into v_recebimentos_legacy
-  from public."transaction" t
+  from public.extratobancario t
   where coalesce(t.tipo, '') in ('entrada', 'recebimento')
-    and coalesce(t.empresa_id, t.meta->>'empresa_id') = p_empresa_id
-    and (p_periodo_inicio is null or t.data_transacao::date >= p_periodo_inicio)
-    and (p_periodo_fim is null or t.data_transacao::date <= p_periodo_fim);
+    and t.empresa_id = p_empresa_id
+    and (p_periodo_inicio is null or coalesce(t.data_movimento, t.created_date::date) >= p_periodo_inicio)
+    and (p_periodo_fim is null or coalesce(t.data_movimento, t.created_date::date) <= p_periodo_fim);
 
   select
     round(coalesce(sum(case when considera_no_comparativo then coalesce(valor, 0) else 0 end), 0), 2),

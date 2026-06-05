@@ -81,8 +81,6 @@ const UNIT_SCOPED_ENTITIES = new Set([
   'Orcamento',
   'TabelaPrecos',
   'ServiceProvided',
-  'Transaction',
-  'ScheduledTransaction',
   'Replacement',
   'PlanConfig',
   'RecurringPackage',
@@ -526,7 +524,7 @@ const defaultEntities = {};
 [
   'Dog', 'Checkin', 'Schedule', 'ServiceProvider', 'ServiceProviderSchedule', 'Lancamento', 'ExtratoBancario', 'Despesa',
   'Responsavel', 'Carteira', 'Notificacao', 'Orcamento', 'TabelaPrecos', 'Appointment',
-  'ServiceProvided', 'Transaction', 'ScheduledTransaction', 'Replacement', 'PlanConfig',
+  'ServiceProvided', 'Replacement', 'PlanConfig',
   'RecurringPackage', 'PackageSession', 'PackageCredit', 'PackageBilling', 'CarteiraConta',
   'CarteiraMovimento', 'PagamentoV2Execucao', 'PagamentoV2Reversao', 'CarteiraReconciliacao', 'AutorizacaoFinanceira', 'CancelamentoFinanceiro',
   'OrcamentoPagamento',
@@ -686,7 +684,7 @@ function getMockCommissionListRows(empresaId, status = null, limit = 100) {
 }
 
 function buildMockLegacyCockpitSummary(empresaId, periodoInicio = null, periodoFim = null) {
-  const transactions = readStorage('Transaction')
+  const bankTransactions = readStorage('ExtratoBancario')
     .filter((item) => item?.empresa_id === empresaId || !item?.empresa_id);
   const contasReceber = readStorage('ContaReceber')
     .filter((item) => item?.empresa_id === empresaId || !item?.empresa_id);
@@ -704,16 +702,16 @@ function buildMockLegacyCockpitSummary(empresaId, periodoInicio = null, periodoF
   };
 
   return {
-    recebimentos_total: transactions
+    recebimentos_total: bankTransactions
       .filter((item) => item?.type === 'entrada' || item?.tipo === 'entrada')
-      .filter((item) => !periodoInicio && !periodoFim ? true : isInPeriod(item?.date || item?.data_transacao || item?.created_date))
+      .filter((item) => !periodoInicio && !periodoFim ? true : isInPeriod(item?.data_movimento || item?.date || item?.data_transacao || item?.created_date))
       .reduce((sum, item) => sum + Number(item?.value ?? item?.valor ?? 0), 0),
     pendencias_total: contasReceber
       .filter((item) => (item?.status || 'pendente') !== 'pago' && !item?.data_recebimento)
       .reduce((sum, item) => sum + Number(item?.valor || 0), 0),
-    faturamento_real_total: transactions
+    faturamento_real_total: bankTransactions
       .filter((item) => item?.type === 'entrada' || item?.tipo === 'entrada')
-      .filter((item) => !periodoInicio && !periodoFim ? true : isInPeriod(item?.date || item?.data_transacao || item?.created_date))
+      .filter((item) => !periodoInicio && !periodoFim ? true : isInPeriod(item?.data_movimento || item?.date || item?.data_transacao || item?.created_date))
       .reduce((sum, item) => sum + Number(item?.value ?? item?.valor ?? 0), 0),
     geracao_recursos_total: servicesProvided
       .filter((item) => !periodoInicio && !periodoFim ? true : isInPeriod(item?.data_utilizacao || item?.created_date))
@@ -3110,8 +3108,6 @@ mockFunctions.financeHybridWriteAudit = async (payload = {}) => {
     contasReceber: readStorage('ContaReceber'),
     clients: readStorage('Client'),
     walletAccounts: readStorage('CarteiraConta'),
-    transactions: readStorage('Transaction'),
-    scheduledTransactions: readStorage('ScheduledTransaction'),
     recurringPackages: readStorage('RecurringPackage'),
     obligations: readStorage('ObrigacaoFinanceira'),
     charges: readStorage('CobrancaFinanceira'),
@@ -3119,8 +3115,6 @@ mockFunctions.financeHybridWriteAudit = async (payload = {}) => {
     periodEnd,
   });
   const contaReceberById = Object.fromEntries(readStorage('ContaReceber').map((item) => [item?.id, item]));
-  const transactions = readStorage('Transaction').filter((item) => (item?.empresa_id || item?.meta?.empresa_id) === empresaId);
-  const scheduledTransactions = readStorage('ScheduledTransaction').filter((item) => item?.empresa_id === empresaId);
   const obligations = readStorage('ObrigacaoFinanceira').filter((item) => item?.empresa_id === empresaId);
   const charges = readStorage('CobrancaFinanceira').filter((item) => item?.empresa_id === empresaId);
   const movements = readStorage('CarteiraMovimento').filter((item) => item?.empresa_id === empresaId);
@@ -3156,51 +3150,6 @@ mockFunctions.financeHybridWriteAudit = async (payload = {}) => {
         },
       };
     }),
-    ...transactions.filter((item) => isInPeriod(item?.date || item?.data_transacao || item?.created_date, periodStart, periodEnd)).map((item) => ({
-      event_date: item?.data_transacao || item?.date || item?.created_date || null,
-      write_domain: 'pagamento',
-      entity_type: 'transaction',
-      entity_id: item?.id || null,
-      write_layer: 'legacy',
-      source_role: 'compatibility_historical',
-      empresa_id: item?.empresa_id || item?.meta?.empresa_id || null,
-      carteira_id: null,
-      carteira_conta_id: null,
-      counterparty_entity_type: null,
-      counterparty_entity_id: null,
-      status: item?.status || item?.tipo || 'registrada',
-      amount: Number(item?.valor ?? item?.value ?? 0),
-      source_key: item?.referencia || item?.id || null,
-      origin_label: 'transaction',
-      hybrid_classification: 'legado_historico',
-      operational_risk: 'media',
-      payload: {
-        tipo: item?.tipo || item?.type || null,
-        descricao: item?.descricao || item?.description || null,
-      },
-    })),
-    ...scheduledTransactions.filter((item) => isInPeriod(item?.due_date || item?.created_date, periodStart, periodEnd)).map((item) => ({
-      event_date: item?.due_date ? `${item.due_date}T12:00:00` : item?.created_date || null,
-      write_domain: 'cobranca',
-      entity_type: 'scheduledtransaction',
-      entity_id: item?.id || null,
-      write_layer: 'legacy',
-      source_role: 'compatibility_historical',
-      empresa_id: item?.empresa_id || null,
-      carteira_id: null,
-      carteira_conta_id: null,
-      counterparty_entity_type: null,
-      counterparty_entity_id: null,
-      status: item?.status || 'agendada',
-      amount: Number(item?.amount || 0),
-      source_key: item?.id || null,
-      origin_label: 'scheduledtransaction',
-      hybrid_classification: 'legado_historico',
-      operational_risk: 'media',
-      payload: {
-        descricao: item?.descricao || null,
-      },
-    })),
     ...obligations.filter((item) => isInPeriod(item?.due_date || item?.created_date, periodStart, periodEnd)).map((item) => ({
       event_date: item?.created_date || null,
       write_domain: 'obrigacao',
@@ -3330,8 +3279,6 @@ mockFunctions.financeOperationalReconciliationMatrix = async (payload = {}) => {
     contasReceber: readStorage('ContaReceber'),
     clients: readStorage('Client'),
     walletAccounts: readStorage('CarteiraConta'),
-    transactions: readStorage('Transaction'),
-    scheduledTransactions: readStorage('ScheduledTransaction'),
     recurringPackages: readStorage('RecurringPackage'),
     obligations: readStorage('ObrigacaoFinanceira'),
     charges: readStorage('CobrancaFinanceira'),
@@ -3383,8 +3330,6 @@ mockFunctions.financeOperationalObservabilityContext = async (payload = {}) => {
     contasReceber: readStorage('ContaReceber'),
     clients: readStorage('Client'),
     walletAccounts: readStorage('CarteiraConta'),
-    transactions: readStorage('Transaction'),
-    scheduledTransactions: readStorage('ScheduledTransaction'),
     recurringPackages: readStorage('RecurringPackage'),
     obligations: readStorage('ObrigacaoFinanceira'),
     charges: readStorage('CobrancaFinanceira'),
@@ -3437,8 +3382,6 @@ mockFunctions.financeOperationalObservabilityContext = async (payload = {}) => {
     reconciliations: readStorage('CarteiraReconciliacao').filter((item) => item?.empresa_id === empresaId),
     commissions: readStorage('ComissaoEvento').filter((item) => item?.empresa_id === empresaId),
     cancellations: readStorage('CancelamentoFinanceiro').filter((item) => item?.empresa_id === empresaId),
-    transactions: readStorage('Transaction').filter((item) => (item?.empresa_id || item?.meta?.empresa_id) === empresaId),
-    scheduledTransactions: readStorage('ScheduledTransaction').filter((item) => item?.empresa_id === empresaId),
   });
 };
 
@@ -4968,8 +4911,6 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     ServiceProvided: 'serviceprovided',
     ServiceProvider: 'serviceproviders',
     ServiceProviderSchedule: 'serviceprovider_schedule',
-    Transaction: 'transaction',
-    ScheduledTransaction: 'scheduledtransaction',
     Replacement: 'replacement',
     Lancamento: 'lancamento',
     ExtratoBancario: 'extratobancario',

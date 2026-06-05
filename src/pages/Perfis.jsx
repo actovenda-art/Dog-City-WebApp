@@ -9,6 +9,7 @@ import { findEntityByReference, getInternalEntityReference } from "@/lib/entity-
 import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import { canViewSensitivePersonalData } from "@/lib/access-control";
 import { maskCpfCnpj, maskEmail, maskPhone, maskSensitiveValue } from "@/lib/privacy";
+import { ensureWalletAccountForFinancialProfile } from "@/lib/wallet-account";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1408,6 +1409,14 @@ export default function Perfis() {
       };
 
       const updatedCarteira = await Carteira.update(editingCarteiraId, payload);
+      try {
+        await ensureWalletAccountForFinancialProfile(
+          { id: editingCarteiraId, empresa_id: currentUser?.empresa_id || null, ...payload, ...(updatedCarteira || {}) },
+          currentUser?.empresa_id || null,
+        );
+      } catch (walletError) {
+        console.warn("Não foi possível garantir a conta operacional da carteira agora:", walletError);
+      }
 
       setCarteiras((current) =>
         current.map((item) =>

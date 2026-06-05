@@ -28,6 +28,7 @@ import { formatDisplayName, isCompletePersonName, sanitizeDisplayNameInput } fro
 import { cn } from "@/lib/utils";
 import { createPageUrl, isImagePreviewable, openImageViewer } from "@/utils";
 import { useLocation, useNavigate } from "react-router-dom";
+import { ensureWalletAccountForFinancialProfile } from "@/lib/wallet-account";
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "Médio", "Grande", "Gigante"];
@@ -1454,7 +1455,7 @@ export default function Cadastro() {
         }
       }
 
-      await Carteira.create({
+      const createdCarteira = await Carteira.create({
         empresa_id: currentUser?.empresa_id || null,
         nome_razao_social: formatDisplayName(carteiraForm.nome_razao_social),
         cpf_cnpj: optional(carteiraForm.cpf_cnpj),
@@ -1486,6 +1487,11 @@ export default function Cadastro() {
         dog_id_7: optional(carteiraForm.dog_id_7),
         dog_id_8: optional(carteiraForm.dog_id_8),
       });
+      try {
+        await ensureWalletAccountForFinancialProfile(createdCarteira, currentUser?.empresa_id || null);
+      } catch (walletError) {
+        console.warn("Não foi possível criar a conta operacional da carteira agora:", walletError);
+      }
       setNotifyTitle("Sucesso"); setNotifyMessage("Carteira cadastrada!"); setNotifyOpen(true);
       setCarteiraForm(emptyCarteira);
       await loadData();

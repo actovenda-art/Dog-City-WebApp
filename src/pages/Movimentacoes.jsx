@@ -652,6 +652,13 @@ function buildWalletStatementRows({
   );
   const budgetsById = new Map((budgets || []).map((item) => [item?.id, item]));
   const recurringPackagesById = new Map((recurringPackages || []).map((item) => [item?.id, item]));
+  const paidBudgetIds = new Set(
+    (budgetPayments || [])
+      .filter((row) => row?.carteira_id === walletId)
+      .filter((row) => ["recebido", "pago"].includes(String(row?.status || "").toLowerCase()))
+      .map((row) => row?.orcamento_id)
+      .filter(Boolean),
+  );
   const debitAppointmentIds = new Set();
   const budgetAppointmentCounts = (appointments || []).reduce((acc, appointment) => {
     if (!appointment?.orcamento_id) return acc;
@@ -676,6 +683,13 @@ function buildWalletStatementRows({
       const referenceType = budget ? "orcamento" : recurringPackage ? "pacote" : null;
       const referenceId = budget?.id || recurringPackage?.id || null;
       const referenceCode = formatWalletStatementReferenceCode(referenceType, referenceRecord);
+      const paymentStatus = normalizeWalletPaymentStatus(
+        receivable?.status
+        || obrigacao?.status
+        || charge?.status
+        || service?.status_pagamento
+        || service?.status,
+      ) || (budget?.id && paidBudgetIds.has(budget.id) ? "paid" : "pending");
       if (appointment?.id || obrigacao?.appointment_id) {
         debitAppointmentIds.add(appointment?.id || obrigacao?.appointment_id);
       }
@@ -700,6 +714,7 @@ function buildWalletStatementRows({
         referenceId,
         referenceCode,
         referenceLabel: referenceType === "pacote" ? "Pacote" : "Orçamento",
+        paymentStatus,
       };
     });
 
@@ -719,6 +734,12 @@ function buildWalletStatementRows({
       const referenceCode = formatWalletStatementReferenceCode(referenceType, referenceRecord);
       const budgetAppointmentCount = budget?.id ? Math.max(Number(budgetAppointmentCounts[budget.id] || 1), 1) : 1;
       const fallbackBudgetShare = budget?.valor_total ? Number(budget.valor_total) / budgetAppointmentCount : 0;
+      const paymentStatus = normalizeWalletPaymentStatus(
+        service?.status_pagamento
+        || service?.status
+        || appointment?.status_pagamento
+        || appointment?.payment_status,
+      ) || (budget?.id && paidBudgetIds.has(budget.id) ? "paid" : "pending");
 
       return {
         id: `debit-fallback-${appointment?.id}`,
@@ -740,6 +761,7 @@ function buildWalletStatementRows({
         referenceId,
         referenceCode,
         referenceLabel: referenceType === "pacote" ? "Pacote" : "Orçamento",
+        paymentStatus,
       };
     });
 
@@ -933,17 +955,40 @@ function getOperationalStatusClass(tone) {
   return "border-emerald-200 bg-emerald-50 text-emerald-700";
 }
 
+function getWalletTimelineDotClass(row) {
+  if (row?.sourceKind === "transaction") return "bg-emerald-500";
+  if (row?.sourceKind === "reversal") return "bg-red-500";
+  if (row?.paymentStatus === "paid") return "bg-emerald-500";
+  return "bg-amber-400";
+}
+
 function getLinkedDogIdsFromCarteira(carteira) {
   return Array.from({ length: 8 }, (_, index) => carteira?.[`dog_id_${index + 1}`]).filter(Boolean);
 }
 
+function normalizeWalletPaymentStatus(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["pago", "paga", "quitado", "quitada", "liquidado", "liquidada", "estornado"].includes(normalized)) {
+    return "paid";
+  }
+  if (["pendente", "em_aberto", "aberto", "vencido", "atrasado", "parcial"].includes(normalized)) {
+    return "pending";
+  }
+  return null;
+}
+
 function buildWalletAdminAccounts(accounts = [], carteiras = [], dogs = [], receivables = []) {
   const carteirasById = new Map((carteiras || []).map((carteira) => [carteira?.id, carteira]));
+  const accountsByCarteiraId = new Map(
+    (accounts || [])
+      .filter((account) => account?.carteira_id && carteirasById.has(account.carteira_id))
+      .map((account) => [account.carteira_id, account]),
+  );
   const dogsById = new Map((dogs || []).map((dog) => [dog?.id, dog]));
   const financialStatusMap = buildFinancialOperationalStatusMap(receivables);
 
-  const enrichWalletAccount = (account) => {
-    const carteira = carteirasById.get(account?.carteira_id) || null;
+  const buildVisibleWallet = (carteira) => {
+    const account = accountsByCarteiraId.get(carteira?.id) || null;
     const linkedDogLabels = getLinkedDogIdsFromCarteira(carteira).map((dogId) => {
       const dog = dogsById.get(dogId);
       if (!dog) return null;
@@ -953,50 +998,30 @@ function buildWalletAdminAccounts(accounts = [], carteiras = [], dogs = [], rece
     const financialStatus = getFinancialOperationalStatus(financialStatusMap, carteira?.id || null);
 
     return {
-      ...account,
-      carteira_nome: account?.carteira_nome || carteira?.nome_razao_social || carteira?.nome_fantasia || "Responsável financeiro",
-      carteira_codigo: account?.carteira_codigo || carteira?.cpf_cnpj || carteira?.celular || carteira?.email || null,
+      ...(account || {}),
+      carteira_selection_id: account?.carteira_conta_id || `virtual:${carteira?.id}`,
+      carteira_conta_id: account?.carteira_conta_id || null,
+      carteira_id: carteira?.id || null,
+      carteira_nome: carteira?.nome_razao_social || carteira?.nome_fantasia || "Responsável financeiro",
+      carteira_codigo: carteira?.cpf_cnpj || carteira?.celular || carteira?.email || null,
       carteira_vencimento_padrao: carteira?.vencimento_planos || null,
       linked_dog_labels: linkedDogLabels,
       financial_status_label: financialStatus?.label || "Regular",
       financial_status_tone: financialStatus?.tone || "regular",
+      saldo_atual: Number(account?.saldo_atual || 0),
+      movimento_count: Number(account?.movimento_count || 0),
+      ultimo_movimento_em: account?.ultimo_movimento_em || null,
+      latest_reconciliation_status: account?.latest_reconciliation_status || (account ? null : "sem_conta"),
+      has_wallet_account: Boolean(account?.carteira_conta_id),
     };
   };
 
-  const normalizedAccounts = (accounts || []).map((account) => ({
-    ...enrichWalletAccount(account),
-    carteira_selection_id: account?.carteira_conta_id || `conta:${account?.carteira_id || account?.id || "wallet"}`,
-    has_wallet_account: Boolean(account?.carteira_conta_id),
-  }));
-
-  const accountedCarteiraIds = new Set(
-    normalizedAccounts
-      .map((account) => account?.carteira_id || null)
-      .filter(Boolean),
-  );
-
-  const virtualCarteiras = (carteiras || [])
+  return (carteiras || [])
     .filter((carteira) => carteira?.ativo !== false)
-    .filter((carteira) => !accountedCarteiraIds.has(carteira?.id))
-    .map((carteira) => ({
-      ...enrichWalletAccount({
-        carteira_id: carteira?.id || null,
-        carteira_nome: carteira?.nome_razao_social || carteira?.nome_fantasia || "Responsável financeiro",
-        carteira_codigo: carteira?.cpf_cnpj || carteira?.celular || carteira?.email || null,
-      }),
-      carteira_selection_id: `virtual:${carteira?.id}`,
-      carteira_conta_id: null,
-      carteira_id: carteira?.id || null,
-      saldo_atual: 0,
-      movimento_count: 0,
-      ultimo_movimento_em: null,
-      latest_reconciliation_status: "sem_conta",
-      has_wallet_account: false,
-    }));
-
-  return [...normalizedAccounts, ...virtualCarteiras].sort((left, right) =>
-    String(left?.carteira_nome || "").localeCompare(String(right?.carteira_nome || ""), "pt-BR", { sensitivity: "base" }),
-  );
+    .map(buildVisibleWallet)
+    .sort((left, right) =>
+      String(left?.carteira_nome || "").localeCompare(String(right?.carteira_nome || ""), "pt-BR", { sensitivity: "base" }),
+    );
 }
 
 export default function Movimentacoes({ walletOnly = false }) {
@@ -1710,12 +1735,15 @@ export default function Movimentacoes({ walletOnly = false }) {
           categoryLabel: row.referenceType === "pacote" ? "Pacote recorrente" : "Avulso",
           amount: reversalEvent ? 0 : row.amount,
           amountTone: reversalEvent ? "neutral" : "debit",
+          paymentStatus: reversalEvent ? "paid" : row.paymentStatus,
           badges: reversalEvent
             ? [
                 { label: "ESTORNADO", tone: "red" },
                 { label: "PAGO", tone: "green" },
               ]
-            : [],
+            : row.paymentStatus === "paid"
+              ? [{ label: "PAGO", tone: "green" }]
+              : [{ label: "PENDENTE", tone: "amber" }],
           appointmentId: row.appointmentId || null,
           referenceId: row.referenceId || null,
           referenceCode: row.referenceCode || null,
@@ -1725,7 +1753,7 @@ export default function Movimentacoes({ walletOnly = false }) {
             data: formatWalletStatementDate(row.primaryDate),
             vencimento: formatWalletStatementDate(row.dueDate),
             executor: reversalEvent?.details?.executor || "—",
-            status: reversalEvent ? "Pago" : "Em aberto",
+            status: reversalEvent ? "Pago" : row.paymentStatus === "paid" ? "Pago" : "Pendente",
             motivo: reversalEvent?.details?.motivo || null,
             anexo: reversalEvent?.details?.attachmentName || null,
           },
@@ -1742,6 +1770,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         categoryLabel: row.paymentMethod,
         amount: row.amount,
         amountTone: "credit",
+        paymentStatus: "paid",
         badges: [],
         appointmentId: null,
         referenceId: null,
@@ -1770,6 +1799,7 @@ export default function Movimentacoes({ walletOnly = false }) {
           categoryLabel: "Estorno",
           amount: 0,
           amountTone: "neutral",
+          paymentStatus: "paid",
           badges: [
             { label: "ESTORNADO", tone: "red" },
             { label: "PAGO", tone: "green" },
@@ -2656,9 +2686,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                   <div className="space-y-4">
                                     {filteredWalletTimelineRows.map((row) => (
                                       <div key={row.id} className="relative">
-                                        <div className={`absolute -left-[1.45rem] top-5 h-3 w-3 rounded-full border-2 border-white ${
-                                          row.sourceKind === "transaction" ? "bg-emerald-500" : row.sourceKind === "reversal" ? "bg-red-500" : "bg-slate-400"
-                                        }`} />
+                                        <div className={`absolute -left-[1.45rem] top-5 h-3 w-3 rounded-full border-2 border-white ${getWalletTimelineDotClass(row)}`} />
                                         <details className="group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
                                           <summary className="cursor-pointer list-none px-4 py-4 hover:bg-slate-50">
                                             <div>
@@ -2672,7 +2700,9 @@ export default function Movimentacoes({ walletOnly = false }) {
                                                         variant="outline"
                                                         className={badge.tone === "red"
                                                           ? "border-red-200 bg-red-50 text-red-700"
-                                                          : "border-emerald-200 bg-emerald-50 text-emerald-700"}
+                                                          : badge.tone === "amber"
+                                                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                                                            : "border-emerald-200 bg-emerald-50 text-emerald-700"}
                                                       >
                                                         {badge.label}
                                                       </Badge>

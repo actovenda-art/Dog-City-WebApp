@@ -881,6 +881,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [selectedWalletAccountId, setSelectedWalletAccountId] = useState("");
   const [walletListSearchTerm, setWalletListSearchTerm] = useState("");
   const [walletLoading, setWalletLoading] = useState(false);
+  const [walletFlagsLoaded, setWalletFlagsLoaded] = useState(false);
   const [walletHistoryLoading, setWalletHistoryLoading] = useState(false);
   const [walletSaving, setWalletSaving] = useState(false);
   const [walletActionMessage, setWalletActionMessage] = useState(null);
@@ -1083,6 +1084,7 @@ export default function Movimentacoes({ walletOnly = false }) {
 
   const loadWalletFlags = async (userProfile) => {
     if (!userProfile?.empresa_id) {
+      setWalletFlagsLoaded(true);
       setWalletFlags({
         balanceReadEnabled: false,
         movementsEnabled: false,
@@ -1116,11 +1118,13 @@ export default function Movimentacoes({ walletOnly = false }) {
       paymentV2ReversalEnabled: getFinanceFeatureFlagValue(configs, FINANCE_FEATURE_FLAGS.paymentV2ReversalEnabled, userProfile.empresa_id),
     };
     setWalletFlags(nextFlags);
+    setWalletFlagsLoaded(true);
     return nextFlags;
   };
 
   const loadWalletAdminData = async (userProfile = currentUser, preferredWalletAccountId = selectedWalletAccountId) => {
     if (!userProfile?.empresa_id) {
+      setWalletFlagsLoaded(true);
       setWalletAccounts([]);
       setWalletAuditRows([]);
       setWalletRecentMovements([]);
@@ -1140,6 +1144,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
 
     setWalletLoading(true);
+    setWalletFlagsLoaded(false);
     try {
       const nextFlags = await loadWalletFlags(userProfile);
       const walletReadEnabled = nextFlags.balanceReadEnabled || nextFlags.movementsEnabled;
@@ -2003,31 +2008,33 @@ export default function Movimentacoes({ walletOnly = false }) {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
-              {walletOnly ? "Carteiras dos responsáveis financeiros" : "Transações"}
-            </h1>
-            {walletOnly ? (
-              <p className="mt-1 text-sm text-slate-500">
-                Consulte a carteira e o extrato de cada responsável financeiro em uma página dedicada do Financeiro, separada do extrato operacional da empresa.
-              </p>
+        {!(walletOnly && selectedWalletAccount) ? (
+          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
+                {walletOnly ? "Carteiras dos responsáveis financeiros" : "Transações"}
+              </h1>
+              {walletOnly ? (
+                <p className="mt-1 text-sm text-slate-500">
+                  Consulte a carteira e o extrato de cada responsável financeiro em uma página dedicada do Financeiro, separada do extrato operacional da empresa.
+                </p>
+              ) : null}
+            </div>
+
+            {!walletOnly ? (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing} className="h-9 rounded-full px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
+                  <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""} sm:mr-2 sm:h-4 sm:w-4`} />
+                  {isRefreshing ? "Atualizando..." : "Atualizar extrato"}
+                </Button>
+                <Button onClick={() => openModal()} className="h-9 rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:px-4 sm:text-sm">
+                  <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+                  Nova movimentação manual
+                </Button>
+              </div>
             ) : null}
           </div>
-
-          {!walletOnly ? (
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing} className="h-9 rounded-full px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
-                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""} sm:mr-2 sm:h-4 sm:w-4`} />
-                {isRefreshing ? "Atualizando..." : "Atualizar extrato"}
-              </Button>
-              <Button onClick={() => openModal()} className="h-9 rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:px-4 sm:text-sm">
-                <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
-                Nova movimentação manual
-              </Button>
-            </div>
-          ) : null}
-        </div>
+        ) : null}
 
         {!walletOnly && refreshResult && (
           <Card className={`mb-6 ${refreshResult.success ? "border-blue-200 bg-blue-50" : "border-red-200 bg-red-50"}`}>
@@ -2096,7 +2103,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         {walletOnly && walletReadEnabled ? (
           <Card className="mb-6 border-slate-200 bg-white">
             <CardContent className="space-y-4 p-4 sm:p-5">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              {!selectedWalletAccount ? (
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-semibold text-slate-900 sm:text-lg">Carteira do responsável financeiro</h2>
@@ -2108,67 +2115,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                       : "Bloco administrativo temporário para auditoria de saldo e movimentos, sem substituir o fluxo principal."}
                   </p>
                 </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => loadWalletAdminData(currentUser, selectedWalletAccountId)}
-                    disabled={walletLoading}
-                    className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                  >
-                    <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${walletLoading ? "animate-spin" : ""}`} />
-                    Atualizar carteira
-                  </Button>
-                  {canManageWalletOperations ? (
-                    <Button
-                      variant="outline"
-                      onClick={() => openWalletReversalModal({ carteira_conta_id: selectedWalletRuntimeAccountId })}
-                      disabled={!selectedWalletRuntimeAccountId}
-                      className="h-9 rounded-full border-red-200 bg-red-50 px-3 text-xs text-red-700 hover:bg-red-100 sm:text-sm"
-                    >
-                      <Undo2 className="mr-1.5 h-3.5 w-3.5" />
-                      Novo estorno V2
-                    </Button>
-                  ) : null}
-                  {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations && (
-                    <>
-                      {walletFlags.manualCreditEnabled ? (
-                        <Button
-                          variant="outline"
-                          onClick={() => openWalletOperationModal("credito_manual")}
-                          className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                        >
-                          Crédito manual
-                        </Button>
-                      ) : null}
-                      <Button
-                        variant="outline"
-                        onClick={() => openWalletOperationModal("ajuste_manual")}
-                        className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                      >
-                        Ajuste manual
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => openWalletOperationModal("estorno_manual")}
-                        className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                      >
-                        Estorno manual
-                      </Button>
-                    </>
-                  )}
-                  {walletFlags.balanceReadEnabled && selectedWalletRuntimeAccountId && (
-                    <Button
-                      variant="outline"
-                      onClick={handleWalletReconcile}
-                      disabled={walletLoading}
-                      className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                    >
-                      Reconciliar
-                    </Button>
-                  )}
-                </div>
-              </div>
+              ) : null}
 
               {walletActionMessage && (
                 <div
@@ -2185,7 +2132,8 @@ export default function Movimentacoes({ walletOnly = false }) {
               )}
 
               {!selectedWalletAccount ? (
-                <div className="space-y-4">
+                <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="space-y-4">
                   <SearchFiltersToolbar
                     searchTerm={walletListSearchTerm}
                     onSearchChange={setWalletListSearchTerm}
@@ -2254,10 +2202,12 @@ export default function Movimentacoes({ walletOnly = false }) {
                       </div>
                     </Card>
                   )}
+                  </div>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="mx-auto max-w-5xl rounded-[32px] border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/70 sm:p-6">
+                  <div className="space-y-4">
+                  <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
                     <Button
                       type="button"
                       variant="outline"
@@ -2267,65 +2217,9 @@ export default function Movimentacoes({ walletOnly = false }) {
                       <ChevronLeft className="mr-1.5 h-3.5 w-3.5" />
                       Voltar para a lista
                     </Button>
-
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => loadWalletAdminData(currentUser, selectedWalletAccountId)}
-                        disabled={walletLoading}
-                        className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                      >
-                        <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${walletLoading ? "animate-spin" : ""}`} />
-                        Atualizar carteira
-                      </Button>
-                      {canManageWalletOperations ? (
-                        <Button
-                          variant="outline"
-                          onClick={() => openWalletReversalModal({ carteira_conta_id: selectedWalletRuntimeAccountId })}
-                          disabled={!selectedWalletRuntimeAccountId}
-                          className="h-9 rounded-full border-red-200 bg-red-50 px-3 text-xs text-red-700 hover:bg-red-100 sm:text-sm"
-                        >
-                          <Undo2 className="mr-1.5 h-3.5 w-3.5" />
-                          Novo estorno V2
-                        </Button>
-                      ) : null}
-                      {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations && (
-                        <>
-                          {walletFlags.manualCreditEnabled ? (
-                            <Button
-                              variant="outline"
-                              onClick={() => openWalletOperationModal("credito_manual")}
-                              className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                            >
-                              Crédito manual
-                            </Button>
-                          ) : null}
-                          <Button
-                            variant="outline"
-                            onClick={() => openWalletOperationModal("ajuste_manual")}
-                            className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                          >
-                            Ajuste manual
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => openWalletOperationModal("estorno_manual")}
-                            className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                          >
-                            Estorno manual
-                          </Button>
-                        </>
-                      )}
-                      {walletFlags.balanceReadEnabled && selectedWalletRuntimeAccountId && (
-                        <Button
-                          variant="outline"
-                          onClick={handleWalletReconcile}
-                          disabled={walletLoading}
-                          className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                        >
-                          Reconciliar
-                        </Button>
-                      )}
+                    <div className="min-w-0 flex-1 sm:text-right">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Carteira do responsável financeiro</p>
+                      <p className="truncate text-lg font-semibold text-slate-900">{selectedWalletAccount.carteira_nome}</p>
                     </div>
                   </div>
 
@@ -2357,6 +2251,76 @@ export default function Movimentacoes({ walletOnly = false }) {
                         status={selectedWalletFinancialStatus}
                         title="Situação financeira do responsável"
                       />
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h3 className="font-semibold text-slate-900">Ações da carteira</h3>
+                            <p className="mt-1 text-sm text-slate-500">
+                              Atualize a leitura da carteira e execute ações administrativas sem sair da visualização individual.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => loadWalletAdminData(currentUser, selectedWalletAccountId)}
+                              disabled={walletLoading}
+                              className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                            >
+                              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${walletLoading ? "animate-spin" : ""}`} />
+                              Atualizar carteira
+                            </Button>
+                            {canManageWalletOperations ? (
+                              <Button
+                                variant="outline"
+                                onClick={() => openWalletReversalModal({ carteira_conta_id: selectedWalletRuntimeAccountId })}
+                                disabled={!selectedWalletRuntimeAccountId}
+                                className="h-9 rounded-full border-red-200 bg-red-50 px-3 text-xs text-red-700 hover:bg-red-100 sm:text-sm"
+                              >
+                                <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                                Novo estorno V2
+                              </Button>
+                            ) : null}
+                            {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations ? (
+                              <>
+                                {walletFlags.manualCreditEnabled ? (
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => openWalletOperationModal("credito_manual")}
+                                    className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                                  >
+                                    Crédito manual
+                                  </Button>
+                                ) : null}
+                                <Button
+                                  variant="outline"
+                                  onClick={() => openWalletOperationModal("ajuste_manual")}
+                                  className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                                >
+                                  Ajuste manual
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => openWalletOperationModal("estorno_manual")}
+                                  className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                                >
+                                  Estorno manual
+                                </Button>
+                              </>
+                            ) : null}
+                            {walletFlags.balanceReadEnabled && selectedWalletRuntimeAccountId ? (
+                              <Button
+                                variant="outline"
+                                onClick={handleWalletReconcile}
+                                disabled={walletLoading}
+                                className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                              >
+                                Reconciliar
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
 
                       {!selectedWalletAccount.has_wallet_account ? (
                         <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
@@ -2636,10 +2600,11 @@ export default function Movimentacoes({ walletOnly = false }) {
                       )}
                   </div>
                 </div>
+              </div>
               )}
             </CardContent>
           </Card>
-        ) : walletOnly ? (
+        ) : walletOnly && walletFlagsLoaded ? (
           <Card className="mb-6 border-dashed border-slate-300 bg-white">
             <CardContent className="p-6 text-sm text-slate-500">
               A leitura administrativa de carteiras ainda está desligada por feature flag nesta unidade.

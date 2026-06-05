@@ -272,10 +272,16 @@ returns table (
 )
 language plpgsql
 stable
+security definer
+set search_path = public
 as $$
 begin
   if coalesce(trim(p_empresa_id), '') = '' then
     raise exception 'p_empresa_id e obrigatorio para leitura administrativa da carteira.';
+  end if;
+
+  if auth.uid() is not null and not public.app_active_unit_matches(p_empresa_id) then
+    raise exception 'Acesso negado para leitura administrativa da carteira na empresa %.', p_empresa_id;
   end if;
 
   if not (
@@ -356,12 +362,18 @@ returns table (
 )
 language plpgsql
 stable
+security definer
+set search_path = public
 as $$
 declare
   v_limit integer := greatest(1, least(coalesce(p_limit, 20), 100));
 begin
   if coalesce(trim(p_empresa_id), '') = '' then
     raise exception 'p_empresa_id e obrigatorio para leitura administrativa dos movimentos da carteira.';
+  end if;
+
+  if auth.uid() is not null and not public.app_active_unit_matches(p_empresa_id) then
+    raise exception 'Acesso negado para leitura administrativa dos movimentos da carteira na empresa %.', p_empresa_id;
   end if;
 
   if not public.finance_get_feature_flag('finance.wallet_movements_enabled', p_empresa_id) then
@@ -417,10 +429,16 @@ returns table (
 )
 language plpgsql
 stable
+security definer
+set search_path = public
 as $$
 begin
   if coalesce(trim(p_empresa_id), '') = '' then
     raise exception 'p_empresa_id e obrigatorio para auditoria administrativa da carteira.';
+  end if;
+
+  if auth.uid() is not null and not public.app_active_unit_matches(p_empresa_id) then
+    raise exception 'Acesso negado para auditoria administrativa da carteira na empresa %.', p_empresa_id;
   end if;
 
   if not public.finance_get_feature_flag('finance.wallet_balance_read_enabled', p_empresa_id) then

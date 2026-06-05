@@ -1496,6 +1496,56 @@ async function ensureWalletAccountForBudget(empresaId: string, carteiraId: strin
   return sanitizeText(createdAccount?.id) || null;
 }
 
+function normalizeSearchText(value: unknown) {
+  return sanitizeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+async function resolveBudgetPaymentExtratoId(row: Record<string, unknown>) {
+  const empresaId = sanitizeText(row.empresa_id);
+  const amount = toNumber(firstDefined(row.valor_recebido, row.valor));
+  if (!empresaId || amount <= 0) return null;
+
+  const { data, error } = await supabase
+    .from("extratobancario")
+    .select("id, nome_contraparte, valor, data_hora_transacao, created_date")
+    .eq("empresa_id", empresaId)
+    .eq("valor", amount)
+    .order("created_date", { ascending: false })
+    .limit(50);
+
+  if (error) throw error;
+  if (!Array.isArray(data) || data.length === 0) return null;
+
+  const expectedName = normalizeSearchText(
+    firstDefined(
+      row?.metadata && typeof row.metadata === "object" ? row.metadata.responsavel_nome : null,
+      row.responsavel_nome,
+      row.nome_contraparte,
+    ),
+  );
+  const expectedDate = sanitizeText(firstDefined(row.pago_em, row.updated_date, row.created_date)).slice(0, 10);
+
+  const scoredRows = data
+    .map((candidate) => {
+      const candidateName = normalizeSearchText(candidate?.nome_contraparte);
+      const candidateDate = sanitizeText(firstDefined(candidate?.data_hora_transacao, candidate?.created_date)).slice(0, 10);
+      let score = 0;
+
+      if (expectedName && candidateName.includes(expectedName)) score += 3;
+      if (expectedName && expectedName.split(" ").every((token) => token && candidateName.includes(token))) score += 2;
+      if (expectedDate && candidateDate === expectedDate) score += 2;
+
+      return { candidate, score };
+    })
+    .sort((left, right) => right.score - left.score);
+
+  const bestMatch = scoredRows[0];
+  return bestMatch && bestMatch.score >= 2 ? sanitizeText(bestMatch.candidate?.id) || null : null;
+}
+
 async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
   if (row.credited_wallet_movement_id) return row;
 
@@ -1508,6 +1558,7 @@ async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
   const operacaoIdempotencia = `orcamento_pagamento|${sanitizeText(row.id)}|recebido`;
   const amount = toNumber(firstDefined(row.valor_recebido, row.valor));
   if (amount <= 0) return row;
+  const linkedTransactionId = await resolveBudgetPaymentExtratoId(row);
 
   const { data, error } = await supabase.rpc("finance_wallet_admin_apply_operation", {
     p_carteira_conta_id: ensuredWalletAccountId,
@@ -1519,7 +1570,7 @@ async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
     p_motivo: "Recarga de carteira por pagamento do orçamento",
     p_observacao: `Cobrança recebida via Banco Inter (${sanitizeText(row.codigo_solicitacao)})`,
     p_origem: "orcamento_pagamento_banco_inter",
-    p_transacao_id: sanitizeText(firstDefined(row.codigo_solicitacao, row.txid, row.id)) || null,
+    p_transacao_id: linkedTransactionId,
     p_usuario_id: sanitizeText(row.created_by_user_id) || null,
     p_metadata: {
       orcamento_pagamento_id: row.id,

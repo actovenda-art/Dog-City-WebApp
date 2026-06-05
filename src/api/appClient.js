@@ -1340,6 +1340,26 @@ function resolveMockWalletAccountForCarteira(carteiraId, empresaId = null) {
 function applyMockBudgetPaymentToWallet(row = {}) {
   if (row?.credited_wallet_movement_id || !row?.carteira_conta_id) return row;
 
+  const normalizeSearchText = (value) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  const extratoMatch = readStorage('ExtratoBancario')
+    .filter((item) => Number(item?.valor || 0) === Number(row?.valor_recebido || row?.valor || 0))
+    .map((item) => {
+      const expectedName = normalizeSearchText(row?.metadata?.responsavel_nome || '');
+      const candidateName = normalizeSearchText(item?.nome_contraparte || item?.descricao || '');
+      const expectedDate = String(row?.pago_em || row?.updated_date || row?.created_date || '').slice(0, 10);
+      const candidateDate = String(item?.data_hora_transacao || item?.created_date || item?.data_movimento || '').slice(0, 10);
+      let score = 0;
+      if (expectedName && candidateName.includes(expectedName)) score += 3;
+      if (expectedName && expectedName.split(' ').every((token) => token && candidateName.includes(token))) score += 2;
+      if (expectedDate && candidateDate === expectedDate) score += 2;
+      return { item, score };
+    })
+    .sort((left, right) => right.score - left.score)[0];
+
   const walletResult = applyMockWalletOperationCore({
     carteira_conta_id: row.carteira_conta_id,
     operacao_idempotencia: `orcamento_pagamento|${row.id}|recebido`,
@@ -1349,7 +1369,7 @@ function applyMockBudgetPaymentToWallet(row = {}) {
     valor: Number(row?.valor_recebido || row?.valor || 0),
     referencia_amigavel: `Recarga do orçamento ${row?.orcamento_id || ''}`.trim(),
     descricao: `Cobrança do orçamento ${row?.orcamento_id || ''}`.trim(),
-    transacao_id: row?.codigo_solicitacao || row?.txid || row?.id || null,
+    transacao_id: extratoMatch?.score >= 2 ? (extratoMatch.item?.id || null) : null,
     usuario_id: row?.created_by_user_id || null,
     metadata: {
       orcamento_pagamento_id: row.id,

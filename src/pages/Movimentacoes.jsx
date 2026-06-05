@@ -22,6 +22,7 @@ import {
   ExtratoBancario,
   ObrigacaoFinanceira,
   Orcamento,
+  OrcamentoPagamento,
   RecurringPackage,
   ServiceProvided,
   User,
@@ -564,7 +565,42 @@ function resolveWalletCreditPaymentMethod({ movement, transaction }) {
   return method || movement?.origem || "Forma não informada";
 }
 
+function resolveBudgetPaymentMethod(paymentRow) {
+  const metadata = paymentRow?.metadata && typeof paymentRow.metadata === "object" ? paymentRow.metadata : {};
+  const chargeSnapshot = metadata?.charge_snapshot && typeof metadata.charge_snapshot === "object"
+    ? metadata.charge_snapshot
+    : {};
+  const receiptOrigin = String(
+    chargeSnapshot?.cobranca?.origemRecebimento
+    || chargeSnapshot?.origemRecebimento
+    || "",
+  ).trim().toUpperCase();
+  const metodo = String(paymentRow?.metodo || "").trim().toLowerCase();
+
+  if (metodo === "boleto_bancario") {
+    return receiptOrigin === "PIX" ? "Pix via boleto bancário" : "Boleto bancário";
+  }
+  if (metodo === "pix_transferencia") {
+    return "Pix ou transferência";
+  }
+  if (metodo === "cartao") {
+    return "Cartão";
+  }
+
+  return paymentRow?.metodo || "Forma não informada";
+}
+
+function formatWalletStatementReferenceCode(referenceType, referenceRecord) {
+  const fullReference = referenceRecord ? getInternalEntityReference(referenceRecord) : null;
+  if (!fullReference) return null;
+  if (referenceType === "orcamento") {
+    return String(fullReference).slice(0, 4);
+  }
+  return fullReference;
+}
+
 function buildWalletStatementRows({
+  walletId,
   walletAccountId,
   movements = [],
   transactions = [],
@@ -576,8 +612,9 @@ function buildWalletStatementRows({
   dogs = [],
   budgets = [],
   recurringPackages = [],
+  budgetPayments = [],
 }) {
-  if (!walletAccountId) {
+  if (!walletId && !walletAccountId) {
     return { debitRows: [], creditRows: [] };
   }
 
@@ -596,8 +633,15 @@ function buildWalletStatementRows({
   );
   const budgetsById = new Map((budgets || []).map((item) => [item?.id, item]));
   const recurringPackagesById = new Map((recurringPackages || []).map((item) => [item?.id, item]));
+  const debitAppointmentIds = new Set();
+  const budgetAppointmentCounts = (appointments || []).reduce((acc, appointment) => {
+    if (!appointment?.orcamento_id) return acc;
+    if (["cancelado"].includes(String(appointment?.status || "").toLowerCase())) return acc;
+    acc[appointment.orcamento_id] = (acc[appointment.orcamento_id] || 0) + 1;
+    return acc;
+  }, {});
 
-  const debitRows = (obligations || [])
+  const debitRowsFromObligations = (obligations || [])
     .filter((item) => item?.carteira_conta_id === walletAccountId)
     .filter((item) => !["cancelada", "estornada"].includes(String(item?.status || "").toLowerCase()))
     .map((obrigacao) => {
@@ -612,7 +656,10 @@ function buildWalletStatementRows({
       const referenceRecord = budget || recurringPackage || null;
       const referenceType = budget ? "orcamento" : recurringPackage ? "pacote" : null;
       const referenceId = budget?.id || recurringPackage?.id || null;
-      const referenceCode = referenceRecord ? getInternalEntityReference(referenceRecord) : null;
+      const referenceCode = formatWalletStatementReferenceCode(referenceType, referenceRecord);
+      if (appointment?.id || obrigacao?.appointment_id) {
+        debitAppointmentIds.add(appointment?.id || obrigacao?.appointment_id);
+      }
 
       return {
         id: `debit-${obrigacao?.id}`,
@@ -635,14 +682,56 @@ function buildWalletStatementRows({
         referenceCode,
         referenceLabel: referenceType === "pacote" ? "Pacote" : "Orçamento",
       };
-    })
+    });
+
+  const fallbackDebitRows = (appointments || [])
+    .filter((appointment) => appointment?.cliente_id === walletId)
+    .filter((appointment) => !debitAppointmentIds.has(appointment?.id))
+    .filter((appointment) => !["cancelado"].includes(String(appointment?.status || "").toLowerCase()))
+    .filter((appointment) => appointment?.orcamento_id || appointment?.recurring_package_id)
+    .map((appointment) => {
+      const service = servicesByAppointmentId.get(appointment?.id) || null;
+      const budget = appointment?.orcamento_id ? budgetsById.get(appointment.orcamento_id) : null;
+      const recurringPackage = appointment?.recurring_package_id ? recurringPackagesById.get(appointment.recurring_package_id) : null;
+      const dogName = resolveEventDogName({ appointment, service, dogsById });
+      const referenceType = budget ? "orcamento" : recurringPackage ? "pacote" : null;
+      const referenceId = budget?.id || recurringPackage?.id || null;
+      const referenceRecord = budget || recurringPackage || null;
+      const referenceCode = formatWalletStatementReferenceCode(referenceType, referenceRecord);
+      const budgetAppointmentCount = budget?.id ? Math.max(Number(budgetAppointmentCounts[budget.id] || 1), 1) : 1;
+      const fallbackBudgetShare = budget?.valor_total ? Number(budget.valor_total) / budgetAppointmentCount : 0;
+
+      return {
+        id: `debit-fallback-${appointment?.id}`,
+        appointmentId: appointment?.id || null,
+        appointmentDate: getAppointmentDateKey(appointment) || appointment?.data_referencia || null,
+        serviceLabel: resolveEventServiceLabel({ appointment, service, fallback: "Serviço" }),
+        dogName,
+        dueDate: budget?.data_validade || recurringPackage?.vencimento_padrao || appointment?.data_referencia || null,
+        amount: Number(
+          service?.valor_cobrado
+          ?? service?.preco
+          ?? appointment?.valor_previsto
+          ?? fallbackBudgetShare
+          ?? recurringPackage?.valor_mensal
+          ?? recurringPackage?.valor
+          ?? 0,
+        ),
+        referenceType,
+        referenceId,
+        referenceCode,
+        referenceLabel: referenceType === "pacote" ? "Pacote" : "Orçamento",
+      };
+    });
+
+  const debitRows = [...debitRowsFromObligations, ...fallbackDebitRows]
     .sort((left, right) => {
       const leftDate = new Date(`${normalizeDateOnly(left?.appointmentDate || left?.dueDate) || "1970-01-01"}T00:00:00`).getTime();
       const rightDate = new Date(`${normalizeDateOnly(right?.appointmentDate || right?.dueDate) || "1970-01-01"}T00:00:00`).getTime();
       return rightDate - leftDate;
     });
 
-  const creditRows = (movements || [])
+  const creditRowsFromWallet = (movements || [])
     .filter((movement) => movement?.carteira_conta_id === walletAccountId)
     .filter((movement) => String(movement?.natureza || "").toLowerCase() === "entrada")
     .filter((movement) => String(movement?.tipo || "").trim() === "entrada_direcionada" || Boolean(movement?.transacao_id))
@@ -661,7 +750,31 @@ function buildWalletStatementRows({
         amount: Number(movement?.valor || 0),
         paymentMethod: resolveWalletCreditPaymentMethod({ movement, transaction }),
       };
+    });
+
+  const existingCreditKeys = new Set(
+    creditRowsFromWallet.flatMap((row) => [row?.transactionId, row?.transactionLookup, row?.movementId]).filter(Boolean),
+  );
+
+  const creditRowsFromBudgetPayments = (budgetPayments || [])
+    .filter((row) => row?.carteira_id === walletId)
+    .filter((row) => ["recebido", "pago"].includes(String(row?.status || "").toLowerCase()))
+    .filter((row) => {
+      const matchKey = row?.codigo_solicitacao || row?.txid || row?.id;
+      return !existingCreditKeys.has(matchKey);
     })
+    .map((row) => ({
+      id: `credit-budget-${row?.id}`,
+      movementId: row?.credited_wallet_movement_id || null,
+      transactionId: null,
+      transactionLookup: String(row?.txid || row?.codigo_solicitacao || row?.id || "").trim() || null,
+      receivedDate: row?.pago_em || row?.updated_date || row?.created_date || null,
+      counterparty: row?.metadata?.responsavel_nome || "Contraparte não informada",
+      amount: Number(row?.valor_recebido || row?.valor || 0),
+      paymentMethod: resolveBudgetPaymentMethod(row),
+    }));
+
+  const creditRows = [...creditRowsFromWallet, ...creditRowsFromBudgetPayments]
     .sort((left, right) => new Date(right?.receivedDate || 0).getTime() - new Date(left?.receivedDate || 0).getTime());
 
   return { debitRows, creditRows };
@@ -877,6 +990,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     budgets: [],
     recurringPackages: [],
     transactions: [],
+    budgetPayments: [],
   });
   const [selectedWalletAccountId, setSelectedWalletAccountId] = useState("");
   const [walletListSearchTerm, setWalletListSearchTerm] = useState("");
@@ -1138,6 +1252,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         budgets: [],
         recurringPackages: [],
         transactions: [],
+        budgetPayments: [],
       });
       setSelectedWalletAccountId("");
       return;
@@ -1226,8 +1341,8 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
   };
 
-  const loadWalletOperationalHistory = async (walletAccountId, userProfile = currentUser) => {
-    if (!userProfile?.empresa_id || !walletAccountId) {
+  const loadWalletOperationalHistory = async ({ walletAccountId, walletId } = {}, userProfile = currentUser) => {
+    if (!userProfile?.empresa_id || (!walletAccountId && !walletId)) {
       setWalletOperationalContext({
         appointments: [],
         services: [],
@@ -1238,6 +1353,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         budgets: [],
         recurringPackages: [],
         transactions: [],
+        budgetPayments: [],
       });
       setWalletOperationalHistory([]);
       return;
@@ -1245,7 +1361,7 @@ export default function Movimentacoes({ walletOnly = false }) {
 
     setWalletHistoryLoading(true);
     try {
-      const [executionRows, reversalRows, appointments, services, obligations, charges, accountsReceivable, dogs, budgets, recurringPackages, transactions] = await Promise.all([
+      const [executionRows, reversalRows, appointments, services, obligations, charges, accountsReceivable, dogs, budgets, recurringPackages, transactions, budgetPayments] = await Promise.all([
         financePaymentV2ExecutionAudit({ empresa_id: userProfile.empresa_id, limit: OPERATIONAL_HISTORY_LIMIT }),
         financePaymentV2ReversalAudit({ empresa_id: userProfile.empresa_id, limit: OPERATIONAL_HISTORY_LIMIT }),
         readEntityCollection(Appointment, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
@@ -1257,6 +1373,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         readEntityCollection(Orcamento, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
         readEntityCollection(RecurringPackage, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
         readEntityCollection(ExtratoBancario, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(OrcamentoPagamento, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
       ]);
 
       const nextHistory = buildOperationalHistoryRows({
@@ -1282,6 +1399,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         budgets: Array.isArray(budgets) ? budgets : [],
         recurringPackages: Array.isArray(recurringPackages) ? recurringPackages : [],
         transactions: Array.isArray(transactions) ? transactions : [],
+        budgetPayments: Array.isArray(budgetPayments) ? budgetPayments : [],
       });
       setWalletOperationalHistory(nextHistory);
     } catch (error) {
@@ -1297,6 +1415,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         budgets: [],
         recurringPackages: [],
         transactions: [],
+        budgetPayments: [],
       });
       setWalletOperationalHistory([]);
     } finally {
@@ -1341,7 +1460,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   }, [currentUser?.empresa_id, selectedWalletRuntimeAccountId, walletFlags.movementsEnabled]);
 
   useEffect(() => {
-    if (!currentUser?.empresa_id || !selectedWalletRuntimeAccountId) {
+    if (!currentUser?.empresa_id || !selectedWalletAccount?.carteira_id) {
       setWalletReceivables([]);
       setWalletOperationalContext({
         appointments: [],
@@ -1353,12 +1472,16 @@ export default function Movimentacoes({ walletOnly = false }) {
         budgets: [],
         recurringPackages: [],
         transactions: [],
+        budgetPayments: [],
       });
       setWalletOperationalHistory([]);
       return;
     }
-    loadWalletOperationalHistory(selectedWalletRuntimeAccountId, currentUser);
-  }, [currentUser?.empresa_id, selectedWalletRuntimeAccountId]);
+    loadWalletOperationalHistory({
+      walletAccountId: selectedWalletRuntimeAccountId,
+      walletId: selectedWalletAccount?.carteira_id || null,
+    }, currentUser);
+  }, [currentUser?.empresa_id, selectedWalletRuntimeAccountId, selectedWalletAccount?.carteira_id]);
 
   const normalizedMovements = React.useMemo(
     () =>
@@ -1456,6 +1579,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   );
   const walletStatementRows = useMemo(
     () => buildWalletStatementRows({
+      walletId: selectedWalletAccount?.carteira_id || null,
       walletAccountId: selectedWalletRuntimeAccountId,
       movements: walletRecentMovements,
       transactions: walletOperationalContext.transactions,
@@ -1467,8 +1591,10 @@ export default function Movimentacoes({ walletOnly = false }) {
       dogs: walletOperationalContext.dogs,
       budgets: walletOperationalContext.budgets,
       recurringPackages: walletOperationalContext.recurringPackages,
+      budgetPayments: walletOperationalContext.budgetPayments,
     }),
     [
+      selectedWalletAccount?.carteira_id,
       selectedWalletRuntimeAccountId,
       walletRecentMovements,
       walletOperationalContext.transactions,
@@ -1480,6 +1606,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       walletOperationalContext.dogs,
       walletOperationalContext.budgets,
       walletOperationalContext.recurringPackages,
+      walletOperationalContext.budgetPayments,
     ],
   );
   const walletReversalServiceOptions = useMemo(

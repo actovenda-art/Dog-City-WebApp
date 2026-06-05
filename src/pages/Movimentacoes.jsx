@@ -49,11 +49,13 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Calendar,
+  ChevronLeft,
   CheckCircle2,
   ChevronDown,
   FileText,
   FileWarning,
   ListFilter,
+  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
@@ -761,9 +763,38 @@ function getOperationalStatusClass(tone) {
   return "border-emerald-200 bg-emerald-50 text-emerald-700";
 }
 
-function buildWalletAdminAccounts(accounts = [], carteiras = []) {
+function getLinkedDogIdsFromCarteira(carteira) {
+  return Array.from({ length: 8 }, (_, index) => carteira?.[`dog_id_${index + 1}`]).filter(Boolean);
+}
+
+function buildWalletAdminAccounts(accounts = [], carteiras = [], dogs = [], receivables = []) {
+  const carteirasById = new Map((carteiras || []).map((carteira) => [carteira?.id, carteira]));
+  const dogsById = new Map((dogs || []).map((dog) => [dog?.id, dog]));
+  const financialStatusMap = buildFinancialOperationalStatusMap(receivables);
+
+  const enrichWalletAccount = (account) => {
+    const carteira = carteirasById.get(account?.carteira_id) || null;
+    const linkedDogLabels = getLinkedDogIdsFromCarteira(carteira).map((dogId) => {
+      const dog = dogsById.get(dogId);
+      if (!dog) return null;
+      const breed = String(dog?.raca || "").trim();
+      return breed ? `${dog.nome} - ${breed}` : dog.nome;
+    }).filter(Boolean);
+    const financialStatus = getFinancialOperationalStatus(financialStatusMap, carteira?.id || null);
+
+    return {
+      ...account,
+      carteira_nome: account?.carteira_nome || carteira?.nome_razao_social || carteira?.nome_fantasia || "Responsável financeiro",
+      carteira_codigo: account?.carteira_codigo || carteira?.cpf_cnpj || carteira?.celular || carteira?.email || null,
+      carteira_vencimento_padrao: carteira?.vencimento_planos || null,
+      linked_dog_labels: linkedDogLabels,
+      financial_status_label: financialStatus?.label || "Regular",
+      financial_status_tone: financialStatus?.tone || "regular",
+    };
+  };
+
   const normalizedAccounts = (accounts || []).map((account) => ({
-    ...account,
+    ...enrichWalletAccount(account),
     carteira_selection_id: account?.carteira_conta_id || `conta:${account?.carteira_id || account?.id || "wallet"}`,
     has_wallet_account: Boolean(account?.carteira_conta_id),
   }));
@@ -778,11 +809,14 @@ function buildWalletAdminAccounts(accounts = [], carteiras = []) {
     .filter((carteira) => carteira?.ativo !== false)
     .filter((carteira) => !accountedCarteiraIds.has(carteira?.id))
     .map((carteira) => ({
+      ...enrichWalletAccount({
+        carteira_id: carteira?.id || null,
+        carteira_nome: carteira?.nome_razao_social || carteira?.nome_fantasia || "Responsável financeiro",
+        carteira_codigo: carteira?.cpf_cnpj || carteira?.celular || carteira?.email || null,
+      }),
       carteira_selection_id: `virtual:${carteira?.id}`,
       carteira_conta_id: null,
       carteira_id: carteira?.id || null,
-      carteira_nome: carteira?.nome_razao_social || carteira?.nome_fantasia || "Responsável financeiro",
-      carteira_codigo: carteira?.cpf_cnpj || carteira?.celular || carteira?.email || null,
       saldo_atual: 0,
       movimento_count: 0,
       ultimo_movimento_em: null,
@@ -845,6 +879,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     transactions: [],
   });
   const [selectedWalletAccountId, setSelectedWalletAccountId] = useState("");
+  const [walletListSearchTerm, setWalletListSearchTerm] = useState("");
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletHistoryLoading, setWalletHistoryLoading] = useState(false);
   const [walletSaving, setWalletSaving] = useState(false);
@@ -1117,27 +1152,30 @@ export default function Movimentacoes({ walletOnly = false }) {
         return;
       }
 
-      const [accounts, auditRows, carteiras] = await Promise.all([
+      const [accounts, auditRows, carteiras, dogs, receivables] = await Promise.all([
         financeWalletAdminReadAccounts({ empresa_id: userProfile.empresa_id }),
         nextFlags.balanceReadEnabled
           ? financeWalletAdminAuditAccounts({ empresa_id: userProfile.empresa_id })
           : Promise.resolve([]),
         readEntityCollection(Carteira, { sort: "nome_razao_social", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(Dog, { sort: "nome", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(ContaReceber, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
       ]);
 
       const normalizedAccounts = buildWalletAdminAccounts(
         Array.isArray(accounts) ? accounts : [],
         Array.isArray(carteiras) ? carteiras : [],
+        Array.isArray(dogs) ? dogs : [],
+        Array.isArray(receivables) ? receivables : [],
       );
       setWalletAccounts(normalizedAccounts);
       setWalletAuditRows(Array.isArray(auditRows) ? auditRows : []);
 
       const nextSelectedWallet = normalizedAccounts.find((item) => item.carteira_selection_id === preferredWalletAccountId)
-        || normalizedAccounts[0]
-        || null;
+        || (!walletOnly ? normalizedAccounts[0] : null);
       const nextSelectedWalletId = normalizedAccounts.some((item) => item.carteira_selection_id === preferredWalletAccountId)
         ? preferredWalletAccountId
-        : (nextSelectedWallet?.carteira_selection_id || "");
+        : (walletOnly ? "" : (nextSelectedWallet?.carteira_selection_id || ""));
       setSelectedWalletAccountId(nextSelectedWalletId);
 
       if (nextFlags.movementsEnabled && nextSelectedWallet?.carteira_conta_id) {
@@ -1263,6 +1301,24 @@ export default function Movimentacoes({ walletOnly = false }) {
 
   const selectedWalletAccount = walletAccounts.find((item) => item.carteira_selection_id === selectedWalletAccountId) || null;
   const selectedWalletRuntimeAccountId = selectedWalletAccount?.carteira_conta_id || "";
+  const filteredWalletAccounts = useMemo(() => {
+    const normalizedSearch = String(walletListSearchTerm || "").trim().toLowerCase();
+    if (!normalizedSearch) return walletAccounts;
+
+    return walletAccounts.filter((account) => {
+      const searchable = [
+        account?.carteira_nome,
+        account?.carteira_codigo,
+        account?.financial_status_label,
+        ...(account?.linked_dog_labels || []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(normalizedSearch);
+    });
+  }, [walletAccounts, walletListSearchTerm]);
 
   useEffect(() => {
     if (!currentUser?.empresa_id) return;
@@ -1950,11 +2006,11 @@ export default function Movimentacoes({ walletOnly = false }) {
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
-              {walletOnly ? "Carteiras financeiras" : "Transações"}
+              {walletOnly ? "Carteiras dos responsáveis financeiros" : "Transações"}
             </h1>
             {walletOnly ? (
               <p className="mt-1 text-sm text-slate-500">
-                Consulte o extrato e a trilha operacional de cada responsável financeiro em uma página dedicada do Financeiro.
+                Consulte a carteira e o extrato de cada responsável financeiro em uma página dedicada do Financeiro, separada do extrato operacional da empresa.
               </p>
             ) : null}
           </div>
@@ -2043,12 +2099,12 @@ export default function Movimentacoes({ walletOnly = false }) {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-semibold text-slate-900 sm:text-lg">Carteira financeira</h2>
+                    <h2 className="text-base font-semibold text-slate-900 sm:text-lg">Carteira do responsável financeiro</h2>
                     <Badge variant="outline">Leitura controlada</Badge>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
                     {walletOnly
-                      ? "Consulte o extrato administrativo e a trilha operacional de cada responsável financeiro em uma superfície dedicada do Financeiro."
+                      ? "Consulte o extrato do responsável financeiro, com débitos de consumo e créditos de pagamento vinculados à carteira do cliente."
                       : "Bloco administrativo temporário para auditoria de saldo e movimentos, sem substituir o fluxo principal."}
                   </p>
                 </div>
@@ -2128,78 +2184,152 @@ export default function Movimentacoes({ walletOnly = false }) {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <Label>Carteira selecionada</Label>
-                    <Select value={selectedWalletAccountId || ""} onValueChange={setSelectedWalletAccountId}>
-                      <SelectTrigger className="mt-2">
-                        <SelectValue placeholder="Selecione uma carteira" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {walletAccounts.map((account) => (
-                          <SelectItem key={account.carteira_selection_id} value={account.carteira_selection_id}>
-                            {account.carteira_nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+              {!selectedWalletAccount ? (
+                <div className="space-y-4">
+                  <SearchFiltersToolbar
+                    searchTerm={walletListSearchTerm}
+                    onSearchChange={setWalletListSearchTerm}
+                    searchPlaceholder="Buscar por responsável financeiro, cães vinculados ou situação..."
+                    hasActiveFilters={Boolean(walletListSearchTerm)}
+                    onClear={() => setWalletListSearchTerm("")}
+                  />
 
-                  <div className="space-y-3">
-                    {walletAccounts.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-                        Nenhum responsável financeiro foi encontrado para esta unidade.
+                  {filteredWalletAccounts.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
+                      {walletAccounts.length === 0
+                        ? "Nenhum responsável financeiro foi encontrado para esta unidade."
+                        : "Nenhuma carteira corresponde ao filtro informado."}
+                    </div>
+                  ) : (
+                    <Card className="overflow-hidden border-slate-200 bg-white">
+                      <div className="hidden border-b border-slate-200 bg-slate-50 px-4 py-3 lg:grid lg:grid-cols-[minmax(0,1.2fr)_140px_180px_minmax(0,1.4fr)_32px] lg:gap-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Nome do responsável</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Vencimento padrão</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Situação da carteira</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Cães vinculados à carteira</p>
+                        <span />
                       </div>
-                    ) : (
-                      walletAccounts.map((account) => {
-                        const isSelected = account.carteira_selection_id === selectedWalletAccountId;
-                        return (
+                      <div className="divide-y divide-slate-100">
+                        {filteredWalletAccounts.map((account) => (
                           <button
                             key={account.carteira_selection_id}
                             type="button"
                             onClick={() => setSelectedWalletAccountId(account.carteira_selection_id)}
-                            className={`w-full rounded-2xl border p-4 text-left transition ${
-                              isSelected
-                                ? "border-blue-300 bg-blue-50"
-                                : "border-slate-200 bg-white hover:border-slate-300"
-                            }`}
+                            className="grid w-full gap-3 px-4 py-4 text-left transition hover:bg-slate-50 lg:grid-cols-[minmax(0,1.2fr)_140px_180px_minmax(0,1.4fr)_32px] lg:items-center lg:gap-4"
                           >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="font-semibold text-slate-900">{account.carteira_nome}</p>
-                                {account.carteira_codigo ? (
-                                  <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
-                                    {account.carteira_codigo}
-                                  </p>
-                                ) : null}
-                              </div>
-                              <Badge variant={account.latest_reconciliation_status === "divergente" ? "destructive" : "outline"}>
-                                {account.has_wallet_account
-                                  ? (account.latest_reconciliation_status === "divergente" ? "Divergente" : "Auditável")
-                                  : "Sem conta operacional"}
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">Nome do responsável</p>
+                              <p className="truncate text-sm font-semibold text-slate-900">{account.carteira_nome}</p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">Vencimento padrão</p>
+                              <p className="text-sm text-slate-700">
+                                {account.carteira_vencimento_padrao ? `Dia ${account.carteira_vencimento_padrao}` : "Não informado"}
+                              </p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">Situação da carteira</p>
+                              <Badge
+                                variant="outline"
+                                className={account.financial_status_tone === "irregular"
+                                  ? "border-red-200 bg-red-50 text-red-700"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"}
+                              >
+                                {account.financial_status_tone === "irregular" ? "Irregular" : "Regular"}
                               </Badge>
                             </div>
-                            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                              <div>
-                                <p className="text-slate-500">Saldo atual</p>
-                                <p className="mt-1 font-semibold text-slate-900">{formatCurrency(account.saldo_atual)}</p>
-                              </div>
-                              <div>
-                                <p className="text-slate-500">Movimentos</p>
-                                <p className="mt-1 font-semibold text-slate-900">{account.movimento_count || 0}</p>
-                              </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">Cães vinculados à carteira</p>
+                              <p className="text-sm text-slate-700">
+                                {account.linked_dog_labels?.length
+                                  ? account.linked_dog_labels.join(", ")
+                                  : "Nenhum cão vinculado"}
+                              </p>
+                            </div>
+                            <div className="justify-self-end text-slate-400">
+                              <MoreHorizontal className="h-4 w-4" />
                             </div>
                           </button>
-                        );
-                      })
-                    )}
-                  </div>
+                        ))}
+                      </div>
+                    </Card>
+                  )}
                 </div>
-
+              ) : (
                 <div className="space-y-4">
-                  {selectedWalletAccount ? (
-                    <>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setSelectedWalletAccountId("")}
+                      className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                    >
+                      <ChevronLeft className="mr-1.5 h-3.5 w-3.5" />
+                      Voltar para a lista
+                    </Button>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => loadWalletAdminData(currentUser, selectedWalletAccountId)}
+                        disabled={walletLoading}
+                        className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                      >
+                        <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${walletLoading ? "animate-spin" : ""}`} />
+                        Atualizar carteira
+                      </Button>
+                      {canManageWalletOperations ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => openWalletReversalModal({ carteira_conta_id: selectedWalletRuntimeAccountId })}
+                          disabled={!selectedWalletRuntimeAccountId}
+                          className="h-9 rounded-full border-red-200 bg-red-50 px-3 text-xs text-red-700 hover:bg-red-100 sm:text-sm"
+                        >
+                          <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                          Novo estorno V2
+                        </Button>
+                      ) : null}
+                      {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations && (
+                        <>
+                          {walletFlags.manualCreditEnabled ? (
+                            <Button
+                              variant="outline"
+                              onClick={() => openWalletOperationModal("credito_manual")}
+                              className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                            >
+                              Crédito manual
+                            </Button>
+                          ) : null}
+                          <Button
+                            variant="outline"
+                            onClick={() => openWalletOperationModal("ajuste_manual")}
+                            className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                          >
+                            Ajuste manual
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => openWalletOperationModal("estorno_manual")}
+                            className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                          >
+                            Estorno manual
+                          </Button>
+                        </>
+                      )}
+                      {walletFlags.balanceReadEnabled && selectedWalletRuntimeAccountId && (
+                        <Button
+                          variant="outline"
+                          onClick={handleWalletReconcile}
+                          disabled={walletLoading}
+                          className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                        >
+                          Reconciliar
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                         <StatCard
                           label="Saldo da carteira"
@@ -2238,7 +2368,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                         <div className="space-y-4">
                           <div className="rounded-2xl border border-slate-200 bg-white">
                             <div className="border-b border-slate-100 px-4 py-3">
-                              <h3 className="font-semibold text-slate-900">Fluxo financeiro operacional</h3>
+                              <h3 className="font-semibold text-slate-900">Histórico operacional vinculado à carteira</h3>
                               <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <Badge
                                   variant="outline"
@@ -2260,7 +2390,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                 </Badge>
                               </div>
                               <p className="mt-2 text-sm text-slate-500">
-                                Timeline operacional contínua do novo financeiro, em ordem cronológica, sem abrir rollout.
+                                Eventos operacionais que ajudam a explicar pagamentos, estornos e estados da carteira do responsável financeiro.
                               </p>
                             </div>
                             <div className="divide-y divide-slate-100">
@@ -2369,9 +2499,9 @@ export default function Movimentacoes({ walletOnly = false }) {
 
                           <div className="rounded-2xl border border-slate-200 bg-white">
                             <div className="border-b border-slate-100 px-4 py-3">
-                              <h3 className="font-semibold text-slate-900">Extrato da carteira</h3>
+                              <h3 className="font-semibold text-slate-900">Extrato do responsável financeiro</h3>
                               <p className="mt-1 text-sm text-slate-500">
-                                Débitos vindos de agendamentos e pacotes recorrentes, e créditos vindos de recebimentos vinculados à carteira.
+                                Débitos vindos de agendamentos avulsos e pacotes recorrentes, e créditos vindos de recebimentos vinculados à carteira do cliente.
                               </p>
                             </div>
                             <div className="space-y-4 p-4">
@@ -2382,7 +2512,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                     <Badge variant="outline">{walletStatementRows.debitRows.length}</Badge>
                                   </div>
                                   <p className="mt-1 text-sm text-slate-500">
-                                    Data do agendamento, serviço, cão, vencimento, valor e código do orçamento ou pacote.
+                                    Data do agendamento, serviço, cão, vencimento, valor e código do orçamento ou pacote vinculados ao consumo da carteira.
                                   </p>
                                 </div>
                                 <div className="divide-y divide-slate-100">
@@ -2457,7 +2587,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                     <Badge variant="outline">{walletStatementRows.creditRows.length}</Badge>
                                   </div>
                                   <p className="mt-1 text-sm text-slate-500">
-                                    Recebimentos vindos de transações vinculadas à carteira. Clique em qualquer linha para abrir a transação.
+                                    Recebimentos vindos de transações vinculadas à carteira do responsável financeiro. Clique em qualquer linha para abrir a transação.
                                   </p>
                                 </div>
                                 <div className="divide-y divide-slate-100">
@@ -2504,14 +2634,9 @@ export default function Movimentacoes({ walletOnly = false }) {
                           A leitura detalhada dos movimentos ainda está desligada por feature flag.
                         </div>
                       )}
-                    </>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-sm text-slate-500">
-                      Selecione uma carteira para auditar saldo, reconciliação e movimentos.
-                    </div>
-                  )}
+                  </div>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         ) : walletOnly ? (

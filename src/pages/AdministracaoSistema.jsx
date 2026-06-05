@@ -2,7 +2,7 @@
 import { Link } from "react-router-dom";
 import { useRef } from "react";
 import { appClient } from "@/api/appClient";
-import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User, UserInvite, UserProfile, UserUnitAccess } from "@/api/entities";
+import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User, UserProfile, UserUnitAccess } from "@/api/entities";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { createPageUrl, openImageViewer } from "@/utils";
 import { MISSING_BRANDING_IMAGE_URL, notifyBrandingChanged } from "@/hooks/use-branding";
@@ -1115,15 +1115,16 @@ export default function AdministracaoSistema() {
     setIsSaving(true);
     setActiveTab("acessos");
     try {
-      const [userRows, inviteRows, accessRows] = await Promise.all([
+      const [userRows, accessRows] = await Promise.all([
         UserProfile.list("-created_date", 500),
-        UserInvite.list("-created_date", 500),
         UserUnitAccess.list("-created_date", 1000),
       ]);
 
       const linkedUsers = (userRows || []).filter((item) => item.access_profile_id === profile.id);
-      const linkedInvites = (inviteRows || []).filter((item) =>
-        item.access_profile_id === profile.id && item.status !== "cancelado"
+      const linkedInvites = (userRows || []).filter((item) =>
+        item.access_profile_id === profile.id
+        && item.invite_sent === true
+        && (item.invite_status || "pendente") !== "cancelado"
       );
       const linkedUnitAccess = (accessRows || []).filter((item) =>
         item.access_profile_id === profile.id && item.active !== false

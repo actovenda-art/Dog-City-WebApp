@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Empresa, PerfilAcesso, User, UserInvite, UserProfile, UserUnitAccess } from "@/api/entities";
+import { Empresa, PerfilAcesso, User, UserProfile, UserUnitAccess } from "@/api/entities";
 import { SendEmail } from "@/api/integrations";
 import { createPageUrl } from "@/utils";
 import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
@@ -38,7 +38,7 @@ function formatApiError(error, fallbackMessage) {
 }
 
 function isMissingAdminTablesError(error) {
-  return error?.code === "PGRST205" || /public\.empresa|public\.perfil_acesso|public\.user_invite|public\.user_unit_access|schema cache/i.test(error?.message || "");
+  return error?.code === "PGRST205" || /public\.empresa|public\.perfil_acesso|public\.user_unit_access|schema cache/i.test(error?.message || "");
 }
 
 function isRowLevelSecurityError(error) {
@@ -67,6 +67,16 @@ function getInviteStatusMeta(status) {
   };
 
   return map[status] || map.pendente;
+}
+
+function normalizeInviteUser(row) {
+  return {
+    ...(row || {}),
+    token: row?.invite_token || row?.token || "",
+    status: row?.invite_status || row?.status || (row?.invite_sent ? "pendente" : "cancelado"),
+    invited_at: row?.invited_at || row?.created_date || null,
+    accepted_at: row?.invite_accepted_at || row?.accepted_at || null,
+  };
 }
 
 function getAccessStatusMeta(user) {
@@ -129,12 +139,11 @@ export default function Dev_Dashboard() {
     setSetupError("");
 
     try {
-      const [me, unitRows, profileRows, userRows, inviteRows, accessRows] = await Promise.all([
+      const [me, unitRows, profileRows, userRows, accessRows] = await Promise.all([
         User.me(),
         Empresa.list("-created_date", 200),
         PerfilAcesso.list("-created_date", 200),
         UserProfile.list("-created_date", 500),
-        UserInvite.list("-created_date", 500),
         UserUnitAccess.list("-created_date", 1000),
       ]);
 
@@ -142,7 +151,7 @@ export default function Dev_Dashboard() {
       setUnits(unitRows || []);
       setProfiles(profileRows || []);
       setUsers(userRows || []);
-      setInvites(inviteRows || []);
+      setInvites((userRows || []).filter((item) => item?.invite_sent || item?.invite_status).map(normalizeInviteUser));
       setUnitAccessRows(accessRows || []);
       setUserUnitAccessMap(buildUnitAccessMap(accessRows || []));
 
@@ -313,6 +322,7 @@ export default function Dev_Dashboard() {
         : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
       const invitePayload = {
+        action: "create_user_invite",
         token,
         full_name: formattedName,
         email: inviteForm.email.trim().toLowerCase(),
@@ -325,7 +335,8 @@ export default function Dev_Dashboard() {
         invited_at: new Date().toISOString(),
       };
 
-      const createdInvite = await UserInvite.create(invitePayload);
+      const inviteResult = await appClient.functions.userAdmin(invitePayload);
+      const createdInvite = normalizeInviteUser(inviteResult?.invite || {});
       const emailPayload = buildInviteEmail(createdInvite);
       const emailResult = await SendEmail({
         to: createdInvite.email,
@@ -384,7 +395,11 @@ export default function Dev_Dashboard() {
 
     setIsSaving(true);
     try {
-      await UserInvite.update(invite.id, { status: "cancelado" });
+      await appClient.functions.userAdmin({
+        action: "cancel_user_invite",
+        invite_id: invite.id,
+        email: invite.email,
+      });
       await loadData();
     } catch (error) {
       console.error("Erro ao cancelar convite:", error);
@@ -399,7 +414,20 @@ export default function Dev_Dashboard() {
 
     setIsSaving(true);
     try {
-      await UserInvite.delete(invite.id);
+      if ((invite.status || "pendente") === "concluido") {
+        await User.saveManagedUserAccess?.({
+          user_id: invite.id,
+          primary_unit_id: null,
+          unit_ids: [],
+          access_profile_id: null,
+          company_role: null,
+          is_platform_admin: false,
+          active: false,
+          clear_access: true,
+        });
+      } else {
+        await UserProfile.delete(invite.id);
+      }
       await loadData();
     } catch (error) {
       console.error("Erro ao excluir convite:", error);
@@ -526,7 +554,11 @@ export default function Dev_Dashboard() {
       });
 
       const relatedInvites = invites.filter((invite) => invite.email?.toLowerCase() === user.email?.toLowerCase() && invite.status !== "concluido");
-      await Promise.all(relatedInvites.map((invite) => UserInvite.update(invite.id, { status: "cancelado" })));
+      await Promise.all(relatedInvites.map((invite) => appClient.functions.userAdmin({
+        action: "cancel_user_invite",
+        invite_id: invite.id,
+        email: invite.email,
+      })));
 
       await loadData();
     } catch (error) {

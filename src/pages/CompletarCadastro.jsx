@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Empresa, User, UserInvite, UserProfile } from "@/api/entities";
+import { Empresa, User, UserProfile } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import { getSafeNextPathFromSearch, isSameAppLocation } from "@/lib/auth-navigation";
 import { normalizePin, validatePin } from "@/lib/pin-auth";
@@ -165,11 +165,14 @@ export default function CompletarCadastro() {
         return;
       }
 
-      let currentInvite = null;
-      if (me.email) {
-        const inviteRows = await UserInvite.filter({ email: me.email }, "-created_date", 20);
-        currentInvite = (inviteRows || []).find((item) => item.status !== "concluido") || null;
-      }
+      const currentInvite = me?.invite_sent && (me?.invite_status || "pendente") !== "concluido"
+        ? {
+          ...me,
+          token: me.invite_token,
+          status: me.invite_status || "pendente",
+          accepted_at: me.invite_accepted_at || null,
+        }
+        : null;
 
       let currentCompany = null;
       const companyId = currentInvite?.empresa_id || me.empresa_id || null;
@@ -294,15 +297,11 @@ export default function CompletarCadastro() {
         access_profile_id: currentUser.access_profile_id || invite?.access_profile_id || null,
         company_role: currentUser.company_role || invite?.company_role || null,
         is_platform_admin: currentUser.is_platform_admin ?? invite?.is_platform_admin ?? false,
+        invite_sent: true,
+        invite_accepted: true,
+        invite_status: "concluido",
+        invite_accepted_at: invite?.accepted_at || now,
       });
-
-      if (invite?.id) {
-        await UserInvite.update(invite.id, {
-          status: "concluido",
-          accepted_at: invite.accepted_at || now,
-          onboarding_completed_at: now,
-        });
-      }
 
       if (currentUser?.pin_required_reset === true) {
         const params = new URLSearchParams();

@@ -17,7 +17,16 @@ ALTER TABLE IF EXISTS public.users
   ADD COLUMN IF NOT EXISTS emergency_contact TEXT,
   ADD COLUMN IF NOT EXISTS profile_photo_path TEXT,
   ADD COLUMN IF NOT EXISTS onboarding_status TEXT DEFAULT 'completo',
-  ADD COLUMN IF NOT EXISTS onboarding_completed_at TIMESTAMP;
+  ADD COLUMN IF NOT EXISTS onboarding_completed_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS invite_sent BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS invite_accepted BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS invite_status TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS invite_token TEXT,
+  ADD COLUMN IF NOT EXISTS invited_by_user_id TEXT,
+  ADD COLUMN IF NOT EXISTS invited_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS invite_accepted_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS invite_expires_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS invite_metadata JSONB DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS public.user_invite (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -43,6 +52,9 @@ CREATE INDEX IF NOT EXISTS idx_user_invite_email ON public.user_invite(email);
 CREATE INDEX IF NOT EXISTS idx_user_invite_status ON public.user_invite(status);
 CREATE INDEX IF NOT EXISTS idx_user_invite_empresa_id ON public.user_invite(empresa_id);
 CREATE INDEX IF NOT EXISTS idx_users_onboarding_status ON public.users(onboarding_status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_token ON public.users(invite_token) WHERE invite_token IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_invite_status ON public.users(invite_status) WHERE invite_sent = true;
+CREATE INDEX IF NOT EXISTS idx_users_invite_email ON public.users(lower(email)) WHERE invite_sent = true;
 
 ALTER TABLE IF EXISTS public.user_invite DISABLE ROW LEVEL SECURITY;
 

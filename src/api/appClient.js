@@ -533,7 +533,7 @@ const defaultEntities = {};
   'ObrigacaoFinanceira', 'CobrancaFinanceira', 'CobrancaItem', 'ComissaoEvento',
   'FinanceSnapshot', 'FinanceSnapshotDelta', 'AuditLog',
   'IntegracaoConfig', 'Receita', 'AppConfig', 'AppAsset', 'Empresa', 'PerfilAcesso',
-  'UserInvite', 'UserUnitAccess',
+  'UserUnitAccess',
   'UserProfile', 'ContaReceber', 'Client', 'PedidoInterno',
   'CentroCusto',
 ].forEach((name) => {
@@ -4982,7 +4982,6 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     AppAsset: 'app_asset',
     Empresa: 'empresa',
     PerfilAcesso: 'perfil_acesso',
-    UserInvite: 'user_invite',
     UserUnitAccess: 'user_unit_access',
     UserProfile: 'users',
     CentroCusto: 'centro_custo',
@@ -5830,16 +5829,41 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     if (!email) return null;
 
     try {
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      const { data: userInvite, error: userInviteError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', normalizedEmail)
+        .eq('invite_sent', true)
+        .in('invite_status', ['pendente', 'aceito'])
+        .order('created_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!userInviteError && userInvite) {
+        return {
+          ...userInvite,
+          token: userInvite.invite_token,
+          status: userInvite.invite_status,
+          accepted_at: userInvite.invite_accepted_at,
+          expires_at: userInvite.invite_expires_at,
+          metadata: userInvite.invite_metadata,
+        };
+      }
+
       const { data, error } = await supabase
         .from('user_invite')
         .select('*')
-        .eq('email', email)
+        .eq('email', normalizedEmail)
         .in('status', ['pendente', 'aceito'])
         .order('created_date', { ascending: false })
         .limit(1);
 
       if (error) {
         console.warn('findPendingInviteByEmail error', error);
+        if (error?.code === 'PGRST205' || /user_invite|schema cache|does not exist|relation/i.test(error?.message || '')) {
+          return null;
+        }
         return null;
       }
 
@@ -5915,6 +5939,15 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         company_role: existingProfile?.company_role || invite?.company_role || null,
         is_platform_admin: existingProfile?.is_platform_admin ?? invite?.is_platform_admin ?? false,
         onboarding_status: onboardingStatus,
+        invite_sent: existingProfile?.invite_sent ?? Boolean(invite),
+        invite_accepted: existingProfile?.invite_accepted ?? ['aceito', 'concluido'].includes(invite?.status || ''),
+        invite_status: existingProfile?.invite_status || invite?.status || null,
+        invite_token: existingProfile?.invite_token || invite?.token || null,
+        invited_by_user_id: existingProfile?.invited_by_user_id || invite?.invited_by_user_id || null,
+        invited_at: existingProfile?.invited_at || invite?.invited_at || null,
+        invite_accepted_at: existingProfile?.invite_accepted_at || invite?.accepted_at || null,
+        invite_expires_at: existingProfile?.invite_expires_at || invite?.expires_at || null,
+        invite_metadata: existingProfile?.invite_metadata || invite?.metadata || {},
       };
 
       if (existingProfile) {
@@ -5950,6 +5983,15 @@ if (SUPABASE_URL && SUPABASE_ANON) {
           company_role: invite?.company_role || null,
           is_platform_admin: invite?.is_platform_admin ?? false,
           onboarding_status: invite ? 'pendente' : 'completo',
+          invite_sent: Boolean(invite),
+          invite_accepted: ['aceito', 'concluido'].includes(invite?.status || ''),
+          invite_status: invite?.status || null,
+          invite_token: invite?.token || null,
+          invited_by_user_id: invite?.invited_by_user_id || null,
+          invited_at: invite?.invited_at || null,
+          invite_accepted_at: invite?.accepted_at || null,
+          invite_expires_at: invite?.expires_at || null,
+          invite_metadata: invite?.metadata || {},
         }])
         .select()
         .single();

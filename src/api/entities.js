@@ -95,8 +95,6 @@ export const Empresa = appClient.entities.Empresa;
 
 export const PerfilAcesso = appClient.entities.PerfilAcesso;
 
-export const UserInvite = appClient.entities.UserInvite;
-
 export const UserUnitAccess = appClient.entities.UserUnitAccess;
 
 export const UserProfile = appClient.entities.UserProfile;

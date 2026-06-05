@@ -8,7 +8,6 @@ import {
   financeWalletAdminAuditAccounts,
   financeWalletAdminReadAccounts,
   financeWalletAdminReadMovements,
-  financeWalletReconcileAccount,
 } from "@/api/functions";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
@@ -51,8 +50,8 @@ import {
   ArrowUpCircle,
   Calendar,
   ChevronLeft,
-  CheckCircle2,
   ChevronDown,
+  CheckCircle2,
   FileText,
   FileWarning,
   ListFilter,
@@ -129,6 +128,7 @@ const WALLET_OPERATION_LABELS = {
   estorno_manual: "Estorno manual",
   entrada_direcionada: "Entrada direcionada",
 };
+const WALLET_OPERATION_MODAL_LABEL = "Alteração manual";
 
 const MOVEMENTS_PAGE_SIZE = 50;
 const MOVEMENT_CACHE_KEY = "movimentacoes:last-overview";
@@ -407,6 +407,9 @@ function buildOperationalHistoryRows({
         statusTone: "regular",
         statusHelper: row?.servico_realizado ? "Serviço mantido para trilha histórica." : "Serviço não realizado removido conforme contrato.",
         details: {
+          appointmentId: appointmentId || null,
+          serviceprovidedId: serviceId || null,
+          obrigacaoId: row?.obrigacao_id || null,
           tipo: row?.reversao_tipo || "—",
           motivo: row?.motivo || "—",
           executor: row?.metadata?.executed_by_label || row?.metadata?.initiated_by_label || "—",
@@ -590,6 +593,15 @@ function resolveBudgetPaymentMethod(paymentRow) {
   return paymentRow?.metodo || "Forma não informada";
 }
 
+function resolveWalletTimelineCreditTitle(row) {
+  const movementType = String(row?.movementType || "").trim().toLowerCase();
+  if (movementType === "credito_manual") return "Crédito manual";
+  if (movementType === "ajuste_manual") return "Ajuste manual";
+  if (movementType === "estorno_manual") return "Estorno manual";
+  if (movementType === "entrada_direcionada") return "Pagamento recebido";
+  return "Pagamento recebido";
+}
+
 function formatWalletStatementReferenceCode(referenceType, referenceRecord) {
   const fullReference = referenceRecord ? getInternalEntityReference(referenceRecord) : null;
   if (!fullReference) return null;
@@ -615,7 +627,14 @@ function buildWalletStatementRows({
   budgetPayments = [],
 }) {
   if (!walletId && !walletAccountId) {
-    return { debitRows: [], creditRows: [] };
+    return {
+      rows: [],
+      debitRows: [],
+      creditRows: [],
+      debitTotal: 0,
+      creditTotal: 0,
+      netBalance: 0,
+    };
   }
 
   const appointmentsById = new Map((appointments || []).map((item) => [item?.id, item]));
@@ -743,6 +762,7 @@ function buildWalletStatementRows({
       return {
         id: `credit-${movement?.movimento_id}`,
         movementId: movement?.movimento_id || null,
+        movementType: movement?.tipo || null,
         transactionId: normalizedTransaction?.id || null,
         transactionLookup,
         receivedDate: normalizedTransaction?.dataHora || normalizedTransaction?.data_movimento || normalizedTransaction?.data || movement?.created_date || null,
@@ -766,6 +786,7 @@ function buildWalletStatementRows({
     .map((row) => ({
       id: `credit-budget-${row?.id}`,
       movementId: row?.credited_wallet_movement_id || null,
+      movementType: "entrada_direcionada",
       transactionId: null,
       transactionLookup: String(row?.txid || row?.codigo_solicitacao || row?.id || "").trim() || null,
       receivedDate: row?.pago_em || row?.updated_date || row?.created_date || null,
@@ -777,7 +798,43 @@ function buildWalletStatementRows({
   const creditRows = [...creditRowsFromWallet, ...creditRowsFromBudgetPayments]
     .sort((left, right) => new Date(right?.receivedDate || 0).getTime() - new Date(left?.receivedDate || 0).getTime());
 
-  return { debitRows, creditRows };
+  const unifiedRows = [
+    ...debitRows.map((row) => ({
+      ...row,
+      rowKind: "debit",
+      sortDate: normalizeDateOnly(row?.appointmentDate || row?.dueDate) || null,
+      primaryDate: row?.appointmentDate || row?.dueDate || null,
+      secondaryLabel: row?.dogName || "—",
+      tertiaryLabel: row?.dueDate ? `Vencimento: ${formatWalletStatementDate(row.dueDate)}` : "Vencimento não informado",
+      amountTone: "debit",
+    })),
+    ...creditRows.map((row) => ({
+      ...row,
+      rowKind: "credit",
+      sortDate: normalizeDateOnly(row?.receivedDate) || null,
+      primaryDate: row?.receivedDate || null,
+      primaryLabel: row?.counterparty || "Contraparte não informada",
+      secondaryLabel: row?.paymentMethod || "Forma não informada",
+      tertiaryLabel: "Abrir transação",
+      amountTone: "credit",
+    })),
+  ].sort((left, right) => {
+    const leftDate = left?.sortDate ? new Date(`${left.sortDate}T00:00:00`).getTime() : 0;
+    const rightDate = right?.sortDate ? new Date(`${right.sortDate}T00:00:00`).getTime() : 0;
+    return rightDate - leftDate;
+  });
+
+  const debitTotal = debitRows.reduce((sum, row) => sum + Number(row?.amount || 0), 0);
+  const creditTotal = creditRows.reduce((sum, row) => sum + Number(row?.amount || 0), 0);
+
+  return {
+    rows: unifiedRows,
+    debitRows,
+    creditRows,
+    debitTotal,
+    creditTotal,
+    netBalance: creditTotal - debitTotal,
+  };
 }
 
 function normalizeMovementSummary(summary) {
@@ -997,6 +1054,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletFlagsLoaded, setWalletFlagsLoaded] = useState(false);
   const [walletHistoryLoading, setWalletHistoryLoading] = useState(false);
+  const [walletTimelineFilter, setWalletTimelineFilter] = useState("all");
   const [walletSaving, setWalletSaving] = useState(false);
   const [walletActionMessage, setWalletActionMessage] = useState(null);
   const [showWalletOperationModal, setShowWalletOperationModal] = useState(false);
@@ -1609,6 +1667,143 @@ export default function Movimentacoes({ walletOnly = false }) {
       walletOperationalContext.budgetPayments,
     ],
   );
+  const walletStatementSummary = useMemo(() => {
+    const rows = Array.isArray(walletStatementRows?.rows) ? walletStatementRows.rows : [];
+    const latestDate = rows[0]?.primaryDate || null;
+    const effectiveBalance = rows.length > 0
+      ? walletStatementRows.netBalance
+      : Number(selectedWalletAccount?.saldo_atual || 0);
+
+    return {
+      rowCount: rows.length,
+      latestDate,
+      effectiveBalance,
+    };
+  }, [selectedWalletAccount?.saldo_atual, walletStatementRows]);
+  const walletTimelineRows = useMemo(() => {
+    const reversalEvents = (walletOperationalHistory || []).filter((event) => event?.type === "reversal");
+    const reversalByAppointmentId = new Map();
+    const matchedReversalIds = new Set();
+
+    reversalEvents.forEach((event) => {
+      const appointmentId = String(event?.details?.appointmentId || "").trim();
+      if (appointmentId) {
+        reversalByAppointmentId.set(appointmentId, event);
+      }
+    });
+
+    const rows = (walletStatementRows.rows || []).map((row) => {
+      if (row.rowKind === "debit") {
+        const appointmentKey = String(row?.appointmentId || "").trim();
+        const reversalEvent = appointmentKey ? reversalByAppointmentId.get(appointmentKey) : null;
+        if (reversalEvent?.id) {
+          matchedReversalIds.add(reversalEvent.id);
+        }
+
+        return {
+          id: `timeline-${row.id}`,
+          filterGroup: "activity",
+          sourceKind: reversalEvent ? "reversal" : "activity",
+          primaryDate: row.primaryDate || row.dueDate || null,
+          title: row.serviceLabel,
+          subtitle: row.dogName,
+          categoryLabel: row.referenceType === "pacote" ? "Pacote recorrente" : "Avulso",
+          amount: reversalEvent ? 0 : row.amount,
+          amountTone: reversalEvent ? "neutral" : "debit",
+          badges: reversalEvent
+            ? [
+                { label: "ESTORNADO", tone: "red" },
+                { label: "PAGO", tone: "green" },
+              ]
+            : [],
+          appointmentId: row.appointmentId || null,
+          referenceId: row.referenceId || null,
+          referenceCode: row.referenceCode || null,
+          referenceLabel: row.referenceLabel || null,
+          transactionRow: null,
+          details: {
+            data: formatWalletStatementDate(row.primaryDate),
+            vencimento: formatWalletStatementDate(row.dueDate),
+            executor: reversalEvent?.details?.executor || "—",
+            status: reversalEvent ? "Pago" : "Em aberto",
+            motivo: reversalEvent?.details?.motivo || null,
+            anexo: reversalEvent?.details?.attachmentName || null,
+          },
+        };
+      }
+
+      return {
+        id: `timeline-${row.id}`,
+        filterGroup: "transaction",
+        sourceKind: "transaction",
+        primaryDate: row.primaryDate || null,
+        title: resolveWalletTimelineCreditTitle(row),
+        subtitle: row.counterparty,
+        categoryLabel: row.paymentMethod,
+        amount: row.amount,
+        amountTone: "credit",
+        badges: [],
+        appointmentId: null,
+        referenceId: null,
+        referenceCode: null,
+        referenceLabel: null,
+        transactionRow: row,
+        details: {
+          data: formatWalletStatementDate(row.primaryDate),
+          formaPagamento: row.paymentMethod || "Forma não informada",
+          contraparte: row.counterparty || "Contraparte não informada",
+          referencia: row.transactionLookup || row.transactionId || "—",
+        },
+      };
+    });
+
+    reversalEvents
+      .filter((event) => !matchedReversalIds.has(event.id))
+      .forEach((event) => {
+        rows.push({
+          id: `timeline-orphan-${event.id}`,
+          filterGroup: "activity",
+          sourceKind: "reversal",
+          primaryDate: event.eventDate || null,
+          title: event.serviceLabel,
+          subtitle: event.dogName,
+          categoryLabel: "Estorno",
+          amount: 0,
+          amountTone: "neutral",
+          badges: [
+            { label: "ESTORNADO", tone: "red" },
+            { label: "PAGO", tone: "green" },
+          ],
+          appointmentId: event?.details?.appointmentId || null,
+          referenceId: null,
+          referenceCode: null,
+          referenceLabel: null,
+          transactionRow: null,
+          details: {
+            data: event.eventDate ? new Date(event.eventDate).toLocaleDateString("pt-BR") : "—",
+            executor: event?.details?.executor || "—",
+            status: "Pago",
+            motivo: event?.details?.motivo || null,
+            anexo: event?.details?.attachmentName || null,
+          },
+        });
+      });
+
+    return rows.sort((left, right) => {
+      const leftDate = left?.primaryDate ? new Date(left.primaryDate).getTime() : 0;
+      const rightDate = right?.primaryDate ? new Date(right.primaryDate).getTime() : 0;
+      return rightDate - leftDate;
+    });
+  }, [walletOperationalHistory, walletStatementRows]);
+  const filteredWalletTimelineRows = useMemo(() => {
+    if (walletTimelineFilter === "transactions") {
+      return walletTimelineRows.filter((row) => row.filterGroup === "transaction");
+    }
+    if (walletTimelineFilter === "activities") {
+      return walletTimelineRows.filter((row) => row.filterGroup === "activity");
+    }
+    return walletTimelineRows;
+  }, [walletTimelineFilter, walletTimelineRows]);
   const walletReversalServiceOptions = useMemo(
     () => buildWalletReversalServiceOptions({
       walletAccountId: walletReversalForm.carteira_conta_id || selectedWalletRuntimeAccountId,
@@ -1678,7 +1873,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   };
 
   const openWalletOperationModal = (tipo, options = {}) => {
-    const defaultNatureza = tipo === "credito_manual" || tipo === "entrada_direcionada" ? "entrada" : "entrada";
+    const defaultNatureza = "entrada";
     setWalletActionMessage(null);
     setWalletOperationForm({
       carteira_conta_id: options.carteira_conta_id || selectedWalletRuntimeAccountId || "",
@@ -1803,10 +1998,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       return;
     }
 
-    if (
-      (walletOperationForm.tipo === "credito_manual" || walletOperationForm.tipo === "entrada_direcionada")
-      && walletOperationForm.natureza !== "entrada"
-    ) {
+    if (walletOperationForm.natureza !== "entrada") {
       alert("Essa operação deve usar natureza de entrada.");
       return;
     }
@@ -2351,40 +2543,46 @@ export default function Movimentacoes({ walletOnly = false }) {
                   </div>
 
                   <div className="space-y-4">
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                        <StatCard
-                          label="Saldo da carteira"
-                          value={formatCurrency(selectedWalletAccount.saldo_atual)}
-                          className="border-blue-200"
-                          valueClassName="text-blue-700"
-                        />
-                        <StatCard
-                          label="Último movimento"
-                          value={selectedWalletAccount.ultimo_movimento_em ? new Date(selectedWalletAccount.ultimo_movimento_em).toLocaleDateString("pt-BR") : "—"}
-                          className="border-slate-200"
-                          valueClassName="text-slate-900 text-base sm:text-lg"
-                          helper={selectedWalletAccount.ultimo_movimento_em ? new Date(selectedWalletAccount.ultimo_movimento_em).toLocaleTimeString("pt-BR") : "Sem movimentos"}
-                        />
-                        <StatCard
-                          label="Reconciliação"
-                          value={selectedWalletAudit?.status === "divergente" ? "Divergente" : "OK"}
-                          className={selectedWalletAudit?.status === "divergente" ? "border-amber-200" : "border-green-200"}
-                          valueClassName={selectedWalletAudit?.status === "divergente" ? "text-amber-700 text-base sm:text-lg" : "text-green-700 text-base sm:text-lg"}
-                          helper={selectedWalletAudit ? `Diferença: ${formatCurrency(selectedWalletAudit.diferenca_ultimo || 0)}` : "Sem auditoria detalhada carregada"}
-                        />
+                      <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Carteira financeira</p>
+                            <p className="text-2xl font-bold text-slate-900">{formatCurrency(walletStatementSummary.effectiveBalance)}</p>
+                            <p className="text-sm text-slate-500">
+                              {walletStatementSummary.rowCount > 0
+                                ? `Saldo líquido considerando ${walletStatementSummary.rowCount} lançamentos do extrato.`
+                                : "Sem lançamentos na carteira até o momento."}
+                            </p>
+                          </div>
+                          <div className="min-w-[180px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Situação</p>
+                            <p
+                              className={`mt-2 text-sm font-semibold ${
+                                selectedWalletFinancialStatus?.tone === "irregular" ? "text-red-700" : "text-emerald-700"
+                              }`}
+                            >
+                              {selectedWalletFinancialStatus?.tone === "irregular" ? "IRREGULAR" : "REGULAR"}
+                            </p>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {walletStatementSummary.latestDate
+                                ? `Último lançamento em ${formatWalletStatementDate(walletStatementSummary.latestDate)}.`
+                                : "Aguardando primeiro lançamento."}
+                            </p>
+                          </div>
+                        </div>
+                        {selectedWalletFinancialStatus?.tone === "irregular" ? (
+                          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                            Regularize os débitos em aberto.
+                          </div>
+                        ) : null}
                       </div>
-
-                      <FinancialOperationalAlert
-                        status={selectedWalletFinancialStatus}
-                        title="Situação financeira do responsável"
-                      />
 
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div>
                             <h3 className="font-semibold text-slate-900">Ações da carteira</h3>
                             <p className="mt-1 text-sm text-slate-500">
-                              Atualize a leitura da carteira e execute ações administrativas sem sair da visualização individual.
+                              Atualize a leitura e registre alterações manuais sem sair da visualização individual.
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2">
@@ -2392,57 +2590,20 @@ export default function Movimentacoes({ walletOnly = false }) {
                               variant="outline"
                               onClick={() => loadWalletAdminData(currentUser, selectedWalletAccountId)}
                               disabled={walletLoading}
-                              className="h-9 rounded-full px-3 text-xs sm:text-sm"
+                              className="h-9 w-9 rounded-full p-0"
+                              title="Atualizar"
+                              aria-label="Atualizar"
                             >
-                              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${walletLoading ? "animate-spin" : ""}`} />
-                              Atualizar carteira
+                              <RefreshCw className={`h-4 w-4 ${walletLoading ? "animate-spin" : ""}`} />
                             </Button>
-                            {canManageWalletOperations ? (
-                              <Button
-                                variant="outline"
-                                onClick={() => openWalletReversalModal({ carteira_conta_id: selectedWalletRuntimeAccountId })}
-                                disabled={!selectedWalletRuntimeAccountId}
-                                className="h-9 rounded-full border-red-200 bg-red-50 px-3 text-xs text-red-700 hover:bg-red-100 sm:text-sm"
-                              >
-                                <Undo2 className="mr-1.5 h-3.5 w-3.5" />
-                                Novo estorno V2
-                              </Button>
-                            ) : null}
                             {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations ? (
-                              <>
-                                {walletFlags.manualCreditEnabled ? (
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => openWalletOperationModal("credito_manual")}
-                                    className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                                  >
-                                    Crédito manual
-                                  </Button>
-                                ) : null}
-                                <Button
-                                  variant="outline"
-                                  onClick={() => openWalletOperationModal("ajuste_manual")}
-                                  className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                                >
-                                  Ajuste manual
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  onClick={() => openWalletOperationModal("estorno_manual")}
-                                  className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                                >
-                                  Estorno manual
-                                </Button>
-                              </>
-                            ) : null}
-                            {walletFlags.balanceReadEnabled && selectedWalletRuntimeAccountId ? (
                               <Button
                                 variant="outline"
-                                onClick={handleWalletReconcile}
-                                disabled={walletLoading}
+                                onClick={() => openWalletOperationModal("credito_manual")}
+                                disabled={!selectedWalletRuntimeAccountId}
                                 className="h-9 rounded-full px-3 text-xs sm:text-sm"
                               >
-                                Reconciliar
+                                Alteração manual
                               </Button>
                             ) : null}
                           </div>
@@ -2455,268 +2616,154 @@ export default function Movimentacoes({ walletOnly = false }) {
                         </div>
                       ) : null}
 
-                      {walletFlags.movementsEnabled && selectedWalletAccount.has_wallet_account ? (
+                      {walletFlags.movementsEnabled ? (
                         <div className="space-y-4">
-                          <div className="rounded-2xl border border-slate-200 bg-white">
-                            <div className="border-b border-slate-100 px-4 py-3">
-                              <h3 className="font-semibold text-slate-900">Histórico operacional vinculado à carteira</h3>
-                              <div className="mt-2 flex flex-wrap items-center gap-2">
-                                <Badge
-                                  variant="outline"
-                                  className={walletFlags.paymentV2WriteEnabled
-                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                    : "border-slate-200 bg-slate-50 text-slate-600"}
-                                >
-                                  <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
-                                  Payment V2 {walletFlags.paymentV2WriteEnabled ? "ativo" : "desligado"}
-                                </Badge>
-                                <Badge
-                                  variant="outline"
-                                  className={walletFlags.paymentV2ReversalEnabled
-                                    ? "border-red-200 bg-red-50 text-red-700"
-                                    : "border-slate-200 bg-slate-50 text-slate-600"}
-                                >
-                                  <Undo2 className="mr-1.5 h-3.5 w-3.5" />
-                                  Estorno V2 {walletFlags.paymentV2ReversalEnabled ? "ativo" : "desligado"}
-                                </Badge>
-                              </div>
-                              <p className="mt-2 text-sm text-slate-500">
-                                Eventos operacionais que ajudam a explicar pagamentos, estornos e estados da carteira do responsável financeiro.
-                              </p>
-                            </div>
-                            <div className="divide-y divide-slate-100">
-                              {walletHistoryLoading ? (
-                                <div className="px-4 py-6 text-sm text-slate-500">Carregando histórico operacional do Payment V2 e Estorno V2...</div>
-                              ) : walletOperationalHistory.length === 0 ? (
-                                <div className="px-4 py-6 text-sm text-slate-500">
-                                  Nenhum evento operacional do Payment V2 ou Estorno V2 foi encontrado para a carteira selecionada. Quando houver pagamento ou estorno V2 auditável, ele aparecerá aqui.
-                                </div>
-                              ) : (
-                                walletOperationalHistory.map((event) => (
-                                  <details key={event.id} className="group px-4 py-4">
-                                    <summary className="cursor-pointer list-none">
-                                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                                        <div className="min-w-0 flex-1">
-                                          <div className="flex flex-wrap items-center gap-2">
-                                            <p className="font-medium text-slate-900">{event.title}</p>
-                                            <Badge variant="outline" className={getOperationalBadgeClass(event.badgeTone)}>
-                                              {event.type === "reversal" ? (
-                                                <Undo2 className="mr-1.5 h-3.5 w-3.5" />
-                                              ) : (
-                                                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                                              )}
-                                              {event.badgeLabel}
-                                            </Badge>
-                                            <Badge variant="outline" className={getOperationalStatusClass(event.statusTone)}>
-                                              {event.statusTone === "irregular" ? (
-                                                <ShieldAlert className="mr-1.5 h-3.5 w-3.5" />
-                                              ) : (
-                                                <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
-                                              )}
-                                              {event.statusLabel}
-                                              {event.statusTone === "irregular" ? " (>5 dias)" : ""}
-                                            </Badge>
-                                          </div>
-                                          <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
-                                            <p><span className="font-medium text-slate-900">Serviço:</span> {event.serviceLabel}</p>
-                                            <p><span className="font-medium text-slate-900">Cão:</span> {event.dogName}</p>
-                                            <p><span className="font-medium text-slate-900">Vencimento:</span> {event.dueDate ? new Date(`${event.dueDate}T00:00:00`).toLocaleDateString("pt-BR") : "—"}</p>
-                                            <p><span className="font-medium text-slate-900">Data:</span> {event.eventDate ? new Date(event.eventDate).toLocaleString("pt-BR") : "—"}</p>
-                                          </div>
-                                          <p className="mt-2 text-sm text-slate-500">{event.statusHelper}</p>
-                                        </div>
-
-                                        <div className="flex items-center justify-between gap-3 lg:flex-col lg:items-end">
-                                          <div className="text-left lg:text-right">
-                                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Valor</p>
-                                            <p className={`mt-1 text-base font-semibold ${event.type === "reversal" ? "text-red-600" : "text-emerald-700"}`}>
-                                              {event.type === "reversal" ? "-" : "+"}
-                                              {formatCurrency(event.amount)}
-                                            </p>
-                                          </div>
-                                          <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500 transition group-open:bg-slate-100">
-                                            Ver histórico
-                                            <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" />
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </summary>
-
-                                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                      <div className="grid grid-cols-1 gap-3 text-sm text-slate-600 md:grid-cols-2 xl:grid-cols-3">
-                                        <p><span className="font-medium text-slate-900">Tipo:</span> {event.details.tipo || "—"}</p>
-                                        <p><span className="font-medium text-slate-900">Origem:</span> {event.details.origem || "—"}</p>
-                                        <p><span className="font-medium text-slate-900">Source key:</span> {event.details.sourceKey || "—"}</p>
-                                        <p><span className="font-medium text-slate-900">Idempotência:</span> {event.details.operacaoIdempotencia || "—"}</p>
-                                        <p><span className="font-medium text-slate-900">Obrigação:</span> {event.details.obrigacaoStatus || "—"}</p>
-                                        <p><span className="font-medium text-slate-900">Cobrança:</span> {event.details.cobrancaStatus || "—"}</p>
-                                        {event.type === "reversal" ? (
-                                          <>
-                                            <p><span className="font-medium text-slate-900">Motivo:</span> {event.details.motivo || "—"}</p>
-                                            <p><span className="font-medium text-slate-900">Executor:</span> {event.details.executor || "—"}</p>
-                                            <p><span className="font-medium text-slate-900">Anexo:</span> {event.details.attachmentName || "—"}</p>
-                                          <p><span className="font-medium text-slate-900">Extensão:</span> {event.details.attachmentExtension || "—"}</p>
-                                          <p><span className="font-medium text-slate-900">Conta a receber:</span> {event.details.contaReceberStatus || "—"}</p>
-                                          <p><span className="font-medium text-slate-900">Serviço realizado:</span> {event.details.servicoRealizado || "—"}</p>
-                                        </>
-                                      ) : null}
-                                    </div>
-                                    {event.type === "reversal" && event.details.attachmentPath ? (
-                                      <div className="mt-3">
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm"
-                                          onClick={() => handleOpenPrivateAttachment(event.details.attachmentPath)}
-                                        >
-                                          <FileText className="mr-1.5 h-3.5 w-3.5" />
-                                          Abrir anexo
-                                        </Button>
-                                      </div>
-                                    ) : null}
-                                    {event.details.reasonMessage ? (
-                                        <div className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                                          <FileWarning className="mt-0.5 h-4 w-4 shrink-0" />
-                                          <p>{event.details.reasonMessage}</p>
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  </details>
-                                ))
-                              )}
-                            </div>
-                          </div>
-
                           <div className="rounded-2xl border border-slate-200 bg-white">
                             <div className="border-b border-slate-100 px-4 py-3">
                               <h3 className="font-semibold text-slate-900">Extrato do responsável financeiro</h3>
                               <p className="mt-1 text-sm text-slate-500">
-                                Débitos vindos de agendamentos avulsos e pacotes recorrentes, e créditos vindos de recebimentos vinculados à carteira do cliente.
+                                Um feed cronológico com transações, atividades e estornos vinculados à carteira do responsável financeiro.
                               </p>
                             </div>
                             <div className="space-y-4 p-4">
-                              <div className="rounded-2xl border border-slate-200">
-                                <div className="border-b border-slate-100 px-4 py-3">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <h4 className="font-medium text-slate-900">Débitos na carteira</h4>
-                                    <Badge variant="outline">{walletStatementRows.debitRows.length}</Badge>
-                                  </div>
-                                  <p className="mt-1 text-sm text-slate-500">
-                                    Data do agendamento, serviço, cão, vencimento, valor e código do orçamento ou pacote vinculados ao consumo da carteira.
-                                  </p>
-                                </div>
-                                <div className="divide-y divide-slate-100">
-                                  {walletStatementRows.debitRows.length === 0 ? (
-                                    <div className="px-4 py-6 text-sm text-slate-500">
-                                      Nenhum débito operacional foi encontrado para a carteira selecionada.
-                                    </div>
-                                  ) : (
-                                    walletStatementRows.debitRows.map((row) => (
-                                      <div key={row.id} className="grid grid-cols-1 gap-3 px-4 py-4 xl:grid-cols-[140px_minmax(0,1.1fr)_140px_130px_170px]">
-                                        <div>
-                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Data do agendamento</p>
-                                          {row.appointmentId ? (
-                                            <Button
-                                              type="button"
-                                              variant="link"
-                                              className="mt-1 h-auto p-0 text-left text-sm font-medium text-blue-700"
-                                              onClick={() => openWalletStatementAppointment(row.appointmentId)}
-                                            >
-                                              {formatWalletStatementDate(row.appointmentDate)}
-                                            </Button>
-                                          ) : (
-                                            <p className="mt-1 text-sm font-medium text-slate-900">{formatWalletStatementDate(row.appointmentDate)}</p>
-                                          )}
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                          <div>
-                                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Serviço</p>
-                                            <p className="mt-1 text-sm font-medium text-slate-900">{row.serviceLabel}</p>
-                                          </div>
-                                          <div>
-                                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Cão</p>
-                                            <p className="mt-1 text-sm font-medium text-slate-900">{row.dogName}</p>
-                                          </div>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Vencimento</p>
-                                          <p className="mt-1 text-sm font-medium text-slate-900">{formatWalletStatementDate(row.dueDate)}</p>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Valor</p>
-                                          <p className="mt-1 text-sm font-semibold text-red-600">-{formatCurrency(row.amount)}</p>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Código do orçamento/pacote</p>
-                                          {row.referenceId && row.referenceCode ? (
-                                            <Button
-                                              type="button"
-                                              variant="link"
-                                              className="mt-1 h-auto p-0 text-left text-sm font-medium text-blue-700"
-                                              onClick={() => openWalletStatementReference(row)}
-                                            >
-                                              {row.referenceCode}
-                                            </Button>
-                                          ) : (
-                                            <p className="mt-1 text-sm font-medium text-slate-900">—</p>
-                                          )}
-                                          {row.referenceId && row.referenceCode ? (
-                                            <p className="mt-1 text-xs text-slate-500">{row.referenceLabel}</p>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    ))
-                                  )}
-                                </div>
+                              <div className="flex flex-wrap gap-2">
+                                {[
+                                  { value: "all", label: "Todos" },
+                                  { value: "transactions", label: "Transações" },
+                                  { value: "activities", label: "Atividades" },
+                                ].map((filter) => (
+                                  <Button
+                                    key={filter.value}
+                                    type="button"
+                                    variant={walletTimelineFilter === filter.value ? "default" : "outline"}
+                                    className={`h-9 rounded-full px-4 text-xs sm:text-sm ${
+                                      walletTimelineFilter === filter.value ? "bg-slate-900 text-white hover:bg-slate-800" : ""
+                                    }`}
+                                    onClick={() => setWalletTimelineFilter(filter.value)}
+                                  >
+                                    {filter.label}
+                                  </Button>
+                                ))}
                               </div>
 
-                              <div className="rounded-2xl border border-slate-200">
-                                <div className="border-b border-slate-100 px-4 py-3">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <h4 className="font-medium text-slate-900">Créditos na carteira</h4>
-                                    <Badge variant="outline">{walletStatementRows.creditRows.length}</Badge>
+                              {filteredWalletTimelineRows.length === 0 ? (
+                                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                                  Nenhum lançamento foi encontrado para o filtro selecionado.
+                                </div>
+                              ) : (
+                                <div className="relative pl-6">
+                                  <div className="absolute bottom-0 left-2 top-0 w-px bg-slate-200" />
+                                  <div className="space-y-4">
+                                    {filteredWalletTimelineRows.map((row) => (
+                                      <div key={row.id} className="relative">
+                                        <div className={`absolute -left-[1.45rem] top-5 h-3 w-3 rounded-full border-2 border-white ${
+                                          row.sourceKind === "transaction" ? "bg-emerald-500" : row.sourceKind === "reversal" ? "bg-red-500" : "bg-slate-400"
+                                        }`} />
+                                        <details className="group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                                          <summary className="cursor-pointer list-none px-4 py-4 hover:bg-slate-50">
+                                            <div>
+                                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                                <div className="min-w-0 space-y-2">
+                                                  <div className="flex flex-wrap items-center gap-2">
+                                                    <p className="text-base font-semibold text-slate-900">{row.title}</p>
+                                                    {row.badges.map((badge) => (
+                                                      <Badge
+                                                        key={`${row.id}-${badge.label}`}
+                                                        variant="outline"
+                                                        className={badge.tone === "red"
+                                                          ? "border-red-200 bg-red-50 text-red-700"
+                                                          : "border-emerald-200 bg-emerald-50 text-emerald-700"}
+                                                      >
+                                                        {badge.label}
+                                                      </Badge>
+                                                    ))}
+                                                  </div>
+                                                  <p className="text-sm text-slate-600">{row.subtitle}</p>
+                                                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{row.categoryLabel}</p>
+                                                </div>
+                                                <div className="text-left md:text-right">
+                                                  <p className={`text-base font-semibold ${
+                                                    row.amountTone === "credit"
+                                                      ? "text-emerald-700"
+                                                      : row.amountTone === "debit"
+                                                        ? "text-red-600"
+                                                        : "text-slate-900"
+                                                  }`}
+                                                  >
+                                                    {row.amountTone === "credit" ? "+" : row.amountTone === "debit" ? "-" : ""}
+                                                    {formatCurrency(row.amount)}
+                                                  </p>
+                                                  <p className="mt-1 text-sm text-slate-500">{formatWalletStatementDate(row.primaryDate)}</p>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </summary>
+
+                                          <div className="border-t border-slate-100 bg-slate-50 px-4 py-4">
+                                            <div className="grid grid-cols-1 gap-3 text-sm text-slate-600 md:grid-cols-2">
+                                              <p><span className="font-medium text-slate-900">Data:</span> {row.details.data}</p>
+                                              <p><span className="font-medium text-slate-900">Status:</span> {row.details.status || "—"}</p>
+                                              {row.sourceKind === "transaction" ? (
+                                                <>
+                                                  <p><span className="font-medium text-slate-900">Forma de pagamento:</span> {row.details.formaPagamento}</p>
+                                                  <p><span className="font-medium text-slate-900">Contraparte:</span> {row.details.contraparte}</p>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <p><span className="font-medium text-slate-900">Vencimento:</span> {row.details.vencimento || "—"}</p>
+                                                  <p><span className="font-medium text-slate-900">Executor:</span> {row.details.executor || "—"}</p>
+                                                </>
+                                              )}
+                                              {row.details.motivo ? (
+                                                <p className="md:col-span-2"><span className="font-medium text-slate-900">Motivo:</span> {row.details.motivo}</p>
+                                              ) : null}
+                                              {row.details.anexo ? (
+                                                <p className="md:col-span-2"><span className="font-medium text-slate-900">Anexo:</span> {row.details.anexo}</p>
+                                              ) : null}
+                                            </div>
+
+                                            <div className="mt-4 flex flex-wrap gap-2">
+                                              {row.appointmentId ? (
+                                                <Button
+                                                  type="button"
+                                                  variant="outline"
+                                                  size="sm"
+                                                  className="h-8 rounded-full px-3 text-[11px] sm:text-sm"
+                                                  onClick={() => openWalletStatementAppointment(row.appointmentId)}
+                                                >
+                                                  Abrir agendamento
+                                                </Button>
+                                              ) : null}
+                                              {row.referenceId && row.referenceCode ? (
+                                                <Button
+                                                  type="button"
+                                                  variant="outline"
+                                                  size="sm"
+                                                  className="h-8 rounded-full px-3 text-[11px] sm:text-sm"
+                                                  onClick={() => openWalletStatementReference(row)}
+                                                >
+                                                  Abrir {row.referenceLabel?.toLowerCase() || "referência"} {row.referenceCode}
+                                                </Button>
+                                              ) : null}
+                                              {row.sourceKind === "transaction" && row.transactionRow ? (
+                                                <Button
+                                                  type="button"
+                                                  variant="outline"
+                                                  size="sm"
+                                                  className="h-8 rounded-full px-3 text-[11px] sm:text-sm"
+                                                  onClick={() => openWalletStatementTransaction(row.transactionRow)}
+                                                >
+                                                  Abrir transação
+                                                </Button>
+                                              ) : null}
+                                            </div>
+                                          </div>
+                                        </details>
+                                      </div>
+                                    ))}
                                   </div>
-                                  <p className="mt-1 text-sm text-slate-500">
-                                    Recebimentos vindos de transações vinculadas à carteira do responsável financeiro. Clique em qualquer linha para abrir a transação.
-                                  </p>
                                 </div>
-                                <div className="divide-y divide-slate-100">
-                                  {walletStatementRows.creditRows.length === 0 ? (
-                                    <div className="px-4 py-6 text-sm text-slate-500">
-                                      Nenhum recebimento vinculado à carteira foi encontrado nesta leitura.
-                                    </div>
-                                  ) : (
-                                    walletStatementRows.creditRows.map((row) => (
-                                      <button
-                                        key={row.id}
-                                        type="button"
-                                        onClick={() => openWalletStatementTransaction(row)}
-                                        className="grid w-full grid-cols-1 gap-3 px-4 py-4 text-left transition hover:bg-slate-50 xl:grid-cols-[150px_minmax(0,1fr)_130px_220px]"
-                                      >
-                                        <div>
-                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Data de recebimento</p>
-                                          <p className="mt-1 text-sm font-medium text-slate-900">
-                                            {row.receivedDate ? new Date(row.receivedDate).toLocaleDateString("pt-BR") : "—"}
-                                          </p>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Contraparte</p>
-                                          <p className="mt-1 text-sm font-medium text-slate-900">{row.counterparty}</p>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Valor</p>
-                                          <p className="mt-1 text-sm font-semibold text-emerald-700">+{formatCurrency(row.amount)}</p>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Forma de pagamento</p>
-                                          <p className="mt-1 text-sm font-medium text-slate-900">{row.paymentMethod}</p>
-                                        </div>
-                                      </button>
-                                    ))
-                                  )}
-                                </div>
-                              </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -3046,9 +3093,9 @@ export default function Movimentacoes({ walletOnly = false }) {
       <Dialog open={showWalletOperationModal} onOpenChange={setShowWalletOperationModal}>
         <DialogContent className="max-h-[90vh] w-[95vw] max-w-[720px] overflow-hidden">
           <DialogHeader>
-            <DialogTitle>{WALLET_OPERATION_LABELS[walletOperationForm.tipo] || "Operação de carteira"}</DialogTitle>
+            <DialogTitle>{WALLET_OPERATION_MODAL_LABEL}</DialogTitle>
             <DialogDescription>
-              Registro administrativo controlado da carteira, sempre via RPC e com movimento compensatório auditável.
+              Registre créditos, ajustes ou estornos manuais diretamente no extrato da carteira do responsável financeiro.
             </DialogDescription>
           </DialogHeader>
 
@@ -3081,7 +3128,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                   setWalletOperationForm((prev) => ({
                     ...prev,
                     tipo: value,
-                    natureza: value === "credito_manual" || value === "entrada_direcionada" ? "entrada" : prev.natureza,
+                    natureza: "entrada",
                   }))
                 }
               >
@@ -3094,26 +3141,15 @@ export default function Movimentacoes({ walletOnly = false }) {
                   ) : null}
                   <SelectItem value="ajuste_manual">Ajuste manual</SelectItem>
                   <SelectItem value="estorno_manual">Estorno manual</SelectItem>
-                  <SelectItem value="entrada_direcionada">Entrada direcionada</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <Label>Natureza *</Label>
-              <Select
-                value={walletOperationForm.natureza}
-                onValueChange={(value) => setWalletOperationForm((prev) => ({ ...prev, natureza: value }))}
-                disabled={walletOperationForm.tipo === "credito_manual" || walletOperationForm.tipo === "entrada_direcionada"}
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="entrada">Entrada</SelectItem>
-                  <SelectItem value="saida">Saída</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>Natureza</Label>
+              <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
+                Entrada
+              </div>
             </div>
 
             <div>

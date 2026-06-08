@@ -104,6 +104,7 @@ export const ATTENDANCE_SERVICES = [
   { id: "tosa", label: "Tosa" },
   { id: "transporte", label: "Transporte" },
   { id: "adestramento", label: "Adestramento" },
+  { id: "diversos", label: "Diversos" },
 ];
 
 export const MANUAL_REGISTRADOR_SERVICES = ATTENDANCE_SERVICES.filter((service) =>

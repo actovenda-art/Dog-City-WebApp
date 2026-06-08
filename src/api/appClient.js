@@ -538,6 +538,369 @@ const defaultEntities = {};
   defaultEntities[name] = createMockEntity(name, { unitScoped: UNIT_SCOPED_ENTITIES.has(name) });
 });
 
+function ensureMockRows(key, rows = []) {
+  const existingRows = readStorage(key);
+  const existingIds = new Set(existingRows.map((item) => item?.id).filter(Boolean));
+  let changed = false;
+
+  rows.forEach((row) => {
+    if (!row?.id || existingIds.has(row.id)) return;
+    existingRows.push(row);
+    existingIds.add(row.id);
+    changed = true;
+  });
+
+  if (changed) {
+    writeStorage(key, existingRows);
+  }
+}
+
+function formatMockDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function buildMockIso(dateKey, timeValue = '09:00') {
+  return `${dateKey}T${timeValue}:00`;
+}
+
+function ensureMockAgendamentosDesktopSeed() {
+  if (typeof window === 'undefined' || (SUPABASE_URL && SUPABASE_ANON)) return;
+
+  const today = new Date();
+  const todayKey = formatMockDateKey(today);
+  const seedCreatedAt = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 6, 0, 0).toISOString();
+  const companies = [
+    {
+      id: 'empresa_demo',
+      codigo: 'MTZ',
+      nome_fantasia: 'Unidade Matriz',
+      nome: 'Dog City Brasil',
+      ativo: true,
+      created_date: seedCreatedAt,
+    },
+  ];
+
+  const carteiras = [
+    {
+      id: 'mock_wallet_juliana',
+      empresa_id: 'empresa_demo',
+      nome_razao_social: 'Juliana Costa',
+      celular: '19990000001',
+      email: 'juliana.costa@mock.local',
+      dog_id_1: 'mock_dog_zaya',
+      ativo: true,
+      created_date: seedCreatedAt,
+    },
+    {
+      id: 'mock_wallet_joao',
+      empresa_id: 'empresa_demo',
+      nome_razao_social: 'Joao Silva',
+      celular: '19990000002',
+      email: 'joao.silva@mock.local',
+      dog_id_1: 'mock_dog_theo',
+      ativo: true,
+      created_date: seedCreatedAt,
+    },
+    {
+      id: 'mock_wallet_felipe',
+      empresa_id: 'empresa_demo',
+      nome_razao_social: 'Felipe Andrade',
+      celular: '19990000003',
+      email: 'felipe.andrade@mock.local',
+      dog_id_1: 'mock_dog_bolt',
+      ativo: true,
+      created_date: seedCreatedAt,
+    },
+    {
+      id: 'mock_wallet_ana',
+      empresa_id: 'empresa_demo',
+      nome_razao_social: 'Ana Beatriz',
+      celular: '19990000004',
+      email: 'ana.beatriz@mock.local',
+      dog_id_1: 'mock_dog_nina',
+      ativo: true,
+      created_date: seedCreatedAt,
+    },
+    {
+      id: 'mock_wallet_roberto',
+      empresa_id: 'empresa_demo',
+      nome_razao_social: 'Roberto Alves',
+      celular: '19990000005',
+      email: 'roberto.alves@mock.local',
+      dog_id_1: 'mock_dog_mel',
+      ativo: true,
+      created_date: seedCreatedAt,
+    },
+    {
+      id: 'mock_wallet_mariana',
+      empresa_id: 'empresa_demo',
+      nome_razao_social: 'Mariana Lima',
+      celular: '19990000006',
+      email: 'mariana.lima@mock.local',
+      dog_id_1: 'mock_dog_luke',
+      ativo: true,
+      created_date: seedCreatedAt,
+    },
+  ];
+
+  const dogs = [
+    { id: 'mock_dog_zaya', empresa_id: 'empresa_demo', cliente_id: 'mock_wallet_juliana', nome: 'Zaya', raca: 'Poodle', ativo: true, created_date: seedCreatedAt },
+    { id: 'mock_dog_theo', empresa_id: 'empresa_demo', cliente_id: 'mock_wallet_joao', nome: 'Theo', raca: 'Golden Retriever', ativo: true, created_date: seedCreatedAt },
+    { id: 'mock_dog_bolt', empresa_id: 'empresa_demo', cliente_id: 'mock_wallet_felipe', nome: 'Bolt', raca: 'Bulldog Francês', ativo: true, created_date: seedCreatedAt },
+    { id: 'mock_dog_nina', empresa_id: 'empresa_demo', cliente_id: 'mock_wallet_ana', nome: 'Nina', raca: 'Dachshund', ativo: true, created_date: seedCreatedAt },
+    { id: 'mock_dog_mel', empresa_id: 'empresa_demo', cliente_id: 'mock_wallet_roberto', nome: 'Mel', raca: 'Shih Tzu', ativo: true, created_date: seedCreatedAt },
+    { id: 'mock_dog_luke', empresa_id: 'empresa_demo', cliente_id: 'mock_wallet_mariana', nome: 'Luke', raca: 'Labrador', ativo: true, created_date: seedCreatedAt },
+  ];
+
+  const orcamentos = [
+    { id: 'mock_orc_zaya', empresa_id: 'empresa_demo', dog_id: 'mock_dog_zaya', cliente_id: 'mock_wallet_juliana', status: 'aprovado', titulo: 'Day Care Zaya', created_date: seedCreatedAt },
+    { id: 'mock_orc_theo', empresa_id: 'empresa_demo', dog_id: 'mock_dog_theo', cliente_id: 'mock_wallet_joao', status: 'aprovado', titulo: 'Transporte Theo', created_date: seedCreatedAt },
+    { id: 'mock_orc_bolt', empresa_id: 'empresa_demo', dog_id: 'mock_dog_bolt', cliente_id: 'mock_wallet_felipe', status: 'aprovado', titulo: 'Day Care Bolt', created_date: seedCreatedAt },
+    { id: 'mock_orc_nina', empresa_id: 'empresa_demo', dog_id: 'mock_dog_nina', cliente_id: 'mock_wallet_ana', status: 'aprovado', titulo: 'Hospedagem Nina', created_date: seedCreatedAt },
+    { id: 'mock_orc_luke', empresa_id: 'empresa_demo', dog_id: 'mock_dog_luke', cliente_id: 'mock_wallet_mariana', status: 'aprovado', titulo: 'Transporte Luke', created_date: seedCreatedAt },
+  ];
+
+  const appointments = [
+    {
+      id: 'mock_ag_daycare_arrived_zaya',
+      empresa_id: 'empresa_demo',
+      dog_id: 'mock_dog_zaya',
+      cliente_id: 'mock_wallet_juliana',
+      orcamento_id: 'mock_orc_zaya',
+      service_type: 'day_care',
+      status: 'agendado',
+      charge_type: 'avulso',
+      source_type: 'orcamento_aprovado',
+      data_referencia: todayKey,
+      data_hora_entrada: buildMockIso(todayKey, '07:30'),
+      data_hora_saida: buildMockIso(todayKey, '18:00'),
+      hora_entrada: '07:30',
+      hora_saida: '18:00',
+      valor_previsto: 48,
+      metadata: { owner_nome: 'Juliana Costa' },
+      created_date: buildMockIso(todayKey, '07:00'),
+    },
+    {
+      id: 'mock_ag_transport_arrived_theo',
+      empresa_id: 'empresa_demo',
+      dog_id: 'mock_dog_theo',
+      cliente_id: 'mock_wallet_joao',
+      orcamento_id: 'mock_orc_theo',
+      service_type: 'transporte',
+      status: 'agendado',
+      charge_type: 'avulso',
+      source_type: 'orcamento_aprovado',
+      data_referencia: todayKey,
+      data_hora_entrada: buildMockIso(todayKey, '08:00'),
+      data_hora_saida: buildMockIso(todayKey, '08:40'),
+      hora_entrada: '08:00',
+      hora_saida: '08:40',
+      valor_previsto: 18,
+      metadata: { owner_nome: 'Joao Silva' },
+      created_date: buildMockIso(todayKey, '07:15'),
+    },
+    {
+      id: 'mock_ag_daycare_late_bolt',
+      empresa_id: 'empresa_demo',
+      dog_id: 'mock_dog_bolt',
+      cliente_id: 'mock_wallet_felipe',
+      orcamento_id: 'mock_orc_bolt',
+      service_type: 'day_care',
+      status: 'agendado',
+      charge_type: 'avulso',
+      source_type: 'orcamento_aprovado',
+      data_referencia: todayKey,
+      data_hora_entrada: buildMockIso(todayKey, '08:30'),
+      data_hora_saida: buildMockIso(todayKey, '18:00'),
+      hora_entrada: '08:30',
+      hora_saida: '18:00',
+      valor_previsto: 48,
+      metadata: { owner_nome: 'Felipe Andrade' },
+      created_date: buildMockIso(todayKey, '07:30'),
+    },
+    {
+      id: 'mock_ag_hosp_late_nina',
+      empresa_id: 'empresa_demo',
+      dog_id: 'mock_dog_nina',
+      cliente_id: 'mock_wallet_ana',
+      orcamento_id: 'mock_orc_nina',
+      service_type: 'hospedagem',
+      status: 'agendado',
+      charge_type: 'avulso',
+      source_type: 'orcamento_aprovado',
+      data_referencia: todayKey,
+      data_hora_entrada: buildMockIso(todayKey, '09:00'),
+      data_hora_saida: buildMockIso(todayKey, '17:30'),
+      hora_entrada: '09:00',
+      hora_saida: '17:30',
+      valor_previsto: 120,
+      metadata: { owner_nome: 'Ana Beatriz' },
+      created_date: buildMockIso(todayKey, '07:45'),
+    },
+    {
+      id: 'mock_ag_banho_pending_mel',
+      empresa_id: 'empresa_demo',
+      dog_id: 'mock_dog_mel',
+      cliente_id: 'mock_wallet_roberto',
+      service_type: 'banho',
+      status: 'agendado',
+      charge_type: 'pendente_comercial',
+      source_type: 'manual_registrador',
+      data_referencia: todayKey,
+      data_hora_entrada: buildMockIso(todayKey, '09:30'),
+      data_hora_saida: buildMockIso(todayKey, '10:30'),
+      hora_entrada: '09:30',
+      hora_saida: '10:30',
+      valor_previsto: 65,
+      metadata: {
+        owner_nome: 'Roberto Alves',
+        manual_monitor_nome: 'Equipe Comercial',
+        commercial_review_pending: true,
+      },
+      created_date: buildMockIso(todayKey, '08:00'),
+    },
+    {
+      id: 'mock_ag_transport_upcoming_luke',
+      empresa_id: 'empresa_demo',
+      dog_id: 'mock_dog_luke',
+      cliente_id: 'mock_wallet_mariana',
+      orcamento_id: 'mock_orc_luke',
+      service_type: 'transporte',
+      status: 'agendado',
+      charge_type: 'avulso',
+      source_type: 'orcamento_aprovado',
+      data_referencia: todayKey,
+      data_hora_entrada: buildMockIso(todayKey, '21:00'),
+      data_hora_saida: buildMockIso(todayKey, '21:40'),
+      hora_entrada: '21:00',
+      hora_saida: '21:40',
+      valor_previsto: 18,
+      metadata: { owner_nome: 'Mariana Lima' },
+      created_date: buildMockIso(todayKey, '08:15'),
+    },
+    {
+      id: 'mock_ag_misc_visit_upcoming',
+      empresa_id: 'empresa_demo',
+      service_type: 'diversos',
+      status: 'agendado',
+      charge_type: 'avulso',
+      source_type: 'manual_registrador',
+      data_referencia: todayKey,
+      data_hora_entrada: buildMockIso(todayKey, '21:30'),
+      data_hora_saida: buildMockIso(todayKey, '22:00'),
+      hora_entrada: '21:30',
+      hora_saida: '22:00',
+      valor_previsto: 0,
+      metadata: {
+        manual_monitor_nome: 'Recepcao',
+        misc_title: 'Visita de cliente',
+        misc_subtitle: 'Visita agendada',
+        misc_owner_name: 'Cliente: PetCorretor',
+        misc_detail_label: 'Contato: Juliana Costa',
+        misc_service_label: 'Visita comercial',
+      },
+      created_date: buildMockIso(todayKey, '08:30'),
+    },
+    {
+      id: 'mock_ag_misc_repair_upcoming',
+      empresa_id: 'empresa_demo',
+      service_type: 'diversos',
+      status: 'agendado',
+      charge_type: 'avulso',
+      source_type: 'manual_registrador',
+      data_referencia: todayKey,
+      data_hora_entrada: buildMockIso(todayKey, '22:00'),
+      data_hora_saida: buildMockIso(todayKey, '23:00'),
+      hora_entrada: '22:00',
+      hora_saida: '23:00',
+      valor_previsto: 0,
+      metadata: {
+        manual_monitor_nome: 'Recepcao',
+        misc_title: 'Reparo tecnico',
+        misc_subtitle: 'Manutencao',
+        misc_owner_name: 'Responsavel: TechFix',
+        misc_detail_label: 'Prestador de servico',
+        misc_service_label: 'Suporte tecnico',
+      },
+      created_date: buildMockIso(todayKey, '08:45'),
+    },
+    {
+      id: 'mock_ag_misc_visit_noshow',
+      empresa_id: 'empresa_demo',
+      service_type: 'diversos',
+      status: 'faltou',
+      charge_type: 'avulso',
+      source_type: 'manual_registrador',
+      data_referencia: todayKey,
+      data_hora_entrada: buildMockIso(todayKey, '11:00'),
+      data_hora_saida: buildMockIso(todayKey, '11:30'),
+      hora_entrada: '11:00',
+      hora_saida: '11:30',
+      valor_previsto: 0,
+      metadata: {
+        manual_monitor_nome: 'Equipe Comercial',
+        absence_confirmed_at: buildMockIso(todayKey, '11:35'),
+        misc_title: 'Visita de prospeccao',
+        misc_subtitle: 'Nao compareceu',
+        misc_owner_name: 'Cliente: PetCorretor',
+        misc_detail_label: 'Agendado pela equipe comercial',
+        misc_service_label: 'Visita comercial',
+      },
+      created_date: buildMockIso(todayKey, '09:00'),
+    },
+  ];
+
+  const checkins = [
+    {
+      id: 'mock_checkin_zaya',
+      empresa_id: 'empresa_demo',
+      appointment_id: 'mock_ag_daycare_arrived_zaya',
+      dog_id: 'mock_dog_zaya',
+      dog_nome: 'Zaya',
+      service_type: 'day_care',
+      tipo: 'pet',
+      checkin_datetime: buildMockIso(todayKey, '07:22'),
+      created_date: buildMockIso(todayKey, '07:22'),
+      checkin_monitor_nome: 'Juliana Costa',
+      entregador_nome: 'Juliana Costa',
+      status: 'presente',
+    },
+    {
+      id: 'mock_checkin_theo',
+      empresa_id: 'empresa_demo',
+      appointment_id: 'mock_ag_transport_arrived_theo',
+      dog_id: 'mock_dog_theo',
+      dog_nome: 'Theo',
+      service_type: 'transporte',
+      tipo: 'pet',
+      checkin_datetime: buildMockIso(todayKey, '07:55'),
+      created_date: buildMockIso(todayKey, '07:55'),
+      checkin_monitor_nome: 'Equipe de Transporte',
+      entregador_nome: 'Joao Silva',
+      status: 'presente',
+    },
+  ];
+
+  if (!getStoredActiveUnitId()) {
+    setStoredUnitSelection({
+      primaryUnitId: 'empresa_demo',
+      selectedUnitIds: ['empresa_demo'],
+    });
+  }
+
+  ensureMockRows('Empresa', companies);
+  ensureMockRows('Carteira', carteiras);
+  ensureMockRows('Dog', dogs);
+  ensureMockRows('Orcamento', orcamentos);
+  ensureMockRows('Appointment', appointments);
+  ensureMockRows('Checkin', checkins);
+}
+
+ensureMockAgendamentosDesktopSeed();
+
 function getMockFlagValue(key, empresaId = null) {
   const configs = readStorage('AppConfig');
   const scoped = configs.find(

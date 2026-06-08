@@ -10,37 +10,189 @@ import {
   getAppointmentEndDateKey,
   getAppointmentMeta,
   getAppointmentSourceLabel,
+  getAppointmentTimeValue,
   getCheckinMealRecords,
   getChargeTypeLabel,
   getServiceLabel,
 } from "@/lib/attendance";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
 import { isOperationalProfile } from "@/lib/access-control";
+import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
+import { cn } from "@/lib/utils";
 import { createPageUrl } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
-import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import FinancialOperationalAlert from "@/components/finance/FinancialOperationalAlert";
-import { AlertTriangle, Calendar, ClipboardList, RefreshCw, Tag } from "lucide-react";
-import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
+import {
+  Calendar,
+  CalendarClock,
+  Car,
+  CheckCircle2,
+  ClipboardList,
+  Clock3,
+  Home,
+  LoaderCircle,
+  MoreHorizontal,
+  PawPrint,
+  RefreshCw,
+  Scissors,
+  TriangleAlert,
+  Users,
+} from "lucide-react";
+
+const SERVICE_BUCKETS = [
+  {
+    id: "day_care",
+    label: "Day Care",
+    subtitle: "rotina do dia",
+    icon: PawPrint,
+    iconClassName: "bg-blue-100 text-blue-600",
+    progressClassName: "bg-blue-600",
+    serviceTypes: ["day_care", "adaptacao"],
+  },
+  {
+    id: "hospedagem",
+    label: "Hospedagem",
+    subtitle: "entrada / saida",
+    icon: Home,
+    iconClassName: "bg-emerald-100 text-emerald-600",
+    progressClassName: "bg-emerald-600",
+    serviceTypes: ["hospedagem", "pernoite"],
+  },
+  {
+    id: "transporte",
+    label: "Transporte",
+    subtitle: "busca / entrega",
+    icon: Car,
+    iconClassName: "bg-violet-100 text-violet-600",
+    progressClassName: "bg-violet-600",
+    serviceTypes: ["transporte"],
+  },
+  {
+    id: "banho",
+    label: "Banho",
+    subtitle: "banho e tosa",
+    icon: Scissors,
+    iconClassName: "bg-amber-100 text-amber-600",
+    progressClassName: "bg-amber-500",
+    serviceTypes: ["banho", "tosa"],
+  },
+  {
+    id: "diversos",
+    label: "Diversos",
+    subtitle: "visitas, reparos, etc.",
+    icon: MoreHorizontal,
+    iconClassName: "bg-cyan-100 text-cyan-600",
+    progressClassName: "bg-cyan-500",
+    serviceTypes: ["adestramento", "diversos"],
+  },
+];
+
+const STATUS_STYLES = {
+  arrived: {
+    label: "Ja chegaram",
+    badgeLabel: "Chegou",
+    valueClassName: "text-emerald-600",
+    containerClassName: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    subtleClassName: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+  },
+  late: {
+    label: "Atrasados",
+    badgeLabel: "Atrasado",
+    valueClassName: "text-amber-600",
+    containerClassName: "border-amber-200 bg-amber-50 text-amber-700",
+    subtleClassName: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+  },
+  upcoming: {
+    label: "Previstos",
+    badgeLabel: "Previsto",
+    valueClassName: "text-violet-600",
+    containerClassName: "border-violet-200 bg-violet-50 text-violet-700",
+    subtleClassName: "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
+  },
+  no_show: {
+    label: "Nao compareceram",
+    badgeLabel: "Nao compareceu",
+    valueClassName: "text-rose-600",
+    containerClassName: "border-rose-200 bg-rose-50 text-rose-700",
+    subtleClassName: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+  },
+  completed: {
+    label: "Realizados",
+    badgeLabel: "Realizado",
+    valueClassName: "text-slate-700",
+    containerClassName: "border-slate-200 bg-slate-50 text-slate-700",
+    subtleClassName: "bg-slate-50 text-slate-700 ring-1 ring-slate-200",
+  },
+  attention: {
+    label: "Precisa de atencao",
+    badgeLabel: "Verificar falta",
+    valueClassName: "text-rose-600",
+    containerClassName: "border-rose-200 bg-rose-50 text-rose-700",
+    subtleClassName: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+  },
+};
+
+const MAIN_SERVICE_FILTERS = ["all", ...SERVICE_BUCKETS.map((service) => service.id)];
+
+function getTodayKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateValue(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T12:00:00`);
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
 function formatDate(value) {
   if (!value) return "-";
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(value));
+  const parsed = parseDateValue(value);
+  return parsed ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(parsed) : "-";
+}
+
+function formatLongDate(value) {
+  if (!value) return "-";
+  const parsed = parseDateValue(value);
+  return parsed
+    ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(parsed)
+    : "-";
+}
+
+function formatTime(value) {
+  if (!value) return "-";
+  if (/^\d{2}:\d{2}$/.test(value)) return value;
+  return new Intl.DateTimeFormat("pt-BR", { timeStyle: "short" }).format(new Date(value));
 }
 
 function formatDateTime(value) {
   if (!value) return "-";
+  const parsed = parseDateValue(value);
+  if (!parsed) return "-";
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
-  }).format(new Date(value));
+  }).format(parsed);
 }
 
 function formatAppointmentPeriod(appointment) {
@@ -56,11 +208,11 @@ function formatAppointmentPeriod(appointment) {
     return formatDate(startDateKey);
   }
 
-  return `${formatDate(startDateKey)} até ${formatDate(endDateKey)}`;
+  return `${formatDate(startDateKey)} ate ${formatDate(endDateKey)}`;
 }
 
 function formatOwnerAppointmentLine(ownerName, appointment) {
-  const safeOwnerName = ownerName || "Responsável não identificado";
+  const safeOwnerName = ownerName || "Responsavel nao identificado";
   const period = formatAppointmentPeriod(appointment);
   return period ? `${safeOwnerName} • ${period}` : safeOwnerName;
 }
@@ -72,23 +224,296 @@ function addDays(dateKey, days) {
   return base.toISOString().slice(0, 10);
 }
 
-function appointmentMatchesSearch(appointment, dog, owner, query) {
-  const haystack = [
-    dog?.nome,
-    dog?.raca,
-    owner?.nome,
-    getServiceLabel(appointment.service_type),
-    appointment.source_type,
-  ]
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(query.toLowerCase());
+function getServiceBucketId(serviceType) {
+  if (["day_care", "adaptacao"].includes(serviceType)) return "day_care";
+  if (["hospedagem", "pernoite"].includes(serviceType)) return "hospedagem";
+  if (serviceType === "transporte") return "transporte";
+  if (["banho", "tosa"].includes(serviceType)) return "banho";
+  return "diversos";
+}
+
+function getServiceBucketConfig(appointment) {
+  const bucketId = getServiceBucketId(appointment?.service_type);
+  return SERVICE_BUCKETS.find((bucket) => bucket.id === bucketId) || SERVICE_BUCKETS[SERVICE_BUCKETS.length - 1];
+}
+
+function getScheduleTimestamp(appointment) {
+  const dateKey = getAppointmentDateKey(appointment);
+  if (!dateKey) return null;
+  const timeValue = getAppointmentTimeValue(appointment, "entrada") || "09:00";
+  return new Date(`${dateKey}T${timeValue}:00`);
+}
+
+function getLatestRecordTimestamp(record) {
+  return (
+    record?.checkout_datetime ||
+    record?.data_checkout ||
+    record?.checkin_datetime ||
+    record?.data_checkin ||
+    record?.created_date ||
+    ""
+  );
+}
+
+function compareAppointments(left, right) {
+  const leftDate = getAppointmentDateKey(left) || "";
+  const rightDate = getAppointmentDateKey(right) || "";
+  if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+
+  const leftTime = getAppointmentTimeValue(left, "entrada") || "99:99";
+  const rightTime = getAppointmentTimeValue(right, "entrada") || "99:99";
+  if (leftTime !== rightTime) return leftTime.localeCompare(rightTime);
+
+  return String(left?.created_date || left?.id || "").localeCompare(String(right?.created_date || right?.id || ""));
+}
+
+function buildAppointmentRecordIndex(checkins) {
+  return (checkins || [])
+    .filter((record) => record?.tipo === "pet")
+    .reduce((accumulator, record) => {
+      if (!record?.appointment_id) return accumulator;
+      const current = accumulator[record.appointment_id];
+      if (!current || getLatestRecordTimestamp(record) > getLatestRecordTimestamp(current)) {
+        accumulator[record.appointment_id] = record;
+      }
+      return accumulator;
+    }, {});
+}
+
+function getAppointmentPrimaryLabel(appointment, dog) {
+  if (dog?.nome) return dog.nome;
+  const meta = getAppointmentMeta(appointment);
+  return meta.misc_title || meta.owner_nome || meta.client_name || "Atividade";
+}
+
+function getAppointmentSecondaryLabel(appointment, dog) {
+  if (dog?.raca) return dog.raca;
+  const meta = getAppointmentMeta(appointment);
+  return meta.misc_subtitle || getAppointmentSourceLabel(appointment);
+}
+
+function getAppointmentOwnerDisplay(owner, appointment) {
+  if (owner?.nome) return owner.nome;
+  const meta = getAppointmentMeta(appointment);
+  return (
+    meta.misc_owner_name ||
+    meta.contact_name ||
+    meta.responsavel_nome ||
+    meta.client_name ||
+    meta.owner_nome ||
+    "Responsavel nao identificado"
+  );
+}
+
+function getAppointmentDetailLabel(appointment) {
+  const meta = getAppointmentMeta(appointment);
+  return meta.misc_detail_label || getAppointmentSourceLabel(appointment);
+}
+
+function getAppointmentServiceLine(appointment) {
+  const bucket = getServiceBucketConfig(appointment);
+  const rawLabel = getServiceLabel(appointment?.service_type);
+  const meta = getAppointmentMeta(appointment);
+
+  if (bucket.id === "day_care") {
+    return {
+      title: bucket.label,
+      subtitle: appointment?.service_type === "adaptacao" ? rawLabel : "Periodo operacional",
+    };
+  }
+
+  if (bucket.id === "hospedagem") {
+    return {
+      title: bucket.label,
+      subtitle: appointment?.service_type === "pernoite" ? "Pernoite" : "Check-in",
+    };
+  }
+
+  if (bucket.id === "transporte") {
+    return {
+      title: bucket.label,
+      subtitle: "Busca",
+    };
+  }
+
+  if (bucket.id === "banho") {
+    return {
+      title: bucket.label,
+      subtitle: rawLabel,
+    };
+  }
+
+  return {
+    title: bucket.label,
+    subtitle: meta.misc_service_label || (rawLabel !== "Diversos" && rawLabel !== "diversos" ? rawLabel : bucket.subtitle),
+  };
+}
+
+function getAppointmentOperationalState(appointment, record) {
+  const meta = getAppointmentMeta(appointment);
+  const todayKey = getTodayKey();
+  const appointmentDateKey = getAppointmentDateKey(appointment);
+  const scheduleTimestamp = getScheduleTimestamp(appointment);
+  const now = new Date();
+  const hasCheckin = Boolean(record?.checkin_datetime || record?.data_checkin) || appointment?.status === "presente";
+  const hasCheckout = Boolean(record?.checkout_datetime || record?.data_checkout) || appointment?.status === "finalizado";
+  const isNoShowConfirmed = appointment?.status === "faltou" || Boolean(meta.absence_confirmed_at);
+  const needsAbsenceReview = Boolean(meta.absence_review_pending);
+
+  if (isNoShowConfirmed) {
+    return { key: "no_show", label: STATUS_STYLES.no_show.badgeLabel, needsAbsenceReview };
+  }
+
+  if (hasCheckout) {
+    return { key: "completed", label: STATUS_STYLES.completed.badgeLabel, needsAbsenceReview };
+  }
+
+  if (hasCheckin) {
+    return { key: "arrived", label: STATUS_STYLES.arrived.badgeLabel, needsAbsenceReview };
+  }
+
+  if (appointmentDateKey && appointmentDateKey < todayKey) {
+    return {
+      key: needsAbsenceReview ? "attention" : "late",
+      label: needsAbsenceReview ? STATUS_STYLES.attention.badgeLabel : STATUS_STYLES.late.badgeLabel,
+      needsAbsenceReview,
+    };
+  }
+
+  if (appointmentDateKey === todayKey && scheduleTimestamp && scheduleTimestamp <= now) {
+    return {
+      key: needsAbsenceReview ? "attention" : "late",
+      label: needsAbsenceReview ? STATUS_STYLES.attention.badgeLabel : STATUS_STYLES.late.badgeLabel,
+      needsAbsenceReview,
+    };
+  }
+
+  if (needsAbsenceReview) {
+    return { key: "attention", label: STATUS_STYLES.attention.badgeLabel, needsAbsenceReview };
+  }
+
+  return { key: "upcoming", label: STATUS_STYLES.upcoming.badgeLabel, needsAbsenceReview };
+}
+
+function formatDateControlLabel(dateKey) {
+  if (!dateKey) return "Hoje";
+  const date = new Date(`${dateKey}T12:00:00`);
+  const isToday = dateKey === getTodayKey();
+  const dateLabel = formatLongDate(`${dateKey}T12:00:00`);
+  return isToday ? `Hoje • ${dateLabel}` : dateLabel;
+}
+
+function SummaryCard({ icon: Icon, label, value, helper, iconClassName, valueClassName }) {
+  return (
+    <Card className="rounded-[24px] border border-slate-200 shadow-sm">
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className={cn("flex h-12 w-12 items-center justify-center rounded-2xl", iconClassName)}>
+            <Icon className="h-5 w-5" />
+          </div>
+        </div>
+        <div className="mt-5 space-y-2">
+          <p className="text-sm font-semibold text-slate-900">{label}</p>
+          <p className={cn("text-5xl font-bold tracking-tight", valueClassName)}>{value}</p>
+          <p className="text-sm text-slate-500">{helper}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatusPill({ icon: Icon, label, value, active, onClick, tone }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex min-w-[158px] items-center gap-3 rounded-2xl border px-4 py-3 text-left transition",
+        active ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+      )}
+    >
+      <span className={cn("flex h-9 w-9 items-center justify-center rounded-xl", tone)}>
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold">{label}</span>
+        <span className="block text-sm font-bold">{value}</span>
+      </span>
+    </button>
+  );
+}
+
+function AppointmentStatusBadge({ stateKey, label }) {
+  const style = STATUS_STYLES[stateKey] || STATUS_STYLES.upcoming;
+  return (
+    <span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-semibold", style.subtleClassName)}>
+      {label}
+    </span>
+  );
+}
+
+function AppointmentActions({ appointment, state, isSaving, onOpenRegistrador, onOpenRecords, onOpenOrcamento, onOpenPackageDialog, onCreateOrcamento, onMarkAbsence }) {
+  const primaryAction =
+    state.key === "late" || state.key === "attention" || state.key === "upcoming"
+      ? {
+          label: state.key === "attention" ? "Resolver agora" : "Registrar check-in",
+          onClick: () => onOpenRegistrador(appointment),
+        }
+      : appointment?.orcamento_id
+        ? {
+            label: "Abrir orçamento",
+            onClick: () => onOpenOrcamento(appointment),
+          }
+        : {
+            label: "Ver registros",
+            onClick: () => onOpenRecords(appointment),
+          };
+
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <Button variant="outline" className="h-10 rounded-xl px-4 text-sm" onClick={primaryAction.onClick}>
+        {primaryAction.label}
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl border border-slate-200">
+            <MoreHorizontal className="h-4 w-4 text-slate-500" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56 rounded-2xl">
+          <DropdownMenuItem onClick={() => onOpenRegistrador(appointment)}>Abrir no registrador</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onOpenRecords(appointment)}>Ver registros</DropdownMenuItem>
+          {appointment?.orcamento_id ? (
+            <DropdownMenuItem onClick={() => onOpenOrcamento(appointment)}>Abrir orçamento</DropdownMenuItem>
+          ) : null}
+          {appointment?.charge_type === "pendente_comercial" ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onOpenPackageDialog(appointment)}>Marcar pacote</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onCreateOrcamento(appointment)}>Criar orçamento</DropdownMenuItem>
+            </>
+          ) : null}
+          {state.needsAbsenceReview ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={isSaving} onClick={() => onMarkAbsence(appointment)}>
+                Registrar falta
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
 }
 
 export default function Agendamentos() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const reviewAppointmentId = searchParams.get("review");
+  const absenceReviewAppointmentId = searchParams.get("absenceReview");
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [appointments, setAppointments] = useState([]);
@@ -97,26 +522,30 @@ export default function Agendamentos() {
   const [carteiras, setCarteiras] = useState([]);
   const [contasReceber, setContasReceber] = useState([]);
   const [checkins, setCheckins] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterDate, setFilterDate] = useState("");
-  const [filterService, setFilterService] = useState("all");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterDate, setFilterDate] = useState(getTodayKey());
+  const [topTab, setTopTab] = useState(
+    reviewAppointmentId ? "pendencias_comerciais" : absenceReviewAppointmentId ? "nao_compareceram" : "operacao",
+  );
+  const [statusView, setStatusView] = useState("all");
+  const [serviceView, setServiceView] = useState("all");
   const [packageDialogOpen, setPackageDialogOpen] = useState(false);
   const [avulsoActionsDialogOpen, setAvulsoActionsDialogOpen] = useState(false);
   const [recordsDialogOpen, setRecordsDialogOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [packageCode, setPackageCode] = useState("");
   const [packageNotes, setPackageNotes] = useState("");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
 
   const dogsById = useMemo(() => Object.fromEntries(dogs.map((dog) => [dog.id, dog])), [dogs]);
-  const orcamentosById = useMemo(() => Object.fromEntries(orcamentos.map((orcamento) => [orcamento.id, orcamento])), [orcamentos]);
+  const orcamentosById = useMemo(
+    () => Object.fromEntries(orcamentos.map((orcamento) => [orcamento.id, orcamento])),
+    [orcamentos],
+  );
   const ownerByDogId = useMemo(() => {
     const baseIndex = buildDogOwnerIndex(carteiras, []);
     const dogKeys = [1, 2, 3, 4, 5, 6, 7, 8].map((index) => `dog_id_${index}`);
     const mergedIndex = { ...baseIndex };
-    const carteirasById = Object.fromEntries(
-      (carteiras || []).map((carteira) => [carteira?.id, carteira]),
-    );
+    const carteirasById = Object.fromEntries((carteiras || []).map((carteira) => [carteira?.id, carteira]));
 
     (carteiras || []).forEach((carteira) => {
       dogKeys.forEach((key) => {
@@ -149,23 +578,20 @@ export default function Agendamentos() {
 
     return mergedIndex;
   }, [carteiras, dogs]);
-  const financialStatusMap = useMemo(
-    () => buildFinancialOperationalStatusMap(contasReceber),
-    [contasReceber],
-  );
+  const financialStatusMap = useMemo(() => buildFinancialOperationalStatusMap(contasReceber), [contasReceber]);
   const visibleAppointments = useMemo(
-    () => filterAppointmentsByApprovedOrcamentos(appointments, orcamentosById),
-    [appointments, orcamentosById]
+    () => filterAppointmentsByApprovedOrcamentos(appointments, orcamentosById).sort(compareAppointments),
+    [appointments, orcamentosById],
   );
-  const reviewAppointmentId = searchParams.get("review");
-  const absenceReviewAppointmentId = searchParams.get("absenceReview");
+  const appointmentRecordByAppointmentId = useMemo(() => buildAppointmentRecordIndex(checkins), [checkins]);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  async function loadData(silent = false) {
+    if (silent) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
 
-  async function loadData() {
-    setIsLoading(true);
     try {
       const [me, appointmentRows, orcamentoRows, dogRows, carteiraRows, checkinRows, contaRows] = await Promise.all([
         User.me(),
@@ -183,69 +609,177 @@ export default function Agendamentos() {
       setCarteiras((carteiraRows || []).filter((item) => item.ativo !== false));
       setCheckins(checkinRows || []);
       setContasReceber(contaRows || []);
+      setLastUpdatedAt(new Date());
     } catch (error) {
       console.error("Erro ao carregar agendamentos:", error);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
-    setIsLoading(false);
   }
 
   const shouldHideOperationalAlerts = useMemo(() => isOperationalProfile(currentUser), [currentUser]);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (shouldHideOperationalAlerts && topTab === "pendencias_comerciais") {
+      setTopTab("operacao");
+    }
+  }, [shouldHideOperationalAlerts, topTab]);
+
   const selectedAppointmentRecord = useMemo(() => {
     if (!selectedAppointment) return null;
+    const directRecord = appointmentRecordByAppointmentId[selectedAppointment.id];
+    if (directRecord) return directRecord;
 
     const matchingRecords = checkins
       .filter((item) => item.tipo === "pet")
-      .filter((item) =>
-        item.id === selectedAppointment.linked_checkin_id
-        || item.appointment_id === selectedAppointment.id
-      )
-      .sort((left, right) => {
-        const leftValue = left.checkout_datetime || left.data_checkout || left.checkin_datetime || left.data_checkin || left.created_date || "";
-        const rightValue = right.checkout_datetime || right.data_checkout || right.checkin_datetime || right.data_checkin || right.created_date || "";
-        return String(rightValue).localeCompare(String(leftValue));
-      });
+      .filter((item) => item.id === selectedAppointment.linked_checkin_id || item.appointment_id === selectedAppointment.id)
+      .sort((left, right) => String(getLatestRecordTimestamp(right)).localeCompare(String(getLatestRecordTimestamp(left))));
 
     return matchingRecords[0] || null;
-  }, [checkins, selectedAppointment]);
+  }, [appointmentRecordByAppointmentId, checkins, selectedAppointment]);
 
   const pendingCommercialAppointments = useMemo(() => {
     return visibleAppointments.filter((appointment) => {
       const meta = getAppointmentMeta(appointment);
       return appointment.source_type === "manual_registrador" && (
-        appointment.charge_type === "pendente_comercial" ||
-        meta.commercial_review_pending
+        appointment.charge_type === "pendente_comercial" || meta.commercial_review_pending
       );
     });
   }, [visibleAppointments]);
 
   const pendingAbsenceAppointments = useMemo(() => {
-    return visibleAppointments.filter((appointment) => {
-      const meta = getAppointmentMeta(appointment);
-      return meta.absence_review_pending;
-    });
+    return visibleAppointments.filter((appointment) => getAppointmentMeta(appointment).absence_review_pending);
   }, [visibleAppointments]);
 
-  const filteredAppointments = useMemo(() => {
-    return visibleAppointments.filter((appointment) => {
+  const appointmentPresentationRows = useMemo(() => {
+    return visibleAppointments.map((appointment) => {
       const dog = dogsById[appointment.dog_id];
       const owner = ownerByDogId[appointment.dog_id] || {};
-      const matchSearch = !searchTerm || appointmentMatchesSearch(appointment, dog, owner, searchTerm);
-      const matchDate = !filterDate || doesAppointmentOccurOnDate(appointment, filterDate);
-      const matchService = filterService === "all" || appointment.service_type === filterService;
-      const matchStatus = filterStatus === "all" || appointment.status === filterStatus || appointment.charge_type === filterStatus;
-      return matchSearch && matchDate && matchService && matchStatus;
-    });
-  }, [visibleAppointments, dogsById, filterDate, filterService, filterStatus, ownerByDogId, searchTerm]);
+      const record = appointmentRecordByAppointmentId[appointment.id] || null;
+      const meta = getAppointmentMeta(appointment);
+      const bucket = getServiceBucketConfig(appointment);
+      const state = getAppointmentOperationalState(appointment, record);
+      const ownerDisplayName = getAppointmentOwnerDisplay(owner, appointment);
+      const ownerFinancialStatus = getFinancialOperationalStatus(
+        financialStatusMap,
+        owner?.cliente_id || owner?.id || null,
+      );
+      const serviceLine = getAppointmentServiceLine(appointment);
+      const scheduleTime = getAppointmentTimeValue(appointment, "entrada");
+      const checkinTime = record?.checkin_datetime || record?.data_checkin || null;
+      const checkoutTime = record?.checkout_datetime || record?.data_checkout || null;
 
-  const stats = useMemo(() => {
-    const todayKey = new Date().toISOString().slice(0, 10);
+      return {
+        appointment,
+        dog,
+        owner,
+        meta,
+        bucket,
+        state,
+        ownerFinancialStatus,
+        serviceLine,
+        appointmentDateKey: getAppointmentDateKey(appointment),
+        scheduleTime,
+        sortTime: scheduleTime || "99:99",
+        primaryLabel: getAppointmentPrimaryLabel(appointment, dog),
+        secondaryLabel: getAppointmentSecondaryLabel(appointment, dog),
+        ownerDisplayName,
+        ownerLine: formatOwnerAppointmentLine(ownerDisplayName, appointment),
+        sourceLabel: getAppointmentDetailLabel(appointment),
+        checkinTime,
+        checkoutTime,
+        hasCommercialPending: appointment.charge_type === "pendente_comercial",
+        hasAbsenceReviewPending: Boolean(meta.absence_review_pending),
+      };
+    });
+  }, [appointmentRecordByAppointmentId, dogsById, financialStatusMap, ownerByDogId, visibleAppointments]);
+
+  const selectedDayKey = filterDate || getTodayKey();
+  const dailyRows = useMemo(() => {
+    return appointmentPresentationRows
+      .filter((row) => doesAppointmentOccurOnDate(row.appointment, selectedDayKey))
+      .sort((left, right) => left.sortTime.localeCompare(right.sortTime));
+  }, [appointmentPresentationRows, selectedDayKey]);
+
+  const dailyStats = useMemo(() => {
+    const arrived = dailyRows.filter((row) => row.state.key === "arrived").length;
+    const late = dailyRows.filter((row) => ["late", "attention"].includes(row.state.key)).length;
+    const upcoming = dailyRows.filter((row) => row.state.key === "upcoming").length;
+    const noShow = dailyRows.filter((row) => row.state.key === "no_show").length;
+
     return {
-      total: visibleAppointments.length,
-      hoje: visibleAppointments.filter((appointment) => doesAppointmentOccurOnDate(appointment, todayKey)).length,
-      pendencias: pendingCommercialAppointments.length,
-      presentes: visibleAppointments.filter((appointment) => appointment.status === "presente").length,
+      total: dailyRows.length,
+      arrived,
+      late,
+      upcoming,
+      noShow,
     };
-  }, [pendingCommercialAppointments, visibleAppointments]);
+  }, [dailyRows]);
+
+  const serviceSummary = useMemo(() => {
+    return SERVICE_BUCKETS.map((bucket) => {
+      const bucketRows = dailyRows.filter((row) => row.bucket.id === bucket.id);
+      const total = bucketRows.length;
+      const arrived = bucketRows.filter((row) => row.state.key === "arrived").length;
+      const late = bucketRows.filter((row) => ["late", "attention"].includes(row.state.key)).length;
+      const upcoming = bucketRows.filter((row) => row.state.key === "upcoming").length;
+      const noShow = bucketRows.filter((row) => row.state.key === "no_show").length;
+      const rate = total > 0 ? Math.round((arrived / total) * 100) : 0;
+
+      return {
+        ...bucket,
+        total,
+        arrived,
+        late,
+        upcoming,
+        noShow,
+        rate,
+      };
+    });
+  }, [dailyRows]);
+
+  const lateRows = useMemo(() => {
+    return dailyRows.filter((row) => ["late", "attention"].includes(row.state.key));
+  }, [dailyRows]);
+
+  const baseRows = useMemo(() => {
+    if (topTab === "presentes_agora") {
+      return dailyRows.filter((row) => row.state.key === "arrived");
+    }
+
+    if (topTab === "nao_compareceram") {
+      return appointmentPresentationRows.filter((row) => row.state.key === "no_show" || row.hasAbsenceReviewPending);
+    }
+
+    if (topTab === "pendencias_comerciais") {
+      return appointmentPresentationRows.filter((row) => row.hasCommercialPending);
+    }
+
+    return dailyRows;
+  }, [appointmentPresentationRows, dailyRows, topTab]);
+
+  const filteredMainRows = useMemo(() => {
+    return baseRows
+      .filter((row) => (serviceView === "all" ? true : row.bucket.id === serviceView))
+      .filter((row) => {
+        if (topTab !== "operacao" || statusView === "all") return true;
+        if (statusView === "late") return ["late", "attention"].includes(row.state.key);
+        return row.state.key === statusView;
+      })
+      .sort((left, right) => {
+        const leftDate = left.appointmentDateKey || "";
+        const rightDate = right.appointmentDateKey || "";
+        if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+        return left.sortTime.localeCompare(right.sortTime);
+      });
+  }, [baseRows, serviceView, statusView, topTab]);
+
+  const highlightAppointmentId = reviewAppointmentId || absenceReviewAppointmentId || null;
 
   function openPackageDialog(appointment) {
     const meta = getAppointmentMeta(appointment);
@@ -296,13 +830,14 @@ export default function Agendamentos() {
           commercial_notes: packageNotes || "",
         },
       });
-      await loadData();
+      await loadData(true);
       setPackageDialogOpen(false);
       setSelectedAppointment(null);
     } catch (error) {
       console.error("Erro ao classificar como pacote:", error);
+    } finally {
+      setIsSaving(false);
     }
-    setIsSaving(false);
   }
 
   async function handleCreateOrcamento(appointment) {
@@ -323,17 +858,18 @@ export default function Agendamentos() {
       await resolveReceivableIfNeeded(nextAppointment);
       const dog = dogsById[appointment.dog_id];
       navigate(
-        `${createPageUrl("Orcamentos")}?dogId=${encodeURIComponent(getInternalEntityReference(dog) || appointment.dog_id)}&service=${encodeURIComponent(appointment.service_type || "")}&date=${encodeURIComponent(getAppointmentDateKey(appointment) || "")}&appointmentId=${encodeURIComponent(appointment.id)}&owner=${encodeURIComponent(ownerByDogId[appointment.dog_id]?.nome || dog?.nome || "")}`
+        `${createPageUrl("Orcamentos")}?dogId=${encodeURIComponent(getInternalEntityReference(dog) || appointment.dog_id)}&service=${encodeURIComponent(appointment.service_type || "")}&date=${encodeURIComponent(getAppointmentDateKey(appointment) || "")}&appointmentId=${encodeURIComponent(appointment.id)}&owner=${encodeURIComponent(ownerByDogId[appointment.dog_id]?.nome || dog?.nome || "")}`,
       );
     } catch (error) {
-      console.error("Erro ao preparar orçamento avulso:", error);
+      console.error("Erro ao preparar orcamento avulso:", error);
+    } finally {
+      setIsSaving(false);
     }
-    setIsSaving(false);
   }
 
   function openRegistradorForAppointment(appointment) {
     navigate(
-      `${createPageUrl("Registrador")}?date=${encodeURIComponent(getAppointmentDateKey(appointment) || "")}&appointmentId=${encodeURIComponent(appointment.id)}`
+      `${createPageUrl("Registrador")}?date=${encodeURIComponent(getAppointmentDateKey(appointment) || "")}&appointmentId=${encodeURIComponent(appointment.id)}`,
     );
   }
 
@@ -353,292 +889,470 @@ export default function Agendamentos() {
           ...currentMeta,
           absence_review_pending: false,
           absence_confirmed_at: new Date().toISOString(),
-          replacement_deadline: appointment.charge_type === "pacote" ? (currentMeta.suggested_replacement_deadline || addDays(serviceDate, 30)) : null,
+          replacement_deadline:
+            appointment.charge_type === "pacote"
+              ? currentMeta.suggested_replacement_deadline || addDays(serviceDate, 30)
+              : null,
           finance_review_required: appointment.charge_type !== "pacote",
           finance_follow_up: appointment.charge_type === "pacote" ? null : "avaliar_pagamento_ou_credito",
         },
       });
-      await loadData();
+      await loadData(true);
     } catch (error) {
       console.error("Erro ao marcar falta:", error);
+    } finally {
+      setIsSaving(false);
     }
-    setIsSaving(false);
   }
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-[#f6f8fc]">
         <div className="h-16 w-16 animate-spin rounded-full border-b-4 border-blue-600" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
-      <div className="mx-auto max-w-7xl space-y-4 sm:space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-blue-100 p-2.5 sm:p-3">
-              <Calendar className="h-5 w-5 text-blue-700 sm:h-6 sm:w-6" />
+    <div className="min-h-screen bg-[#f6f8fc] p-4 lg:p-6">
+      <div className="mx-auto max-w-[1400px] space-y-6">
+        <div className="flex flex-col gap-4 rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_20px_50px_rgba(15,23,42,0.06)] backdrop-blur">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-blue-50 text-blue-600">
+                  <Calendar className="h-8 w-8" />
+                </div>
+                <div>
+                  <h1 className="text-4xl font-bold tracking-tight text-slate-950">Agendamentos</h1>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Painel operacional do dia com leitura por servico, status e pendencias de check-in.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-6 border-b border-slate-200 pb-1">
+                {[
+                  { id: "operacao", label: "Operacao", count: dailyStats.total },
+                  { id: "presentes_agora", label: "Presentes Agora", count: dailyStats.arrived },
+                  { id: "nao_compareceram", label: "Nao Compareceram", count: dailyStats.noShow },
+                  ...(!shouldHideOperationalAlerts
+                    ? [{ id: "pendencias_comerciais", label: "Pendencias Comerciais", count: pendingCommercialAppointments.length }]
+                    : []),
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setTopTab(tab.id)}
+                    className={cn(
+                      "flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-semibold transition",
+                      topTab === tab.id
+                        ? "border-blue-600 text-blue-600"
+                        : "border-transparent text-slate-500 hover:text-slate-700",
+                    )}
+                  >
+                    <span>{tab.label}</span>
+                    <span className="text-xs font-bold">{tab.count}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 sm:text-3xl">Agendamentos</h1>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center xl:justify-end">
+              <Button
+                variant="outline"
+                onClick={() => loadData(true)}
+                className="h-12 rounded-2xl border-slate-200 px-5 text-sm font-semibold shadow-sm"
+              >
+                {isRefreshing ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Atualizar
+              </Button>
+              <div className="min-w-[240px]">
+                <DatePickerInput
+                  value={filterDate}
+                  onChange={setFilterDate}
+                  placeholder={formatDateControlLabel(selectedDayKey)}
+                  className="h-12 rounded-2xl border-slate-200 px-4 text-sm font-semibold shadow-sm sm:h-12"
+                />
+              </div>
             </div>
           </div>
-          <Button variant="outline" onClick={loadData} className="h-9 w-full rounded-full px-3 text-xs sm:h-10 sm:w-auto sm:px-4 sm:text-sm">
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
-            Atualizar
-          </Button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          {[
-            { label: "Total", value: stats.total, tone: "text-blue-600", border: "border-blue-200" },
-            { label: "Hoje", value: stats.hoje, tone: "text-emerald-600", border: "border-emerald-200" },
-            { label: "Presentes", value: stats.presentes, tone: "text-amber-600", border: "border-amber-200" },
-            ...(!shouldHideOperationalAlerts ? [{ label: "Pendencias comerciais", value: stats.pendencias, tone: "text-rose-600", border: "border-rose-200" }] : []),
-          ].map((item) => (
-            <Card key={item.label} className={`${item.border} bg-white`}>
-              <CardContent className="p-2.5 sm:p-4">
-                <p className="text-[11px] text-gray-600 sm:text-sm">{item.label}</p>
-                <p className={`mt-1 text-lg font-bold sm:text-2xl ${item.tone}`}>{item.value}</p>
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold text-slate-950">Resumo geral do dia</h2>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-5">
+            <SummaryCard
+              icon={Users}
+              label="Total previsto"
+              value={dailyStats.total}
+              helper={`${dailyStats.total} agendamento${dailyStats.total === 1 ? "" : "s"}`}
+              iconClassName="bg-blue-50 text-blue-600"
+              valueClassName="text-blue-600"
+            />
+            <SummaryCard
+              icon={CheckCircle2}
+              label="Ja chegaram"
+              value={dailyStats.arrived}
+              helper={dailyStats.total > 0 ? `${Math.round((dailyStats.arrived / dailyStats.total) * 100)}% do previsto` : "Sem chegadas registradas"}
+              iconClassName="bg-emerald-50 text-emerald-600"
+              valueClassName="text-emerald-600"
+            />
+            <SummaryCard
+              icon={Clock3}
+              label="Atrasados"
+              value={dailyStats.late}
+              helper="Aguardando check-in"
+              iconClassName="bg-amber-50 text-amber-600"
+              valueClassName="text-amber-600"
+            />
+            <SummaryCard
+              icon={CalendarClock}
+              label="Previstos"
+              value={dailyStats.upcoming}
+              helper="Ainda nao chegaram"
+              iconClassName="bg-violet-50 text-violet-600"
+              valueClassName="text-violet-600"
+            />
+            <SummaryCard
+              icon={TriangleAlert}
+              label="Nao compareceram"
+              value={dailyStats.noShow}
+              helper="Sem check-in"
+              iconClassName="bg-rose-50 text-rose-600"
+              valueClassName="text-rose-600"
+            />
+          </div>
+        </section>
+
+        <section className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
+          <Card className="rounded-[28px] border border-slate-200 shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-2xl text-slate-950">Resumo por servico</CardTitle>
+            </CardHeader>
+            <CardContent className="overflow-hidden px-0 pb-2">
+              <div className="grid grid-cols-[minmax(260px,1.8fr)_72px_92px_88px_118px_104px_110px] items-center gap-2 border-b border-slate-200 px-5 pb-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <span>Servico</span>
+                <span className="text-center">Previstos</span>
+                <span className="text-center">Ja chegaram</span>
+                <span className="text-center">Atrasados</span>
+                <span className="text-center">Previstos</span>
+                <span className="text-center">Nao vieram</span>
+                <span className="text-center">% Chegaram</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {serviceSummary.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setServiceView(item.id)}
+                      className={cn(
+                        "grid w-full grid-cols-[minmax(260px,1.8fr)_72px_92px_88px_118px_104px_110px] items-center gap-2 px-5 py-4 text-left transition hover:bg-slate-50",
+                        serviceView === item.id && "bg-blue-50/60",
+                      )}
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", item.iconClassName)}>
+                          <Icon className="h-5 w-5" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-base font-semibold text-slate-900">{item.label}</span>
+                          <span className="block truncate text-sm text-slate-500">{item.subtitle}</span>
+                        </span>
+                      </div>
+                      <span className="text-center text-lg font-semibold text-slate-900">{item.total}</span>
+                      <span className="text-center text-lg font-semibold text-emerald-600">{item.arrived}</span>
+                      <span className="text-center text-lg font-semibold text-amber-600">{item.late}</span>
+                      <span className="text-center text-lg font-semibold text-violet-600">{item.upcoming}</span>
+                      <span className="text-center text-lg font-semibold text-rose-600">{item.noShow}</span>
+                      <div className="flex items-center justify-end gap-3">
+                        <Progress
+                          value={item.rate}
+                          className={cn("h-2.5 w-20 bg-slate-100 [&>div]:transition-all", item.progressClassName)}
+                        />
+                        <span className="w-8 text-right text-sm font-semibold text-slate-600">{item.rate}%</span>
+                      </div>
+                    </button>
+                  );
+                })}
+                <div className="grid grid-cols-[minmax(260px,1.8fr)_72px_92px_88px_118px_104px_110px] items-center gap-2 bg-slate-50 px-5 py-4">
+                  <span className="text-lg font-semibold text-slate-950">Todos os servicos</span>
+                  <span className="text-center text-lg font-bold text-slate-950">{dailyStats.total}</span>
+                  <span className="text-center text-lg font-bold text-emerald-600">{dailyStats.arrived}</span>
+                  <span className="text-center text-lg font-bold text-amber-600">{dailyStats.late}</span>
+                  <span className="text-center text-lg font-bold text-violet-600">{dailyStats.upcoming}</span>
+                  <span className="text-center text-lg font-bold text-rose-600">{dailyStats.noShow}</span>
+                  <span className="text-right text-sm font-semibold text-slate-600">
+                    {dailyStats.total > 0 ? Math.round((dailyStats.arrived / dailyStats.total) * 100) : 0}%
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-4">
+            <Card className="rounded-[28px] border border-slate-200 shadow-sm">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-2xl text-slate-950">Visao por status (agendamentos do dia)</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                  <StatusPill
+                    icon={ClipboardList}
+                    label="Todos"
+                    value={dailyStats.total}
+                    active={statusView === "all"}
+                    onClick={() => setStatusView("all")}
+                    tone="bg-blue-50 text-blue-600"
+                  />
+                  <StatusPill
+                    icon={CheckCircle2}
+                    label="Ja chegaram"
+                    value={dailyStats.arrived}
+                    active={statusView === "arrived"}
+                    onClick={() => setStatusView("arrived")}
+                    tone="bg-emerald-50 text-emerald-600"
+                  />
+                  <StatusPill
+                    icon={Clock3}
+                    label="Atrasados"
+                    value={dailyStats.late}
+                    active={statusView === "late"}
+                    onClick={() => setStatusView("late")}
+                    tone="bg-amber-50 text-amber-600"
+                  />
+                  <StatusPill
+                    icon={CalendarClock}
+                    label="Previstos"
+                    value={dailyStats.upcoming}
+                    active={statusView === "upcoming"}
+                    onClick={() => setStatusView("upcoming")}
+                    tone="bg-violet-50 text-violet-600"
+                  />
+                  <StatusPill
+                    icon={TriangleAlert}
+                    label="Nao compareceram"
+                    value={dailyStats.noShow}
+                    active={statusView === "no_show"}
+                    onClick={() => setStatusView("no_show")}
+                    tone="bg-rose-50 text-rose-600"
+                  />
+                </div>
               </CardContent>
             </Card>
-          ))}
-        </div>
 
-        {!shouldHideOperationalAlerts && pendingAbsenceAppointments.length > 0 && (
-          <Card className={`border-rose-300 bg-rose-50 ${absenceReviewAppointmentId ? "ring-2 ring-rose-300" : ""}`}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-rose-900">
-                <AlertTriangle className="h-5 w-5" />
-                Confirmação de faltas pendente
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {pendingAbsenceAppointments.map((appointment) => {
-                const dog = dogsById[appointment.dog_id];
-                const owner = ownerByDogId[appointment.dog_id] || {};
-                const meta = getAppointmentMeta(appointment);
-                const highlighted = absenceReviewAppointmentId === appointment.id;
-                return (
-                  <div key={appointment.id} className={`rounded-xl border bg-white p-4 ${highlighted ? "border-rose-400" : "border-rose-200"}`}>
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="font-semibold text-gray-900">
-                          {dog?.nome || "Cão"} - {getServiceLabel(appointment.service_type)}
-                        </p>
-                        <p className="mt-1 text-sm text-gray-600">
-                          {formatOwnerAppointmentLine(owner.nome, appointment)}
-                        </p>
-                        <p className="mt-2 text-sm text-rose-900">
-                          {meta.checkin_id ? "Existe check-in aberto sem check-out. Revise no Registrador antes de confirmar a falta." : "Não houve check-in/check-out registrado para esse atendimento."}
-                        </p>
-                        <p className="mt-2 text-xs text-gray-500">
-                          {appointment.charge_type === "pacote"
-                            ? "Se confirmar a falta, o atendimento fica marcado para reposição em até 30 dias."
-                            : "Se confirmar a falta, o financeiro continua com a análise de pagamento ou crédito."}
-                        </p>
-                      </div>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                        <Button variant="outline" onClick={() => openRegistradorForAppointment(appointment)} className="w-full sm:w-auto">
-                          Abrir no registrador
+            <Card className="rounded-[28px] border border-slate-200 shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                <div>
+                  <CardTitle className="text-2xl text-slate-950">Atrasados (aguardando check-in)</CardTitle>
+                  <CardDescription className="mt-1 text-sm text-slate-500">
+                    Atendimentos previstos para o horario que ainda precisam de acao.
+                  </CardDescription>
+                </div>
+                <Button variant="ghost" className="rounded-xl px-3 text-sm font-semibold text-blue-600" onClick={() => setStatusView("late")}>
+                  Ver todos
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {lateRows.length > 0 ? (
+                  lateRows.slice(0, 5).map((row) => {
+                    const bucket = row.bucket;
+                    const Icon = bucket.icon;
+                    return (
+                      <div key={row.appointment.id} className="flex items-center gap-4 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3">
+                        <div className="w-14 text-center">
+                          <p className="text-sm font-semibold text-slate-900">{row.scheduleTime || "--:--"}</p>
+                          <p className="mt-1 text-xs font-semibold text-rose-600">
+                            {row.state.key === "attention" ? "Verificar" : "Atrasado"}
+                          </p>
+                        </div>
+                        <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", bucket.iconClassName)}>
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate text-base font-semibold text-slate-950">{row.primaryLabel}</p>
+                            <AppointmentStatusBadge stateKey={row.state.key} label={row.state.label} />
+                          </div>
+                          <p className="truncate text-sm text-slate-500">{row.secondaryLabel}</p>
+                          <p className="truncate text-sm text-slate-500">{row.ownerLine}</p>
+                        </div>
+                        <Button variant="outline" className="h-10 rounded-xl px-4 text-sm" onClick={() => openRegistradorForAppointment(row.appointment)}>
+                          Registrar check-in
                         </Button>
-                        <Button onClick={() => handleMarkAbsence(appointment)} disabled={isSaving} className="w-full bg-rose-600 text-white hover:bg-rose-700 sm:w-auto">
-                          Confirmar falta
-                        </Button>
                       </div>
-                    </div>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50 px-5 py-6 text-sm text-slate-500">
+                    Nenhum agendamento atrasado neste recorte.
                   </div>
-                );
-              })}
-            </CardContent>
-          </Card>
-        )}
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </section>
 
-        {!shouldHideOperationalAlerts && pendingCommercialAppointments.length > 0 && (
-          <Card className={`border-amber-300 bg-amber-50 ${reviewAppointmentId ? "ring-2 ring-amber-300" : ""}`}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-amber-900">
-                <ClipboardList className="h-5 w-5" />
-                Classificação comercial pendente
+        <Card className="rounded-[28px] border border-slate-200 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
+            <div>
+              <CardTitle className="text-2xl text-slate-950">
+                {topTab === "pendencias_comerciais" ? "Pendencias comerciais" : "Agendamentos do dia (todos os servicos)"}
               </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {pendingCommercialAppointments.map((appointment) => {
-                const dog = dogsById[appointment.dog_id];
-                const owner = ownerByDogId[appointment.dog_id] || {};
-                const highlighted = reviewAppointmentId === appointment.id;
-                return (
-                  <div key={appointment.id} className={`rounded-xl border bg-white p-4 ${highlighted ? "border-amber-400" : "border-amber-200"}`}>
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="font-semibold text-gray-900">
-                          {dog?.nome || "Cão"} • {getServiceLabel(appointment.service_type)}
-                        </p>
-                        <p className="mt-1 text-sm text-gray-600">
-                          {formatOwnerAppointmentLine(owner.nome, appointment)}
-                        </p>
-                      </div>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                        <Button variant="outline" onClick={() => openPackageDialog(appointment)} className="w-full sm:w-auto">
-                          <Tag className="mr-2 h-4 w-4" />
-                          Marcar pacote
-                        </Button>
-                        <Button onClick={() => handleCreateOrcamento(appointment)} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
-                          Criar orçamento
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </CardContent>
-          </Card>
-        )}
-
-        <Card className="border-gray-200 bg-white">
-          <CardContent className="p-3 sm:p-4">
-            <SearchFiltersToolbar
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-              searchPlaceholder="Buscar por cão, responsável ou serviço..."
-              hasActiveFilters={Boolean(searchTerm || filterDate || filterService !== "all" || filterStatus !== "all")}
-              onClear={() => {
-                setSearchTerm("");
-                setFilterDate("");
-                setFilterService("all");
-                setFilterStatus("all");
+              <CardDescription className="mt-1 text-sm text-slate-500">
+                Feed operacional com status, servico e acao rapida para o dia selecionado.
+              </CardDescription>
+            </div>
+            <Button
+              variant="ghost"
+              className="rounded-xl px-3 text-sm font-semibold text-blue-600"
+              onClick={() => {
+                setTopTab("operacao");
+                setStatusView("all");
+                setServiceView("all");
               }}
-              filters={[
-                {
-                  id: "date",
-                  label: "Data",
-                  icon: Calendar,
-                  active: Boolean(filterDate),
-                  content: (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Data do agendamento</p>
-                      <DatePickerInput value={filterDate} onChange={setFilterDate} />
-                    </div>
-                  ),
-                },
-                {
-                  id: "service",
-                  label: "Serviço",
-                  icon: ClipboardList,
-                  active: filterService !== "all",
-                  content: (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Serviço</p>
-                      <Select value={filterService} onValueChange={setFilterService}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Serviço" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos os serviços</SelectItem>
-                          {["day_care", "hospedagem", "adaptacao", "banho", "tosa", "transporte", "adestramento"].map((service) => (
-                            <SelectItem key={service} value={service}>{getServiceLabel(service)}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ),
-                },
-                {
-                  id: "status",
-                  label: "Status",
-                  icon: Tag,
-                  active: filterStatus !== "all",
-                  content: (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status</p>
-                      <Select value={filterStatus} onValueChange={setFilterStatus}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          <SelectItem value="agendado">Agendado</SelectItem>
-                          <SelectItem value="presente">Presente</SelectItem>
-                          <SelectItem value="finalizado">Finalizado</SelectItem>
-                          <SelectItem value="pendente_comercial">Pendente comercial</SelectItem>
-                          <SelectItem value="avulso">Avulso</SelectItem>
-                          <SelectItem value="pacote">Pacote</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ),
-                },
-              ]}
-              searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
-            />
+            >
+              Ver todos
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex flex-wrap gap-3">
+              {MAIN_SERVICE_FILTERS.map((filterId) => {
+                const isActive = serviceView === filterId;
+                const label = filterId === "all"
+                  ? "Todos"
+                  : SERVICE_BUCKETS.find((service) => service.id === filterId)?.label || filterId;
+                return (
+                  <button
+                    key={filterId}
+                    type="button"
+                    onClick={() => setServiceView(filterId)}
+                    className={cn(
+                      "min-w-[140px] rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+                      isActive ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm" : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="overflow-hidden rounded-[24px] border border-slate-200">
+              <div className="grid grid-cols-[96px_132px_minmax(0,1.2fr)_220px_220px_150px_164px] items-center gap-4 border-b border-slate-200 bg-slate-50 px-6 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <span>Horario</span>
+                <span>Status</span>
+                <span>Pet / atividade</span>
+                <span>Servico</span>
+                <span>Detalhes</span>
+                <span>Check-in</span>
+                <span className="text-right">Acoes</span>
+              </div>
+
+              <div className="divide-y divide-slate-100 bg-white">
+                {filteredMainRows.length > 0 ? (
+                  filteredMainRows.map((row) => {
+                    const bucket = row.bucket;
+                    const Icon = bucket.icon;
+                    const isHighlighted = highlightAppointmentId === row.appointment.id;
+                    const recordSummary = row.checkinTime
+                      ? `Check-in: ${formatTime(row.checkinTime)}`
+                      : `Previsto: ${row.scheduleTime || "--:--"}`;
+
+                    return (
+                      <div
+                        key={row.appointment.id}
+                        className={cn(
+                          "grid grid-cols-[96px_132px_minmax(0,1.2fr)_220px_220px_150px_164px] items-center gap-4 px-6 py-5 transition hover:bg-slate-50",
+                          isHighlighted && "bg-amber-50/80",
+                        )}
+                      >
+                        <div>
+                          <p className="text-lg font-semibold text-slate-950">{row.scheduleTime || "--:--"}</p>
+                          <p className="mt-1 text-sm text-slate-500">{formatLongDate(`${row.appointmentDateKey}T12:00:00`)}</p>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <AppointmentStatusBadge stateKey={row.state.key} label={row.state.label} />
+                          {row.hasCommercialPending ? (
+                            <span className="text-xs font-semibold text-amber-600">Pendente comercial</span>
+                          ) : null}
+                          {row.ownerFinancialStatus.isIrregular && row.appointment.source_type === "manual_registrador" ? (
+                            <span className="text-xs font-semibold text-rose-600">Financeiro irregular</span>
+                          ) : null}
+                        </div>
+
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                            <PawPrint className="h-6 w-6" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-semibold text-slate-950">{row.primaryLabel}</p>
+                            <p className="truncate text-sm text-slate-500">{row.secondaryLabel}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", bucket.iconClassName)}>
+                            <Icon className="h-5 w-5" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-semibold text-slate-950">{row.serviceLine.title}</p>
+                            <p className="truncate text-sm text-slate-500">{row.serviceLine.subtitle}</p>
+                          </div>
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">{row.ownerDisplayName}</p>
+                          <p className="truncate text-sm text-slate-500">{row.sourceLabel}</p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{recordSummary}</p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {row.checkoutTime ? `Check-out: ${formatTime(row.checkoutTime)}` : "Aguardando saida"}
+                          </p>
+                        </div>
+
+                        <AppointmentActions
+                          appointment={row.appointment}
+                          state={row.state}
+                          isSaving={isSaving}
+                          onOpenRegistrador={openRegistradorForAppointment}
+                          onOpenRecords={openRecordsDialog}
+                          onOpenOrcamento={openLinkedOrcamento}
+                          onOpenPackageDialog={openPackageDialog}
+                          onCreateOrcamento={handleCreateOrcamento}
+                          onMarkAbsence={handleMarkAbsence}
+                        />
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="px-6 py-12 text-center">
+                    <p className="text-base font-semibold text-slate-700">Nenhum agendamento encontrado neste recorte.</p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Ajuste a data ou os filtros visuais para encontrar os atendimentos deste painel.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
 
-        <div className="space-y-3">
-          {filteredAppointments.map((appointment) => {
-            const dog = dogsById[appointment.dog_id];
-            const owner = ownerByDogId[appointment.dog_id] || {};
-            const ownerFinancialStatus = getFinancialOperationalStatus(
-              financialStatusMap,
-              owner?.cliente_id || owner?.id || null,
-            );
-            return (
-              <Card
-                key={appointment.id}
-                className={appointment.charge_type === "avulso"
-                  ? "cursor-pointer border-gray-200 bg-white transition hover:border-blue-200 hover:shadow-sm"
-                  : "border-gray-200 bg-white"}
-                onClick={appointment.charge_type === "avulso" ? () => openAvulsoActionsDialog(appointment) : undefined}
-              >
-                <CardContent className="p-2.5 sm:p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-gray-900">{dog?.nome || "Cão"}</p>
-                        <Badge variant="outline" className="text-[11px] sm:text-xs">{getServiceLabel(appointment.service_type)}</Badge>
-                        <Badge className="bg-gray-100 text-[11px] text-gray-700 sm:text-xs">{appointment.status || "agendado"}</Badge>
-                        <Badge className={`text-[11px] sm:text-xs ${appointment.charge_type === "pacote" ? "bg-emerald-100 text-emerald-700" : appointment.charge_type === "avulso" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
-                          {getChargeTypeLabel(appointment.charge_type)}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-xs text-gray-600 sm:text-sm">
-                        {formatOwnerAppointmentLine(owner.nome, appointment)}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500">
-                        {getAppointmentSourceLabel(appointment)}
-                      </p>
-                      {!shouldHideOperationalAlerts && appointment.source_type === "manual_registrador" && ownerFinancialStatus.isIrregular ? (
-                        <FinancialOperationalAlert
-                          status={ownerFinancialStatus}
-                          title="Aviso financeiro"
-                          variant="compact"
-                          className="mt-3"
-                        />
-                      ) : null}
-                    </div>
-                    {!shouldHideOperationalAlerts && appointment.source_type === "manual_registrador" && appointment.charge_type === "pendente_comercial" && (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                        <Button variant="outline" onClick={(event) => { event.stopPropagation(); openPackageDialog(appointment); }} className="w-full sm:w-auto">Pacote</Button>
-                        <Button onClick={(event) => { event.stopPropagation(); handleCreateOrcamento(appointment); }} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
-                          Criar orçamento
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-
-          {filteredAppointments.length === 0 && (
-            <Card className="border-gray-200 bg-white">
-              <CardContent className="p-10 text-center text-gray-500">
-                Nenhum agendamento encontrado para os filtros atuais.
-              </CardContent>
-            </Card>
-          )}
+        <div className="flex items-center justify-between rounded-[24px] border border-blue-100 bg-blue-50/70 px-5 py-4 text-sm text-slate-600 shadow-sm">
+          <p>
+            Ultima atualizacao: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "-"}
+          </p>
+          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-blue-600" onClick={() => loadData(true)}>
+            {isRefreshing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </Button>
         </div>
       </div>
 
@@ -647,16 +1361,16 @@ export default function Agendamentos() {
           <DialogHeader>
             <DialogTitle>Classificar como pacote</DialogTitle>
             <DialogDescription>
-              Informe o código do pacote para que a cobrança siga o contrato recorrente.
+              Informe o codigo do pacote para que a cobranca siga o contrato recorrente.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div>
-              <Label>Código do pacote</Label>
+              <Label>Codigo do pacote</Label>
               <Input value={packageCode} onChange={(event) => setPackageCode(event.target.value)} className="mt-2" placeholder="Ex.: PAC-DAYCARE-2026" />
             </div>
             <div>
-              <Label>Observações comerciais</Label>
+              <Label>Observacoes comerciais</Label>
               <Input value={packageNotes} onChange={(event) => setPackageNotes(event.target.value)} className="mt-2" placeholder="Opcional" />
             </div>
           </div>
@@ -674,19 +1388,21 @@ export default function Agendamentos() {
           <DialogHeader>
             <DialogTitle>Agendamento avulso</DialogTitle>
             <DialogDescription>
-              Escolha a ação desejada para este atendimento.
+              Escolha a acao desejada para este atendimento.
             </DialogDescription>
           </DialogHeader>
           {selectedAppointment ? (
             <div className="space-y-4 py-2">
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-semibold text-gray-900">{dogsById[selectedAppointment.dog_id]?.nome || "Cão"}</p>
+                  <p className="font-semibold text-gray-900">
+                    {getAppointmentPrimaryLabel(selectedAppointment, dogsById[selectedAppointment.dog_id])}
+                  </p>
                   <Badge variant="outline">{getServiceLabel(selectedAppointment.service_type)}</Badge>
                   <Badge className="bg-blue-100 text-blue-700">Avulso</Badge>
                 </div>
                 <p className="mt-2 text-sm text-gray-600">
-                  {formatOwnerAppointmentLine((ownerByDogId[selectedAppointment.dog_id] || {}).nome, selectedAppointment)}
+                  {formatOwnerAppointmentLine(getAppointmentOwnerDisplay(ownerByDogId[selectedAppointment.dog_id] || {}, selectedAppointment), selectedAppointment)}
                 </p>
               </div>
 
@@ -699,7 +1415,7 @@ export default function Agendamentos() {
                     setAvulsoActionsDialogOpen(false);
                   }}
                 >
-                  Ver Registros
+                  Ver registros
                 </Button>
                 <Button
                   className="justify-start bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-200"
@@ -709,11 +1425,11 @@ export default function Agendamentos() {
                     setAvulsoActionsDialogOpen(false);
                   }}
                 >
-                  Abrir Orçamento
+                  Abrir Orcamento
                 </Button>
                 {!selectedAppointment.orcamento_id ? (
                   <p className="text-xs text-amber-700">
-                    Este agendamento não possui orçamento vinculado.
+                    Este agendamento nao possui orcamento vinculado.
                   </p>
                 ) : null}
               </div>
@@ -730,19 +1446,21 @@ export default function Agendamentos() {
           <DialogHeader>
             <DialogTitle>Registros do atendimento</DialogTitle>
             <DialogDescription>
-              Confira os dados de check-in e check-out vinculados a este serviço.
+              Confira os dados de check-in e check-out vinculados a este servico.
             </DialogDescription>
           </DialogHeader>
           {selectedAppointment ? (
             <div className="space-y-4 py-2">
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-semibold text-gray-900">{dogsById[selectedAppointment.dog_id]?.nome || "Cão"}</p>
+                  <p className="font-semibold text-gray-900">
+                    {getAppointmentPrimaryLabel(selectedAppointment, dogsById[selectedAppointment.dog_id])}
+                  </p>
                   <Badge variant="outline">{getServiceLabel(selectedAppointment.service_type)}</Badge>
                   <Badge className="bg-blue-100 text-blue-700">{getChargeTypeLabel(selectedAppointment.charge_type)}</Badge>
                 </div>
                 <p className="mt-2 text-sm text-gray-600">
-                  {formatOwnerAppointmentLine((ownerByDogId[selectedAppointment.dog_id] || {}).nome, selectedAppointment)}
+                  {formatOwnerAppointmentLine(getAppointmentOwnerDisplay(ownerByDogId[selectedAppointment.dog_id] || {}, selectedAppointment), selectedAppointment)}
                 </p>
               </div>
 
@@ -754,9 +1472,9 @@ export default function Agendamentos() {
                       <p><span className="font-medium text-gray-900">Entrada:</span> {formatDateTime(selectedAppointmentRecord.checkin_datetime || selectedAppointmentRecord.data_checkin)}</p>
                       <p><span className="font-medium text-gray-900">Quem trouxe:</span> {selectedAppointmentRecord.entregador_nome || "-"}</p>
                       <p><span className="font-medium text-gray-900">Monitor:</span> {selectedAppointmentRecord.checkin_monitor_nome || "-"}</p>
-                      <p><span className="font-medium text-gray-900">Tem refeição:</span> {selectedAppointmentRecord.tem_refeicao ? "Sim" : "Não"}</p>
+                      <p><span className="font-medium text-gray-900">Tem refeicao:</span> {selectedAppointmentRecord.tem_refeicao ? "Sim" : "Nao"}</p>
                       {selectedAppointmentRecord.refeicao_observacao ? (
-                        <p><span className="font-medium text-gray-900">Observação da refeição:</span> {selectedAppointmentRecord.refeicao_observacao}</p>
+                        <p><span className="font-medium text-gray-900">Observacao da refeicao:</span> {selectedAppointmentRecord.refeicao_observacao}</p>
                       ) : null}
                     </div>
                   </div>
@@ -764,7 +1482,7 @@ export default function Agendamentos() {
                   <div className="rounded-xl border border-gray-200 bg-white p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Check-out</p>
                     <div className="mt-3 space-y-2 text-sm text-gray-700">
-                      <p><span className="font-medium text-gray-900">Saída:</span> {formatDateTime(selectedAppointmentRecord.checkout_datetime || selectedAppointmentRecord.data_checkout)}</p>
+                      <p><span className="font-medium text-gray-900">Saida:</span> {formatDateTime(selectedAppointmentRecord.checkout_datetime || selectedAppointmentRecord.data_checkout)}</p>
                       <p><span className="font-medium text-gray-900">Quem buscou:</span> {selectedAppointmentRecord.retirador_nome || "-"}</p>
                       <p><span className="font-medium text-gray-900">Monitor:</span> {selectedAppointmentRecord.checkout_monitor_nome || "-"}</p>
                       <p><span className="font-medium text-gray-900">Status:</span> {selectedAppointmentRecord.status || "-"}</p>
@@ -774,10 +1492,10 @@ export default function Agendamentos() {
                   <div className="rounded-xl border border-gray-200 bg-white p-4 md:col-span-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Resumo</p>
                     <div className="mt-3 grid gap-2 text-sm text-gray-700 md:grid-cols-2">
-                      <p><span className="font-medium text-gray-900">Registros de refeição:</span> {getCheckinMealRecords(selectedAppointmentRecord).length}</p>
-                      <p><span className="font-medium text-gray-900">Observações:</span> {selectedAppointmentRecord.observacoes || "-"}</p>
-                      <p><span className="font-medium text-gray-900">Foto dos pertences na entrada:</span> {selectedAppointmentRecord.pertences_entrada_foto_url ? "Anexada" : "Não anexada"}</p>
-                      <p><span className="font-medium text-gray-900">Foto dos pertences na saída:</span> {selectedAppointmentRecord.pertences_saida_foto_url ? "Anexada" : "Não anexada"}</p>
+                      <p><span className="font-medium text-gray-900">Registros de refeicao:</span> {getCheckinMealRecords(selectedAppointmentRecord).length}</p>
+                      <p><span className="font-medium text-gray-900">Observacoes:</span> {selectedAppointmentRecord.observacoes || "-"}</p>
+                      <p><span className="font-medium text-gray-900">Foto dos pertences na entrada:</span> {selectedAppointmentRecord.pertences_entrada_foto_url ? "Anexada" : "Nao anexada"}</p>
+                      <p><span className="font-medium text-gray-900">Foto dos pertences na saida:</span> {selectedAppointmentRecord.pertences_saida_foto_url ? "Anexada" : "Nao anexada"}</p>
                     </div>
                   </div>
                 </div>

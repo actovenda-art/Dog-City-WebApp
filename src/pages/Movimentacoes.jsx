@@ -1946,6 +1946,7 @@ export default function Movimentacoes({ walletOnly = false }) {
               : [{ label: "PENDENTE", tone: "amber" }],
           appointmentId: row.appointmentId || null,
           referenceId: row.referenceId || null,
+          referenceType: row.referenceType || null,
           referenceCode: row.referenceCode || null,
           referenceLabel: row.referenceLabel || null,
           transactionRow: null,
@@ -1976,6 +1977,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         badges: [],
         appointmentId: null,
         referenceId: null,
+        referenceType: null,
         referenceCode: null,
         referenceLabel: null,
         transactionRow: row,
@@ -2008,6 +2010,7 @@ export default function Movimentacoes({ walletOnly = false }) {
           ],
           appointmentId: event?.details?.appointmentId || null,
           referenceId: null,
+          referenceType: null,
           referenceCode: null,
           referenceLabel: null,
           transactionRow: null,
@@ -2651,22 +2654,9 @@ export default function Movimentacoes({ walletOnly = false }) {
           </div>
         ) : null}
 
-        {walletOnly && walletReadEnabled ? (
+        {walletOnly && walletReadEnabled && (
           <Card className="mb-6 border-slate-200 bg-white">
             <CardContent className="space-y-4 p-4 sm:p-5">
-              {!selectedWalletAccount ? (
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-semibold text-slate-900 sm:text-lg">Carteira do responsável financeiro</h2>
-                    <Badge variant="outline">Leitura controlada</Badge>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {walletOnly
-                      ? "Consulte o extrato do responsável financeiro, com débitos de consumo e créditos de pagamento vinculados à carteira do cliente."
-                      : "Bloco administrativo temporário para auditoria de saldo e movimentos, sem substituir o fluxo principal."}
-                  </p>
-                </div>
-              ) : null}
 
               {walletActionMessage && (
                 <div
@@ -2756,8 +2746,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                   </div>
                 </div>
               ) : (
-                <div className="mx-auto max-w-5xl rounded-[32px] border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/70 sm:p-6">
-                  <div className="space-y-4">
+                <div className="space-y-4">
                   <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
                     <Button
                       type="button"
@@ -2968,7 +2957,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                                   Abrir agendamento
                                                 </Button>
                                               ) : null}
-                                              {row.referenceId && row.referenceCode ? (
+                                              {row.referenceId && row.referenceType ? (
                                                 <Button
                                                   type="button"
                                                   variant="outline"
@@ -2976,7 +2965,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                                   className="h-8 rounded-full px-3 text-[11px] sm:text-sm"
                                                   onClick={() => openWalletStatementReference(row)}
                                                 >
-                                                  Abrir {row.referenceLabel?.toLowerCase() || "referência"} {row.referenceCode}
+                                                  Abrir {row.referenceLabel?.toLowerCase() || "referência"}
                                                 </Button>
                                               ) : null}
                                               {row.sourceKind === "transaction" && row.transactionRow ? (
@@ -3008,17 +2997,18 @@ export default function Movimentacoes({ walletOnly = false }) {
                       )}
                   </div>
                 </div>
-              </div>
               )}
             </CardContent>
           </Card>
-        ) : walletOnly && walletFlagsLoaded ? (
+        )}
+
+        {walletOnly && !walletReadEnabled && walletFlagsLoaded && (
           <Card className="mb-6 border-dashed border-slate-300 bg-white">
             <CardContent className="p-6 text-sm text-slate-500">
               A leitura administrativa de carteiras ainda está desligada por feature flag nesta unidade.
             </CardContent>
           </Card>
-        ) : null}
+        )}
 
         {!walletOnly ? (
           <>

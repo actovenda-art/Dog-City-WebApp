@@ -418,9 +418,6 @@ function NotificationSection({ title, items, onOpenItem, pendingContextLoaded })
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
           {title}
         </p>
-        {title === "Pendências do departamento" && !pendingContextLoaded ? (
-          <p className="mt-1 text-[11px] text-slate-400 sm:text-xs">Conferindo pendências em aberto...</p>
-        ) : null}
       </div>
 
       <div>

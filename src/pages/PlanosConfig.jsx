@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { addDays, addMonths, addWeeks, differenceInCalendarDays, endOfMonth, format, getDay, isSameDay, isSameMonth, isWeekend, nextDay, parseISO, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Bath,
   AlertTriangle,
+  BellRing,
   Calendar,
   CalendarClock,
   CreditCard,
@@ -28,6 +29,7 @@ import {
   AppConfig,
   AuditLog,
   Carteira,
+  Checkin,
   ContaReceber,
   Dog,
   PackageBilling,
@@ -72,6 +74,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
+import { createPageUrl } from "@/utils";
 
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 const DAY_CARE_PACKAGE_TYPE = "day_care_pacote";
@@ -347,10 +350,20 @@ function buildRecurringBillingSchedule(plan, referenceDate = new Date()) {
 
 function getPaymentTone(entry) {
   if (!entry) return "border-gray-200 bg-gray-50 text-gray-700";
+  if (entry.needsAdjustment) return "border-rose-300 bg-rose-50 text-rose-900";
   if (entry.status === "paid") return "border-emerald-200 bg-emerald-50 text-emerald-900";
   if (entry.status === "due_today") return "border-amber-200 bg-amber-50 text-amber-900";
   if (entry.status === "overdue") return "border-rose-200 bg-rose-50 text-rose-900";
   return "border-gray-200 bg-gray-50 text-gray-700";
+}
+
+function isAppointmentRealized(appointment, checkinsById = {}) {
+  const linkedCheckinId = appointment?.linked_checkin_id || appointment?.checkin_id || null;
+  const linkedCheckin = linkedCheckinId ? checkinsById[linkedCheckinId] : null;
+  if (linkedCheckin?.checkout_datetime || linkedCheckin?.data_checkout || linkedCheckin?.status === "finalizado") {
+    return true;
+  }
+  return ["finalizado", "concluido", "presente"].includes(String(appointment?.status || "").toLowerCase());
 }
 
 function formatCurrency(value) {
@@ -745,6 +758,7 @@ function buildRecurringPackagePayloadFromPlan(plan) {
 }
 
 export default function PlanosConfig() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const openedPackageFromQueryRef = useRef("");
   const [plans, setPlans] = useState([]);
@@ -757,6 +771,7 @@ export default function PlanosConfig() {
     commissionEnabled: false,
   });
   const [appointments, setAppointments] = useState([]);
+  const [checkins, setCheckins] = useState([]);
   const [receivables, setReceivables] = useState([]);
   const [prepaidPackages, setPrepaidPackages] = useState([]);
   const [packageSessions, setPackageSessions] = useState([]);
@@ -767,6 +782,7 @@ export default function PlanosConfig() {
   const [detailItem, setDetailItem] = useState(null);
   const [paymentsItem, setPaymentsItem] = useState(null);
   const [deleteItem, setDeleteItem] = useState(null);
+  const [attentionEntry, setAttentionEntry] = useState(null);
   const [deleteDate, setDeleteDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [replacementItem, setReplacementItem] = useState(null);
   const [replacementDate, setReplacementDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -845,6 +861,7 @@ export default function PlanosConfig() {
         carteirasData,
         tabelaPrecosData,
         appointmentsData,
+        checkinsData,
         receivablesData,
         prepaidPackagesData,
         packageSessionsData,
@@ -860,6 +877,7 @@ export default function PlanosConfig() {
         safeLoad("responsáveis financeiros", () => Carteira.list("-created_date", 500), []),
         safeLoad("tabela de preços", () => TabelaPrecos.list("-created_date", 1000), []),
         safeLoad("agendamentos automáticos", () => (Appointment.listAll ? Appointment.listAll("-created_date", 1000, 10000) : Appointment.list("-created_date", 5000)), []),
+        safeLoad("check-ins", () => (Checkin.listAll ? Checkin.listAll("-created_date", 1000, 10000) : Checkin.list("-created_date", 5000)), []),
         safeLoad("cobranças recorrentes", () => (ContaReceber.listAll ? ContaReceber.listAll("-created_date", 1000, 10000) : ContaReceber.list("-created_date", 5000)), []),
         safeLoad("pacotes pré-pagos", () => (RecurringPackage.listAll ? RecurringPackage.listAll("-created_at", 1000, 10000) : RecurringPackage.list("-created_at", 5000)), []),
         safeLoad("fichas de pacotes", () => (PackageSession.listAll ? PackageSession.listAll("-scheduled_date", 1000, 20000) : PackageSession.list("-scheduled_date", 5000)), []),
@@ -874,6 +892,7 @@ export default function PlanosConfig() {
       const empresaId = me?.empresa_id || null;
       const activePlans = plansData || [];
       const activeAppointments = appointmentsData || [];
+      const activeCheckins = checkinsData || [];
       const activeReceivables = receivablesData || [];
       const activePrepaidPackages = prepaidPackagesData || [];
       const activePackageSessions = packageSessionsData || [];
@@ -898,6 +917,7 @@ export default function PlanosConfig() {
       setPlans(activePlans);
       setDogs((dogsData || []).filter((item) => item.ativo !== false));
       setCarteiras((carteirasData || []).filter((item) => item.ativo !== false));
+      setCheckins(activeCheckins);
       setAppointments(activeAppointments);
       setReceivables(activeReceivables);
       setPrepaidPackages(activePrepaidPackages);
@@ -969,6 +989,11 @@ export default function PlanosConfig() {
   const clientsById = useMemo(
     () => Object.fromEntries(carteiras.map((client) => [client.id, client])),
     [carteiras],
+  );
+
+  const checkinsById = useMemo(
+    () => Object.fromEntries(checkins.map((checkin) => [checkin.id, checkin])),
+    [checkins],
   );
 
   const packageDogCount = formData.service === "day_care" ?Number(formData.package_dog_count || 1) : 1;
@@ -2115,6 +2140,44 @@ export default function PlanosConfig() {
     setReplacementDate(format(suggestedDate, "yyyy-MM-dd"));
   }
 
+  function openRegistradorForAppointment(appointment) {
+    navigate(
+      `${createPageUrl("Registrador")}?date=${encodeURIComponent(appointment?.data_referencia || appointment?.data_hora_entrada?.slice?.(0, 10) || "")}&appointmentId=${encodeURIComponent(appointment?.id || "")}`,
+    );
+  }
+
+  async function handleMarkRecurringAbsence(appointment) {
+    if (!appointment?.id) return;
+    setIsSaving(true);
+    try {
+      const currentMeta = parseMetadata(appointment.metadata);
+      const serviceDate = appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10) || format(new Date(), "yyyy-MM-dd");
+      const nextMetadata = {
+        ...currentMeta,
+        absence_review_pending: false,
+        absence_confirmed_at: new Date().toISOString(),
+        replacement_deadline: currentMeta.replacement_deadline || currentMeta.suggested_replacement_deadline || formatDateOnly(addDays(parseDateOnly(serviceDate) || new Date(), 30)),
+      };
+
+      await Appointment.update(appointment.id, {
+        status: "faltou",
+        metadata: nextMetadata,
+      });
+
+      await loadData();
+      setAttentionEntry(null);
+      openReplacementDialog({
+        ...appointment,
+        status: "faltou",
+        metadata: nextMetadata,
+      });
+    } catch (error) {
+      console.error("Erro ao registrar falta do pacote:", error);
+      alert("Não foi possível registrar a falta deste agendamento.");
+    }
+    setIsSaving(false);
+  }
+
   async function handleScheduleReplacement() {
     if (!replacementItem || !replacementDate) return;
 
@@ -2312,8 +2375,27 @@ export default function PlanosConfig() {
   const paymentEntries = useMemo(() => {
     if (!paymentsItem) return [];
 
+    const today = normalizeDate(new Date());
     const monthMap = new Map();
     const groupedCharges = groupReceivablesMap.get(paymentsItem.id) || [];
+    const groupedAppointments = appointments.filter((appointment) => {
+      const metadata = parseMetadata(appointment.metadata);
+      return paymentsItem.planIds.includes(metadata.plan_id) || metadata.package_group_key === paymentsItem.packageGroupKey;
+    });
+
+    groupedAppointments.forEach((appointment) => {
+      const appointmentDate = parseDateOnly(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
+      if (!appointmentDate) return;
+      const monthKey = getMonthKey(appointmentDate);
+      const current = monthMap.get(monthKey) || {
+        monthKey,
+        monthDate: startOfMonth(appointmentDate),
+        charges: [],
+        appointments: [],
+      };
+      current.appointments.push(appointment);
+      monthMap.set(monthKey, current);
+    });
 
     groupedCharges.forEach((charge) => {
       const dueDate = parseDateOnly(charge.vencimento);
@@ -2323,29 +2405,53 @@ export default function PlanosConfig() {
         monthKey,
         monthDate: startOfMonth(dueDate),
         charges: [],
+        appointments: [],
       };
       current.charges.push(charge);
       monthMap.set(monthKey, current);
     });
 
     return Array.from(monthMap.values())
-      .sort((left, right) => left.monthKey.localeCompare(right.monthKey))
+      .sort((left, right) => right.monthKey.localeCompare(left.monthKey))
       .map((entry) => {
-        const today = normalizeDate(new Date());
+        const monthClosed = endOfMonth(entry.monthDate).getTime() < today.getTime();
         const paidCharges = entry.charges.filter((charge) => Boolean(charge.data_recebimento));
         const overdueCharges = entry.charges.filter((charge) => !charge.data_recebimento && parseDateOnly(charge.vencimento)?.getTime() < today.getTime());
         const dueTodayCharges = entry.charges.filter((charge) => !charge.data_recebimento && parseDateOnly(charge.vencimento) && isSameDay(parseDateOnly(charge.vencimento), today));
         const futureCharges = entry.charges.filter((charge) => !charge.data_recebimento && parseDateOnly(charge.vencimento)?.getTime() > today.getTime());
+        const baseAppointments = entry.appointments.filter((appointment) => {
+          const metadata = parseMetadata(appointment.metadata);
+          if (metadata.replacement_of_appointment_id || appointment.source_type === "reposicao_pacote") return false;
+          return !["cancelado", "desconsiderado"].includes(String(appointment.status || "").toLowerCase());
+        });
+        const utilizationCount = baseAppointments.filter((appointment) => isAppointmentRealized(appointment, checkinsById)).length;
+        const absenceCount = baseAppointments.filter((appointment) => String(appointment.status || "").toLowerCase() === "faltou").length;
+        const unresolvedCount = monthClosed
+          ? baseAppointments.filter((appointment) => {
+            const normalizedStatus = String(appointment.status || "").toLowerCase();
+            return normalizedStatus !== "faltou" && !isAppointmentRealized(appointment, checkinsById);
+          }).length
+          : 0;
+        const pendingAppointments = monthClosed
+          ? baseAppointments.filter((appointment) => {
+            const normalizedStatus = String(appointment.status || "").toLowerCase();
+            return normalizedStatus !== "faltou" && !isAppointmentRealized(appointment, checkinsById);
+          })
+          : [];
+        const needsAdjustment = monthClosed && unresolvedCount > 0;
 
         let status = "upcoming";
+        let paymentLabel = "Em aberto";
         let helper = entry.charges[0]?.vencimento ? `Vence em ${format(parseDateOnly(entry.charges[0].vencimento), "dd/MM/yyyy", { locale: ptBR })}` : "Sem vencimento";
 
-        if (paidCharges.length === entry.charges.length) {
+        if (entry.charges.length > 0 && paidCharges.length === entry.charges.length) {
           status = "paid";
+          paymentLabel = "Pago";
           const paymentDates = paidCharges.map((charge) => parseDateOnly(charge.data_recebimento)).filter(Boolean).sort((a, b) => a - b);
           helper = paymentDates.length > 0 ? `Pago ${format(paymentDates[paymentDates.length - 1], "dd/MM/yyyy", { locale: ptBR })}` : "Pago";
         } else if (overdueCharges.length > 0) {
           status = "overdue";
+          paymentLabel = "Atrasado";
           const reference = overdueCharges
             .map((charge) => parseDateOnly(charge.vencimento))
             .filter(Boolean)
@@ -2356,17 +2462,31 @@ export default function PlanosConfig() {
           helper = "Vence hoje";
         } else if (futureCharges.length > 0 && paidCharges.length > 0) {
           helper = `Pago parcial ${paidCharges.length}/${entry.charges.length}`;
+        } else if (entry.charges.length === 0) {
+          helper = "Sem cobrança gerada para este mês.";
+        }
+
+        if (needsAdjustment) {
+          helper = `${unresolvedCount} agendamento(s) de ${formatMonthLabel(entry.monthDate)} precisam de ajuste.`;
         }
 
         return {
           ...entry,
           label: formatMonthLabel(entry.monthDate),
           totalValue: entry.charges.reduce((sum, charge) => sum + (Number(charge.valor) || 0), 0),
+          appointmentsCount: baseAppointments.length,
+          utilizationCount,
+          absenceCount,
+          unresolvedCount,
+          pendingAppointments,
+          needsAdjustment,
+          paymentLabel,
+          monthClosed,
           status,
           helper,
         };
       });
-  }, [groupReceivablesMap, paymentsItem]);
+  }, [appointments, checkinsById, groupReceivablesMap, paymentsItem]);
 
   const deletePreview = useMemo(() => {
     if (!deleteItem || !deleteDate) return null;
@@ -2581,7 +2701,7 @@ export default function PlanosConfig() {
           </CardContent>
         </Card>
 
-        <Card className="mb-6 border-emerald-200 bg-white">
+        <Card className="hidden">
           <CardContent className="p-3 sm:p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -2733,7 +2853,7 @@ export default function PlanosConfig() {
           <DialogHeader>
             <DialogTitle>Plano recorrente</DialogTitle>
             <DialogDescription>
-              Confira os dados principais do pacote antes de editar ou gerar os próximos movimentos.
+              Confira a renovação automática do pacote, os meses fechados e as ações disponíveis para este plano.
             </DialogDescription>
           </DialogHeader>
 
@@ -2794,6 +2914,16 @@ export default function PlanosConfig() {
                 </div>
               </div>
 
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                <p className="text-sm font-semibold text-blue-900">Renovação automática</p>
+                <p className="mt-2 text-sm text-blue-800">
+                  Após o primeiro mês, no dia 25 do mês anterior o sistema gera os agendamentos do próximo ciclo e cria a cobrança para o vencimento da carteira vinculada ao responsável financeiro.
+                </p>
+                <p className="mt-2 text-sm text-blue-800">
+                  Neste plano, o vencimento segue para {detailItem.dueDay ? `o dia ${detailItem.dueDay}` : "a configuração da carteira"} e cada agendamento continua vinculado ao código do pacote.
+                </p>
+              </div>
+
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                 <p className="text-sm font-semibold text-emerald-900">Agendamentos de {detailCurrentMonthLabel}</p>
                 {detailCurrentMonthDates.length > 0 ? (
@@ -2827,7 +2957,7 @@ export default function PlanosConfig() {
               className="w-full sm:w-auto"
             >
               <Zap className="mr-2 h-4 w-4" />
-              Pagamentos
+              Resumo dos meses
             </Button>
             <Button
               variant="outline"
@@ -3668,9 +3798,9 @@ export default function PlanosConfig() {
       <Dialog open={Boolean(paymentsItem)} onOpenChange={(open) => !open && setPaymentsItem(null)}>
         <DialogContent className="w-[95vw] max-w-[760px] max-h-[88vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Pagamentos do plano</DialogTitle>
+            <DialogTitle>Resumo dos meses</DialogTitle>
             <DialogDescription>
-              Acompanhe os meses do pacote e o status financeiro de cada ciclo.
+              Acompanhe os fechamentos mensais do pacote com indicadores operacionais e financeiros.
             </DialogDescription>
           </DialogHeader>
 
@@ -3683,18 +3813,22 @@ export default function PlanosConfig() {
                 </p>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-4">
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
                   <p className="font-semibold">Verde</p>
-                  <p className="mt-1">Pago</p>
+                  <p className="mt-1">Mês pago</p>
                 </div>
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                   <p className="font-semibold">Amarelo</p>
-                  <p className="mt-1">Vence hoje</p>
+                  <p className="mt-1">Em aberto</p>
                 </div>
                 <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
                   <p className="font-semibold">Vermelho</p>
                   <p className="mt-1">Atrasado</p>
+                </div>
+                <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900">
+                  <p className="font-semibold">Sino vermelho</p>
+                  <p className="mt-1">Agendamentos pendentes</p>
                 </div>
               </div>
 
@@ -3707,10 +3841,47 @@ export default function PlanosConfig() {
                           <p className="font-semibold">{entry.label}</p>
                           <p className="mt-1 text-sm">{entry.helper}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm opacity-80">Valor</p>
-                          <p className="font-semibold">{formatCurrency(entry.totalValue)}</p>
+                        <div className="flex items-start gap-2">
+                          {entry.pendingAppointments?.length > 0 ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setAttentionEntry(entry)}
+                              className="h-9 w-9 rounded-full border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                            >
+                              <BellRing className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                          <div className="text-right">
+                            <p className="text-sm opacity-80">Valor</p>
+                            <p className="font-semibold">{formatCurrency(entry.totalValue)}</p>
+                          </div>
                         </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                        <div className="rounded-xl bg-white/70 p-2">
+                          <p className="text-gray-500">Agendamentos</p>
+                          <p className="mt-1 font-semibold">{entry.appointmentsCount}</p>
+                        </div>
+                        <div className="rounded-xl bg-white/70 p-2">
+                          <p className="text-gray-500">Utilizações</p>
+                          <p className="mt-1 font-semibold">{entry.utilizationCount}</p>
+                        </div>
+                        <div className="rounded-xl bg-white/70 p-2">
+                          <p className="text-gray-500">Faltas</p>
+                          <p className="mt-1 font-semibold">{entry.absenceCount}</p>
+                        </div>
+                        <div className="rounded-xl bg-white/70 p-2">
+                          <p className="text-gray-500">Não resolvidos</p>
+                          <p className="mt-1 font-semibold">{entry.unresolvedCount}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-white/70 px-3 py-2 text-sm">
+                        <span className="text-gray-600">Status de pagamento</span>
+                        <span className="font-semibold">{entry.paymentLabel}</span>
                       </div>
                     </div>
                   ))}
@@ -3822,6 +3993,63 @@ export default function PlanosConfig() {
             >
               <Trash2 className="mr-2 h-4 w-4" />
               {isDeleting ? "Excluindo..." : "Confirmar exclusão"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(attentionEntry)} onOpenChange={(open) => !open && setAttentionEntry(null)}>
+        <DialogContent className="w-[95vw] max-w-[760px] max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Agendamentos que precisam de atenção</DialogTitle>
+            <DialogDescription>
+              Resolva os atendimentos pendentes com check-in/check-out manual no Registrador ou registrando a falta para liberar a reposição.
+            </DialogDescription>
+          </DialogHeader>
+
+          {attentionEntry ? (
+            <div className="space-y-3 py-2">
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                <p className="font-semibold text-rose-900">{attentionEntry.label}</p>
+                <p className="mt-1 text-sm text-rose-800">{attentionEntry.helper}</p>
+              </div>
+
+              {attentionEntry.pendingAppointments?.map((appointment) => {
+                const appointmentDate = parseDateOnly(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
+                return (
+                  <div key={appointment.id} className="rounded-2xl border border-gray-200 bg-white p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="font-semibold text-gray-900">{dogsById[appointment.dog_id]?.nome || "Cão"}</p>
+                        <p className="mt-1 text-sm text-gray-600">
+                          {getServiceMeta(appointment.service_type).label} • {appointmentDate ? format(appointmentDate, "dd/MM/yyyy", { locale: ptBR }) : "-"}
+                        </p>
+                        <p className="mt-2 text-sm text-rose-700">
+                          Atendimento pendente sem check-out concluído.
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button variant="outline" onClick={() => openRegistradorForAppointment(appointment)} className="w-full sm:w-auto">
+                          Abrir no Registrador
+                        </Button>
+                        <Button
+                          onClick={() => handleMarkRecurringAbsence(appointment)}
+                          disabled={isSaving}
+                          className="w-full bg-rose-600 text-white hover:bg-rose-700 sm:w-auto"
+                        >
+                          Registrar falta
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setAttentionEntry(null)} className="w-full sm:w-auto">
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>

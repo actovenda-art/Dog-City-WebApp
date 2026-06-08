@@ -622,6 +622,47 @@ function getWalletStatementDateTimestamp(value, fallback = 0) {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+function buildMonthlyDueDate(referenceDateValue, dueDayValue) {
+  const normalizedReference = normalizeDateOnly(referenceDateValue);
+  const parsedDueDay = Number.parseInt(String(dueDayValue || "").trim(), 10);
+  if (!normalizedReference || !Number.isFinite(parsedDueDay) || parsedDueDay <= 0) {
+    return null;
+  }
+
+  const [yearText, monthText] = normalizedReference.split("-");
+  const year = Number.parseInt(yearText, 10);
+  const month = Number.parseInt(monthText, 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return null;
+  }
+
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const effectiveDay = Math.min(parsedDueDay, lastDayOfMonth);
+  return `${yearText}-${monthText}-${String(effectiveDay).padStart(2, "0")}`;
+}
+
+function resolveRecurringPackageDueDate({
+  appointmentDate,
+  recurringPackage,
+  walletDefaultDueDay,
+}) {
+  const recurringDueDay = recurringPackage?.renovacao_dia
+    || recurringPackage?.due_day
+    || recurringPackage?.vencimento_padrao
+    || walletDefaultDueDay
+    || null;
+
+  const monthlyDueDate = buildMonthlyDueDate(
+    appointmentDate || recurringPackage?.data_vencimento || recurringPackage?.created_at || null,
+    recurringDueDay,
+  );
+
+  return monthlyDueDate
+    || normalizeDateOnly(recurringPackage?.data_vencimento)
+    || normalizeDateOnly(appointmentDate)
+    || null;
+}
+
 function buildWalletChronologicalSettlement({
   debitRows = [],
   creditRows = [],
@@ -631,7 +672,9 @@ function buildWalletChronologicalSettlement({
   const visibleCreditTotal = roundWalletStatementAmount(
     (creditRows || []).reduce((sum, row) => sum + Number(row?.amount || 0), 0),
   );
-  const settlementBudget = roundWalletStatementAmount(Math.max(officialAvailableBalance, visibleCreditTotal));
+  const settlementBudget = roundWalletStatementAmount(
+    visibleCreditTotal > 0 ? visibleCreditTotal : officialAvailableBalance,
+  );
   const canSimulateWithWalletCredits = settlementBudget > 0 || (creditRows || []).length > 0;
 
   let remainingBudget = settlementBudget;
@@ -639,6 +682,16 @@ function buildWalletChronologicalSettlement({
   let settledDebitTotal = 0;
   let paidDebitCount = 0;
   let pendingDebitCount = 0;
+  const creditsInChronologicalOrder = [...(creditRows || [])].sort((left, right) => {
+    const leftDate = getWalletStatementDateTimestamp(left?.receivedDate);
+    const rightDate = getWalletStatementDateTimestamp(right?.receivedDate);
+    if (leftDate !== rightDate) {
+      return leftDate - rightDate;
+    }
+    return String(left?.id || "").localeCompare(String(right?.id || ""));
+  });
+  let creditCursor = 0;
+  let lastAppliedCreditDate = null;
 
   const debitRowsById = new Map();
   const debitsInChronologicalOrder = [...(debitRows || [])].sort((left, right) => {
@@ -661,15 +714,27 @@ function buildWalletChronologicalSettlement({
     const amount = roundWalletStatementAmount(row?.amount || 0);
     const fallbackStatus = row?.paymentStatus || "pending";
     let paymentStatus = fallbackStatus;
+    let settlementDate = row?.settlementDate || null;
 
     if (canSimulateWithWalletCredits) {
       if (amount <= 0) {
         paymentStatus = "paid";
-      } else if (remainingBudget + 0.0001 >= amount) {
-        paymentStatus = "paid";
-        remainingBudget = roundWalletStatementAmount(remainingBudget - amount);
+        settlementDate = settlementDate || lastAppliedCreditDate || null;
       } else {
-        paymentStatus = "pending";
+        while (remainingBudget + 0.0001 < amount && creditCursor < creditsInChronologicalOrder.length) {
+          const creditRow = creditsInChronologicalOrder[creditCursor];
+          remainingBudget = roundWalletStatementAmount(remainingBudget + Number(creditRow?.amount || 0));
+          lastAppliedCreditDate = creditRow?.receivedDate || lastAppliedCreditDate || null;
+          creditCursor += 1;
+        }
+
+        if (remainingBudget + 0.0001 >= amount) {
+          paymentStatus = "paid";
+          settlementDate = lastAppliedCreditDate || settlementDate || null;
+          remainingBudget = roundWalletStatementAmount(remainingBudget - amount);
+        } else {
+          paymentStatus = "pending";
+        }
       }
     }
 
@@ -684,13 +749,16 @@ function buildWalletChronologicalSettlement({
     debitRowsById.set(row.id, {
       ...row,
       paymentStatus,
+      settlementDate,
       settlementRule: canSimulateWithWalletCredits ? "wallet_chronological_full_only" : "source_status_fallback",
     });
   });
 
   return {
     debitRows: (debitRows || []).map((row) => debitRowsById.get(row.id) || row),
-    availableBalance: officialAvailableBalance,
+    availableBalance: canSimulateWithWalletCredits
+      ? roundWalletStatementAmount(Math.max(remainingBudget, 0))
+      : officialAvailableBalance,
     creditTotal: visibleCreditTotal,
     openDebitTotal,
     settledDebitTotal,
@@ -703,6 +771,7 @@ function buildWalletStatementRows({
   walletId,
   walletAccountId,
   walletAvailableBalance = 0,
+  walletDefaultDueDay = null,
   movements = [],
   transactions = [],
   appointments = [],
@@ -772,6 +841,13 @@ function buildWalletStatementRows({
       const referenceType = budget ? "orcamento" : recurringPackage ? "pacote" : null;
       const referenceId = budget?.id || recurringPackage?.id || null;
       const referenceCode = formatWalletStatementReferenceCode(referenceType, referenceRecord);
+      const recurringDueDate = recurringPackage
+        ? resolveRecurringPackageDueDate({
+          appointmentDate,
+          recurringPackage,
+          walletDefaultDueDay,
+        })
+        : null;
       const paymentStatus = normalizeWalletPaymentStatus(
         receivable?.status
         || obrigacao?.status
@@ -789,7 +865,7 @@ function buildWalletStatementRows({
         appointmentDate,
         serviceLabel: resolveEventServiceLabel({ appointment, service, obrigacao, cobranca: charge, fallback: "Serviço" }),
         dogName,
-        dueDate: obrigacao?.due_date || charge?.due_date || receivable?.vencimento || null,
+        dueDate: obrigacao?.due_date || charge?.due_date || receivable?.vencimento || recurringDueDate || null,
         amount: Number(
           receivable?.valor
           ?? obrigacao?.valor_final
@@ -823,6 +899,13 @@ function buildWalletStatementRows({
       const referenceCode = formatWalletStatementReferenceCode(referenceType, referenceRecord);
       const budgetAppointmentCount = budget?.id ? Math.max(Number(budgetAppointmentCounts[budget.id] || 1), 1) : 1;
       const fallbackBudgetShare = budget?.valor_total ? Number(budget.valor_total) / budgetAppointmentCount : 0;
+      const recurringDueDate = recurringPackage
+        ? resolveRecurringPackageDueDate({
+          appointmentDate: getAppointmentDateKey(appointment) || appointment?.data_referencia || null,
+          recurringPackage,
+          walletDefaultDueDay,
+        })
+        : null;
       const paymentStatus = normalizeWalletPaymentStatus(
         service?.status_pagamento
         || service?.status
@@ -836,7 +919,7 @@ function buildWalletStatementRows({
         appointmentDate: getAppointmentDateKey(appointment) || appointment?.data_referencia || null,
         serviceLabel: resolveEventServiceLabel({ appointment, service, fallback: "Serviço" }),
         dogName,
-        dueDate: budget?.data_validade || recurringPackage?.vencimento_padrao || appointment?.data_referencia || null,
+        dueDate: budget?.data_validade || recurringDueDate || appointment?.data_referencia || null,
         amount: Number(
           service?.valor_cobrado
           ?? service?.preco
@@ -1775,6 +1858,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       walletId: selectedWalletAccount?.carteira_id || null,
       walletAccountId: selectedWalletRuntimeAccountId,
       walletAvailableBalance: Number(selectedWalletAccount?.saldo_atual || 0),
+      walletDefaultDueDay: selectedWalletAccount?.carteira_vencimento_padrao || null,
       movements: walletRecentMovements,
       transactions: walletOperationalContext.transactions,
       appointments: walletOperationalContext.appointments,
@@ -1790,6 +1874,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     [
       selectedWalletAccount?.carteira_id,
       selectedWalletAccount?.saldo_atual,
+      selectedWalletAccount?.carteira_vencimento_padrao,
       selectedWalletRuntimeAccountId,
       walletRecentMovements,
       walletOperationalContext.transactions,
@@ -1867,7 +1952,9 @@ export default function Movimentacoes({ walletOnly = false }) {
           details: {
             data: formatWalletStatementDate(row.primaryDate),
             vencimento: formatWalletStatementDate(row.dueDate),
-            executor: reversalEvent?.details?.executor || "—",
+            quitacaoData: reversalEvent?.eventDate
+              ? new Date(reversalEvent.eventDate).toLocaleDateString("pt-BR")
+              : (row.settlementDate ? formatWalletStatementDate(row.settlementDate) : "—"),
             status: reversalEvent ? "Pago" : row.paymentStatus === "paid" ? "Pago" : "Pendente",
             motivo: reversalEvent?.details?.motivo || null,
             anexo: reversalEvent?.details?.attachmentName || null,
@@ -1926,7 +2013,7 @@ export default function Movimentacoes({ walletOnly = false }) {
           transactionRow: null,
           details: {
             data: event.eventDate ? new Date(event.eventDate).toLocaleDateString("pt-BR") : "—",
-            executor: event?.details?.executor || "—",
+            quitacaoData: event.eventDate ? new Date(event.eventDate).toLocaleDateString("pt-BR") : "—",
             status: "Pago",
             motivo: event?.details?.motivo || null,
             anexo: event?.details?.attachmentName || null,
@@ -2858,7 +2945,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                               ) : (
                                                 <>
                                                   <p><span className="font-medium text-slate-900">Vencimento:</span> {row.details.vencimento || "—"}</p>
-                                                  <p><span className="font-medium text-slate-900">Executor:</span> {row.details.executor || "—"}</p>
+                                                  <p><span className="font-medium text-slate-900">Data da quitação:</span> {row.details.quitacaoData || "—"}</p>
                                                 </>
                                               )}
                                               {row.details.motivo ? (

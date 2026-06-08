@@ -405,17 +405,17 @@ function formatDateControlLabel(dateKey) {
 
 function SummaryCard({ icon: Icon, label, value, helper, iconClassName, valueClassName }) {
   return (
-    <Card className="rounded-[24px] border border-slate-200 shadow-sm">
-      <CardContent className="p-6">
+    <Card className="rounded-[20px] border border-slate-200 shadow-sm">
+      <CardContent className="p-5">
         <div className="flex items-start justify-between gap-4">
-          <div className={cn("flex h-12 w-12 items-center justify-center rounded-2xl", iconClassName)}>
-            <Icon className="h-5 w-5" />
+          <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconClassName)}>
+            <Icon className="h-4 w-4" />
           </div>
         </div>
-        <div className="mt-5 space-y-2">
-          <p className="text-sm font-semibold text-slate-900">{label}</p>
-          <p className={cn("text-5xl font-bold tracking-tight", valueClassName)}>{value}</p>
-          <p className="text-sm text-slate-500">{helper}</p>
+        <div className="mt-4 space-y-1.5">
+          <p className="text-[13px] font-semibold text-slate-900">{label}</p>
+          <p className={cn("text-4xl font-bold tracking-tight", valueClassName)}>{value}</p>
+          <p className="text-[13px] text-slate-500">{helper}</p>
         </div>
       </CardContent>
     </Card>
@@ -428,16 +428,16 @@ function StatusPill({ icon: Icon, label, value, active, onClick, tone }) {
       type="button"
       onClick={onClick}
       className={cn(
-        "flex min-w-[158px] items-center gap-3 rounded-2xl border px-4 py-3 text-left transition",
+        "flex min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition",
         active ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
       )}
     >
-      <span className={cn("flex h-9 w-9 items-center justify-center rounded-xl", tone)}>
+      <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg", tone)}>
         <Icon className="h-4 w-4" />
       </span>
       <span className="min-w-0">
-        <span className="block text-sm font-semibold">{label}</span>
-        <span className="block text-sm font-bold">{value}</span>
+        <span className="block text-[13px] font-semibold">{label}</span>
+        <span className="block text-[13px] font-bold">{value}</span>
       </span>
     </button>
   );
@@ -446,7 +446,7 @@ function StatusPill({ icon: Icon, label, value, active, onClick, tone }) {
 function AppointmentStatusBadge({ stateKey, label }) {
   const style = STATUS_STYLES[stateKey] || STATUS_STYLES.upcoming;
   return (
-    <span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-semibold", style.subtleClassName)}>
+    <span className={cn("inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold", style.subtleClassName)}>
       {label}
     </span>
   );
@@ -914,24 +914,24 @@ export default function Agendamentos() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f6f8fc] p-4 lg:p-6">
-      <div className="mx-auto max-w-[1400px] space-y-6">
-        <div className="flex flex-col gap-4 rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_20px_50px_rgba(15,23,42,0.06)] backdrop-blur">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-blue-50 text-blue-600">
-                  <Calendar className="h-8 w-8" />
+    <div className="min-h-screen bg-[#f6f8fc] p-3 lg:p-4">
+      <div className="mx-auto max-w-[1200px] space-y-5">
+        <div className="flex flex-col gap-3 rounded-[24px] border border-white/80 bg-white/90 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-blue-50 text-blue-600">
+                  <Calendar className="h-6 w-6" />
                 </div>
                 <div>
-                  <h1 className="text-4xl font-bold tracking-tight text-slate-950">Agendamentos</h1>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <h1 className="text-3xl font-bold tracking-tight text-slate-950">Agendamentos</h1>
+                  <p className="mt-1 max-w-2xl text-sm text-slate-500">
                     Painel operacional do dia com leitura por servico, status e pendencias de check-in.
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-6 border-b border-slate-200 pb-1">
+              <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 pb-0.5">
                 {[
                   { id: "operacao", label: "Operacao", count: dailyStats.total },
                   { id: "presentes_agora", label: "Presentes Agora", count: dailyStats.arrived },
@@ -945,7 +945,7 @@ export default function Agendamentos() {
                     type="button"
                     onClick={() => setTopTab(tab.id)}
                     className={cn(
-                      "flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-semibold transition",
+                      "flex items-center gap-2 border-b-2 px-1 pb-2.5 text-sm font-semibold transition",
                       topTab === tab.id
                         ? "border-blue-600 text-blue-600"
                         : "border-transparent text-slate-500 hover:text-slate-700",
@@ -962,29 +962,29 @@ export default function Agendamentos() {
               <Button
                 variant="outline"
                 onClick={() => loadData(true)}
-                className="h-12 rounded-2xl border-slate-200 px-5 text-sm font-semibold shadow-sm"
+                className="h-11 rounded-xl border-slate-200 px-4 text-sm font-semibold shadow-sm"
               >
                 {isRefreshing ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                 Atualizar
               </Button>
-              <div className="min-w-[240px]">
+              <div className="min-w-[208px]">
                 <DatePickerInput
                   value={filterDate}
                   onChange={setFilterDate}
                   placeholder={formatDateControlLabel(selectedDayKey)}
-                  className="h-12 rounded-2xl border-slate-200 px-4 text-sm font-semibold shadow-sm sm:h-12"
+                  className="h-11 rounded-xl border-slate-200 px-4 text-sm font-semibold shadow-sm"
                 />
               </div>
             </div>
           </div>
         </div>
 
-        <section className="space-y-4">
+        <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold text-slate-950">Resumo geral do dia</h2>
+            <h2 className="text-xl font-semibold text-slate-950">Resumo geral do dia</h2>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-5">
+          <div className="grid gap-3 xl:grid-cols-5">
             <SummaryCard
               icon={Users}
               label="Total previsto"
@@ -1028,13 +1028,13 @@ export default function Agendamentos() {
           </div>
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
-          <Card className="rounded-[28px] border border-slate-200 shadow-sm">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-2xl text-slate-950">Resumo por servico</CardTitle>
+        <section className="grid gap-3 xl:grid-cols-[minmax(0,1.42fr)_360px] 2xl:grid-cols-[minmax(0,1.35fr)_390px]">
+          <Card className="rounded-[24px] border border-slate-200 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-xl text-slate-950">Resumo por servico</CardTitle>
             </CardHeader>
-            <CardContent className="overflow-hidden px-0 pb-2">
-              <div className="grid grid-cols-[minmax(260px,1.8fr)_72px_92px_88px_118px_104px_110px] items-center gap-2 border-b border-slate-200 px-5 pb-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <CardContent className="overflow-x-auto px-0 pb-2">
+              <div className="grid grid-cols-[minmax(220px,1.7fr)_64px_80px_76px_96px_92px_96px] items-center gap-1 border-b border-slate-200 px-4 pb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                 <span>Servico</span>
                 <span className="text-center">Previstos</span>
                 <span className="text-center">Ja chegaram</span>
@@ -1052,42 +1052,42 @@ export default function Agendamentos() {
                       type="button"
                       onClick={() => setServiceView(item.id)}
                       className={cn(
-                        "grid w-full grid-cols-[minmax(260px,1.8fr)_72px_92px_88px_118px_104px_110px] items-center gap-2 px-5 py-4 text-left transition hover:bg-slate-50",
+                        "grid w-full grid-cols-[minmax(220px,1.7fr)_64px_80px_76px_96px_92px_96px] items-center gap-1 px-4 py-3 text-left transition hover:bg-slate-50",
                         serviceView === item.id && "bg-blue-50/60",
                       )}
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <span className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", item.iconClassName)}>
-                          <Icon className="h-5 w-5" />
+                        <span className={cn("flex h-10 w-10 items-center justify-center rounded-xl", item.iconClassName)}>
+                          <Icon className="h-4 w-4" />
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-base font-semibold text-slate-900">{item.label}</span>
-                          <span className="block truncate text-sm text-slate-500">{item.subtitle}</span>
+                          <span className="block truncate text-[15px] font-semibold text-slate-900">{item.label}</span>
+                          <span className="block truncate text-xs text-slate-500">{item.subtitle}</span>
                         </span>
                       </div>
-                      <span className="text-center text-lg font-semibold text-slate-900">{item.total}</span>
-                      <span className="text-center text-lg font-semibold text-emerald-600">{item.arrived}</span>
-                      <span className="text-center text-lg font-semibold text-amber-600">{item.late}</span>
-                      <span className="text-center text-lg font-semibold text-violet-600">{item.upcoming}</span>
-                      <span className="text-center text-lg font-semibold text-rose-600">{item.noShow}</span>
+                      <span className="text-center text-base font-semibold text-slate-900">{item.total}</span>
+                      <span className="text-center text-base font-semibold text-emerald-600">{item.arrived}</span>
+                      <span className="text-center text-base font-semibold text-amber-600">{item.late}</span>
+                      <span className="text-center text-base font-semibold text-violet-600">{item.upcoming}</span>
+                      <span className="text-center text-base font-semibold text-rose-600">{item.noShow}</span>
                       <div className="flex items-center justify-end gap-3">
                         <Progress
                           value={item.rate}
-                          className={cn("h-2.5 w-20 bg-slate-100 [&>div]:transition-all", item.progressClassName)}
+                          className={cn("h-2.5 w-16 bg-slate-100 [&>div]:transition-all", item.progressClassName)}
                         />
-                        <span className="w-8 text-right text-sm font-semibold text-slate-600">{item.rate}%</span>
+                        <span className="w-8 text-right text-xs font-semibold text-slate-600">{item.rate}%</span>
                       </div>
                     </button>
                   );
                 })}
-                <div className="grid grid-cols-[minmax(260px,1.8fr)_72px_92px_88px_118px_104px_110px] items-center gap-2 bg-slate-50 px-5 py-4">
-                  <span className="text-lg font-semibold text-slate-950">Todos os servicos</span>
-                  <span className="text-center text-lg font-bold text-slate-950">{dailyStats.total}</span>
-                  <span className="text-center text-lg font-bold text-emerald-600">{dailyStats.arrived}</span>
-                  <span className="text-center text-lg font-bold text-amber-600">{dailyStats.late}</span>
-                  <span className="text-center text-lg font-bold text-violet-600">{dailyStats.upcoming}</span>
-                  <span className="text-center text-lg font-bold text-rose-600">{dailyStats.noShow}</span>
-                  <span className="text-right text-sm font-semibold text-slate-600">
+                <div className="grid grid-cols-[minmax(220px,1.7fr)_64px_80px_76px_96px_92px_96px] items-center gap-1 bg-slate-50 px-4 py-3">
+                  <span className="text-base font-semibold text-slate-950">Todos os servicos</span>
+                  <span className="text-center text-base font-bold text-slate-950">{dailyStats.total}</span>
+                  <span className="text-center text-base font-bold text-emerald-600">{dailyStats.arrived}</span>
+                  <span className="text-center text-base font-bold text-amber-600">{dailyStats.late}</span>
+                  <span className="text-center text-base font-bold text-violet-600">{dailyStats.upcoming}</span>
+                  <span className="text-center text-base font-bold text-rose-600">{dailyStats.noShow}</span>
+                  <span className="text-right text-xs font-semibold text-slate-600">
                     {dailyStats.total > 0 ? Math.round((dailyStats.arrived / dailyStats.total) * 100) : 0}%
                   </span>
                 </div>
@@ -1096,12 +1096,12 @@ export default function Agendamentos() {
           </Card>
 
           <div className="space-y-4">
-            <Card className="rounded-[28px] border border-slate-200 shadow-sm">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-2xl text-slate-950">Visao por status (agendamentos do dia)</CardTitle>
+            <Card className="rounded-[24px] border border-slate-200 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-xl text-slate-950">Visao por status (agendamentos do dia)</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <CardContent className="space-y-3">
+                <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                   <StatusPill
                     icon={ClipboardList}
                     label="Todos"
@@ -1146,10 +1146,10 @@ export default function Agendamentos() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-[28px] border border-slate-200 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <Card className="rounded-[24px] border border-slate-200 shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                 <div>
-                  <CardTitle className="text-2xl text-slate-950">Atrasados (aguardando check-in)</CardTitle>
+                  <CardTitle className="text-xl text-slate-950">Atrasados (aguardando check-in)</CardTitle>
                   <CardDescription className="mt-1 text-sm text-slate-500">
                     Atendimentos previstos para o horario que ainda precisam de acao.
                   </CardDescription>
@@ -1164,25 +1164,25 @@ export default function Agendamentos() {
                     const bucket = row.bucket;
                     const Icon = bucket.icon;
                     return (
-                      <div key={row.appointment.id} className="flex items-center gap-4 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3">
-                        <div className="w-14 text-center">
-                          <p className="text-sm font-semibold text-slate-900">{row.scheduleTime || "--:--"}</p>
-                          <p className="mt-1 text-xs font-semibold text-rose-600">
+                      <div key={row.appointment.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
+                        <div className="w-12 text-center">
+                          <p className="text-xs font-semibold text-slate-900">{row.scheduleTime || "--:--"}</p>
+                          <p className="mt-1 text-[11px] font-semibold text-rose-600">
                             {row.state.key === "attention" ? "Verificar" : "Atrasado"}
                           </p>
                         </div>
-                        <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", bucket.iconClassName)}>
-                          <Icon className="h-5 w-5" />
+                        <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", bucket.iconClassName)}>
+                          <Icon className="h-4 w-4" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate text-base font-semibold text-slate-950">{row.primaryLabel}</p>
+                            <p className="truncate text-[15px] font-semibold text-slate-950">{row.primaryLabel}</p>
                             <AppointmentStatusBadge stateKey={row.state.key} label={row.state.label} />
                           </div>
-                          <p className="truncate text-sm text-slate-500">{row.secondaryLabel}</p>
-                          <p className="truncate text-sm text-slate-500">{row.ownerLine}</p>
+                          <p className="truncate text-xs text-slate-500">{row.secondaryLabel}</p>
+                          <p className="truncate text-xs text-slate-500">{row.ownerLine}</p>
                         </div>
-                        <Button variant="outline" className="h-10 rounded-xl px-4 text-sm" onClick={() => openRegistradorForAppointment(row.appointment)}>
+                        <Button variant="outline" className="h-9 rounded-xl px-3.5 text-xs" onClick={() => openRegistradorForAppointment(row.appointment)}>
                           Registrar check-in
                         </Button>
                       </div>
@@ -1198,10 +1198,10 @@ export default function Agendamentos() {
           </div>
         </section>
 
-        <Card className="rounded-[28px] border border-slate-200 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
+        <Card className="rounded-[24px] border border-slate-200 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
             <div>
-              <CardTitle className="text-2xl text-slate-950">
+              <CardTitle className="text-xl text-slate-950">
                 {topTab === "pendencias_comerciais" ? "Pendencias comerciais" : "Agendamentos do dia (todos os servicos)"}
               </CardTitle>
               <CardDescription className="mt-1 text-sm text-slate-500">
@@ -1220,8 +1220,8 @@ export default function Agendamentos() {
               Ver todos
             </Button>
           </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="flex flex-wrap gap-3">
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2.5">
               {MAIN_SERVICE_FILTERS.map((filterId) => {
                 const isActive = serviceView === filterId;
                 const label = filterId === "all"
@@ -1233,7 +1233,7 @@ export default function Agendamentos() {
                     type="button"
                     onClick={() => setServiceView(filterId)}
                     className={cn(
-                      "min-w-[140px] rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+                      "min-w-[108px] rounded-xl border px-3 py-2.5 text-[13px] font-semibold transition",
                       isActive ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm" : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300",
                     )}
                   >
@@ -1243,8 +1243,8 @@ export default function Agendamentos() {
               })}
             </div>
 
-            <div className="overflow-hidden rounded-[24px] border border-slate-200">
-              <div className="grid grid-cols-[96px_132px_minmax(0,1.2fr)_220px_220px_150px_164px] items-center gap-4 border-b border-slate-200 bg-slate-50 px-6 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <div className="overflow-x-auto rounded-[20px] border border-slate-200">
+              <div className="grid grid-cols-[72px_104px_minmax(180px,1fr)_172px_184px_128px_148px] items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                 <span>Horario</span>
                 <span>Status</span>
                 <span>Pet / atividade</span>
@@ -1268,13 +1268,13 @@ export default function Agendamentos() {
                       <div
                         key={row.appointment.id}
                         className={cn(
-                          "grid grid-cols-[96px_132px_minmax(0,1.2fr)_220px_220px_150px_164px] items-center gap-4 px-6 py-5 transition hover:bg-slate-50",
+                          "grid grid-cols-[72px_104px_minmax(180px,1fr)_172px_184px_128px_148px] items-center gap-3 px-4 py-4 transition hover:bg-slate-50",
                           isHighlighted && "bg-amber-50/80",
                         )}
                       >
                         <div>
-                          <p className="text-lg font-semibold text-slate-950">{row.scheduleTime || "--:--"}</p>
-                          <p className="mt-1 text-sm text-slate-500">{formatLongDate(`${row.appointmentDateKey}T12:00:00`)}</p>
+                          <p className="text-base font-semibold text-slate-950">{row.scheduleTime || "--:--"}</p>
+                          <p className="mt-1 text-xs text-slate-500">{formatLongDate(`${row.appointmentDateKey}T12:00:00`)}</p>
                         </div>
 
                         <div className="flex flex-col gap-2">
@@ -1288,33 +1288,33 @@ export default function Agendamentos() {
                         </div>
 
                         <div className="flex min-w-0 items-center gap-3">
-                          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-                            <PawPrint className="h-6 w-6" />
+                          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                            <PawPrint className="h-5 w-5" />
                           </div>
                           <div className="min-w-0">
-                            <p className="truncate text-base font-semibold text-slate-950">{row.primaryLabel}</p>
-                            <p className="truncate text-sm text-slate-500">{row.secondaryLabel}</p>
+                            <p className="truncate text-sm font-semibold text-slate-950">{row.primaryLabel}</p>
+                            <p className="truncate text-xs text-slate-500">{row.secondaryLabel}</p>
                           </div>
                         </div>
 
                         <div className="flex min-w-0 items-center gap-3">
-                          <span className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", bucket.iconClassName)}>
-                            <Icon className="h-5 w-5" />
+                          <span className={cn("flex h-10 w-10 items-center justify-center rounded-xl", bucket.iconClassName)}>
+                            <Icon className="h-4 w-4" />
                           </span>
                           <div className="min-w-0">
-                            <p className="truncate text-base font-semibold text-slate-950">{row.serviceLine.title}</p>
-                            <p className="truncate text-sm text-slate-500">{row.serviceLine.subtitle}</p>
+                            <p className="truncate text-sm font-semibold text-slate-950">{row.serviceLine.title}</p>
+                            <p className="truncate text-xs text-slate-500">{row.serviceLine.subtitle}</p>
                           </div>
                         </div>
 
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-slate-900">{row.ownerDisplayName}</p>
-                          <p className="truncate text-sm text-slate-500">{row.sourceLabel}</p>
+                          <p className="truncate text-xs font-semibold text-slate-900">{row.ownerDisplayName}</p>
+                          <p className="truncate text-xs text-slate-500">{row.sourceLabel}</p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-semibold text-slate-900">{recordSummary}</p>
-                          <p className="mt-1 text-sm text-slate-500">
+                          <p className="text-xs font-semibold text-slate-900">{recordSummary}</p>
+                          <p className="mt-1 text-xs text-slate-500">
                             {row.checkoutTime ? `Check-out: ${formatTime(row.checkoutTime)}` : "Aguardando saida"}
                           </p>
                         </div>
@@ -1334,7 +1334,7 @@ export default function Agendamentos() {
                     );
                   })
                 ) : (
-                  <div className="px-6 py-12 text-center">
+                  <div className="px-4 py-10 text-center">
                     <p className="text-base font-semibold text-slate-700">Nenhum agendamento encontrado neste recorte.</p>
                     <p className="mt-2 text-sm text-slate-500">
                       Ajuste a data ou os filtros visuais para encontrar os atendimentos deste painel.
@@ -1346,11 +1346,11 @@ export default function Agendamentos() {
           </CardContent>
         </Card>
 
-        <div className="flex items-center justify-between rounded-[24px] border border-blue-100 bg-blue-50/70 px-5 py-4 text-sm text-slate-600 shadow-sm">
+        <div className="flex items-center justify-between rounded-[20px] border border-blue-100 bg-blue-50/70 px-4 py-3.5 text-sm text-slate-600 shadow-sm">
           <p>
             Ultima atualizacao: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "-"}
           </p>
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-blue-600" onClick={() => loadData(true)}>
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-blue-600" onClick={() => loadData(true)}>
             {isRefreshing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>
         </div>

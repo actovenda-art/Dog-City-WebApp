@@ -611,9 +611,98 @@ function formatWalletStatementReferenceCode(referenceType, referenceRecord) {
   return fullReference;
 }
 
+function roundWalletStatementAmount(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function getWalletStatementDateTimestamp(value, fallback = 0) {
+  const normalized = normalizeDateOnly(value);
+  if (!normalized) return fallback;
+  const parsed = new Date(`${normalized}T00:00:00`).getTime();
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function buildWalletChronologicalSettlement({
+  debitRows = [],
+  creditRows = [],
+  walletAvailableBalance = 0,
+}) {
+  const officialAvailableBalance = roundWalletStatementAmount(Math.max(Number(walletAvailableBalance || 0), 0));
+  const visibleCreditTotal = roundWalletStatementAmount(
+    (creditRows || []).reduce((sum, row) => sum + Number(row?.amount || 0), 0),
+  );
+  const settlementBudget = roundWalletStatementAmount(Math.max(officialAvailableBalance, visibleCreditTotal));
+  const canSimulateWithWalletCredits = settlementBudget > 0 || (creditRows || []).length > 0;
+
+  let remainingBudget = settlementBudget;
+  let openDebitTotal = 0;
+  let settledDebitTotal = 0;
+  let paidDebitCount = 0;
+  let pendingDebitCount = 0;
+
+  const debitRowsById = new Map();
+  const debitsInChronologicalOrder = [...(debitRows || [])].sort((left, right) => {
+    const leftAppointmentDate = getWalletStatementDateTimestamp(left?.appointmentDate || left?.dueDate);
+    const rightAppointmentDate = getWalletStatementDateTimestamp(right?.appointmentDate || right?.dueDate);
+    if (leftAppointmentDate !== rightAppointmentDate) {
+      return leftAppointmentDate - rightAppointmentDate;
+    }
+
+    const leftDueDate = getWalletStatementDateTimestamp(left?.dueDate);
+    const rightDueDate = getWalletStatementDateTimestamp(right?.dueDate);
+    if (leftDueDate !== rightDueDate) {
+      return leftDueDate - rightDueDate;
+    }
+
+    return String(left?.id || "").localeCompare(String(right?.id || ""));
+  });
+
+  debitsInChronologicalOrder.forEach((row) => {
+    const amount = roundWalletStatementAmount(row?.amount || 0);
+    const fallbackStatus = row?.paymentStatus || "pending";
+    let paymentStatus = fallbackStatus;
+
+    if (canSimulateWithWalletCredits) {
+      if (amount <= 0) {
+        paymentStatus = "paid";
+      } else if (remainingBudget + 0.0001 >= amount) {
+        paymentStatus = "paid";
+        remainingBudget = roundWalletStatementAmount(remainingBudget - amount);
+      } else {
+        paymentStatus = "pending";
+      }
+    }
+
+    if (paymentStatus === "paid") {
+      paidDebitCount += 1;
+      settledDebitTotal = roundWalletStatementAmount(settledDebitTotal + amount);
+    } else {
+      pendingDebitCount += 1;
+      openDebitTotal = roundWalletStatementAmount(openDebitTotal + amount);
+    }
+
+    debitRowsById.set(row.id, {
+      ...row,
+      paymentStatus,
+      settlementRule: canSimulateWithWalletCredits ? "wallet_chronological_full_only" : "source_status_fallback",
+    });
+  });
+
+  return {
+    debitRows: (debitRows || []).map((row) => debitRowsById.get(row.id) || row),
+    availableBalance: officialAvailableBalance,
+    creditTotal: visibleCreditTotal,
+    openDebitTotal,
+    settledDebitTotal,
+    paidDebitCount,
+    pendingDebitCount,
+  };
+}
+
 function buildWalletStatementRows({
   walletId,
   walletAccountId,
+  walletAvailableBalance = 0,
   movements = [],
   transactions = [],
   appointments = [],
@@ -775,7 +864,16 @@ function buildWalletStatementRows({
   const creditRowsFromWallet = (movements || [])
     .filter((movement) => movement?.carteira_conta_id === walletAccountId)
     .filter((movement) => String(movement?.natureza || "").toLowerCase() === "entrada")
-    .filter((movement) => String(movement?.tipo || "").trim() === "entrada_direcionada" || Boolean(movement?.transacao_id))
+    .filter((movement) => {
+      const movementType = String(movement?.tipo || "").trim().toLowerCase();
+      return (
+        movementType === "entrada_direcionada"
+        || movementType === "credito_manual"
+        || movementType === "ajuste_manual"
+        || movementType === "estorno_manual"
+        || Boolean(movement?.transacao_id)
+      );
+    })
     .map((movement) => {
       const transaction = resolveWalletCreditTransaction({ movement, transactions });
       const normalizedTransaction = transaction ? normalizeMovement(transaction) : null;
@@ -820,8 +918,15 @@ function buildWalletStatementRows({
   const creditRows = [...creditRowsFromWallet, ...creditRowsFromBudgetPayments]
     .sort((left, right) => new Date(right?.receivedDate || 0).getTime() - new Date(left?.receivedDate || 0).getTime());
 
+  const settlementSummary = buildWalletChronologicalSettlement({
+    debitRows,
+    creditRows,
+    walletAvailableBalance,
+  });
+  const settledDebitRows = settlementSummary.debitRows;
+
   const unifiedRows = [
-    ...debitRows.map((row) => ({
+    ...settledDebitRows.map((row) => ({
       ...row,
       rowKind: "debit",
       sortDate: normalizeDateOnly(row?.appointmentDate || row?.dueDate) || null,
@@ -846,16 +951,21 @@ function buildWalletStatementRows({
     return rightDate - leftDate;
   });
 
-  const debitTotal = debitRows.reduce((sum, row) => sum + Number(row?.amount || 0), 0);
+  const debitTotal = settledDebitRows.reduce((sum, row) => sum + Number(row?.amount || 0), 0);
   const creditTotal = creditRows.reduce((sum, row) => sum + Number(row?.amount || 0), 0);
 
   return {
     rows: unifiedRows,
-    debitRows,
+    debitRows: settledDebitRows,
     creditRows,
     debitTotal,
     creditTotal,
     netBalance: creditTotal - debitTotal,
+    availableBalance: settlementSummary.availableBalance,
+    openDebitTotal: settlementSummary.openDebitTotal,
+    settledDebitTotal: settlementSummary.settledDebitTotal,
+    paidDebitCount: settlementSummary.paidDebitCount,
+    pendingDebitCount: settlementSummary.pendingDebitCount,
   };
 }
 
@@ -1664,6 +1774,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     () => buildWalletStatementRows({
       walletId: selectedWalletAccount?.carteira_id || null,
       walletAccountId: selectedWalletRuntimeAccountId,
+      walletAvailableBalance: Number(selectedWalletAccount?.saldo_atual || 0),
       movements: walletRecentMovements,
       transactions: walletOperationalContext.transactions,
       appointments: walletOperationalContext.appointments,
@@ -1678,6 +1789,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     }),
     [
       selectedWalletAccount?.carteira_id,
+      selectedWalletAccount?.saldo_atual,
       selectedWalletRuntimeAccountId,
       walletRecentMovements,
       walletOperationalContext.transactions,
@@ -1695,14 +1807,17 @@ export default function Movimentacoes({ walletOnly = false }) {
   const walletStatementSummary = useMemo(() => {
     const rows = Array.isArray(walletStatementRows?.rows) ? walletStatementRows.rows : [];
     const latestDate = rows[0]?.primaryDate || null;
-    const effectiveBalance = rows.length > 0
-      ? walletStatementRows.netBalance
+    const effectiveBalance = Number.isFinite(Number(walletStatementRows?.availableBalance))
+      ? Number(walletStatementRows.availableBalance)
       : Number(selectedWalletAccount?.saldo_atual || 0);
 
     return {
       rowCount: rows.length,
       latestDate,
       effectiveBalance,
+      openDebitTotal: Number(walletStatementRows?.openDebitTotal || 0),
+      paidDebitCount: Number(walletStatementRows?.paidDebitCount || 0),
+      pendingDebitCount: Number(walletStatementRows?.pendingDebitCount || 0),
     };
   }, [selectedWalletAccount?.saldo_atual, walletStatementRows]);
   const walletTimelineRows = useMemo(() => {
@@ -2580,7 +2695,9 @@ export default function Movimentacoes({ walletOnly = false }) {
                             <p className="text-2xl font-bold text-slate-900">{formatCurrency(walletStatementSummary.effectiveBalance)}</p>
                             <p className="text-sm text-slate-500">
                               {walletStatementSummary.rowCount > 0
-                                ? `Saldo líquido considerando ${walletStatementSummary.rowCount} lançamentos do extrato.`
+                                ? walletStatementSummary.openDebitTotal > 0
+                                  ? `Saldo disponível na carteira após a quitação cronológica. Débitos ainda em aberto: ${formatCurrency(walletStatementSummary.openDebitTotal)}.`
+                                  : `Saldo disponível na carteira após quitar ${walletStatementSummary.paidDebitCount} lançamento(s) em ordem cronológica.`
                                 : "Sem lançamentos na carteira até o momento."}
                             </p>
                           </div>

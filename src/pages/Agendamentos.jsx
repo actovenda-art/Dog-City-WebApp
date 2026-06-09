@@ -40,9 +40,11 @@ import {
   CalendarClock,
   Car,
   CheckCircle2,
+  ChevronRight,
   ClipboardList,
   Clock3,
   Home,
+  Info,
   LoaderCircle,
   MoreHorizontal,
   PawPrint,
@@ -50,6 +52,7 @@ import {
   Scissors,
   TriangleAlert,
   Users,
+  Wrench,
 } from "lucide-react";
 
 const SERVICE_BUCKETS = [
@@ -452,6 +455,93 @@ function AppointmentStatusBadge({ stateKey, label }) {
   );
 }
 
+function MobileSummaryCard({ icon: Icon, label, value, helper, iconClassName, valueClassName }) {
+  return (
+    <Card className="rounded-[20px] border border-slate-200 shadow-sm">
+      <CardContent className="p-2.5">
+        <div className={cn("flex h-8 w-8 items-center justify-center rounded-xl", iconClassName)}>
+          <Icon className="h-3.5 w-3.5" />
+        </div>
+        <div className="mt-3 space-y-1">
+          <p className="text-[12px] font-semibold leading-4 text-slate-950">{label}</p>
+          <p className={cn("text-[22px] font-bold tracking-tight", valueClassName)}>{value}</p>
+          <p className="text-[11px] leading-4 text-slate-500">{helper}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function getMobileTopViewKey(topTab, statusView) {
+  if (topTab === "pendencias_comerciais") return "pendencias";
+  if (topTab === "nao_compareceram") return "nao_compareceram";
+  if (topTab === "presentes_agora" || (topTab === "operacao" && statusView === "arrived")) return "presentes";
+  if (topTab === "operacao" && statusView === "upcoming") return "previstos";
+  return "operacao";
+}
+
+function getAppointmentThumbnail(row) {
+  if (row?.dog?.foto_url) {
+    return { kind: "image", src: row.dog.foto_url, alt: row.primaryLabel };
+  }
+
+  if (row?.dog?.nome) {
+    return { kind: "dog" };
+  }
+
+  const detail = `${row?.primaryLabel || ""} ${row?.secondaryLabel || ""}`.toLowerCase();
+  if (detail.includes("reparo") || detail.includes("manuten")) {
+    return { kind: "icon", icon: Wrench };
+  }
+
+  return { kind: "icon", icon: ClipboardList };
+}
+
+function getMobileOperationalMeta(row) {
+  if (row.state.key === "arrived" || row.state.key === "completed") {
+    return {
+      shortLabel: "Chegou",
+      shortLabelClassName: "text-emerald-600",
+      actionText: row.checkinTime ? formatTime(row.checkinTime) : "Concluido",
+      actionTextClassName: "text-emerald-600",
+      actionToneClassName: "border-emerald-100 bg-emerald-50 text-emerald-600",
+      actionIcon: CheckCircle2,
+    };
+  }
+
+  if (row.state.key === "late" || row.state.key === "attention") {
+    return {
+      shortLabel: "Atrasado",
+      shortLabelClassName: "text-amber-600",
+      actionText: "Aguardando\ncheck-in",
+      actionTextClassName: "text-amber-600",
+      actionToneClassName: "border-amber-100 bg-amber-50 text-amber-600",
+      actionIcon: Clock3,
+    };
+  }
+
+  if (row.state.key === "no_show") {
+    return {
+      shortLabel: "Nao veio",
+      shortLabelClassName: "text-rose-600",
+      actionText: "Sem\ncheck-in",
+      actionTextClassName: "text-rose-600",
+      actionToneClassName: "border-rose-100 bg-rose-50 text-rose-600",
+      actionIcon: TriangleAlert,
+    };
+  }
+
+  const expectedLabel = row.bucket.id === "diversos" ? "Horario\nprevisto" : "Check-in\nprevisto";
+  return {
+    shortLabel: "Previsto",
+    shortLabelClassName: "text-blue-600",
+    actionText: `${expectedLabel}: ${row.scheduleTime || "--:--"}`,
+    actionTextClassName: "text-slate-500",
+    actionToneClassName: "border-slate-200 bg-white text-slate-500",
+    actionIcon: Calendar,
+  };
+}
+
 function AppointmentActions({ appointment, state, isSaving, onOpenRegistrador, onOpenRecords, onOpenOrcamento, onOpenPackageDialog, onCreateOrcamento, onMarkAbsence }) {
   const primaryAction =
     state.key === "late" || state.key === "attention" || state.key === "upcoming"
@@ -780,6 +870,115 @@ export default function Agendamentos() {
   }, [baseRows, serviceView, statusView, topTab]);
 
   const highlightAppointmentId = reviewAppointmentId || absenceReviewAppointmentId || null;
+  const mobileTopView = useMemo(() => getMobileTopViewKey(topTab, statusView), [statusView, topTab]);
+  const mobileTopTabs = useMemo(
+    () => [
+      { key: "operacao", label: "Operacao", icon: ClipboardList, toneClassName: "text-blue-600" },
+      { key: "presentes", label: "Presentes Agora", icon: PawPrint, toneClassName: "text-emerald-600" },
+      { key: "previstos", label: "Previstos", icon: Calendar, toneClassName: "text-amber-500" },
+      { key: "nao_compareceram", label: "Nao Compareceram", icon: TriangleAlert, toneClassName: "text-rose-600" },
+      { key: "pendencias", label: "Pendencias", icon: CalendarClock, toneClassName: "text-amber-500" },
+    ],
+    [],
+  );
+  const mobileSummaryCards = useMemo(
+    () => [
+      {
+        key: "total",
+        icon: Users,
+        label: "Total previsto",
+        value: dailyStats.total,
+        helper: `${dailyStats.total} agendamento${dailyStats.total === 1 ? "" : "s"}`,
+        iconClassName: "bg-blue-50 text-blue-600",
+        valueClassName: "text-blue-600",
+      },
+      {
+        key: "arrived",
+        icon: PawPrint,
+        label: "Presentes agora",
+        value: dailyStats.arrived,
+        helper: "ja chegaram",
+        iconClassName: "bg-emerald-50 text-emerald-600",
+        valueClassName: "text-emerald-600",
+      },
+      {
+        key: "upcoming",
+        icon: Calendar,
+        label: "Previstos",
+        value: dailyStats.upcoming,
+        helper: "ainda podem chegar",
+        iconClassName: "bg-amber-50 text-amber-500",
+        valueClassName: "text-amber-500",
+      },
+      {
+        key: "late",
+        icon: Clock3,
+        label: "Atrasados",
+        value: dailyStats.late,
+        helper: "aguardando check-in",
+        iconClassName: "bg-orange-50 text-orange-500",
+        valueClassName: "text-orange-500",
+      },
+      {
+        key: "no_show",
+        icon: TriangleAlert,
+        label: "Nao compareceram",
+        value: dailyStats.noShow,
+        helper: "sem check-in",
+        iconClassName: "bg-rose-50 text-rose-600",
+        valueClassName: "text-rose-600",
+      },
+    ],
+    [dailyStats],
+  );
+
+  function applyMobileTopView(nextView) {
+    if (nextView === "presentes") {
+      setTopTab("operacao");
+      setStatusView("arrived");
+      return;
+    }
+
+    if (nextView === "previstos") {
+      setTopTab("operacao");
+      setStatusView("upcoming");
+      return;
+    }
+
+    if (nextView === "nao_compareceram") {
+      setTopTab("nao_compareceram");
+      setStatusView("all");
+      return;
+    }
+
+    if (nextView === "pendencias") {
+      setTopTab("pendencias_comerciais");
+      setStatusView("all");
+      return;
+    }
+
+    setTopTab("operacao");
+    setStatusView("all");
+  }
+
+  function handleMobilePrimaryAction(row) {
+    if (row.hasCommercialPending) {
+      openAvulsoActionsDialog(row.appointment);
+      return;
+    }
+
+    if (["late", "attention", "upcoming"].includes(row.state.key)) {
+      openRegistradorForAppointment(row.appointment);
+      return;
+    }
+
+    if (row.appointment?.orcamento_id) {
+      openLinkedOrcamento(row.appointment);
+      return;
+    }
+
+    openRecordsDialog(row.appointment);
+  }
 
   function openPackageDialog(appointment) {
     const meta = getAppointmentMeta(appointment);
@@ -915,6 +1114,202 @@ export default function Agendamentos() {
 
   return (
     <div className="min-h-screen bg-[#f6f8fc] p-3 lg:p-4">
+      <div className="space-y-6 lg:hidden">
+        <div className="-mx-3 overflow-x-auto border-b border-slate-200 bg-white/90 px-3 pb-3 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-max items-center gap-3">
+            {mobileTopTabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = mobileTopView === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => applyMobileTopView(tab.key)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-1 border-b-2 pb-3 pt-1 text-[12px] font-semibold tracking-tight transition",
+                    isActive ? "border-blue-600 text-blue-600" : "border-transparent text-slate-600",
+                  )}
+                >
+                  <Icon className={cn("h-3.5 w-3.5", isActive ? "text-blue-600" : tab.toneClassName)} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+          <DatePickerInput
+            value={filterDate}
+            onChange={setFilterDate}
+            placeholder={formatDateControlLabel(selectedDayKey)}
+            className="h-14 rounded-2xl border-slate-200 bg-white px-4 text-[16px] font-semibold shadow-sm"
+          />
+          <Button
+            variant="outline"
+            onClick={() => loadData(true)}
+            className="h-14 rounded-2xl border-slate-200 bg-white px-5 text-[16px] font-semibold text-slate-900 shadow-sm hover:bg-white"
+          >
+            {isRefreshing ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Atualizar
+          </Button>
+        </div>
+
+        <section className="space-y-4">
+          <h2 className="text-[20px] font-semibold tracking-tight text-slate-950">Resumo geral do dia</h2>
+          <div className="grid grid-cols-5 gap-2">
+              {mobileSummaryCards.map((card) => (
+                <MobileSummaryCard
+                  key={card.key}
+                  icon={card.icon}
+                  label={card.label}
+                  value={card.value}
+                  helper={card.helper}
+                  iconClassName={card.iconClassName}
+                  valueClassName={card.valueClassName}
+                />
+              ))}
+          </div>
+        </section>
+
+        <Card className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
+          <CardHeader className="space-y-3 pb-4">
+            <CardTitle className="text-[20px] font-semibold tracking-tight text-slate-950">
+              {mobileTopView === "pendencias" ? "Pendencias comerciais" : "Agendamentos do dia (todos os servicos)"}
+            </CardTitle>
+            <div className="-mx-1 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="flex gap-1.5 px-1">
+                {MAIN_SERVICE_FILTERS.map((filterId) => {
+                  const isActive = serviceView === filterId;
+                  const label = filterId === "all"
+                    ? "Todos"
+                    : SERVICE_BUCKETS.find((service) => service.id === filterId)?.label || filterId;
+                  return (
+                    <button
+                      key={filterId}
+                      type="button"
+                      onClick={() => setServiceView(filterId)}
+                      className={cn(
+                        "shrink-0 rounded-2xl border px-3 py-2.5 text-[12px] font-semibold transition",
+                        isActive
+                          ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm"
+                          : "border-slate-200 bg-slate-50 text-slate-700",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <div className="overflow-hidden rounded-[24px] border border-slate-100 bg-white">
+              {filteredMainRows.length > 0 ? (
+                <div className="divide-y divide-slate-100">
+                  {filteredMainRows.map((row) => {
+                    const bucket = row.bucket;
+                    const BucketIcon = bucket.icon;
+                    const actionMeta = getMobileOperationalMeta(row);
+                    const ActionIcon = actionMeta.actionIcon;
+                    const thumbnail = getAppointmentThumbnail(row);
+                    const isHighlighted = highlightAppointmentId === row.appointment.id;
+
+                    return (
+                      <div
+                        key={row.appointment.id}
+                        className={cn("flex items-center gap-2.5 px-2.5 py-3.5", isHighlighted && "bg-amber-50/80")}
+                      >
+                        <div className="w-9 shrink-0">
+                          <p className="text-[14px] font-semibold tracking-tight text-slate-950">{row.scheduleTime || "--:--"}</p>
+                          <p className={cn("mt-1.5 text-[11px] font-semibold", actionMeta.shortLabelClassName)}>{actionMeta.shortLabel}</p>
+                        </div>
+
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-slate-100 bg-slate-50">
+                          {thumbnail.kind === "image" ? (
+                            <img src={thumbnail.src} alt={thumbnail.alt} className="h-full w-full object-cover" />
+                          ) : thumbnail.kind === "dog" ? (
+                            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-amber-100 via-amber-50 to-emerald-50 text-amber-700">
+                              <PawPrint className="h-5 w-5" />
+                            </div>
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-white text-slate-500">
+                              <thumbnail.icon className="h-6 w-6" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="min-w-0">
+                            <p className="truncate text-[13px] font-semibold leading-5 text-slate-950">{row.primaryLabel}</p>
+                            <p className="mt-0.5 truncate text-[12px] text-slate-500">{row.secondaryLabel}</p>
+                          </div>
+
+                          <div className="mt-2 flex items-start justify-between gap-1.5">
+                            <div className="min-w-0 flex items-center gap-1.5">
+                              <span className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl", bucket.iconClassName)}>
+                                <BucketIcon className="h-3 w-3" />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="truncate text-[12px] font-semibold leading-4 text-slate-950">{row.serviceLine.title}</p>
+                                <p className="truncate text-[11px] text-slate-500">{row.serviceLine.subtitle}</p>
+                              </div>
+                            </div>
+
+                            <p className={cn("max-w-[66px] whitespace-pre-line text-right text-[11px] font-medium leading-4", actionMeta.actionTextClassName)}>
+                              {actionMeta.actionText}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleMobilePrimaryAction(row)}
+                            className={cn("flex h-8 w-8 items-center justify-center rounded-full border transition", actionMeta.actionToneClassName)}
+                            aria-label="Abrir ação principal do agendamento"
+                          >
+                            <ActionIcon className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMobilePrimaryAction(row)}
+                            className="flex h-8 w-5 items-center justify-center text-slate-500"
+                            aria-label="Abrir detalhes do agendamento"
+                          >
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="px-4 py-12 text-center">
+                  <p className="text-[16px] font-semibold text-slate-700">Nenhum agendamento encontrado neste recorte.</p>
+                  <p className="mt-2 text-[14px] leading-6 text-slate-500">
+                    Ajuste a data ou os filtros para encontrar os atendimentos deste painel.
+                  </p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="flex items-center gap-3 rounded-[22px] border border-blue-100 bg-blue-50/70 px-4 py-4 text-slate-600 shadow-sm">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-blue-600 shadow-sm">
+            <Info className="h-5 w-5" />
+          </div>
+          <p className="min-w-0 flex-1 text-[15px] leading-6">
+            Ultima atualizacao: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "-"}
+          </p>
+          <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-full text-blue-600" onClick={() => loadData(true)}>
+            {isRefreshing ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <RefreshCw className="h-5 w-5" />}
+          </Button>
+        </div>
+      </div>
+
+      <div className="hidden lg:block">
       <div className="mx-auto max-w-[1200px] space-y-5">
         <div className="flex flex-col gap-3 rounded-[24px] border border-white/80 bg-white/90 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1354,6 +1749,7 @@ export default function Agendamentos() {
             {isRefreshing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>
         </div>
+      </div>
       </div>
 
       <Dialog open={packageDialogOpen} onOpenChange={setPackageDialogOpen}>

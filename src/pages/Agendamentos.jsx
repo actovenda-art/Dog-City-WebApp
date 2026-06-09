@@ -462,8 +462,8 @@ function MobileSummaryCard({ icon: Icon, label, value, helper, iconClassName, va
           <Icon className="h-3 w-3" />
         </div>
         <div className="mt-2.5 space-y-0.5">
-          <p className="text-[11px] font-semibold leading-4 text-slate-950">{label}</p>
-          <p className={cn("text-[20px] font-bold tracking-tight", valueClassName)}>{value}</p>
+          <p className="text-[10px] font-semibold leading-3.5 text-slate-950">{label}</p>
+          <p className={cn("text-[18px] font-bold tracking-tight", valueClassName)}>{value}</p>
         </div>
       </CardContent>
     </Card>

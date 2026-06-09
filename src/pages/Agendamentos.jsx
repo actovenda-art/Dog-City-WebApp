@@ -126,8 +126,8 @@ const STATUS_STYLES = {
     subtleClassName: "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
   },
   no_show: {
-    label: "Nao compareceram",
-    badgeLabel: "Nao compareceu",
+    label: "Não compareceram",
+    badgeLabel: "Não compareceu",
     valueClassName: "text-rose-600",
     containerClassName: "border-rose-200 bg-rose-50 text-rose-700",
     subtleClassName: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
@@ -921,7 +921,7 @@ export default function Agendamentos() {
       {
         key: "no_show",
         icon: TriangleAlert,
-        label: "Nao compareceram",
+        label: "Não compareceram",
         value: dailyStats.noShow,
         helper: "sem check-in",
         iconClassName: "bg-rose-50 text-rose-600",
@@ -1411,7 +1411,7 @@ export default function Agendamentos() {
             />
             <SummaryCard
               icon={TriangleAlert}
-              label="Nao compareceram"
+              label="Não compareceram"
               value={dailyStats.noShow}
               helper="Sem check-in"
               iconClassName="bg-rose-50 text-rose-600"

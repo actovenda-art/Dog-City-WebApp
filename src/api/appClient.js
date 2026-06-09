@@ -844,7 +844,7 @@ function ensureMockAgendamentosDesktopSeed() {
         manual_monitor_nome: 'Equipe Comercial',
         absence_confirmed_at: buildMockIso(todayKey, '11:35'),
         misc_title: 'Visita de prospeccao',
-        misc_subtitle: 'Nao compareceu',
+        misc_subtitle: 'Não compareceu',
         misc_owner_name: 'Cliente: PetCorretor',
         misc_detail_label: 'Agendado pela equipe comercial',
         misc_service_label: 'Visita comercial',

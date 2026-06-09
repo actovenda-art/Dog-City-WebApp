@@ -105,7 +105,7 @@ const SERVICE_BUCKETS = [
 
 const STATUS_STYLES = {
   arrived: {
-    label: "Ja chegaram",
+    label: "Já chegaram",
     badgeLabel: "Chegou",
     valueClassName: "text-emerald-600",
     containerClassName: "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -464,7 +464,6 @@ function MobileSummaryCard({ icon: Icon, label, value, helper, iconClassName, va
         <div className="mt-2.5 space-y-0.5">
           <p className="text-[11px] font-semibold leading-4 text-slate-950">{label}</p>
           <p className={cn("text-[20px] font-bold tracking-tight", valueClassName)}>{value}</p>
-          <p className="text-[10px] leading-4 text-slate-500">{helper}</p>
         </div>
       </CardContent>
     </Card>
@@ -872,7 +871,7 @@ export default function Agendamentos() {
   const mobileTopView = useMemo(() => getMobileTopViewKey(topTab, statusView), [statusView, topTab]);
   const mobileTopTabs = useMemo(
     () => [
-      { key: "operacao", label: "Operacao", icon: ClipboardList, toneClassName: "text-blue-600" },
+      { key: "operacao", label: "Operação", icon: ClipboardList, toneClassName: "text-blue-600" },
       { key: "presentes", label: "Presentes Agora", icon: PawPrint, toneClassName: "text-emerald-600" },
       { key: "previstos", label: "Previstos", icon: Calendar, toneClassName: "text-amber-500" },
       { key: "nao_compareceram", label: "Nao Compareceram", icon: TriangleAlert, toneClassName: "text-rose-600" },
@@ -1325,7 +1324,7 @@ export default function Agendamentos() {
 
               <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 pb-0.5">
                 {[
-                  { id: "operacao", label: "Operacao", count: dailyStats.total },
+                  { id: "operacao", label: "Operação", count: dailyStats.total },
                   { id: "presentes_agora", label: "Presentes Agora", count: dailyStats.arrived },
                   { id: "nao_compareceram", label: "Nao Compareceram", count: dailyStats.noShow },
                   ...(!shouldHideOperationalAlerts
@@ -1387,7 +1386,7 @@ export default function Agendamentos() {
             />
             <SummaryCard
               icon={CheckCircle2}
-              label="Ja chegaram"
+              label="Já chegaram"
               value={dailyStats.arrived}
               helper={dailyStats.total > 0 ? `${Math.round((dailyStats.arrived / dailyStats.total) * 100)}% do previsto` : "Sem chegadas registradas"}
               iconClassName="bg-emerald-50 text-emerald-600"

@@ -408,17 +408,17 @@ function formatDateControlLabel(dateKey) {
 
 function SummaryCard({ icon: Icon, label, value, helper, iconClassName, valueClassName }) {
   return (
-    <Card className="rounded-[20px] border border-slate-200 shadow-sm">
-      <CardContent className="p-5">
+    <Card className="rounded-[18px] border border-slate-200 shadow-sm">
+      <CardContent className="p-4">
         <div className="flex items-start justify-between gap-4">
-          <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconClassName)}>
-            <Icon className="h-4 w-4" />
+          <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg", iconClassName)}>
+            <Icon className="h-3.5 w-3.5" />
           </div>
         </div>
-        <div className="mt-4 space-y-1.5">
-          <p className="text-[13px] font-semibold text-slate-900">{label}</p>
-          <p className={cn("text-4xl font-bold tracking-tight", valueClassName)}>{value}</p>
-          <p className="text-[13px] text-slate-500">{helper}</p>
+        <div className="mt-3 space-y-1">
+          <p className="text-[12px] font-semibold text-slate-900">{label}</p>
+          <p className={cn("text-[32px] font-bold tracking-tight", valueClassName)}>{value}</p>
+          <p className="text-[12px] text-slate-500">{helper}</p>
         </div>
       </CardContent>
     </Card>

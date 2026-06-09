@@ -456,14 +456,14 @@ function AppointmentStatusBadge({ stateKey, label }) {
 
 function MobileSummaryCard({ icon: Icon, label, value, helper, iconClassName, valueClassName }) {
   return (
-    <Card className="rounded-[18px] border border-slate-200 shadow-sm">
-      <CardContent className="p-2">
-        <div className={cn("flex h-7 w-7 items-center justify-center rounded-xl", iconClassName)}>
-          <Icon className="h-3 w-3" />
+    <Card className="rounded-[16px] border border-slate-200 shadow-sm">
+      <CardContent className="p-1.5">
+        <div className={cn("flex h-6 w-6 items-center justify-center rounded-lg", iconClassName)}>
+          <Icon className="h-2.5 w-2.5" />
         </div>
-        <div className="mt-2.5 space-y-0.5">
-          <p className="text-[10px] font-semibold leading-3.5 text-slate-950">{label}</p>
-          <p className={cn("text-[18px] font-bold tracking-tight", valueClassName)}>{value}</p>
+        <div className="mt-2 space-y-0.5">
+          <p className="text-[9px] font-semibold leading-3 text-slate-950">{label}</p>
+          <p className={cn("text-[16px] font-bold tracking-tight", valueClassName)}>{value}</p>
         </div>
       </CardContent>
     </Card>

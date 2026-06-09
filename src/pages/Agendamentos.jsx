@@ -457,15 +457,15 @@ function AppointmentStatusBadge({ stateKey, label }) {
 
 function MobileSummaryCard({ icon: Icon, label, value, helper, iconClassName, valueClassName }) {
   return (
-    <Card className="rounded-[20px] border border-slate-200 shadow-sm">
-      <CardContent className="p-2.5">
-        <div className={cn("flex h-8 w-8 items-center justify-center rounded-xl", iconClassName)}>
-          <Icon className="h-3.5 w-3.5" />
+    <Card className="rounded-[18px] border border-slate-200 shadow-sm">
+      <CardContent className="p-2">
+        <div className={cn("flex h-7 w-7 items-center justify-center rounded-xl", iconClassName)}>
+          <Icon className="h-3 w-3" />
         </div>
-        <div className="mt-3 space-y-1">
-          <p className="text-[12px] font-semibold leading-4 text-slate-950">{label}</p>
-          <p className={cn("text-[22px] font-bold tracking-tight", valueClassName)}>{value}</p>
-          <p className="text-[11px] leading-4 text-slate-500">{helper}</p>
+        <div className="mt-2.5 space-y-0.5">
+          <p className="text-[11px] font-semibold leading-4 text-slate-950">{label}</p>
+          <p className={cn("text-[20px] font-bold tracking-tight", valueClassName)}>{value}</p>
+          <p className="text-[10px] leading-4 text-slate-500">{helper}</p>
         </div>
       </CardContent>
     </Card>
@@ -1155,30 +1155,12 @@ export default function Agendamentos() {
           </Button>
         </div>
 
-        <section className="space-y-4">
-          <h2 className="text-[20px] font-semibold tracking-tight text-slate-950">Resumo geral do dia</h2>
-          <div className="grid grid-cols-5 gap-2">
-              {mobileSummaryCards.map((card) => (
-                <MobileSummaryCard
-                  key={card.key}
-                  icon={card.icon}
-                  label={card.label}
-                  value={card.value}
-                  helper={card.helper}
-                  iconClassName={card.iconClassName}
-                  valueClassName={card.valueClassName}
-                />
-              ))}
-          </div>
-        </section>
-
         <Card className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
           <CardHeader className="space-y-3 pb-4">
-            <CardTitle className="text-[20px] font-semibold tracking-tight text-slate-950">
+            <CardTitle className="text-[18px] font-semibold tracking-tight text-slate-950">
               {mobileTopView === "pendencias" ? "Pendencias comerciais" : "Agendamentos do dia (todos os servicos)"}
             </CardTitle>
-            <div className="-mx-1 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <div className="flex gap-1.5 px-1">
+            <div className="grid grid-cols-3 gap-2">
                 {MAIN_SERVICE_FILTERS.map((filterId) => {
                   const isActive = serviceView === filterId;
                   const label = filterId === "all"
@@ -1190,7 +1172,7 @@ export default function Agendamentos() {
                       type="button"
                       onClick={() => setServiceView(filterId)}
                       className={cn(
-                        "shrink-0 rounded-2xl border px-3 py-2.5 text-[12px] font-semibold transition",
+                        "rounded-2xl border px-2.5 py-2 text-[11px] font-semibold transition",
                         isActive
                           ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm"
                           : "border-slate-200 bg-slate-50 text-slate-700",
@@ -1200,7 +1182,6 @@ export default function Agendamentos() {
                     </button>
                   );
                 })}
-              </div>
             </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">
@@ -1218,45 +1199,45 @@ export default function Agendamentos() {
                     return (
                       <div
                         key={row.appointment.id}
-                        className={cn("flex items-center gap-2.5 px-2.5 py-3.5", isHighlighted && "bg-amber-50/80")}
+                        className={cn("flex items-center gap-2 px-2 py-3", isHighlighted && "bg-amber-50/80")}
                       >
-                        <div className="w-9 shrink-0">
-                          <p className="text-[14px] font-semibold tracking-tight text-slate-950">{row.scheduleTime || "--:--"}</p>
-                          <p className={cn("mt-1.5 text-[11px] font-semibold", actionMeta.shortLabelClassName)}>{actionMeta.shortLabel}</p>
+                        <div className="w-8 shrink-0">
+                          <p className="text-[13px] font-semibold tracking-tight text-slate-950">{row.scheduleTime || "--:--"}</p>
+                          <p className={cn("mt-1 text-[10px] font-semibold", actionMeta.shortLabelClassName)}>{actionMeta.shortLabel}</p>
                         </div>
 
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-slate-100 bg-slate-50">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-slate-100 bg-slate-50">
                           {thumbnail.kind === "image" ? (
                             <img src={thumbnail.src} alt={thumbnail.alt} className="h-full w-full object-cover" />
                           ) : thumbnail.kind === "dog" ? (
                             <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-amber-100 via-amber-50 to-emerald-50 text-amber-700">
-                              <PawPrint className="h-5 w-5" />
+                              <PawPrint className="h-4.5 w-4.5" />
                             </div>
                           ) : (
                             <div className="flex h-full w-full items-center justify-center bg-white text-slate-500">
-                              <thumbnail.icon className="h-6 w-6" />
+                              <thumbnail.icon className="h-5 w-5" />
                             </div>
                           )}
                         </div>
 
                         <div className="min-w-0 flex-1">
                           <div className="min-w-0">
-                            <p className="truncate text-[13px] font-semibold leading-5 text-slate-950">{row.primaryLabel}</p>
-                            <p className="mt-0.5 truncate text-[12px] text-slate-500">{row.secondaryLabel}</p>
+                            <p className="truncate text-[12px] font-semibold leading-4 text-slate-950">{row.primaryLabel}</p>
+                            <p className="mt-0.5 truncate text-[11px] text-slate-500">{row.secondaryLabel}</p>
                           </div>
 
-                          <div className="mt-2 flex items-start justify-between gap-1.5">
+                          <div className="mt-1.5 flex items-start justify-between gap-1">
                             <div className="min-w-0 flex items-center gap-1.5">
-                              <span className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl", bucket.iconClassName)}>
-                                <BucketIcon className="h-3 w-3" />
+                              <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-xl", bucket.iconClassName)}>
+                                <BucketIcon className="h-2.5 w-2.5" />
                               </span>
                               <div className="min-w-0">
-                                <p className="truncate text-[12px] font-semibold leading-4 text-slate-950">{row.serviceLine.title}</p>
-                                <p className="truncate text-[11px] text-slate-500">{row.serviceLine.subtitle}</p>
+                                <p className="truncate text-[11px] font-semibold leading-4 text-slate-950">{row.serviceLine.title}</p>
+                                <p className="truncate text-[10px] text-slate-500">{row.serviceLine.subtitle}</p>
                               </div>
                             </div>
 
-                            <p className={cn("max-w-[66px] whitespace-pre-line text-right text-[11px] font-medium leading-4", actionMeta.actionTextClassName)}>
+                            <p className={cn("max-w-[58px] whitespace-pre-line text-right text-[10px] font-medium leading-4", actionMeta.actionTextClassName)}>
                               {actionMeta.actionText}
                             </p>
                           </div>
@@ -1266,18 +1247,18 @@ export default function Agendamentos() {
                           <button
                             type="button"
                             onClick={() => handleMobilePrimaryAction(row)}
-                            className={cn("flex h-8 w-8 items-center justify-center rounded-full border transition", actionMeta.actionToneClassName)}
+                            className={cn("flex h-7 w-7 items-center justify-center rounded-full border transition", actionMeta.actionToneClassName)}
                             aria-label="Abrir ação principal do agendamento"
                           >
-                            <ActionIcon className="h-3 w-3" />
+                            <ActionIcon className="h-2.5 w-2.5" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleMobilePrimaryAction(row)}
-                            className="flex h-8 w-5 items-center justify-center text-slate-500"
+                            className="flex h-7 w-4 items-center justify-center text-slate-500"
                             aria-label="Abrir detalhes do agendamento"
                           >
-                            <ChevronRight className="h-3.5 w-3.5" />
+                            <ChevronRight className="h-3 w-3" />
                           </button>
                         </div>
                       </div>
@@ -1295,6 +1276,23 @@ export default function Agendamentos() {
             </div>
           </CardContent>
         </Card>
+
+        <section className="space-y-3">
+          <h2 className="text-[18px] font-semibold tracking-tight text-slate-950">Resumo geral do dia</h2>
+          <div className="grid grid-cols-5 gap-1.5">
+              {mobileSummaryCards.map((card) => (
+                <MobileSummaryCard
+                  key={card.key}
+                  icon={card.icon}
+                  label={card.label}
+                  value={card.value}
+                  helper={card.helper}
+                  iconClassName={card.iconClassName}
+                  valueClassName={card.valueClassName}
+                />
+              ))}
+          </div>
+        </section>
 
         <div className="flex items-center gap-3 rounded-[22px] border border-blue-100 bg-blue-50/70 px-4 py-4 text-slate-600 shadow-sm">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-blue-600 shadow-sm">

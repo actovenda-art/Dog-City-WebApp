@@ -18,28 +18,32 @@ const pickerTriggerClassName = cn(
   "hover:bg-slate-50 hover:text-slate-900",
 );
 
-const calendarPopoverClassName = "w-[calc(100vw-1rem)] max-w-[284px] rounded-[24px] border border-slate-200 bg-white p-4 shadow-2xl sm:p-5";
+const calendarPopoverClassName =
+  "w-[calc(100vw-1rem)] max-w-[304px] rounded-[18px] border border-slate-200/90 bg-white p-2.5 shadow-[0_8px_24px_rgba(15,23,42,0.08)] sm:p-3";
 
 const calendarClassNames = {
   months: "flex flex-col",
-  month: "w-full min-w-0 space-y-2.5",
-  caption: "grid min-h-[74px] grid-cols-[36px_1fr_36px] items-start gap-2 px-0 pt-0",
-  caption_dropdowns: "col-start-2 grid w-full min-w-0 grid-cols-[minmax(0,1fr)_88px] items-start gap-2 justify-self-center",
-  caption_label: "inline-flex min-h-11 items-center justify-between gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 text-[15px] font-semibold leading-none text-slate-900 capitalize shadow-sm",
+  month: "w-full min-w-0 space-y-1.5",
+  caption: "grid grid-cols-[32px_1fr_32px] items-center gap-1 px-0 pt-0 pb-1",
+  caption_dropdowns: "col-start-2 flex min-w-0 items-center justify-center gap-1.5",
+  caption_label:
+    "col-start-2 flex h-8 items-center justify-center px-2 text-center text-[13px] font-semibold leading-none text-slate-900 capitalize",
   nav: "contents",
-  nav_button: "mt-7 h-9 w-9 rounded-full border border-slate-200 bg-white p-0 text-slate-700 opacity-100 shadow-sm hover:bg-slate-100",
-  nav_button_previous: "col-start-1 justify-self-start self-start",
-  nav_button_next: "col-start-3 justify-self-end self-start",
+  nav_button:
+    "h-8 w-8 rounded-full border border-slate-200 bg-white p-0 text-slate-600 opacity-100 shadow-sm hover:bg-slate-50",
+  nav_button_previous: "col-start-1 justify-self-start",
+  nav_button_next: "col-start-3 justify-self-end",
   dropdown: "absolute inset-0 cursor-pointer opacity-0",
   dropdown_month: "relative w-full",
   dropdown_year: "relative w-full",
   dropdown_icon: "h-3.5 w-3.5 text-slate-400",
-  table: "mt-1.5 w-full min-w-0 table-fixed border-collapse",
+  table: "w-full min-w-0 table-fixed border-collapse",
   head_row: "grid w-full grid-cols-7",
-  head_cell: "flex h-8 w-full items-center justify-center text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400",
-  row: "mt-1 grid w-full grid-cols-7",
-  cell: "h-9 w-full p-0 text-center align-middle text-[13px]",
-  day: "mx-auto h-9 w-9 rounded-full p-0 text-[15px] font-semibold leading-none text-slate-700 hover:bg-slate-100 hover:text-slate-900",
+  head_cell:
+    "flex h-6 w-full items-center justify-center text-center text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400",
+  row: "mt-0.5 grid w-full grid-cols-7",
+  cell: "h-8 w-full p-0 text-center align-middle text-[12px]",
+  day: "mx-auto inline-flex h-8 w-8 items-center justify-center rounded-full p-0 text-[13px] font-medium leading-none text-slate-700 hover:bg-slate-100 hover:text-slate-900",
   day_selected: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white focus:bg-blue-500 focus:text-white",
   day_range_start: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
   day_range_end: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
@@ -47,6 +51,7 @@ const calendarClassNames = {
   day_today: "border border-blue-200 bg-blue-50 text-blue-700",
   day_outside: "text-slate-300",
   day_disabled: "text-slate-300 opacity-40",
+  day_hidden: "invisible",
   vhidden: "sr-only",
 };
 
@@ -120,7 +125,7 @@ function formatDisplayDateRange(startValue, endValue) {
 
   if (startLabel && endLabel) return `${startLabel} até ${endLabel}`;
   if (startLabel) return `A partir de ${startLabel}`;
-  if (endLabel) return `At? ${endLabel}`;
+  if (endLabel) return `Até ${endLabel}`;
   return null;
 }
 
@@ -199,7 +204,7 @@ function PickerPopover({ children, content, className, open, onOpenChange }) {
       <PopoverContent
         align="start"
         side="bottom"
-        sideOffset={8}
+        sideOffset={6}
         collisionPadding={8}
         onOpenAutoFocus={(event) => event.preventDefault()}
         className={cn(
@@ -250,7 +255,12 @@ function PickerTextTrigger({
           className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-slate-900 outline-none placeholder:text-slate-400 sm:text-sm"
         />
       </div>
-      <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform sm:h-4 sm:w-4", open && "rotate-180")} />
+      <ChevronDown
+        className={cn(
+          "h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform sm:h-4 sm:w-4",
+          open && "rotate-180"
+        )}
+      />
     </div>
   );
 }
@@ -287,36 +297,20 @@ export function DatePickerInput({
     <PickerPopover
       open={open}
       onOpenChange={setOpen}
-      className="p-0"
       content={
-        <div className="space-y-2.5">
-          <Calendar
-            mode="single"
-            locale={ptBR}
-            selected={selectedDate || undefined}
-            onSelect={(date) => {
-              onChange?.(date ? formatDateOnly(date) : "");
-              setInputValue(date ? formatInputDate(date) : "");
-              setOpen(false);
-            }}
-            className="mx-auto w-full rounded-[20px] bg-white p-0"
-            classNames={calendarClassNames}
-          />
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Data</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                onChange?.("");
-                setInputValue("");
-              }}
-            >
-              Limpar
-            </Button>
-          </div>
-        </div>
+        <Calendar
+          mode="single"
+          locale={ptBR}
+          captionLayout="buttons"
+          selected={selectedDate || undefined}
+          onSelect={(date) => {
+            onChange?.(date ? formatDateOnly(date) : "");
+            setInputValue(date ? formatInputDate(date) : "");
+            setOpen(false);
+          }}
+          className="mx-auto w-full p-0"
+          classNames={calendarClassNames}
+        />
       }
     >
       <PickerTextTrigger
@@ -381,50 +375,29 @@ export function DateRangePickerInput({
     <PickerPopover
       open={open}
       onOpenChange={setOpen}
-      className="p-0"
       content={
-        <div className="space-y-2.5">
-          <Calendar
-            mode="range"
-            locale={ptBR}
-            numberOfMonths={1}
-            selected={selectedRange}
-            onSelect={(range) => {
-              onStartChange?.(range?.from ? formatDateOnly(range.from) : "");
-              onEndChange?.(range?.to ? formatDateOnly(range.to) : "");
-              setInputValue(formatDisplayDateRange(
+        <Calendar
+          mode="range"
+          locale={ptBR}
+          captionLayout="buttons"
+          numberOfMonths={1}
+          selected={selectedRange}
+          onSelect={(range) => {
+            onStartChange?.(range?.from ? formatDateOnly(range.from) : "");
+            onEndChange?.(range?.to ? formatDateOnly(range.to) : "");
+            setInputValue(
+              formatDisplayDateRange(
                 range?.from ? formatDateOnly(range.from) : "",
                 range?.to ? formatDateOnly(range.to) : "",
-              ) || "");
-              if (range?.from && range?.to) {
-                setOpen(false);
-              }
-            }}
-            className="mx-auto w-full rounded-[20px] bg-white p-0"
-            classNames={calendarClassNames}
-          />
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Período</p>
-            <p className="mt-1.5 text-sm font-semibold text-slate-900">
-              {formatDisplayDateRange(startValue, endValue) || "Defina a data inicial e final"}
-            </p>
-          </div>
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Intervalo</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                onStartChange?.("");
-                onEndChange?.("");
-                setInputValue("");
-              }}
-            >
-              Limpar
-            </Button>
-          </div>
-        </div>
+              ) || ""
+            );
+            if (range?.from && range?.to) {
+              setOpen(false);
+            }
+          }}
+          className="mx-auto w-full p-0"
+          classNames={calendarClassNames}
+        />
       }
     >
       <PickerTextTrigger

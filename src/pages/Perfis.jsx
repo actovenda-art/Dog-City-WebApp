@@ -832,6 +832,11 @@ export default function Perfis() {
     () => carteirasView.find((item) => item.id === viewingCarteiraId) || null,
     [carteirasView, viewingCarteiraId]
   );
+  const viewingCarteiraOrcamentosContact = useMemo(() => ({
+    nome: viewingCarteira?.contato_orcamentos?.nome || viewingCarteira?.contato_orcamentos_nome || "",
+    celular: viewingCarteira?.contato_orcamentos?.celular || viewingCarteira?.contato_orcamentos_celular || "",
+    email: viewingCarteira?.contato_orcamentos?.email || viewingCarteira?.contato_orcamentos_email || "",
+  }), [viewingCarteira]);
   const viewingCarteiraFinancialStatus = useMemo(
     () => getFinancialOperationalStatus(carteiraFinancialStatusMap, viewingCarteira?.id || null),
     [carteiraFinancialStatusMap, viewingCarteira?.id],
@@ -1945,44 +1950,116 @@ export default function Perfis() {
       </Dialog>
 
       <Dialog open={Boolean(viewingCarteiraId)} onOpenChange={(open) => !open && closeCarteiraDetails()}>
-        <DialogContent className="max-h-[92vh] w-[96vw] max-w-3xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{viewingCarteira?.nome_razao_social || "Responsável financeiro"}</DialogTitle>
-            <DialogDescription>
-              Visualize os dados completos do responsável financeiro antes de editar.
-            </DialogDescription>
-          </DialogHeader>
-
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-4xl overflow-y-auto p-0">
           {viewingCarteira ? (
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <ProfileDetailField label="Telefone" value={maskSensitiveValue(viewingCarteira.celular || "", maskPhone, canRevealSensitiveData) || "Não informado"} />
-                <ProfileDetailField label="Email" value={maskSensitiveValue(viewingCarteira.email || "", maskEmail, canRevealSensitiveData) || "Não informado"} />
-                <ProfileDetailField label="CPF/CNPJ" value={maskSensitiveValue(viewingCarteira.cpf_cnpj || "", maskCpfCnpj, canRevealSensitiveData) || "Não informado"} />
-                <ProfileDetailField label="Vencimento" value={viewingCarteira.vencimento_planos ? `Dia ${viewingCarteira.vencimento_planos}` : "Não informado"} />
-              </div>
+            <div className="overflow-hidden">
+              <DialogHeader className="border-b border-gray-100 px-5 py-5 sm:px-6">
+                <DialogTitle>{viewingCarteira.nome_razao_social || "Responsável financeiro"}</DialogTitle>
+                <DialogDescription>
+                  Visualize os dados completos do responsável financeiro, incluindo o contato principal da carteira e o vínculo usado para envio de orçamentos.
+                </DialogDescription>
+              </DialogHeader>
 
-              <FinancialOperationalAlert
-                status={viewingCarteiraFinancialStatus}
-                title="Situação financeira atual"
-              />
+              <div className="space-y-5 px-5 py-5 sm:px-6">
+                <div className="rounded-3xl border border-orange-100 bg-gradient-to-br from-orange-50 via-white to-orange-50/70 p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-orange-100 bg-white text-lg font-semibold text-orange-700 shadow-sm">
+                        {getProfileInitials(viewingCarteira.nome_razao_social)}
+                      </div>
+                      <div className="min-w-0 space-y-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-500">Perfil financeiro</p>
+                        <div className="space-y-1">
+                          <h3 className="truncate text-xl font-semibold text-gray-900">{viewingCarteira.nome_razao_social || "Responsável financeiro sem nome"}</h3>
+                          <p className="text-sm text-gray-600">
+                            {viewingCarteira.vencimento_planos
+                              ? `Carteira com vencimento padrão no dia ${viewingCarteira.vencimento_planos}.`
+                              : "Carteira sem vencimento padrão informado."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
 
-              <div className="rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-500">Cães vinculados</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {viewingCarteira.linkedDogIds.length > 0 ? (
-                    viewingCarteira.linkedDogIds.map((dogId) => (
-                      <Badge key={dogId} className="border border-orange-200 bg-white text-orange-700">
-                        {dogMap[dogId]?.nome || dogId}
-                      </Badge>
-                    ))
-                  ) : (
-                    <Badge className="bg-white text-gray-600">Sem cães vinculados</Badge>
-                  )}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:min-w-[360px]">
+                      <div className="rounded-2xl border border-white/80 bg-white/90 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Orçamentos</p>
+                        <p className="mt-2 text-sm font-semibold text-gray-900">
+                          {viewingCarteiraOrcamentosContact.nome || "Não informado"}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-white/80 bg-white/90 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Telefone financeiro</p>
+                        <p className="mt-2 text-sm font-semibold text-gray-900">
+                          {maskSensitiveValue(viewingCarteira.celular || "", maskPhone, canRevealSensitiveData) || "Não informado"}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-white/80 bg-white/90 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Cães vinculados</p>
+                        <p className="mt-2 text-sm font-semibold text-gray-900">{viewingCarteira.linkedDogIds.length}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <FinancialOperationalAlert
+                  status={viewingCarteiraFinancialStatus}
+                  title="Situação financeira atual"
+                />
+
+                <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <div className="rounded-3xl border border-gray-200 bg-white p-5">
+                    <div className="mb-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Contato para envio de orçamentos</p>
+                      <h4 className="mt-1 text-base font-semibold text-gray-900">Vínculo usado para propostas, aprovações e retorno comercial</h4>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <ProfileDetailField label="Nome" value={viewingCarteiraOrcamentosContact.nome || "Não informado"} />
+                      <ProfileDetailField label="Celular" value={maskSensitiveValue(viewingCarteiraOrcamentosContact.celular || "", maskPhone, canRevealSensitiveData) || "Não informado"} />
+                      <ProfileDetailField label="Email" value={maskSensitiveValue(viewingCarteiraOrcamentosContact.email || "", maskEmail, canRevealSensitiveData) || "Não informado"} className="sm:col-span-2" />
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-violet-100 bg-violet-50/60 p-5">
+                    <div className="mb-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-500">Dados financeiros da carteira</p>
+                      <h4 className="mt-1 text-base font-semibold text-gray-900">Identificação e contato principal do responsável financeiro</h4>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <ProfileDetailField label="Telefone" value={maskSensitiveValue(viewingCarteira.celular || "", maskPhone, canRevealSensitiveData) || "Não informado"} />
+                      <ProfileDetailField label="Email" value={maskSensitiveValue(viewingCarteira.email || "", maskEmail, canRevealSensitiveData) || "Não informado"} />
+                      <ProfileDetailField label="CPF/CNPJ" value={maskSensitiveValue(viewingCarteira.cpf_cnpj || "", maskCpfCnpj, canRevealSensitiveData) || "Não informado"} />
+                      <ProfileDetailField label="Vencimento" value={viewingCarteira.vencimento_planos ? `Dia ${viewingCarteira.vencimento_planos}` : "Não informado"} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-orange-100 bg-orange-50/60 p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-500">Cães vinculados</p>
+                      <h4 className="mt-1 text-base font-semibold text-gray-900">Base operacional desta carteira</h4>
+                    </div>
+                    <Badge className="w-fit border border-orange-200 bg-white text-orange-700">
+                      {viewingCarteira.linkedDogIds.length > 0
+                        ? `${viewingCarteira.linkedDogIds.length} vínculo(s)`
+                        : "Sem vínculos"}
+                    </Badge>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {viewingCarteira.linkedDogIds.length > 0 ? (
+                      viewingCarteira.linkedDogIds.map((dogId) => (
+                        <Badge key={dogId} className="border border-orange-200 bg-white text-orange-700">
+                          {dogMap[dogId]?.nome || dogId}
+                        </Badge>
+                      ))
+                    ) : (
+                      <Badge className="bg-white text-gray-600">Sem cães vinculados</Badge>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <DialogFooter className="gap-2">
+              <DialogFooter className="border-t border-gray-100 px-5 py-4 sm:px-6">
                 <Button variant="outline" onClick={closeCarteiraDetails} className="w-full sm:w-auto">Fechar</Button>
                 <Button
                   className="w-full sm:w-auto"

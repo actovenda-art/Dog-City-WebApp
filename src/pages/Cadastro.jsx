@@ -32,6 +32,10 @@ import { ensureWalletAccountForFinancialProfile } from "@/lib/wallet-account";
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 const DOG_SIZE_OPTIONS = ["Mini", "Pequeno", "Médio", "Grande", "Gigante"];
+const DOG_WEIGHT_OPTIONS = Array.from({ length: 160 }, (_, index) => {
+  const value = (index + 1) * 0.5;
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+});
 const DOG_IMPORTABLE_FIELDS = [
   "codigo",
   "nome",
@@ -108,9 +112,6 @@ const CARTEIRA_IMPORTABLE_FIELDS = [
   "contato_orcamentos_nome",
   "contato_orcamentos_celular",
   "contato_orcamentos_email",
-  "contato_alinhamentos_nome",
-  "contato_alinhamentos_celular",
-  "contato_alinhamentos_email",
 ];
 const DOG_BREED_OPTIONS = [
   "SRD",
@@ -229,6 +230,26 @@ function normalizeDogCoat(value) {
   };
 
   return coatMap[normalized] || String(value || "").trim();
+}
+
+function normalizeDogWeightValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const parsed = Number.parseFloat(String(value).replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed <= 0) return String(value);
+  return Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(1);
+}
+
+function getDogWeightOptions(currentValue) {
+  const normalizedCurrent = normalizeDogWeightValue(currentValue);
+  if (!normalizedCurrent || DOG_WEIGHT_OPTIONS.includes(normalizedCurrent)) {
+    return DOG_WEIGHT_OPTIONS;
+  }
+
+  return [...DOG_WEIGHT_OPTIONS, normalizedCurrent].sort((left, right) => Number(left) - Number(right));
+}
+
+function formatDogWeightLabel(value) {
+  return `${String(value).replace(".", ",")} kg`;
 }
 
 function parseVaccineCardImages(value) {
@@ -388,7 +409,6 @@ export default function Cadastro() {
     cep: "", numero_residencia: "", street: "", neighborhood: "", city: "", state: "",
     vencimento_planos: "",
     contato_orcamentos_nome: "", contato_orcamentos_celular: "", contato_orcamentos_email: "",
-    contato_alinhamentos_nome: "", contato_alinhamentos_celular: "", contato_alinhamentos_email: "",
     dog_id_1: "", dog_id_2: "", dog_id_3: "", dog_id_4: "", dog_id_5: "", dog_id_6: "", dog_id_7: "", dog_id_8: "",
   };
   const [carteiraForm, setCarteiraForm] = useState(emptyCarteira);
@@ -987,9 +1007,6 @@ export default function Cadastro() {
         contato_orcamentos_nome: formatDisplayName(carteiraPayload.contato_orcamentos_nome || source?.contato_orcamentos?.nome || ""),
         contato_orcamentos_celular: carteiraPayload.contato_orcamentos_celular || source?.contato_orcamentos?.celular || "",
         contato_orcamentos_email: carteiraPayload.contato_orcamentos_email || source?.contato_orcamentos?.email || "",
-        contato_alinhamentos_nome: formatDisplayName(carteiraPayload.contato_alinhamentos_nome || source?.contato_alinhamentos?.nome || ""),
-        contato_alinhamentos_celular: carteiraPayload.contato_alinhamentos_celular || source?.contato_alinhamentos?.celular || "",
-        contato_alinhamentos_email: carteiraPayload.contato_alinhamentos_email || source?.contato_alinhamentos?.email || "",
         ...Object.fromEntries(RELATION_SLOTS.map((slot, index) => [`dog_id_${slot}`, importedDogIds[index] || ""])),
       });
       setCarteiraIgualResponsavel(false);
@@ -1420,12 +1437,9 @@ export default function Cadastro() {
       || !carteiraForm.contato_orcamentos_nome
       || !carteiraForm.contato_orcamentos_celular
       || !carteiraForm.contato_orcamentos_email
-      || !carteiraForm.contato_alinhamentos_nome
-      || !carteiraForm.contato_alinhamentos_celular
-      || !carteiraForm.contato_alinhamentos_email
     ) {
       setNotifyTitle("Campos obrigatórios");
-      setNotifyMessage("Preencha os dados principais, endereço, vencimento e os contatos de orçamentos e alinhamentos.");
+      setNotifyMessage("Preencha os dados principais, endereço, vencimento e o contato para envio de orçamentos.");
       setNotifyOpen(true);
       return;
     }
@@ -1472,11 +1486,6 @@ export default function Cadastro() {
           nome: optional(formatDisplayName(carteiraForm.contato_orcamentos_nome)),
           celular: optional(carteiraForm.contato_orcamentos_celular),
           email: optional(carteiraForm.contato_orcamentos_email),
-        },
-        contato_alinhamentos: {
-          nome: optional(formatDisplayName(carteiraForm.contato_alinhamentos_nome)),
-          celular: optional(carteiraForm.contato_alinhamentos_celular),
-          email: optional(carteiraForm.contato_alinhamentos_email),
         },
         dog_id_1: optional(carteiraForm.dog_id_1),
         dog_id_2: optional(carteiraForm.dog_id_2),
@@ -1977,14 +1986,32 @@ export default function Cadastro() {
                       </Select>
                     ),
                   })}
-                  {renderTextField({
+                  {renderSelectField({
                     fieldKey: "dog.peso",
                     label: "Peso (kg)",
-                    value: dogForm.peso,
-                    onChange: (e) => setDogForm({ ...dogForm, peso: e.target.value }),
-                    placeholder: "Ex: 12,5",
-                    kind: "weight",
-                    requiredMessage: "Informe o peso.",
+                    value: normalizeDogWeightValue(dogForm.peso) || "",
+                    placeholder: "Selecione o peso",
+                    requiredMessage: "Selecione o peso.",
+                    children: ({ triggerClassName, placeholder }) => (
+                      <Select
+                        value={normalizeDogWeightValue(dogForm.peso) || ""}
+                        onValueChange={(value) => {
+                          setDogForm({ ...dogForm, peso: value });
+                          touchField("dog.peso");
+                        }}
+                      >
+                        <SelectTrigger className={triggerClassName}>
+                          <SelectValue placeholder={placeholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getDogWeightOptions(dogForm.peso).map((weight) => (
+                            <SelectItem key={weight} value={weight}>
+                              {formatDogWeightLabel(weight)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ),
                   })}
                   {renderDateField({
                     fieldKey: "dog.data_nascimento",
@@ -2824,40 +2851,6 @@ export default function Cadastro() {
                         label: "Email",
                         value: carteiraForm.contato_orcamentos_email,
                         onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_orcamentos_email: e.target.value }),
-                        type: "email",
-                        placeholder: "email@exemplo.com",
-                        kind: "email",
-                        requiredMessage: "Informe o email do contato.",
-                      })}
-                    </div>
-                  </div>
-                  <div className="sm:col-span-2 rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
-                    <h4 className="mb-3 text-sm font-semibold text-orange-900">Contato para o dia a dia</h4>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      {renderTextField({
-                        fieldKey: "carteira.contato_alinhamentos_nome",
-                        label: "Nome",
-                        value: carteiraForm.contato_alinhamentos_nome,
-                    onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_nome: sanitizeDisplayNameInput(e.target.value) }),
-                    onBlur: () => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_nome: formatDisplayName(carteiraForm.contato_alinhamentos_nome) }),
-                        placeholder: "Nome do contato",
-                        requiredMessage: "Informe o nome do contato.",
-                      })}
-                      {renderTextField({
-                        fieldKey: "carteira.contato_alinhamentos_celular",
-                        label: "Celular",
-                        value: carteiraForm.contato_alinhamentos_celular,
-                        onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_celular: formatPhone(e.target.value) }),
-                        maxLength: 15,
-                        placeholder: "(00) 00000-0000",
-                        kind: "phone",
-                        requiredMessage: "Informe o celular do contato.",
-                      })}
-                      {renderTextField({
-                        fieldKey: "carteira.contato_alinhamentos_email",
-                        label: "Email",
-                        value: carteiraForm.contato_alinhamentos_email,
-                        onChange: (e) => setCarteiraForm({ ...carteiraForm, contato_alinhamentos_email: e.target.value }),
                         type: "email",
                         placeholder: "email@exemplo.com",
                         kind: "email",

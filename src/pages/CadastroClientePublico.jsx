@@ -148,10 +148,12 @@ const EMPTY_FINANCEIRO = {
   contato_orcamentos_nome: "",
   contato_orcamentos_celular: "",
   contato_orcamentos_email: "",
-  contato_alinhamentos_nome: "",
-  contato_alinhamentos_celular: "",
-  contato_alinhamentos_email: "",
 };
+
+const DOG_WEIGHT_OPTIONS = Array.from({ length: 160 }, (_, index) => {
+  const value = (index + 1) * 0.5;
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+});
 
 function createEmptyDog() {
   return {
@@ -187,6 +189,26 @@ function createEmptyDog() {
     observacoes_gerais: "",
     medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
   };
+}
+
+function normalizeDogWeightValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const parsed = Number.parseFloat(String(value).replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed <= 0) return String(value);
+  return Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(1);
+}
+
+function getDogWeightOptions(currentValue) {
+  const normalizedCurrent = normalizeDogWeightValue(currentValue);
+  if (!normalizedCurrent || DOG_WEIGHT_OPTIONS.includes(normalizedCurrent)) {
+    return DOG_WEIGHT_OPTIONS;
+  }
+
+  return [...DOG_WEIGHT_OPTIONS, normalizedCurrent].sort((left, right) => Number(left) - Number(right));
+}
+
+function formatDogWeightLabel(value) {
+  return `${String(value).replace(".", ",")} kg`;
 }
 
 function formatCPF(value) {
@@ -351,11 +373,8 @@ function validateFinanceiro(form) {
     !form.contato_orcamentos_nome
     || !form.contato_orcamentos_celular
     || !form.contato_orcamentos_email
-    || !form.contato_alinhamentos_nome
-    || !form.contato_alinhamentos_celular
-    || !form.contato_alinhamentos_email
   ) {
-    return "Preencha os contatos para orçamentos e para avisos e tratativas de alinhamento.";
+    return "Preencha o contato para envio de orçamentos.";
   }
 
   return "";
@@ -958,7 +977,6 @@ export default function CadastroClientePublico() {
             ...financeiroForm,
             nome_razao_social: formatDisplayName(financeiroForm.nome_razao_social),
             contato_orcamentos_nome: formatDisplayName(financeiroForm.contato_orcamentos_nome),
-            contato_alinhamentos_nome: formatDisplayName(financeiroForm.contato_alinhamentos_nome),
             usar_dados_responsavel: financeiroIgualResponsavel,
           },
         },
@@ -1185,14 +1203,22 @@ export default function CadastroClientePublico() {
             </Select>
           ),
         })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.peso`,
+        {renderSelectField({
           label: "Peso (kg)",
-          kind: "weight",
-          value: dog.peso,
-          onChange: (event) => updateDog(dogIndex, { peso: event.target.value }),
-          placeholder: "Ex: 12,5",
-          requiredMessage: "Informe o peso do dog.",
+          children: (
+            <Select value={normalizeDogWeightValue(dog.peso) || ""} onValueChange={(value) => updateDog(dogIndex, { peso: value })}>
+              <SelectTrigger className="h-9 rounded-xl border-slate-200 bg-white/90 px-2.5 text-[13px] shadow-sm transition focus:ring-4 focus:ring-blue-100 sm:h-12 sm:rounded-2xl sm:px-4 sm:text-[15px]">
+                <SelectValue placeholder="Selecione o peso" />
+              </SelectTrigger>
+              <SelectContent>
+                {getDogWeightOptions(dog.peso).map((weight) => (
+                  <SelectItem key={weight} value={weight}>
+                    {formatDogWeightLabel(weight)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ),
         })}
         {renderSelectField({
           label: "Data de nascimento",
@@ -1816,39 +1842,6 @@ export default function CadastroClientePublico() {
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base">Contato para o dia a dia</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-3">
-            {renderTextField({
-              fieldKey: "financeiro.contato_alinhamentos_nome",
-              label: "Nome",
-              value: financeiroForm.contato_alinhamentos_nome,
-              onChange: (event) => setFinanceiroForm((current) => ({ ...current, contato_alinhamentos_nome: sanitizeDisplayNameInput(event.target.value) })),
-              onBlur: () => setFinanceiroForm((current) => ({ ...current, contato_alinhamentos_nome: formatDisplayName(current.contato_alinhamentos_nome) })),
-              requiredMessage: "Informe o nome do contato do dia a dia.",
-            })}
-            {renderTextField({
-              fieldKey: "financeiro.contato_alinhamentos_celular",
-              label: "Celular",
-              kind: "phone",
-              value: financeiroForm.contato_alinhamentos_celular,
-              onChange: (event) => setFinanceiroForm((current) => ({ ...current, contato_alinhamentos_celular: formatPhone(event.target.value) })),
-              maxLength: 15,
-              requiredMessage: "Informe o celular do contato do dia a dia.",
-            })}
-            {renderTextField({
-              fieldKey: "financeiro.contato_alinhamentos_email",
-              label: "Email",
-              kind: "email",
-              value: financeiroForm.contato_alinhamentos_email,
-              onChange: (event) => setFinanceiroForm((current) => ({ ...current, contato_alinhamentos_email: event.target.value })),
-              type: "email",
-              requiredMessage: "Informe o email do contato do dia a dia.",
-            })}
-          </CardContent>
-        </Card>
       </div>
     );
   }

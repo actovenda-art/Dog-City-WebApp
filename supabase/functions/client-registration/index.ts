@@ -318,7 +318,7 @@ function isValidCpfFormat(cpf: string) {
 
 function isMissingClientRegistrationSchema(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
-  return /client_registration_link|restricoes_cuidados|observacoes_gerais|castrado|autorizacao_uso_imagem|contato_orcamentos|contato_alinhamentos|street|neighborhood|city|state/i.test(message);
+  return /client_registration_link|restricoes_cuidados|observacoes_gerais|castrado|autorizacao_uso_imagem|contato_orcamentos|street|neighborhood|city|state/i.test(message);
 }
 
 function withSchemaHint(error: unknown, fallback: string) {
@@ -616,7 +616,7 @@ async function loadResponsavelById(responsavelId: string, empresaId: string) {
 async function loadCarteiraById(carteiraId: string, empresaId: string) {
   const { data, error } = await admin
     .from("carteira")
-    .select("id, empresa_id, nome_razao_social, cpf_cnpj, celular, email, cep, numero_residencia, street, neighborhood, city, state, vencimento_planos, contato_orcamentos, contato_alinhamentos")
+    .select("id, empresa_id, nome_razao_social, cpf_cnpj, celular, email, cep, numero_residencia, street, neighborhood, city, state, vencimento_planos, contato_orcamentos")
     .eq("id", carteiraId)
     .eq("empresa_id", empresaId)
     .maybeSingle();
@@ -841,9 +841,6 @@ async function handleCreateLink(request: Request, payload: Record<string, unknow
             contato_orcamentos_nome: (carteira.contato_orcamentos as Record<string, unknown> | null)?.nome || "",
             contato_orcamentos_celular: (carteira.contato_orcamentos as Record<string, unknown> | null)?.celular || "",
             contato_orcamentos_email: (carteira.contato_orcamentos as Record<string, unknown> | null)?.email || "",
-            contato_alinhamentos_nome: (carteira.contato_alinhamentos as Record<string, unknown> | null)?.nome || "",
-            contato_alinhamentos_celular: (carteira.contato_alinhamentos as Record<string, unknown> | null)?.celular || "",
-            contato_alinhamentos_email: (carteira.contato_alinhamentos as Record<string, unknown> | null)?.email || "",
           },
         };
       }
@@ -1146,11 +1143,6 @@ async function handleSubmit(payload: Record<string, unknown>) {
       email: nullableText(financeiro.contato_orcamentos_email)?.toLowerCase() || null,
     };
 
-    const contatoAlinhamentos = {
-      nome: nullableText(formatDisplayName(financeiro.contato_alinhamentos_nome)),
-      celular: nullableText(financeiro.contato_alinhamentos_celular),
-      email: nullableText(financeiro.contato_alinhamentos_email)?.toLowerCase() || null,
-    };
     let carteiraId = sanitizeText(metadata.existing_carteira_id);
 
     if (registrationMode === "dog_only") {
@@ -1176,7 +1168,6 @@ async function handleSubmit(payload: Record<string, unknown>) {
           state: nullableText(financeiro.state),
           vencimento_planos: nullableText(financeiro.vencimento_planos),
           contato_orcamentos: contatoOrcamentos,
-          contato_alinhamentos: contatoAlinhamentos,
           ativo: true,
           created_date: now,
           updated_date: now,

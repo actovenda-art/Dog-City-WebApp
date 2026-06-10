@@ -23,16 +23,16 @@ const calendarPopoverClassName =
 
 const calendarClassNames = {
   months: "flex flex-col",
-  month: "w-full min-w-0 space-y-1.5",
-  caption: "grid grid-cols-[32px_1fr_32px] items-center gap-1 px-0 pt-0 pb-1",
-  caption_dropdowns: "col-start-2 flex min-w-0 items-center justify-center gap-1.5",
+  month: "w-full min-w-0 space-y-1",
+  caption: "relative flex h-8 items-center justify-center px-8 pb-0.5 pt-0",
+  caption_dropdowns: "flex min-w-0 items-center justify-center gap-1",
   caption_label:
-    "col-start-2 flex h-8 items-center justify-center px-2 text-center text-[13px] font-semibold leading-none text-slate-900 capitalize",
-  nav: "contents",
+    "flex h-8 items-center justify-center text-center text-[13px] font-semibold leading-none text-slate-900 capitalize",
+  nav: "absolute inset-0 flex items-center justify-between",
   nav_button:
-    "h-8 w-8 rounded-full border border-slate-200 bg-white p-0 text-slate-600 opacity-100 shadow-sm hover:bg-slate-50",
-  nav_button_previous: "col-start-1 justify-self-start",
-  nav_button_next: "col-start-3 justify-self-end",
+    "h-8 w-8 rounded-full border border-slate-200 bg-white p-0 text-slate-500 opacity-100 shadow-none hover:bg-slate-50",
+  nav_button_previous: "absolute left-0 top-0",
+  nav_button_next: "absolute right-0 top-0",
   dropdown: "absolute inset-0 cursor-pointer opacity-0",
   dropdown_month: "relative w-full",
   dropdown_year: "relative w-full",
@@ -40,7 +40,7 @@ const calendarClassNames = {
   table: "w-full min-w-0 table-fixed border-collapse",
   head_row: "grid w-full grid-cols-7",
   head_cell:
-    "flex h-6 w-full items-center justify-center text-center text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400",
+    "flex h-5 w-full items-center justify-center text-center text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500/60",
   row: "mt-0.5 grid w-full grid-cols-7",
   cell: "h-8 w-full p-0 text-center align-middle text-[12px]",
   day: "mx-auto inline-flex h-8 w-8 items-center justify-center rounded-full p-0 text-[13px] font-medium leading-none text-slate-700 hover:bg-slate-100 hover:text-slate-900",

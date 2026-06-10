@@ -97,7 +97,7 @@ function Calendar({
         table: "w-full border-collapse",
         head_row: "grid w-full grid-cols-7",
         head_cell:
-          "flex h-5 items-center justify-center text-center text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500/60",
+          "flex h-5 items-center justify-center text-center text-[9px] font-medium uppercase tracking-[0.01em] text-slate-500/60",
         row: "mt-0.5 grid w-full grid-cols-7",
         cell: cn(
           "relative h-8 p-0 text-center text-sm align-middle focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-accent/60 [&:has([aria-selected].day-outside)]:bg-accent/40 [&:has([aria-selected].day-range-end)]:rounded-r-full",

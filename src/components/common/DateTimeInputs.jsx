@@ -40,7 +40,7 @@ const calendarClassNames = {
   table: "w-full min-w-0 table-fixed border-collapse",
   head_row: "grid w-full grid-cols-7",
   head_cell:
-    "flex h-5 w-full items-center justify-center text-center text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500/60",
+    "flex h-5 w-full items-center justify-center text-center text-[9px] font-medium uppercase tracking-[0.01em] text-slate-500/60",
   row: "mt-0.5 grid w-full grid-cols-7",
   cell: "h-8 w-full p-0 text-center align-middle text-[12px]",
   day: "mx-auto inline-flex h-8 w-8 items-center justify-center rounded-full p-0 text-[13px] font-medium leading-none text-slate-700 hover:bg-slate-100 hover:text-slate-900",

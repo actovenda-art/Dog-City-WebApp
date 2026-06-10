@@ -200,6 +200,17 @@ function optional(value) {
   return value === "" ? null : value;
 }
 
+function getProfileInitials(value) {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (parts.length === 0) return "RP";
+  return parts.map((part) => part[0]?.toUpperCase() || "").join("");
+}
+
 function pickFields(source, fields) {
   return fields.reduce((acc, field) => {
     if (Object.prototype.hasOwnProperty.call(source || {}, field)) {
@@ -389,9 +400,9 @@ function ProfileColumnTitle({ children }) {
   return <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">{children}</p>;
 }
 
-function ProfileDetailField({ label, value }) {
+function ProfileDetailField({ label, value, className = "" }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+    <div className={`rounded-2xl border border-gray-200 bg-gray-50 p-4 ${className}`}>
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">{label}</p>
       <p className="mt-2 text-sm font-medium text-gray-900">{value || "-"}</p>
     </div>
@@ -410,6 +421,7 @@ ProfileColumnTitle.propTypes = {
 ProfileDetailField.propTypes = {
   label: PropTypes.string.isRequired,
   value: PropTypes.node,
+  className: PropTypes.string,
 };
 
 EmptyState.propTypes = {
@@ -1777,8 +1789,8 @@ export default function Perfis() {
       </div>
 
       <Dialog open={Boolean(viewingResponsavelId)} onOpenChange={(open) => !open && closeResponsavelDetails()}>
-        <DialogContent className="max-h-[92vh] w-[96vw] max-w-3xl overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-4xl overflow-y-auto p-0">
+          <DialogHeader className="border-b border-gray-100 px-5 py-5 sm:px-6">
             <DialogTitle>{viewingResponsavel?.nome_completo || "Responsável"}</DialogTitle>
             <DialogDescription>
               Visualize os dados completos e escolha a próxima ação para este responsável.
@@ -1786,18 +1798,74 @@ export default function Perfis() {
           </DialogHeader>
 
           {viewingResponsavel ? (
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <ProfileDetailField label="Como gostaria de ser chamado" value={viewingResponsavel.como_gostaria_de_ser_chamado || "Não informado"} />
-                <ProfileDetailField label="Telefone principal" value={maskSensitiveValue(viewingResponsavel.celular || "", maskPhone, canRevealSensitiveData) || "Não informado"} />
-                <ProfileDetailField label="Telefone alternativo" value={maskSensitiveValue(viewingResponsavel.celular_alternativo || "", maskPhone, canRevealSensitiveData) || "Não informado"} />
-                <ProfileDetailField label="CPF" value={maskSensitiveValue(viewingResponsavel.cpf || "", maskCpfCnpj, canRevealSensitiveData) || "Não informado"} />
-                <ProfileDetailField label="Email" value={maskSensitiveValue(viewingResponsavel.email || "", maskEmail, canRevealSensitiveData) || "Não informado"} />
+            <div className="space-y-5 px-5 py-5 sm:px-6">
+              <div className="rounded-3xl border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-violet-50/70 p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-violet-100 bg-white text-lg font-semibold text-violet-700 shadow-sm">
+                      {getProfileInitials(viewingResponsavel.nome_completo)}
+                    </div>
+                    <div className="min-w-0 space-y-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-500">Perfil do responsável</p>
+                      <div className="space-y-1">
+                        <h3 className="truncate text-xl font-semibold text-gray-900">{viewingResponsavel.nome_completo || "Responsável sem nome"}</h3>
+                        <p className="text-sm text-gray-600">
+                          {viewingResponsavel.como_gostaria_de_ser_chamado
+                            ? `Prefere ser chamado de ${viewingResponsavel.como_gostaria_de_ser_chamado}.`
+                            : "Sem apelido de tratamento informado."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:min-w-[360px]">
+                    <div className="rounded-2xl border border-white/80 bg-white/90 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Telefone</p>
+                      <p className="mt-2 text-sm font-semibold text-gray-900">
+                        {maskSensitiveValue(viewingResponsavel.celular || "", maskPhone, canRevealSensitiveData) || "Não informado"}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-white/80 bg-white/90 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">CPF</p>
+                      <p className="mt-2 text-sm font-semibold text-gray-900">
+                        {maskSensitiveValue(viewingResponsavel.cpf || "", maskCpfCnpj, canRevealSensitiveData) || "Não informado"}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-white/80 bg-white/90 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Cães vinculados</p>
+                      <p className="mt-2 text-sm font-semibold text-gray-900">{viewingResponsavel.linkedDogIds.length}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-500">Cães vinculados</p>
-                <div className="mt-3 flex flex-wrap gap-2">
+              <div className="rounded-3xl border border-gray-200 bg-white p-5">
+                <div className="mb-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Dados principais</p>
+                  <h4 className="mt-1 text-base font-semibold text-gray-900">Informações de contato e identificação</h4>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <ProfileDetailField label="Como gostaria de ser chamado" value={viewingResponsavel.como_gostaria_de_ser_chamado || "Não informado"} />
+                  <ProfileDetailField label="Telefone principal" value={maskSensitiveValue(viewingResponsavel.celular || "", maskPhone, canRevealSensitiveData) || "Não informado"} />
+                  <ProfileDetailField label="Telefone alternativo" value={maskSensitiveValue(viewingResponsavel.celular_alternativo || "", maskPhone, canRevealSensitiveData) || "Não informado"} />
+                  <ProfileDetailField label="CPF" value={maskSensitiveValue(viewingResponsavel.cpf || "", maskCpfCnpj, canRevealSensitiveData) || "Não informado"} />
+                  <ProfileDetailField label="Email" value={maskSensitiveValue(viewingResponsavel.email || "", maskEmail, canRevealSensitiveData) || "Não informado"} className="sm:col-span-2 xl:col-span-2" />
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-violet-100 bg-violet-50/60 p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-500">Cães vinculados</p>
+                    <h4 className="mt-1 text-base font-semibold text-gray-900">Relação atual deste responsável</h4>
+                  </div>
+                  <Badge className="w-fit border border-violet-200 bg-white text-violet-700">
+                    {viewingResponsavel.linkedDogIds.length > 0
+                      ? `${viewingResponsavel.linkedDogIds.length} vínculo(s)`
+                      : "Sem vínculos"}
+                  </Badge>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
                   {viewingResponsavel.linkedDogIds.length > 0 ? (
                     viewingResponsavel.linkedDogIds.map((dogId) => (
                       <Badge key={dogId} className="border border-violet-200 bg-white text-violet-700">
@@ -1810,57 +1878,66 @@ export default function Perfis() {
                 </div>
               </div>
 
-              <DialogFooter className="gap-2">
+              <div className="rounded-3xl border border-gray-200 bg-gray-50 p-5">
+                <div className="mb-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Ações do perfil</p>
+                  <h4 className="mt-1 text-base font-semibold text-gray-900">Próximos passos para este responsável</h4>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  <Button
+                    variant="outline"
+                    className="justify-start border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                    onClick={() => handleExportResponsavelProfile(viewingResponsavel)}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Exportar perfil
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="justify-start border-violet-200 text-violet-700 hover:bg-violet-50"
+                    onClick={() => openProfileImportPicker({ type: "responsavel", id: viewingResponsavel.id })}
+                    disabled={isSaving}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Importar perfil
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="justify-start border-violet-200 text-violet-700 hover:bg-violet-50"
+                    onClick={() => {
+                      closeResponsavelDetails();
+                      openLinkDialog(viewingResponsavel.id, "dog_only");
+                    }}
+                  >
+                    <Link2 className="mr-2 h-4 w-4" />
+                    Link: apenas cão
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="justify-start border-violet-200 text-violet-700 hover:bg-violet-50"
+                    onClick={() => {
+                      closeResponsavelDetails();
+                      openLinkDialog(viewingResponsavel.id, "dog_and_financeiro");
+                    }}
+                  >
+                    <Wallet className="mr-2 h-4 w-4" />
+                    Link: cão + financeiro
+                  </Button>
+                  <Button
+                    className="justify-start sm:col-span-2 xl:col-span-1"
+                    onClick={() => {
+                      closeResponsavelDetails();
+                      openResponsavelEditor(viewingResponsavel.id);
+                    }}
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Editar
+                  </Button>
+                </div>
+              </div>
+
+              <DialogFooter className="border-t border-gray-100 px-5 py-4 sm:px-6">
                 <Button variant="outline" onClick={closeResponsavelDetails} className="w-full sm:w-auto">Fechar</Button>
-                <Button
-                  variant="outline"
-                  className="w-full border-emerald-200 text-emerald-700 hover:bg-emerald-50 sm:w-auto"
-                  onClick={() => handleExportResponsavelProfile(viewingResponsavel)}
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Exportar perfil
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full border-violet-200 text-violet-700 hover:bg-violet-50 sm:w-auto"
-                  onClick={() => openProfileImportPicker({ type: "responsavel", id: viewingResponsavel.id })}
-                  disabled={isSaving}
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Importar perfil
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full border-violet-200 text-violet-700 hover:bg-violet-50 sm:w-auto"
-                  onClick={() => {
-                    closeResponsavelDetails();
-                    openLinkDialog(viewingResponsavel.id, "dog_only");
-                  }}
-                >
-                  <Link2 className="mr-2 h-4 w-4" />
-                  Link: apenas cão
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full border-violet-200 text-violet-700 hover:bg-violet-50 sm:w-auto"
-                  onClick={() => {
-                    closeResponsavelDetails();
-                    openLinkDialog(viewingResponsavel.id, "dog_and_financeiro");
-                  }}
-                >
-                  <Wallet className="mr-2 h-4 w-4" />
-                  Link: cão + financeiro
-                </Button>
-                <Button
-                  className="w-full sm:w-auto"
-                  onClick={() => {
-                    closeResponsavelDetails();
-                    openResponsavelEditor(viewingResponsavel.id);
-                  }}
-                >
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Editar
-                </Button>
               </DialogFooter>
             </div>
           ) : null}

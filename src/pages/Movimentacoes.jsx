@@ -2655,26 +2655,24 @@ export default function Movimentacoes({ walletOnly = false }) {
         ) : null}
 
         {walletOnly && walletReadEnabled && (
-          <Card className="mb-6 border-slate-200 bg-white">
-            <CardContent className="space-y-4 p-4 sm:p-5">
+          <div className="mb-6 space-y-4">
+            {walletActionMessage && (
+              <div
+                className={`rounded-2xl border px-4 py-3 text-sm ${
+                  walletActionMessage.type === "success"
+                    ? "border-green-200 bg-green-50 text-green-800"
+                    : walletActionMessage.type === "warning"
+                      ? "border-amber-200 bg-amber-50 text-amber-800"
+                      : "border-red-200 bg-red-50 text-red-800"
+                }`}
+              >
+                {walletActionMessage.message}
+              </div>
+            )}
 
-              {walletActionMessage && (
-                <div
-                  className={`rounded-2xl border px-4 py-3 text-sm ${
-                    walletActionMessage.type === "success"
-                      ? "border-green-200 bg-green-50 text-green-800"
-                      : walletActionMessage.type === "warning"
-                        ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : "border-red-200 bg-red-50 text-red-800"
-                  }`}
-                >
-                  {walletActionMessage.message}
-                </div>
-              )}
-
-              {!selectedWalletAccount ? (
-                <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                  <div className="space-y-4">
+            {!selectedWalletAccount ? (
+              <Card className="border-slate-200 bg-white">
+                <CardContent className="space-y-4 p-4 sm:p-5">
                   <SearchFiltersToolbar
                     searchTerm={walletListSearchTerm}
                     onSearchChange={setWalletListSearchTerm}
@@ -2690,7 +2688,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                         : "Nenhuma carteira corresponde ao filtro informado."}
                     </div>
                   ) : (
-                    <Card className="overflow-hidden border-slate-200 bg-white">
+                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                       <div className="hidden border-b border-slate-200 bg-slate-50 px-4 py-3 lg:grid lg:grid-cols-[minmax(0,1.2fr)_140px_180px_minmax(0,1.4fr)_32px] lg:gap-4">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Nome do responsável</p>
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Vencimento padrão</p>
@@ -2741,11 +2739,11 @@ export default function Movimentacoes({ walletOnly = false }) {
                           </button>
                         ))}
                       </div>
-                    </Card>
+                    </div>
                   )}
-                  </div>
-                </div>
-              ) : (
+                </CardContent>
+              </Card>
+            ) : (
                 <div className="space-y-4">
                   <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
                     <Button
@@ -2997,9 +2995,8 @@ export default function Movimentacoes({ walletOnly = false }) {
                       )}
                   </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+            )}
+          </div>
         )}
 
         {walletOnly && !walletReadEnabled && walletFlagsLoaded && (

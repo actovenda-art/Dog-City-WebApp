@@ -44,7 +44,6 @@ import {
   ClipboardList,
   Clock3,
   Home,
-  Info,
   LoaderCircle,
   MoreHorizontal,
   PawPrint,
@@ -456,14 +455,14 @@ function AppointmentStatusBadge({ stateKey, label }) {
 
 function MobileSummaryCard({ icon: Icon, label, value, helper, iconClassName, valueClassName }) {
   return (
-    <Card className="rounded-[16px] border border-slate-200 shadow-sm">
+    <Card className="rounded-[14px] border border-slate-200 shadow-sm">
       <CardContent className="p-1.5">
-        <div className={cn("flex h-6 w-6 items-center justify-center rounded-lg", iconClassName)}>
+        <div className={cn("flex h-5 w-5 items-center justify-center rounded-md", iconClassName)}>
           <Icon className="h-2.5 w-2.5" />
         </div>
-        <div className="mt-2 space-y-0.5">
-          <p className="text-[9px] font-semibold leading-3 text-slate-950">{label}</p>
-          <p className={cn("text-[16px] font-bold tracking-tight", valueClassName)}>{value}</p>
+        <div className="mt-1.5 space-y-0.5">
+          <p className="text-[8px] font-semibold leading-3 text-slate-950">{label}</p>
+          <p className={cn("text-[14px] font-bold tracking-tight", valueClassName)}>{value}</p>
         </div>
       </CardContent>
     </Card>
@@ -622,7 +621,6 @@ export default function Agendamentos() {
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [packageCode, setPackageCode] = useState("");
   const [packageNotes, setPackageNotes] = useState("");
-  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
 
   const dogsById = useMemo(() => Object.fromEntries(dogs.map((dog) => [dog.id, dog])), [dogs]);
   const orcamentosById = useMemo(
@@ -697,7 +695,6 @@ export default function Agendamentos() {
       setCarteiras((carteiraRows || []).filter((item) => item.ativo !== false));
       setCheckins(checkinRows || []);
       setContasReceber(contaRows || []);
-      setLastUpdatedAt(new Date());
     } catch (error) {
       console.error("Erro ao carregar agendamentos:", error);
     } finally {
@@ -1277,7 +1274,7 @@ export default function Agendamentos() {
 
         <section className="space-y-3">
           <h2 className="text-[18px] font-semibold tracking-tight text-slate-950">Resumo geral do dia</h2>
-          <div className="grid grid-cols-5 gap-1.5">
+          <div className="grid grid-cols-5 gap-1">
               {mobileSummaryCards.map((card) => (
                 <MobileSummaryCard
                   key={card.key}
@@ -1292,17 +1289,6 @@ export default function Agendamentos() {
           </div>
         </section>
 
-        <div className="flex items-center gap-3 rounded-[22px] border border-blue-100 bg-blue-50/70 px-4 py-4 text-slate-600 shadow-sm">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-blue-600 shadow-sm">
-            <Info className="h-5 w-5" />
-          </div>
-          <p className="min-w-0 flex-1 text-[15px] leading-6">
-            Ultima atualizacao: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "-"}
-          </p>
-          <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-full text-blue-600" onClick={() => loadData(true)}>
-            {isRefreshing ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <RefreshCw className="h-5 w-5" />}
-          </Button>
-        </div>
       </div>
 
       <div className="hidden lg:block">
@@ -1567,14 +1553,6 @@ export default function Agendamentos() {
           </CardContent>
         </Card>
 
-        <div className="flex items-center justify-between rounded-[20px] border border-blue-100 bg-blue-50/70 px-4 py-3.5 text-sm text-slate-600 shadow-sm">
-          <p>
-            Ultima atualizacao: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "-"}
-          </p>
-          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-blue-600" onClick={() => loadData(true)}>
-            {isRefreshing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          </Button>
-        </div>
       </div>
       </div>
 

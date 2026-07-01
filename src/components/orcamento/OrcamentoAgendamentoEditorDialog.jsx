@@ -166,7 +166,7 @@ function inferServiceKind(appointment) {
   if (appointment?.service_type === "day_care" && sourceKey.includes("|day_care_avulso|")) return "day_care";
   if (appointment?.service_type === "adaptacao") return "adaptacao";
   if (appointment?.service_type === "transporte") return "transporte";
-  if (appointment?.service_type === "banho" || appointment?.service_type === "tosa") return "banho_tosa";
+  if (appointment?.service_type === "banho" || appointment?.service_type === "tosa" || appointment?.service_type === "banho_tosa") return "banho_tosa";
   return null;
 }
 

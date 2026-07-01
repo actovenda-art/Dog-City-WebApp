@@ -72,6 +72,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
 import { createPageUrl } from "@/utils";
@@ -95,6 +96,13 @@ const SERVICE_OPTIONS = [
     description: "Plano fixo com agendamento e cobrança mensal.",
   },
   {
+    id: "transporte",
+    label: "Transporte",
+    icon: Truck,
+    theme: "border-amber-200 bg-amber-50 text-amber-700",
+    description: "Uso recorrente de transporte com cobrança mensal.",
+  },
+  {
     id: "banho",
     label: "Banho",
     icon: Bath,
@@ -102,37 +110,31 @@ const SERVICE_OPTIONS = [
     description: "Banhos recorrentes com vencimento fixo.",
   },
   {
-    id: "tosa",
-    label: "Tosa",
-    icon: Scissors,
-    theme: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700",
-    description: "Tosa recorrente para agenda automática.",
-  },
-  {
     id: "banho_tosa",
-    label: "Banho e Tosa",
+    label: "Banho & Tosa",
     icon: Sparkles,
     theme: "border-purple-200 bg-purple-50 text-purple-700",
     description: "Plano combinado para banho e tosa na mesma recorrência.",
   },
+];
+
+const LEGACY_SERVICE_OPTIONS = [
   {
-    id: "transporte",
-    label: "Transporte",
-    icon: Truck,
-    theme: "border-amber-200 bg-amber-50 text-amber-700",
-    description: "Uso recorrente de transporte com cobrança mensal.",
+    id: "tosa",
+    label: "Tosa",
+    icon: Scissors,
+    theme: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700",
+    description: "Serviço legado de tosa recorrente.",
   },
 ];
 
-const FREQUENCIES = [
-  { id: "1x_semana", label: "1x por semana" },
-  { id: "2x_semana", label: "2x por semana" },
-  { id: "3x_semana", label: "3x por semana" },
-  { id: "4x_semana", label: "4x por semana" },
-  { id: "5x_semana", label: "5x por semana" },
-  { id: "diario", label: "Diário (seg. a sex.)" },
-  { id: "quinzenal", label: "Quinzenal" },
-  { id: "mensal", label: "Mensal" },
+const NON_DAY_CARE_SCHEDULE_RULES = [
+  { id: "ultima_semana_mes", label: "Última semana do mês" },
+  { id: "primeira_semana", label: "Primeira semana" },
+  { id: "segunda_semana", label: "Segunda semana" },
+  { id: "quarta_semana", label: "Quarta semana" },
+  { id: "toda_semana", label: "Toda semana" },
+  { id: "quinzenal", label: "Quinzenalmente" },
 ];
 
 const DAY_CARE_PACKAGE_FREQUENCIES = [
@@ -141,6 +143,7 @@ const DAY_CARE_PACKAGE_FREQUENCIES = [
   { id: "3x_semana", label: "3x por semana" },
   { id: "4x_semana", label: "4x por semana" },
   { id: "5x_semana", label: "5x por semana" },
+  { id: "quinzenal", label: "Day Care Quinzenal" },
 ];
 
 const DAY_CARE_PACKAGE_DOG_COUNTS = [
@@ -160,6 +163,25 @@ const WEEKDAYS = [
   { id: 6, label: "Sáb" },
 ];
 
+const HOSPEDAGEM_DOG_COUNTS = RELATION_SLOTS.map((slot) => ({
+  id: `hospedagem_${slot}_caes`,
+  label: slot === 1 ? "1 cão" : `${slot} cães`,
+  quantity: slot,
+}));
+
+const GROOMING_RULE_OPTIONS = [
+  { id: "ultimo_banho_mes", label: "Último banho do mês" },
+  { id: "primeiro_banho_mes", label: "Primeiro banho do mês" },
+  { id: "segundo_banho_mes", label: "Segundo banho do mês" },
+  { id: "quarto_banho_mes", label: "Quarto banho do mês" },
+  { id: "todo_banho", label: "Todo banho" },
+  { id: "intercalado_banhos", label: "Intercalado nos banhos" },
+];
+
+const MONTHLY_WEEK_RULES = new Set(["ultima_semana_mes", "primeira_semana", "segunda_semana", "quarta_semana"]);
+const WEEKDAY_TIME_SERVICES = new Set(["banho", "banho_tosa", "transporte"]);
+const MULTI_DOG_SERVICES = new Set(["day_care", "hospedagem"]);
+
 const DEFAULT_FORM_DATA = {
   client_id: "",
   dog_ids: [""],
@@ -167,11 +189,22 @@ const DEFAULT_FORM_DATA = {
   service: "day_care",
   frequency: "",
   weekdays: [],
+  weekday_configs: {},
   start_date: "",
   monthly_value: "",
   first_month_dates: [],
   vendedor_user_id: "",
   commission_percentual: "",
+  transport_address: "",
+  bath_notes: "",
+  bath_groom_notes: "",
+  grooming_rule: "",
+  lodging_entry_time: "",
+  lodging_exit_time: "",
+  lodging_base_weekday: "",
+  lodging_shared_kennel: "nao",
+  lodging_shared_groups: "",
+  lodging_notes: "",
 };
 
 const PREPAID_PACKAGE_SERVICES = new Set(["day_care", "banho", "tosa", "banho_tosa", "transporte", "hospedagem"]);
@@ -186,6 +219,8 @@ const PREPAID_SESSION_STATUS_LABELS = {
   vencida_nao_utilizada: "Vencida não utilizada",
   convertida_em_credito: "Convertida em crédito",
 };
+
+const ALL_SERVICE_OPTIONS = [...SERVICE_OPTIONS, ...LEGACY_SERVICE_OPTIONS];
 
 function getLinkedDogIds(record) {
   return RELATION_SLOTS.map((slot) => record?.[`dog_id_${slot}`]).filter(Boolean);
@@ -242,7 +277,7 @@ function parseMetadata(value) {
 }
 
 function getFrequenciesForService(serviceId) {
-  return serviceId === "day_care" ?DAY_CARE_PACKAGE_FREQUENCIES : FREQUENCIES;
+  return serviceId === "day_care" ?DAY_CARE_PACKAGE_FREQUENCIES : NON_DAY_CARE_SCHEDULE_RULES;
 }
 
 function getMonthlyValue(plan) {
@@ -272,6 +307,101 @@ function normalizeDogIdList(value) {
   }
 
   return [];
+}
+
+function createEmptyWeekdayConfigs() {
+  return WEEKDAYS.reduce((accumulator, weekday) => {
+    accumulator[String(weekday.id)] = {
+      time: "",
+      note: "",
+    };
+    return accumulator;
+  }, {});
+}
+
+function normalizeWeekdayConfigs(value) {
+  const base = createEmptyWeekdayConfigs();
+  if (!value) return base;
+
+  let source = value;
+  if (typeof value === "string") {
+    try {
+      source = JSON.parse(value);
+    } catch (error) {
+      return base;
+    }
+  }
+
+  if (Array.isArray(source)) {
+    source.forEach((entry) => {
+      const weekday = Number(entry?.weekday);
+      if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) return;
+      base[String(weekday)] = {
+        time: String(entry?.time || entry?.hour || "").trim(),
+        note: String(entry?.note || entry?.observacao || "").trim(),
+      };
+    });
+    return base;
+  }
+
+  if (typeof source !== "object") return base;
+
+  Object.entries(source).forEach(([key, entry]) => {
+    const weekday = Number(key);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) return;
+    base[String(weekday)] = {
+      time: String(entry?.time || entry?.hour || "").trim(),
+      note: String(entry?.note || entry?.observacao || "").trim(),
+    };
+  });
+
+  return base;
+}
+
+function serializeWeekdayConfigs(weekdays = [], weekdayConfigs = {}) {
+  return normalizeWeekdays(weekdays).map((weekday) => {
+    const config = weekdayConfigs?.[String(weekday)] || {};
+    return {
+      weekday,
+      time: String(config.time || "").trim(),
+      note: String(config.note || "").trim(),
+    };
+  });
+}
+
+function formatClientAddress(client) {
+  if (!client) return "";
+  const parts = [
+    client.street,
+    client.numero_residencia,
+    client.neighborhood,
+    client.city,
+    client.state,
+    client.cep,
+  ].map((item) => String(item || "").trim()).filter(Boolean);
+  return parts.join(" • ");
+}
+
+function getPlanOperationalConfig(metadata = {}) {
+  return parseMetadata(metadata?.operational_config);
+}
+
+function getSavedWeekdays(plan) {
+  const metadata = parseMetadata(plan?.metadata_gerencial);
+  const operationalConfig = getPlanOperationalConfig(metadata);
+  return normalizeWeekdays(operationalConfig.selected_weekdays || plan?.weekdays);
+}
+
+function getServiceDogCount(serviceId, dogIds = [], explicitCount = 1) {
+  if (serviceId === "day_care") {
+    return Math.max(1, Number(explicitCount || 1) || 1);
+  }
+
+  if (serviceId === "hospedagem") {
+    return Math.max(1, Number(explicitCount || dogIds.filter(Boolean).length || 1) || 1);
+  }
+
+  return 1;
 }
 
 function getPlanPackageMeta(plan) {
@@ -371,18 +501,100 @@ function formatCurrency(value) {
 }
 
 function getServiceMeta(serviceId) {
-  return SERVICE_OPTIONS.find((item) => item.id === serviceId) || SERVICE_OPTIONS[0];
+  return ALL_SERVICE_OPTIONS.find((item) => item.id === serviceId) || SERVICE_OPTIONS[0];
 }
 
 function getFrequencyLabel(frequencyId) {
-  return FREQUENCIES.find((item) => item.id === frequencyId)?.label || frequencyId || "-";
+  return [...DAY_CARE_PACKAGE_FREQUENCIES, ...NON_DAY_CARE_SCHEDULE_RULES].find((item) => item.id === frequencyId)?.label || frequencyId || "-";
 }
 
 function buildDayCarePackageKey(frequencyId, dogCountId) {
   return `day_care_pacote:${frequencyId}:${dogCountId}`;
 }
 
-function getExpectedWeekdayCount(frequencyId) {
+function getWeekdayLabel(weekdayId) {
+  return WEEKDAYS.find((item) => item.id === Number(weekdayId))?.label || `Dia ${weekdayId}`;
+}
+
+function buildPlanNotesSummary(serviceId, operationalConfig = {}) {
+  if (serviceId === "banho") {
+    return operationalConfig.bath_notes || "";
+  }
+
+  if (serviceId === "banho_tosa") {
+    return [operationalConfig.bath_notes, operationalConfig.bath_groom_notes].filter(Boolean).join("\n");
+  }
+
+  if (serviceId === "transporte") {
+    const weekdayNotes = Array.isArray(operationalConfig.weekday_configs)
+      ? operationalConfig.weekday_configs
+        .filter((entry) => entry?.note)
+        .map((entry) => `${getWeekdayLabel(entry.weekday)}: ${entry.note}`)
+      : [];
+    return [operationalConfig.transport_address, ...weekdayNotes].filter(Boolean).join("\n");
+  }
+
+  if (serviceId === "hospedagem") {
+    return operationalConfig.lodging_notes || "";
+  }
+
+  return "";
+}
+
+function getCompactWeekdayOffsets(selectedWeekdays = [], baseWeekday = null) {
+  const anchor = Number(baseWeekday);
+  if (!Number.isInteger(anchor)) return [0];
+
+  return normalizeWeekdays(selectedWeekdays).map((weekday) => {
+    const direct = weekday - anchor;
+    const candidates = [direct, direct - 7, direct + 7];
+    return candidates.sort((left, right) => Math.abs(left) - Math.abs(right))[0];
+  });
+}
+
+function buildAppointmentWindow(dateKey, serviceId, metadata = {}) {
+  const referenceDate = parseDateOnly(dateKey);
+  if (!referenceDate) {
+    return {
+      referenceKey: dateKey,
+      startKey: dateKey,
+      endKey: dateKey,
+      startTime: String(metadata.expected_start_time || "08:00").trim() || "08:00",
+      endTime: String(metadata.expected_end_time || "18:00").trim() || "18:00",
+    };
+  }
+
+  if (serviceId !== "hospedagem") {
+    const defaultTime = String(metadata.expected_start_time || "08:00").trim() || "08:00";
+    return {
+      referenceKey: formatDateOnly(referenceDate),
+      startKey: formatDateOnly(referenceDate),
+      endKey: formatDateOnly(referenceDate),
+      startTime: defaultTime,
+      endTime: String(metadata.expected_end_time || defaultTime).trim() || defaultTime,
+    };
+  }
+
+  const offsets = getCompactWeekdayOffsets(metadata.selected_weekdays, metadata.lodging_base_weekday);
+  const minOffset = offsets.length > 0 ? Math.min(...offsets) : 0;
+  const maxOffset = offsets.length > 0 ? Math.max(...offsets) : 0;
+  const startDate = addDays(referenceDate, minOffset);
+  const endDate = addDays(referenceDate, maxOffset);
+
+  return {
+    referenceKey: formatDateOnly(startDate),
+    startKey: formatDateOnly(startDate),
+    endKey: formatDateOnly(endDate),
+    startTime: String(metadata.expected_start_time || "10:00").trim() || "10:00",
+    endTime: String(metadata.expected_end_time || "11:00").trim() || "11:00",
+  };
+}
+
+function getExpectedWeekdayCount(frequencyId, serviceId) {
+  if (serviceId !== "day_care") {
+    return 0;
+  }
+
   switch (frequencyId) {
     case "1x_semana":
       return 1;
@@ -393,10 +605,8 @@ function getExpectedWeekdayCount(frequencyId) {
     case "4x_semana":
       return 4;
     case "5x_semana":
-    case "diario":
       return 5;
     case "quinzenal":
-    case "mensal":
       return 1;
     default:
       return 0;
@@ -415,6 +625,8 @@ function getDayCareCycleSlots(frequencyId) {
       return 16;
     case "5x_semana":
       return 20;
+    case "quinzenal":
+      return 2;
     default:
       return 0;
   }
@@ -434,11 +646,7 @@ function getAllowedWeekdays(serviceId) {
 
 function getDefaultWeekdays(frequencyId, serviceId) {
   const allowedWeekdays = getAllowedWeekdays(serviceId).map((item) => item.id);
-  if (frequencyId === "diario" && serviceId === "day_care") {
-    return [1, 2, 3, 4, 5];
-  }
-
-  const expectedCount = getExpectedWeekdayCount(frequencyId);
+  const expectedCount = getExpectedWeekdayCount(frequencyId, serviceId);
   return expectedCount > 0 ?allowedWeekdays.slice(0, expectedCount) : [];
 }
 
@@ -698,10 +906,16 @@ function isPrepaidPackagePlan(plan) {
   return metadata.prepaid_package_enabled === true || PREPAID_PACKAGE_SERVICES.has(serviceId);
 }
 
+function getOperationalScheduleRuleFromPlan(plan) {
+  const metadata = parseMetadata(plan?.metadata_gerencial);
+  const operationalConfig = getPlanOperationalConfig(metadata);
+  return operationalConfig.schedule_rule || plan?.frequency || "";
+}
+
 function getRecurringFrequencyFromPlan(plan) {
-  const frequency = plan?.frequency || "semanal";
+  const frequency = getOperationalScheduleRuleFromPlan(plan) || "semanal";
   if (frequency === "quinzenal") return "quinzenal";
-  if (frequency === "mensal") return "mensal";
+  if (MONTHLY_WEEK_RULES.has(frequency) || frequency === "mensal") return "mensal";
   if (frequency === "personalizada") return "personalizada";
   return "semanal";
 }
@@ -722,17 +936,21 @@ function getRecurringPackageFinancialBehavior(serviceId) {
 
 function buildRecurringPackagePayloadFromPlan(plan) {
   const metadata = parseMetadata(plan?.metadata_gerencial);
-  const weekdays = normalizeWeekdays(plan?.weekdays);
+  const operationalConfig = getPlanOperationalConfig(metadata);
+  const selectedWeekdays = normalizeWeekdays(operationalConfig.selected_weekdays || plan?.weekdays);
   const serviceId = plan?.service || plan?.tipo_plano || "day_care";
   const startDate = metadata.start_date || formatDateOnly(plan?.created_date ? parseISO(plan.created_date) : new Date());
+  const recurringWeekdays = serviceId === "hospedagem"
+    ? normalizeWeekdays([operationalConfig.lodging_base_weekday ?? selectedWeekdays[0]])
+    : selectedWeekdays;
 
   return {
     empresa_id: plan?.empresa_id || null,
     client_id: plan?.client_id || plan?.carteira_id || null,
     pet_id: plan?.dog_id || null,
     service_id: serviceId,
-    weekday: weekdays[0] ?? null,
-    weekdays,
+    weekday: recurringWeekdays[0] ?? null,
+    weekdays: recurringWeekdays,
     frequency: getRecurringFrequencyFromPlan(plan),
     financial_behavior: getRecurringPackageFinancialBehavior(serviceId),
     vendedor_user_id: plan?.vendedor_user_id || null,
@@ -747,7 +965,7 @@ function buildRecurringPackagePayloadFromPlan(plan) {
     credit_limit: Number.isFinite(Number(metadata.credit_limit)) ? Number(metadata.credit_limit) : null,
     blocked_dates: Array.isArray(metadata.blocked_dates) ? metadata.blocked_dates : [],
     pause_ranges: Array.isArray(metadata.pause_ranges) ? metadata.pause_ranges : [],
-    notes: metadata.notes || "",
+    notes: metadata.notes || buildPlanNotesSummary(serviceId, operationalConfig),
     metadata: {
       plan_config_id: plan?.id,
       package_group_key: metadata.package_group_key || plan?.id,
@@ -950,9 +1168,11 @@ export default function PlanosConfig() {
     const representativePlan = item?.representativePlan || item;
     const packageMeta = getPlanPackageMeta(representativePlan);
     const existingStartDate = packageMeta.metadata.start_date || format(representativePlan.created_date ?parseISO(representativePlan.created_date) : new Date(), "yyyy-MM-dd");
-    const existingWeekdays = normalizeWeekdays(representativePlan.weekdays);
+    const operationalConfig = getPlanOperationalConfig(packageMeta.metadata);
+    const existingWeekdays = getSavedWeekdays(representativePlan);
     const dogIds = item?.dogIds?.length > 0 ? item.dogIds : packageMeta.dogIds;
-    const packageDogCount = item?.packageDogCount || packageMeta.packageDogCount || dogIds.length || 1;
+    const serviceId = representativePlan.service || representativePlan.tipo_plano || "day_care";
+    const packageDogCount = getServiceDogCount(serviceId, dogIds, item?.packageDogCount || packageMeta.packageDogCount);
 
     setEditingItem({
       ...representativePlan,
@@ -967,9 +1187,10 @@ export default function PlanosConfig() {
       client_id: getPlanClientId(representativePlan),
       dog_ids: ensureDogArraySize(dogIds, packageDogCount),
       package_dog_count: packageDogCount,
-      service: representativePlan.service || representativePlan.tipo_plano || "day_care",
-      frequency: representativePlan.frequency || "",
+      service: serviceId,
+      frequency: operationalConfig.schedule_rule || representativePlan.frequency || "",
       weekdays: existingWeekdays,
+      weekday_configs: normalizeWeekdayConfigs(operationalConfig.weekday_configs),
       start_date: existingStartDate,
       monthly_value: getMonthlyValue(representativePlan) ?String(getMonthlyValue(representativePlan)) : "",
       first_month_dates: normalizeFirstMonthDateList(existingStartDate, packageMeta.metadata.first_month_real_dates).length > 0
@@ -977,6 +1198,16 @@ export default function PlanosConfig() {
         : buildFirstMonthRealDates(existingStartDate, existingWeekdays),
       vendedor_user_id: representativePlan?.vendedor_user_id || "",
       commission_percentual: representativePlan?.commission_percentual ? String(representativePlan.commission_percentual) : "",
+      transport_address: operationalConfig.transport_address || formatClientAddress(clientsById[getPlanClientId(representativePlan)]),
+      bath_notes: operationalConfig.bath_notes || "",
+      bath_groom_notes: operationalConfig.bath_groom_notes || "",
+      grooming_rule: operationalConfig.grooming_rule || "",
+      lodging_entry_time: operationalConfig.lodging_entry_time || "",
+      lodging_exit_time: operationalConfig.lodging_exit_time || "",
+      lodging_base_weekday: operationalConfig.lodging_base_weekday != null ? String(operationalConfig.lodging_base_weekday) : "",
+      lodging_shared_kennel: operationalConfig.lodging_shared_kennel === "sim" ? "sim" : "nao",
+      lodging_shared_groups: operationalConfig.lodging_shared_groups || "",
+      lodging_notes: operationalConfig.lodging_notes || "",
     });
     setShowModal(true);
   }
@@ -996,7 +1227,7 @@ export default function PlanosConfig() {
     [checkins],
   );
 
-  const packageDogCount = formData.service === "day_care" ?Number(formData.package_dog_count || 1) : 1;
+  const packageDogCount = getServiceDogCount(formData.service, formData.dog_ids || [], formData.package_dog_count);
   const currentDogIds = ensureDogArraySize(formData.dog_ids || [], packageDogCount);
   const selectedDogIds = currentDogIds.filter(Boolean);
   const selectedDogs = selectedDogIds.map((dogId) => dogsById[dogId]).filter(Boolean);
@@ -1005,8 +1236,12 @@ export default function PlanosConfig() {
   const availableFrequencies = getFrequenciesForService(formData.service);
   const allowedWeekdayIds = allowedWeekdays.map((item) => item.id);
   const normalizedWeekdays = normalizeWeekdays(formData.weekdays).filter((item) => allowedWeekdayIds.includes(item));
-  const expectedWeekdayCount = getExpectedWeekdayCount(formData.frequency);
-  const weekdaysLocked = formData.service === "day_care" && formData.frequency === "diario";
+  const normalizedWeekdayConfigs = useMemo(
+    () => normalizeWeekdayConfigs(formData.weekday_configs),
+    [formData.weekday_configs],
+  );
+  const expectedWeekdayCount = getExpectedWeekdayCount(formData.frequency, formData.service);
+  const weekdaysLocked = false;
   const projectedFirstMonthDates = useMemo(
     () => formData.service === "day_care" ? buildProjectedFirstMonthDates(formData.start_date, normalizedWeekdays) : [],
     [formData.service, formData.start_date, normalizedWeekdays],
@@ -1019,7 +1254,11 @@ export default function PlanosConfig() {
   );
 
   const candidateClients = useMemo(() => {
-    if (selectedDogIds.length === 0) return [];
+    if (selectedDogIds.length === 0) {
+      return [...carteiras].sort((left, right) =>
+        String(left.nome_razao_social || "").localeCompare(String(right.nome_razao_social || ""), "pt-BR")
+      );
+    }
 
     return carteiras
       .filter((client) => getLinkedDogIds(client).some((dogId) => selectedDogIds.includes(dogId)))
@@ -1074,11 +1313,39 @@ export default function PlanosConfig() {
       ...current,
       frequency: "",
       weekdays: [],
+      weekday_configs: createEmptyWeekdayConfigs(),
       first_month_dates: current.service === "day_care"
         ? buildFirstMonthRealDates(current.start_date, [])
         : [],
     }));
   }, [availableFrequencies, formData.frequency]);
+
+  useEffect(() => {
+    if (formData.service !== "transporte") return;
+    const client = clientsById[formData.client_id];
+    const clientAddress = formatClientAddress(client);
+    if (!clientAddress) return;
+
+    setFormData((current) => (
+      current.service !== "transporte"
+        ? current
+        : current.transport_address.trim()
+          ? current
+          : { ...current, transport_address: clientAddress }
+    ));
+  }, [clientsById, formData.client_id, formData.service]);
+
+  useEffect(() => {
+    if (formData.service !== "hospedagem") return;
+    if (normalizedWeekdays.length === 0) return;
+    const currentBase = Number(formData.lodging_base_weekday);
+    if (normalizedWeekdays.includes(currentBase)) return;
+
+    setFormData((current) => ({
+      ...current,
+      lodging_base_weekday: String(normalizedWeekdays[0]),
+    }));
+  }, [formData.lodging_base_weekday, formData.service, normalizedWeekdays]);
 
   const weekdayValidationMessage = useMemo(() => {
     if (!formData.frequency) return "";
@@ -1163,17 +1430,24 @@ export default function PlanosConfig() {
       const nextWeekdays = normalizeWeekdays(current.weekdays).filter((item) =>
         getAllowedWeekdays(serviceId).some((weekday) => weekday.id === item),
       );
+      const nextDogCount = MULTI_DOG_SERVICES.has(serviceId)
+        ? getServiceDogCount(serviceId, current.dog_ids || [], current.package_dog_count)
+        : 1;
 
       return {
         ...current,
         service: serviceId,
-        package_dog_count: serviceId === "day_care" ?current.package_dog_count : 1,
-        dog_ids: ensureDogArraySize(current.dog_ids || [], serviceId === "day_care" ?Number(current.package_dog_count || 1) : 1),
+        package_dog_count: nextDogCount,
+        dog_ids: ensureDogArraySize(current.dog_ids || [], nextDogCount),
         frequency: nextFrequencyOptions.some((item) => item.id === current.frequency) ?current.frequency : "",
         weekdays: nextWeekdays,
+        weekday_configs: normalizeWeekdayConfigs(current.weekday_configs),
         first_month_dates: serviceId === "day_care"
           ? buildFirstMonthRealDates(current.start_date, nextWeekdays)
           : [],
+        transport_address: serviceId === "transporte"
+          ? (current.transport_address || formatClientAddress(clientsById[current.client_id]))
+          : current.transport_address,
       };
     });
     setUseSuggestedValue(serviceId === "day_care");
@@ -1208,22 +1482,28 @@ export default function PlanosConfig() {
   }
 
   function handleClientChange(clientId) {
-    setFormData((current) => ({
-      ...current,
-      client_id: clientId,
-    }));
+    setFormData((current) => {
+      const client = clientsById[clientId];
+      return {
+        ...current,
+        client_id: clientId,
+        transport_address: current.service === "transporte"
+          ? (current.transport_address.trim() && current.client_id === clientId
+            ? current.transport_address
+            : formatClientAddress(client))
+          : current.transport_address,
+      };
+    });
     setUseSuggestedValue(true);
   }
 
   function handleFrequencyChange(frequencyId) {
     setFormData((current) => {
       const defaultWeekdays = getDefaultWeekdays(frequencyId, current.service);
-      const nextExpectedCount = getExpectedWeekdayCount(frequencyId);
+      const nextExpectedCount = getExpectedWeekdayCount(frequencyId, current.service);
       let nextWeekdays = normalizeWeekdays(current.weekdays).filter((item) => getAllowedWeekdays(current.service).some((weekday) => weekday.id === item));
 
-      if (frequencyId === "diario" && current.service === "day_care") {
-        nextWeekdays = [1, 2, 3, 4, 5];
-      } else if (nextExpectedCount > 0) {
+      if (nextExpectedCount > 0) {
         if (nextWeekdays.length === 0) {
           nextWeekdays = defaultWeekdays;
         } else if (nextWeekdays.length > nextExpectedCount) {
@@ -1235,12 +1515,26 @@ export default function PlanosConfig() {
         ...current,
         frequency: frequencyId,
         weekdays: nextWeekdays,
+        weekday_configs: normalizeWeekdayConfigs(current.weekday_configs),
         first_month_dates: current.service === "day_care"
           ? buildFirstMonthRealDates(current.start_date, nextWeekdays)
           : [],
       };
     });
     setUseSuggestedValue(formData.service === "day_care");
+  }
+
+  function updateWeekdayConfig(weekdayId, field, value) {
+    setFormData((current) => ({
+      ...current,
+      weekday_configs: {
+        ...normalizeWeekdayConfigs(current.weekday_configs),
+        [String(weekdayId)]: {
+          ...(normalizeWeekdayConfigs(current.weekday_configs)[String(weekdayId)] || { time: "", note: "" }),
+          [field]: value,
+        },
+      },
+    }));
   }
 
   function toggleWeekday(weekdayId) {
@@ -1678,6 +1972,9 @@ export default function PlanosConfig() {
     const sourceKey = `package_session|${session.package_id}|${session.pet_id}|${session.service_id}|${session.scheduled_date}`;
     const existingAppointment = appointments.find((appointment) => appointment.source_key === sourceKey);
     if (existingAppointment?.id) return existingAppointment;
+    const sessionMetadata = parseMetadata(session.metadata);
+    const appointmentWindow = buildAppointmentWindow(session.scheduled_date, session.service_id, sessionMetadata);
+    const operationalNotes = String(sessionMetadata.operational_observacoes || "").trim();
 
     const appointment = await Appointment.create({
       empresa_id: session.empresa_id || packageRecord?.empresa_id || null,
@@ -1685,11 +1982,12 @@ export default function PlanosConfig() {
       cliente_id: session.client_id,
       service_type: session.service_id,
       status: session.status === "cancelada_sem_credito" || session.status === "cancelada_com_credito" ? "cancelado" : "agendado",
-      data_referencia: session.scheduled_date,
-      data_hora_entrada: `${session.scheduled_date}T08:00:00`,
-      data_hora_saida: `${session.scheduled_date}T18:00:00`,
-      hora_entrada: "08:00",
-      hora_saida: "18:00",
+      data_referencia: appointmentWindow.referenceKey,
+      data_hora_entrada: `${appointmentWindow.startKey}T${appointmentWindow.startTime}:00`,
+      data_hora_saida: `${appointmentWindow.endKey}T${appointmentWindow.endTime}:00`,
+      hora_entrada: appointmentWindow.startTime,
+      hora_saida: appointmentWindow.endTime,
+      observacoes: operationalNotes,
       valor_previsto: Number(packageRecord?.price_per_session || 0) || 0,
       charge_type: session.covered_by_credit ? "credito_pacote" : "pacote",
       source_type: "pacote_recorrente_pre_pago",
@@ -1701,6 +1999,12 @@ export default function PlanosConfig() {
         billing_month: session.billing_month,
         covered_by_credit: !!session.covered_by_credit,
         credit_id: session.credit_id || null,
+        transport_address: sessionMetadata.transport_address || null,
+        has_grooming: !!sessionMetadata.has_grooming,
+        grooming_rule: sessionMetadata.grooming_rule || null,
+        lodging_base_weekday: sessionMetadata.lodging_base_weekday ?? null,
+        selected_weekdays: sessionMetadata.selected_weekdays || [],
+        checkin_alert: operationalNotes || sessionMetadata.weekday_note || null,
       },
       source_key: sourceKey,
     });
@@ -1884,9 +2188,11 @@ export default function PlanosConfig() {
 
   async function handleSave() {
     const uniqueDogIds = [...new Set(selectedDogIds)];
+    const selectedWeekdayConfigs = serializeWeekdayConfigs(normalizedWeekdays, normalizedWeekdayConfigs);
+    const weekdaysMissingTime = selectedWeekdayConfigs.filter((entry) => WEEKDAY_TIME_SERVICES.has(formData.service) && !entry.time);
 
     if (!formData.service || !formData.frequency) {
-      alert("Selecione serviço e frequência do plano.");
+      alert(formData.service === "day_care" ? "Selecione serviço e frequência do plano." : "Selecione a regra de agendamento do plano.");
       return;
     }
 
@@ -1918,6 +2224,43 @@ export default function PlanosConfig() {
     if (!Number.isFinite(monthlyValuePerDog) || monthlyValuePerDog <= 0) {
       alert(formData.service === "day_care" ? "Informe um valor mensal por cão válido." : "Informe um valor por atendimento válido.");
       return;
+    }
+
+    if (formData.service !== "day_care" && normalizedWeekdays.length === 0) {
+      alert("Selecione ao menos um dia da semana para esse plano.");
+      return;
+    }
+
+    if (weekdaysMissingTime.length > 0) {
+      alert(`Informe o horário de ${getWeekdayLabel(weekdaysMissingTime[0].weekday)} para esse plano.`);
+      return;
+    }
+
+    if (formData.service === "transporte" && !formData.transport_address.trim()) {
+      alert("Informe o endereço do transporte.");
+      return;
+    }
+
+    if (formData.service === "banho_tosa" && !formData.grooming_rule) {
+      alert("Selecione a regra do agendamento das tosas.");
+      return;
+    }
+
+    if (formData.service === "hospedagem") {
+      if (!formData.lodging_entry_time || !formData.lodging_exit_time) {
+        alert("Informe o horário de entrada e de saída da hospedagem.");
+        return;
+      }
+
+      if (!formData.lodging_base_weekday) {
+        alert("Selecione qual dia da semana será usado como base para o agendamento automático.");
+        return;
+      }
+
+      if (!normalizedWeekdays.includes(Number(formData.lodging_base_weekday))) {
+        alert("O dia base da hospedagem precisa fazer parte dos dias selecionados.");
+        return;
+      }
     }
 
     if (weekdayValidationMessage) {
@@ -1959,6 +2302,24 @@ export default function PlanosConfig() {
       const shouldPreserveNextBilling = Boolean(editingItem && (existingMetadata.first_cycle_charged || editingItem.next_billing_date));
 
       const packageGroupKey = editingItem?.packageGroupKey || existingMetadata.package_group_key || createPackageGroupKey();
+      const operationalConfig = {
+        schedule_rule: formData.frequency,
+        selected_weekdays: normalizedWeekdays,
+        weekday_configs: selectedWeekdayConfigs,
+        transport_address: formData.service === "transporte" ? formData.transport_address.trim() : "",
+        bath_notes: ["banho", "banho_tosa"].includes(formData.service) ? formData.bath_notes.trim() : "",
+        bath_groom_notes: formData.service === "banho_tosa" ? formData.bath_groom_notes.trim() : "",
+        grooming_rule: formData.service === "banho_tosa" ? formData.grooming_rule : "",
+        lodging_entry_time: formData.service === "hospedagem" ? formData.lodging_entry_time : "",
+        lodging_exit_time: formData.service === "hospedagem" ? formData.lodging_exit_time : "",
+        lodging_base_weekday: formData.service === "hospedagem" && formData.lodging_base_weekday !== ""
+          ? Number(formData.lodging_base_weekday)
+          : null,
+        lodging_shared_kennel: formData.service === "hospedagem" ? formData.lodging_shared_kennel : "nao",
+        lodging_shared_groups: formData.service === "hospedagem" ? formData.lodging_shared_groups.trim() : "",
+        lodging_notes: formData.service === "hospedagem" ? formData.lodging_notes.trim() : "",
+      };
+      const operationalNotes = buildPlanNotesSummary(formData.service, operationalConfig);
       const metadataGerencial = {
         ...existingMetadata,
         prepaid_package_enabled: true,
@@ -1978,6 +2339,8 @@ export default function PlanosConfig() {
           is_full_package: firstBillingPreview.isFullPackage,
         },
         first_cycle_charged: existingMetadata.first_cycle_charged || false,
+        operational_config: operationalConfig,
+        notes: operationalNotes,
       };
 
       const payloadBase = {
@@ -2317,7 +2680,7 @@ export default function PlanosConfig() {
           serviceId,
           serviceMeta: getServiceMeta(serviceId),
           frequencyLabel: getFrequencyLabel(representativePlan.frequency),
-          weekdays: normalizeWeekdays(representativePlan.weekdays),
+          weekdays: getSavedWeekdays(representativePlan),
           startDate: metadata.start_date || null,
           dueDay: representativePlan.due_day || representativePlan.renovacao_dia || null,
           dogNames,
@@ -3167,7 +3530,7 @@ export default function PlanosConfig() {
           <DialogHeader>
             <DialogTitle>{editingItem ?"Editar plano recorrente" : "Novo plano recorrente"}</DialogTitle>
             <DialogDescription>
-              Para Day Care, escolha a quantidade de cães do pacote, selecione os dias preferenciais e use um responsável financeiro que já esteja ligado a pelo menos um dos cães envolvidos.
+              Configure o serviço recorrente, defina a regra de agendamento e salve os detalhes operacionais que precisam acompanhar cada atendimento gerado automaticamente.
             </DialogDescription>
           </DialogHeader>
 
@@ -3180,7 +3543,7 @@ export default function PlanosConfig() {
                 <div>
                   <p className="font-semibold text-gray-900">Regras do fluxo</p>
                   <p className="mt-1 text-sm text-gray-600">
-                    Day Care aceita somente agendamentos de segunda a sexta, o vencimento vem do cadastro do responsável financeiro e pacotes com múltiplos cães geram um plano por cão para preservar a cobrança correta.
+                    O vencimento sempre vem do cadastro do responsável financeiro. Day Care continua limitado a segunda até sexta, Banho e Transporte passam a guardar horário por dia e Hospedagem pode carregar entrada, saída e observações próprias do plano.
                   </p>
                 </div>
               </div>
@@ -3212,10 +3575,10 @@ export default function PlanosConfig() {
                     </div>
 
                     <div>
-                      <Label>Frequência *</Label>
+                      <Label>{formData.service === "day_care" ? "Frequência *" : "Regra do agendamento *"}</Label>
                       <Select value={formData.frequency || "__empty__"} onValueChange={(value) => handleFrequencyChange(value === "__empty__" ?"" : value)}>
                         <SelectTrigger className="mt-2">
-                          <SelectValue placeholder="Selecione a frequência" />
+                          <SelectValue placeholder={formData.service === "day_care" ? "Selecione a frequência" : "Selecione a regra"} />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__empty__">Selecionar</SelectItem>
@@ -3240,15 +3603,15 @@ export default function PlanosConfig() {
                       </p>
                     </div>
 
-                    {formData.service === "day_care" ?(
+                    {formData.service === "day_care" || formData.service === "hospedagem" ?(
                       <div className="md:col-span-2">
-                        <Label>Quantidade de cães no pacote *</Label>
+                        <Label>{formData.service === "day_care" ? "Quantidade de cães no pacote *" : "Quantidade de cães da hospedagem *"}</Label>
                         <Select value={String(packageDogCount)} onValueChange={handlePackageDogCountChange}>
                           <SelectTrigger className="mt-2">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {DAY_CARE_PACKAGE_DOG_COUNTS.map((count) => (
+                            {(formData.service === "day_care" ? DAY_CARE_PACKAGE_DOG_COUNTS : HOSPEDAGEM_DOG_COUNTS).map((count) => (
                               <SelectItem key={count.id} value={String(count.quantity)}>
                                 {count.label}
                               </SelectItem>
@@ -3256,7 +3619,9 @@ export default function PlanosConfig() {
                           </SelectContent>
                         </Select>
                         <p className="mt-2 text-xs text-gray-500">
-                          Ao escolher 2, 3 ou 4 cães, o formulário libera a mesma quantidade de seletores de cão abaixo.
+                          {formData.service === "day_care"
+                            ? "Ao escolher 2, 3 ou 4 cães, o formulário libera a mesma quantidade de seletores de cão abaixo."
+                            : "A hospedagem pode reunir mais de um cão no mesmo plano, sempre com o mesmo responsável financeiro."}
                         </p>
                       </div>
                     ) : null}
@@ -3435,21 +3800,25 @@ export default function PlanosConfig() {
                   <p className="text-sm text-gray-700">
                     {formData.service === "day_care"
                       ?"Os dias disponíveis para Day Care ficam limitados a segunda, terça, quarta, quinta e sexta."
-                      : "Selecione os dias preferenciais para alimentar os agendamentos automáticos desse plano."}
+                      : formData.service === "hospedagem"
+                        ?"Selecione os dias que compõem cada hospedagem e depois indique qual deles será a base para o agendamento automático."
+                        : "Selecione os dias que devem alimentar os agendamentos automáticos desse plano."}
                   </p>
                 </div>
 
                 <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                   <div className="mb-4 flex items-center gap-2">
                     <CalendarClock className="h-4 w-4 text-purple-600" />
-                    <h3 className="font-semibold text-gray-900">4. Dias preferenciais</h3>
+                    <h3 className="font-semibold text-gray-900">
+                      {formData.service === "day_care" ? "4. Dias preferenciais" : "4. Dias do agendamento"}
+                    </h3>
                   </div>
 
                   <p className="mb-3 text-xs text-gray-500">
-                    {weekdaysLocked
-                      ?"No modo diário de Day Care, os dias úteis ficam preenchidos automaticamente."
-                      : expectedWeekdayCount > 0
-                        ?`Selecione ${expectedWeekdayCount} ${expectedWeekdayCount === 1 ?"dia" : "dias"} para esta frequência.`
+                    {expectedWeekdayCount > 0
+                      ?`Selecione ${expectedWeekdayCount} ${expectedWeekdayCount === 1 ?"dia" : "dias"} para esta frequência.`
+                      : formData.service === "hospedagem"
+                        ? "Escolha os dias que compõem a hospedagem recorrente."
                         : "Escolha os dias em que esse plano deve gerar agendamentos automáticos."}
                   </p>
 
@@ -3475,6 +3844,224 @@ export default function PlanosConfig() {
                     <p className="mt-3 text-sm text-amber-700">{weekdayValidationMessage}</p>
                   ) : null}
                 </div>
+
+                {WEEKDAY_TIME_SERVICES.has(formData.service) ?(
+                  <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex items-center gap-2">
+                      <CalendarClock className="h-4 w-4 text-purple-600" />
+                      <h3 className="font-semibold text-gray-900">4A. Horários e avisos por dia</h3>
+                    </div>
+
+                    <div className="space-y-4">
+                      {normalizedWeekdays.length > 0 ? normalizedWeekdays.map((weekdayId) => {
+                        const config = normalizedWeekdayConfigs[String(weekdayId)] || { time: "", note: "" };
+                        return (
+                          <div key={`weekday-config-${weekdayId}`} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                            <div className="grid gap-4 md:grid-cols-[0.85fr_0.45fr_1fr]">
+                              <div>
+                                <Label>Dia da semana</Label>
+                                <div className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900">
+                                  {getWeekdayLabel(weekdayId)}
+                                </div>
+                              </div>
+
+                              <div>
+                                <Label>Horário *</Label>
+                                <Input
+                                  className="mt-2"
+                                  type="time"
+                                  value={config.time}
+                                  onChange={(event) => updateWeekdayConfig(weekdayId, "time", event.target.value)}
+                                />
+                              </div>
+
+                              <div>
+                                <Label>{formData.service === "transporte" ? "Observação do check-in" : "Observação do atendimento"}</Label>
+                                <Input
+                                  className="mt-2"
+                                  value={config.note}
+                                  onChange={(event) => updateWeekdayConfig(weekdayId, "note", event.target.value)}
+                                  placeholder={formData.service === "transporte" ? "Ex.: Portão lateral, tocar interfone." : "Ex.: usar shampoo hipoalergênico."}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }) : (
+                        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                          Selecione ao menos um dia da semana para configurar horário e aviso.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {formData.service === "transporte" ?(
+                  <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex items-center gap-2">
+                      <Truck className="h-4 w-4 text-purple-600" />
+                      <h3 className="font-semibold text-gray-900">4B. Endereço do transporte</h3>
+                    </div>
+
+                    <Label>Endereço utilizado no transporte *</Label>
+                    <Textarea
+                      className="mt-2 min-h-[100px]"
+                      value={formData.transport_address}
+                      onChange={(event) => setFormData((current) => ({ ...current, transport_address: event.target.value }))}
+                      placeholder="O endereço é preenchido a partir do responsável financeiro, mas pode ser ajustado antes de salvar."
+                    />
+                    <p className="mt-2 text-xs text-gray-500">
+                      Esse endereço acompanha os agendamentos gerados por este plano e fica disponível para a operação.
+                    </p>
+                  </div>
+                ) : null}
+
+                {formData.service === "banho" || formData.service === "banho_tosa" ?(
+                  <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex items-center gap-2">
+                      <Bath className="h-4 w-4 text-purple-600" />
+                      <h3 className="font-semibold text-gray-900">
+                        {formData.service === "banho" ? "4B. Observações dos banhos" : "4B. Regras de banho e tosa"}
+                      </h3>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Observações para os banhos</Label>
+                        <Textarea
+                          className="mt-2 min-h-[100px]"
+                          value={formData.bath_notes}
+                          onChange={(event) => setFormData((current) => ({ ...current, bath_notes: event.target.value }))}
+                          placeholder="Essas observações entram nos agendamentos gerados e ficam visíveis no check-in."
+                        />
+                      </div>
+
+                      {formData.service === "banho_tosa" ?(
+                        <>
+                          <div>
+                            <Label>Regra do agendamento das tosas *</Label>
+                            <Select
+                              value={formData.grooming_rule || "__empty__"}
+                              onValueChange={(value) => setFormData((current) => ({ ...current, grooming_rule: value === "__empty__" ? "" : value }))}
+                            >
+                              <SelectTrigger className="mt-2">
+                                <SelectValue placeholder="Selecione a regra da tosa" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__empty__">Selecionar</SelectItem>
+                                {GROOMING_RULE_OPTIONS.map((option) => (
+                                  <SelectItem key={option.id} value={option.id}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div>
+                            <Label>Observações para os banhos com tosa</Label>
+                            <Textarea
+                              className="mt-2 min-h-[100px]"
+                              value={formData.bath_groom_notes}
+                              onChange={(event) => setFormData((current) => ({ ...current, bath_groom_notes: event.target.value }))}
+                              placeholder="Essas observações aparecem somente nos banhos que também receberem tosa."
+                            />
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                {formData.service === "hospedagem" ?(
+                  <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex items-center gap-2">
+                      <Home className="h-4 w-4 text-purple-600" />
+                      <h3 className="font-semibold text-gray-900">4A. Operação da hospedagem</h3>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div>
+                        <Label>Horário de entrada *</Label>
+                        <Input
+                          className="mt-2"
+                          type="time"
+                          value={formData.lodging_entry_time}
+                          onChange={(event) => setFormData((current) => ({ ...current, lodging_entry_time: event.target.value }))}
+                        />
+                      </div>
+
+                      <div>
+                        <Label>Horário de saída *</Label>
+                        <Input
+                          className="mt-2"
+                          type="time"
+                          value={formData.lodging_exit_time}
+                          onChange={(event) => setFormData((current) => ({ ...current, lodging_exit_time: event.target.value }))}
+                        />
+                      </div>
+
+                      <div>
+                        <Label>Dia base do agendamento *</Label>
+                        <Select
+                          value={formData.lodging_base_weekday || "__empty__"}
+                          onValueChange={(value) => setFormData((current) => ({ ...current, lodging_base_weekday: value === "__empty__" ? "" : value }))}
+                        >
+                          <SelectTrigger className="mt-2">
+                            <SelectValue placeholder="Selecione o dia base" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__empty__">Selecionar</SelectItem>
+                            {normalizedWeekdays.map((weekdayId) => (
+                              <SelectItem key={`lodging-base-${weekdayId}`} value={String(weekdayId)}>
+                                {getWeekdayLabel(weekdayId)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <div>
+                        <Label>Os cães dividem o mesmo canil?</Label>
+                        <Select
+                          value={formData.lodging_shared_kennel}
+                          onValueChange={(value) => setFormData((current) => ({ ...current, lodging_shared_kennel: value }))}
+                        >
+                          <SelectTrigger className="mt-2">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="nao">Não</SelectItem>
+                            <SelectItem value="sim">Sim</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <Label>Quem divide com quem?</Label>
+                        <Input
+                          className="mt-2"
+                          value={formData.lodging_shared_groups}
+                          onChange={(event) => setFormData((current) => ({ ...current, lodging_shared_groups: event.target.value }))}
+                          placeholder="Ex.: Thor e Luna dividem o mesmo canil."
+                          disabled={formData.lodging_shared_kennel !== "sim"}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <Label>Observações para os agendamentos deste plano</Label>
+                      <Textarea
+                        className="mt-2 min-h-[100px]"
+                        value={formData.lodging_notes}
+                        onChange={(event) => setFormData((current) => ({ ...current, lodging_notes: event.target.value }))}
+                        placeholder="Essas observações acompanham todos os agendamentos de hospedagem gerados por este plano."
+                      />
+                    </div>
+                  </div>
+                ) : null}
 
                 {formData.service === "day_care" ?(
                   <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">

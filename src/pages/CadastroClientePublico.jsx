@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import DogColorMultiSelect, { DOG_COAT_OPTIONS } from "@/components/common/DogColorMultiSelect";
-import { normalizeCpfDigits, validateCpfWithGov } from "@/lib/cpf-validation";
+import { isValidCpfChecksum, normalizeCpfDigits, validateCpfWithGov } from "@/lib/cpf-validation";
 import { createEmptyDogMeal } from "@/lib/dog-form-utils";
 import { formatDisplayName, isCompletePersonName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import {
@@ -291,9 +291,13 @@ function getTextFieldError({
     case "email":
       return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email válido.";
     case "cpf":
-      return digits.length === 11 ? "" : "Digite um CPF com 11 números.";
+      if (digits.length !== 11) return "Digite um CPF com 11 números.";
+      return isValidCpfChecksum(digits) ? "" : "Digite um CPF válido.";
     case "cpf_cnpj":
-      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ válido.";
+      if (digits.length === 11) {
+        return isValidCpfChecksum(digits) ? "" : "Digite um CPF válido.";
+      }
+      return digits.length === 14 ? "" : "Digite um CPF ou CNPJ válido.";
     case "phone":
       return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular válido.";
     case "cep":

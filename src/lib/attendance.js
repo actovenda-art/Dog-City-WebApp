@@ -670,12 +670,14 @@ export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, o
 
     if (cao.servicos?.banho) {
       const banhoDate = inferAppointmentDate(cao, orcamento);
+      const banhoReuseExternalId = cao.banho_reuse_appointment_id || null;
+      const banhoReuseServiceType = cao.banho_reuse_service_type || "banho";
       appointments.push({
         empresa_id: orcamento.empresa_id || null,
         cliente_id: orcamento.cliente_id || owner.cliente_id || null,
         dog_id: cao.dog_id,
         orcamento_id: orcamento.id,
-        service_type: "banho",
+        service_type: banhoReuseServiceType === "banho_tosa" ? "banho_tosa" : "banho",
         status: "agendado",
         charge_type: inferChargeType(cao, "banho"),
         source_type: "orcamento_aprovado",
@@ -689,6 +691,10 @@ export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, o
           ...baseMeta,
           servico: "banho",
           data_inferida: !cao.banho_data,
+          external_appointment_id: banhoReuseExternalId,
+          recurring_budget_reuse_kind: banhoReuseExternalId ? "banho" : null,
+          recurring_grooming_resolution: cao.banho_grooming_resolution || null,
+          recurring_grooming_target_appointment_id: cao.banho_grooming_target_appointment_id || null,
           snapshot: cao,
         },
       });
@@ -696,12 +702,14 @@ export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, o
 
     if (cao.servicos?.tosa && cao.tosa_tipo) {
       const tosaDate = inferAppointmentDate(cao, orcamento);
+      const tosaReuseExternalId = cao.tosa_reuse_appointment_id || null;
+      const tosaReuseServiceType = cao.tosa_reuse_service_type || "tosa";
       appointments.push({
         empresa_id: orcamento.empresa_id || null,
         cliente_id: orcamento.cliente_id || owner.cliente_id || null,
         dog_id: cao.dog_id,
         orcamento_id: orcamento.id,
-        service_type: "tosa",
+        service_type: tosaReuseServiceType === "banho_tosa" ? "banho_tosa" : "tosa",
         status: "agendado",
         charge_type: inferChargeType(cao, "tosa"),
         source_type: "orcamento_aprovado",
@@ -714,6 +722,8 @@ export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, o
         metadata: {
           ...baseMeta,
           servico: "tosa",
+          external_appointment_id: tosaReuseExternalId,
+          recurring_budget_reuse_kind: tosaReuseExternalId ? "tosa" : null,
           snapshot: cao,
         },
       });

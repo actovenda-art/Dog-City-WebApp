@@ -53,6 +53,7 @@ import {
   buildPaymentV2Contract,
   isInPeriod,
 } from '@/lib/finance-observability';
+import { isValidCpfChecksum } from '@/lib/cpf-validation';
 
 const STORAGE_PREFIX = 'local_app_client_';
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -1902,10 +1903,11 @@ const mockFunctions = {
     if (action === 'verify_cpf') {
       const fullName = String(payload?.full_name || '').trim();
       const firstName = fullName.split(/\s+/).filter(Boolean)[0]?.toLowerCase() || '';
+      const normalizedCpf = String(payload?.cpf || '').replace(/\D/g, '');
       return {
         ok: true,
         configured: false,
-        valid_format: /^\d{11}$/.test(String(payload?.cpf || '').replace(/\D/g, '')),
+        valid_format: isValidCpfChecksum(normalizedCpf),
         first_name_matches: firstName ? true : null,
         api_name: fullName,
         api_first_name: firstName,

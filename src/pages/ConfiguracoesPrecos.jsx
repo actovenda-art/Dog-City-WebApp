@@ -34,6 +34,7 @@ const DAY_CARE_PACKAGE_FREQUENCIES = [
   { id: "3x_semana", label: "Pacotes de 3x por semana" },
   { id: "4x_semana", label: "Pacotes de 4x por semana" },
   { id: "5x_semana", label: "Pacotes de 5x por semana" },
+  { id: "quinzenal", label: "Day Care Quinzenal" },
 ];
 
 const DAY_CARE_PACKAGE_DOG_COUNTS = [
@@ -568,7 +569,7 @@ export default function ConfiguracoesPrecos() {
                 <div className="rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-sky-50 p-4">
                   <p className="text-sm font-medium text-blue-900">Valores avulsos e matriz de pacotes</p>
                   <p className="mt-1 text-sm text-blue-700">
-                    Configure aqui os valores avulsos de Day Care, adaptação e também os pacotes semanais de 1 a 5 vezes por semana para até 4 cães.
+                    Configure aqui os valores avulsos de Day Care, adaptação e também a matriz dos pacotes semanais e quinzenais para até 4 cães.
                   </p>
                 </div>
 
@@ -595,7 +596,7 @@ export default function ConfiguracoesPrecos() {
                 <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 sm:p-5">
                   <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-base font-semibold text-gray-900">Pacotes semanais de Day Care</p>
+                      <p className="text-base font-semibold text-gray-900">Pacotes de Day Care</p>
                       <p className="text-sm text-gray-600">
                         Preencha os valores mensais por frequência e quantidade de cães. Se deixar uma célula vazia, ela será removida da tabela.
                       </p>

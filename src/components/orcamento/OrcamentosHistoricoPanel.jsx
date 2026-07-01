@@ -1,7 +1,8 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, IntegracaoConfig, Orcamento, OrcamentoPagamento, RecurringPackage, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, IntegracaoConfig, Orcamento, OrcamentoPagamento, PackageSession, RecurringPackage, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
 import {
   bancoInter,
+  financeApplyCompensatoryCredit,
   financeApproveBudgetWithAuthorization,
   financeProcessBudgetCancellationV2,
   financePreviewBudgetConsumption,
@@ -56,6 +57,7 @@ import {
   buildAppointmentsFromOrcamento,
   buildDogOwnerIndex,
   buildPricingConfig,
+  calculateTosaValue,
   getAppointmentDateKey,
   getAppointmentEndDateKey,
   getAppointmentMeta,
@@ -138,6 +140,30 @@ function getCreatedTimestamp(record) {
     if (Number.isFinite(time)) return time;
   }
   return 0;
+}
+
+function appendDistinctNote(baseText, extraText) {
+  const parts = [baseText, extraText]
+    .flatMap((value) => String(value || "").split("\n"))
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set(parts)].join("\n");
+}
+
+function buildRecurringBudgetAdjustmentNote(kind, sourceDate, targetDate) {
+  if (kind === "move_target") {
+    return `Tosa remanejada para este banho a partir de ${formatDate(sourceDate)}.`;
+  }
+  if (kind === "move_source") {
+    return `Tosa remanejada deste banho para ${formatDate(targetDate)}.`;
+  }
+  if (kind === "credit") {
+    return `Tosa deste banho convertida em credito em ${formatDate(sourceDate)}.`;
+  }
+  if (kind === "reused_tosa") {
+    return `Tosa do plano remanejada para ${formatDate(targetDate)} junto com o banho do mesmo dia.`;
+  }
+  return "";
 }
 
 function inferOrcamentoServiceDate(cao, orcamento) {
@@ -1255,25 +1281,160 @@ export default function OrcamentosHistoricoPanel({
                 .filter((item) => item.source_key)
                 .map((item) => [item.source_key, item])
             );
+            const dogsById = Object.fromEntries((dogs || []).map((dog) => [dog.id, dog]));
+            const packageSessionCache = new Map();
+            let resolvedWalletContext = budgetFinanceContext || null;
+
+            const loadPackageSessionById = async (sessionId) => {
+              if (!sessionId) return null;
+              if (packageSessionCache.has(sessionId)) return packageSessionCache.get(sessionId);
+              const sessionRows = await PackageSession.filter({ id: sessionId }, "-created_date", 1);
+              const session = Array.isArray(sessionRows) ? sessionRows[0] : sessionRows;
+              packageSessionCache.set(sessionId, session || null);
+              return session || null;
+            };
 
             for (const appointment of plannedAppointments) {
               const externalAppointmentId = getAppointmentMeta(appointment).external_appointment_id;
               if (externalAppointmentId) {
                 const externalAppointment = (existingAppointments || []).find((item) => item.id === externalAppointmentId);
                 if (externalAppointment?.id) {
+                  const externalMeta = getAppointmentMeta(externalAppointment);
+                  const appointmentMeta = getAppointmentMeta(appointment);
+                  const snapshot = appointmentMeta.snapshot || {};
+                  const isRecurringBudgetReuse = Boolean(appointmentMeta.recurring_budget_reuse_kind);
+                  const nextExternalMetadata = {
+                    ...externalMeta,
+                    ...appointmentMeta,
+                    commercial_review_pending: false,
+                    overnight_budget_pending: false,
+                    overnight_orcamento_id: id,
+                  };
+                  let nextExternalObservacoes = appointment.observacoes;
+
+                  if (isRecurringBudgetReuse && appointmentMeta.recurring_budget_reuse_kind === "banho") {
+                    const resolution = String(appointmentMeta.recurring_grooming_resolution || "").trim().toLowerCase();
+
+                    if (resolution === "move") {
+                      const targetAppointmentId = appointmentMeta.recurring_grooming_target_appointment_id || "";
+                      const targetAppointment = (existingAppointments || []).find((item) => item.id === targetAppointmentId);
+                      if (targetAppointment?.id) {
+                        const targetMeta = getAppointmentMeta(targetAppointment);
+                        const sourceDate = externalAppointment.data_referencia || getAppointmentDateKey(externalAppointment);
+                        const targetDate = targetAppointment.data_referencia || getAppointmentDateKey(targetAppointment);
+                        await Appointment.update(targetAppointment.id, {
+                          observacoes: appendDistinctNote(
+                            targetAppointment.observacoes,
+                            buildRecurringBudgetAdjustmentNote("move_target", sourceDate, targetDate),
+                          ),
+                          metadata: {
+                            ...targetMeta,
+                            has_grooming: true,
+                            grooming_moved_from_appointment_id: externalAppointment.id,
+                          },
+                        });
+
+                        if (targetAppointment.package_session_id) {
+                          const targetSession = await loadPackageSessionById(targetAppointment.package_session_id);
+                          await PackageSession.update(targetAppointment.package_session_id, {
+                            metadata: {
+                              ...(typeof targetSession?.metadata === "object" ? targetSession.metadata : {}),
+                              has_grooming: true,
+                              grooming_moved_from_appointment_id: externalAppointment.id,
+                            },
+                          });
+                        }
+
+                        nextExternalMetadata.has_grooming = false;
+                        nextExternalMetadata.grooming_moved_to_appointment_id = targetAppointment.id;
+                        nextExternalObservacoes = appendDistinctNote(
+                          nextExternalObservacoes,
+                          buildRecurringBudgetAdjustmentNote("move_source", sourceDate, targetDate),
+                        );
+                      }
+                    }
+
+                    if (resolution === "credit") {
+                      if (!resolvedWalletContext?.carteira_conta_id && nextOrcamento?.cliente_id) {
+                        resolvedWalletContext = await financeWalletBudgetReadContext({
+                          empresa_id: currentUser?.empresa_id || nextOrcamento?.empresa_id || null,
+                          carteira_id: nextOrcamento.cliente_id,
+                        });
+                      }
+
+                      if (resolvedWalletContext?.carteira_conta_id) {
+                        const creditValue = calculateTosaValue(snapshot, dogsById[appointment.dog_id], precos);
+                        if (Number(creditValue || 0) > 0) {
+                          await financeApplyCompensatoryCredit({
+                            carteira_conta_id: resolvedWalletContext.carteira_conta_id,
+                            operacao_idempotencia: `budget-grooming-credit:${id}:${externalAppointment.id}`,
+                            valor: Number(creditValue || 0),
+                            motivo: "Tosa remanejada do banho do plano e convertida em credito no orcamento.",
+                            referencia_amigavel: "Credito de tosa do plano",
+                            descricao: `Credito gerado ao remover a tosa do banho reutilizado no orcamento ${id}.`,
+                            orcamento_id: id,
+                            appointment_id: externalAppointment.id,
+                            usuario_id: currentUser?.id || null,
+                            metadata: {
+                              source: "orcamentos_historico_panel",
+                              recurring_budget_reuse_kind: "banho",
+                              external_appointment_id: externalAppointment.id,
+                            },
+                          });
+                        }
+                      }
+
+                      nextExternalMetadata.has_grooming = false;
+                      nextExternalMetadata.grooming_converted_to_credit = true;
+                      nextExternalObservacoes = appendDistinctNote(
+                        nextExternalObservacoes,
+                        buildRecurringBudgetAdjustmentNote(
+                          "credit",
+                          externalAppointment.data_referencia || getAppointmentDateKey(externalAppointment),
+                          appointment.data_referencia,
+                        ),
+                      );
+                    }
+                  }
+
+                  if (isRecurringBudgetReuse && appointmentMeta.recurring_budget_reuse_kind === "tosa") {
+                    nextExternalMetadata.has_grooming = true;
+                    nextExternalObservacoes = appendDistinctNote(
+                      nextExternalObservacoes,
+                      buildRecurringBudgetAdjustmentNote(
+                        "reused_tosa",
+                        externalAppointment.data_referencia || getAppointmentDateKey(externalAppointment),
+                        appointment.data_referencia,
+                      ),
+                    );
+                  }
+
                   await Appointment.update(externalAppointment.id, {
                     orcamento_id: id,
-                    charge_type: "orcamento",
+                    status: "agendado",
+                    charge_type: isRecurringBudgetReuse ? appointment.charge_type : "orcamento",
                     valor_previsto: appointment.valor_previsto,
-                    observacoes: appointment.observacoes,
-                    metadata: {
-                      ...getAppointmentMeta(externalAppointment),
-                      ...appointment.metadata,
-                      commercial_review_pending: false,
-                      overnight_budget_pending: false,
-                      overnight_orcamento_id: id,
-                    },
+                    data_referencia: appointment.data_referencia,
+                    data_hora_entrada: appointment.data_hora_entrada,
+                    data_hora_saida: appointment.data_hora_saida,
+                    hora_entrada: appointment.hora_entrada || getAppointmentTimeValue(appointment, "entrada") || "",
+                    hora_saida: appointment.hora_saida || getAppointmentTimeValue(appointment, "saida") || "",
+                    observacoes: nextExternalObservacoes,
+                    metadata: nextExternalMetadata,
                   });
+
+                  if (externalAppointment.package_session_id) {
+                    const packageSession = await loadPackageSessionById(externalAppointment.package_session_id);
+                    await PackageSession.update(externalAppointment.package_session_id, {
+                      scheduled_date: appointment.data_referencia,
+                      appointment_id: externalAppointment.id,
+                      metadata: {
+                        ...(typeof packageSession?.metadata === "object" ? packageSession.metadata : {}),
+                        has_grooming: nextExternalMetadata.has_grooming ?? (typeof packageSession?.metadata === "object" ? packageSession.metadata?.has_grooming : false) ?? false,
+                        linked_orcamento_id: id,
+                      },
+                    });
+                  }
                   continue;
                 }
               }

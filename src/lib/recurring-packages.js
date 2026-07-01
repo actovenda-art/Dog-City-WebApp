@@ -1,6 +1,7 @@
 const PRE_CANCELLED_STATUSES = new Set(["cancelada_com_credito", "cancelada_sem_credito"]);
 const CONSUMED_STATUSES = new Set(["realizada", "falta_cobrada", "cancelada_sem_credito"]);
 const CREDITABLE_UNUSED_STATUSES = new Set(["prevista", "agendada", "vencida_nao_utilizada"]);
+const MONTHLY_WEEK_RULES = new Set(["ultima_semana_mes", "primeira_semana", "segunda_semana", "quarta_semana"]);
 
 export const SESSION_STATUSES = {
   PREVISTA: "prevista",
@@ -136,12 +137,134 @@ function getFrequencyMode(frequency) {
   return "semanal";
 }
 
+function getPlanOperationalConfig(packageRecord) {
+  const metadata = normalizeMetadata(packageRecord?.metadata);
+  return normalizeMetadata(metadata?.plan_metadata?.operational_config || metadata?.operational_config || {});
+}
+
+function getScheduleRule(packageRecord) {
+  return String(getPlanOperationalConfig(packageRecord)?.schedule_rule || "").trim();
+}
+
+function filterDatesByScheduleRule(dates = [], rule = "", month = null) {
+  if (!Array.isArray(dates) || dates.length === 0) return [];
+  if (rule === "toda_semana" || !rule) return dates;
+
+  const lastDayOfMonth = month?.end?.getDate?.() || 31;
+  return dates.filter((dateKey) => {
+    const date = parseDateKey(dateKey);
+    if (!date) return false;
+    const day = date.getDate();
+
+    switch (rule) {
+      case "primeira_semana":
+        return day >= 1 && day <= 7;
+      case "segunda_semana":
+        return day >= 8 && day <= 14;
+      case "quarta_semana":
+        return day >= 22 && day <= 28;
+      case "ultima_semana_mes":
+        return day >= Math.max(1, lastDayOfMonth - 6);
+      default:
+        return true;
+    }
+  });
+}
+
+function buildWeekdayConfigMap(configs = []) {
+  return (Array.isArray(configs) ? configs : []).reduce((accumulator, entry) => {
+    const weekday = Number(entry?.weekday);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) return accumulator;
+    accumulator[weekday] = {
+      time: String(entry?.time || "").trim(),
+      note: String(entry?.note || "").trim(),
+    };
+    return accumulator;
+  }, {});
+}
+
+function shouldAttachGrooming(rule, occurrenceIndex, totalOccurrences) {
+  switch (rule) {
+    case "todo_banho":
+      return true;
+    case "primeiro_banho_mes":
+      return occurrenceIndex === 1;
+    case "segundo_banho_mes":
+      return occurrenceIndex === 2;
+    case "quarto_banho_mes":
+      return occurrenceIndex === 4;
+    case "ultimo_banho_mes":
+      return occurrenceIndex === totalOccurrences;
+    case "intercalado_banhos":
+      return occurrenceIndex % 2 === 1;
+    default:
+      return false;
+  }
+}
+
+function buildOperationalSessionMetadata(packageRecord, dateKey, occurrenceIndex, scheduledDates = []) {
+  const serviceId = packageRecord?.service_id || "";
+  const operationalConfig = getPlanOperationalConfig(packageRecord);
+  const weekday = parseDateKey(dateKey)?.getDay?.();
+  const weekdayConfig = buildWeekdayConfigMap(operationalConfig.weekday_configs)[weekday] || {};
+  const notes = [];
+
+  if (serviceId === "banho" && operationalConfig.bath_notes) {
+    notes.push(operationalConfig.bath_notes);
+  }
+
+  const totalOccurrences = scheduledDates.length || 0;
+  const hasGrooming = serviceId === "banho_tosa"
+    ? shouldAttachGrooming(operationalConfig.grooming_rule, occurrenceIndex, totalOccurrences)
+    : false;
+
+  if (serviceId === "banho_tosa" && operationalConfig.bath_notes) {
+    notes.push(operationalConfig.bath_notes);
+  }
+
+  if (serviceId === "banho_tosa" && hasGrooming && operationalConfig.bath_groom_notes) {
+    notes.push(operationalConfig.bath_groom_notes);
+  }
+
+  if (serviceId === "transporte" && weekdayConfig.note) {
+    notes.push(weekdayConfig.note);
+  }
+
+  if (serviceId === "hospedagem" && operationalConfig.lodging_notes) {
+    notes.push(operationalConfig.lodging_notes);
+  }
+
+  if (serviceId === "hospedagem" && operationalConfig.lodging_shared_kennel === "sim" && operationalConfig.lodging_shared_groups) {
+    notes.push(`Canil compartilhado: ${operationalConfig.lodging_shared_groups}`);
+  }
+
+  return {
+    schedule_rule: operationalConfig.schedule_rule || null,
+    operational_observacoes: notes.filter(Boolean).join("\n"),
+    expected_start_time: serviceId === "hospedagem"
+      ? String(operationalConfig.lodging_entry_time || "").trim()
+      : String(weekdayConfig.time || "").trim(),
+    expected_end_time: serviceId === "hospedagem"
+      ? String(operationalConfig.lodging_exit_time || "").trim()
+      : String(weekdayConfig.time || "").trim(),
+    weekday_note: weekdayConfig.note || "",
+    transport_address: operationalConfig.transport_address || "",
+    selected_weekdays: Array.isArray(operationalConfig.selected_weekdays) ? operationalConfig.selected_weekdays : [],
+    lodging_base_weekday: operationalConfig.lodging_base_weekday ?? null,
+    grooming_rule: operationalConfig.grooming_rule || "",
+    has_grooming: hasGrooming,
+    occurrence_index: occurrenceIndex,
+    occurrence_total: totalOccurrences,
+  };
+}
+
 export function getPackageScheduledDates(packageRecord, monthKey, options = {}) {
   const month = parseMonthKey(monthKey);
   if (!packageRecord || !month) return [];
 
   const metadata = normalizeMetadata(packageRecord.metadata);
   const frequencyMode = getFrequencyMode(packageRecord.frequency);
+  const scheduleRule = getScheduleRule(packageRecord);
   const customDates = normalizeDateSet([
     ...(Array.isArray(metadata.custom_dates) ? metadata.custom_dates : []),
     ...(Array.isArray(metadata.personalized_dates) ? metadata.personalized_dates : []),
@@ -178,15 +301,20 @@ export function getPackageScheduledDates(packageRecord, monthKey, options = {}) 
     dates.push(formatDateKey(current));
   }
 
-  if (frequencyMode === "quinzenal") {
-    return dates.filter((_, index) => index % 2 === 0);
+  const ruledDates = filterDatesByScheduleRule(dates, scheduleRule, month);
+
+  if (scheduleRule === "quinzenal" || frequencyMode === "quinzenal") {
+    return ruledDates.filter((_, index) => index % 2 === 0);
   }
 
   if (frequencyMode === "mensal") {
-    return dates.slice(0, 1);
+    if (MONTHLY_WEEK_RULES.has(scheduleRule)) {
+      return ruledDates;
+    }
+    return ruledDates.slice(0, 1);
   }
 
-  return dates;
+  return ruledDates;
 }
 
 export function generateMonthlySessions({ packages = [], existingSessions = [], month, year, blockedDates = [], holidays = [] } = {}) {
@@ -201,9 +329,11 @@ export function generateMonthlySessions({ packages = [], existingSessions = [], 
 
   (packages || []).forEach((packageRecord) => {
     const dates = getPackageScheduledDates(packageRecord, monthKey, { blockedDates, holidays });
-    dates.forEach((dateKey) => {
+    dates.forEach((dateKey, index) => {
       const uniqueKey = [packageRecord.id, packageRecord.pet_id, packageRecord.service_id, dateKey].join("|");
       if (existingKeys.has(uniqueKey)) return;
+
+      const operationalMetadata = buildOperationalSessionMetadata(packageRecord, dateKey, index + 1, dates);
 
       const session = {
         empresa_id: packageRecord.empresa_id || null,
@@ -222,6 +352,7 @@ export function generateMonthlySessions({ packages = [], existingSessions = [], 
         metadata: {
           generated_by: "monthly_package_generator",
           package_frequency: packageRecord.frequency,
+          ...operationalMetadata,
         },
       };
 

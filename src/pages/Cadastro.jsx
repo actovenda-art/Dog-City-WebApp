@@ -21,7 +21,7 @@ import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeIn
 import DogColorMultiSelect, { DOG_COAT_OPTIONS } from "@/components/common/DogColorMultiSelect";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { validateCpfWithGov } from "@/lib/cpf-validation";
+import { isValidCpfChecksum, validateCpfWithGov } from "@/lib/cpf-validation";
 import { createEmptyDogMeal, extractDogMeals, isNaturalFoodType, serializeDogMeals } from "@/lib/dog-form-utils";
 import { findEntityByReference } from "@/lib/entity-identifiers";
 import { formatDisplayName, isCompletePersonName, sanitizeDisplayNameInput } from "@/lib/name-format";
@@ -316,9 +316,13 @@ function getTextFieldError({
     case "email":
       return EMAIL_REGEX.test(trimmedValue) ? "" : "Digite um email válido.";
     case "cpf":
-      return digits.length === 11 ? "" : "Digite um CPF com 11 números.";
+      if (digits.length !== 11) return "Digite um CPF com 11 números.";
+      return isValidCpfChecksum(digits) ? "" : "Digite um CPF válido.";
     case "cpf_cnpj":
-      return digits.length === 11 || digits.length === 14 ? "" : "Digite um CPF ou CNPJ válido.";
+      if (digits.length === 11) {
+        return isValidCpfChecksum(digits) ? "" : "Digite um CPF válido.";
+      }
+      return digits.length === 14 ? "" : "Digite um CPF ou CNPJ válido.";
     case "phone":
       return digits.length >= 10 && digits.length <= 11 ? "" : "Digite um celular válido.";
     case "cep":

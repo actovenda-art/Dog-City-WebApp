@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment, RecurringPackage, AppConfig, ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
+import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment, Checkin, RecurringPackage, AppConfig, ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
 import { useLocation } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,10 @@ const emptyCao = {
   banho_observacoes: "",
   banho_srd_porte: "",
   banho_srd_pelagem: "",
+  banho_reuse_appointment_id: "",
+  banho_reuse_service_type: "",
+  banho_grooming_resolution: "",
+  banho_grooming_target_appointment_id: "",
   tosa_data: "",
   tosa_tipo: "",
   tosa_subtipo_higienica: "",
@@ -118,6 +122,8 @@ const emptyCao = {
   tosa_horario_entrada: "",
   tosa_horario_saida: "",
   tosa_obs: "",
+  tosa_reuse_appointment_id: "",
+  tosa_reuse_service_type: "",
   transporte_plano_ativo: false,
   transporte_do_pacote: false,
   transporte_viagens: [{ partida: "", destino: "", data: "", horario: "", horario_fim: "", km: "", observacao: "" }],
@@ -125,6 +131,18 @@ const emptyCao = {
 
 const RELATION_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
 const ORCAMENTO_PREFILL_STORAGE_PREFIX = "dogcity:orcamento-prefill:";
+const ACTIVE_BATH_SERVICE_IDS = new Set(["banho", "banho_tosa"]);
+const ACTIVE_GROOMING_SERVICE_IDS = new Set(["tosa", "banho_tosa"]);
+const RECURRING_DISABLED_APPOINTMENT_STATUSES = new Set(["cancelado", "desconsiderado"]);
+const RECURRING_GROOMING_MOVE_TARGET_SERVICE_IDS = new Set(["banho_tosa"]);
+const RECURRING_SNAPSHOT_FIELDS = [
+  "banho_reuse_appointment_id",
+  "banho_reuse_service_type",
+  "banho_grooming_resolution",
+  "banho_grooming_target_appointment_id",
+  "tosa_reuse_appointment_id",
+  "tosa_reuse_service_type",
+];
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -173,6 +191,261 @@ function parseCurrencyInput(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function createEmptyCao() {
+  return JSON.parse(JSON.stringify(emptyCao));
+}
+
+function parseRecurringMetadata(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function getRecurringOperationalConfig(packageRecord) {
+  const metadata = parseRecurringMetadata(packageRecord?.metadata);
+  return parseRecurringMetadata(metadata?.plan_metadata?.operational_config || metadata?.operational_config || {});
+}
+
+function getRecurringScheduleRule(packageRecord) {
+  return String(getRecurringOperationalConfig(packageRecord)?.schedule_rule || packageRecord?.frequency || "").trim();
+}
+
+function getRecurringFrequencyLabel(frequencyId) {
+  const normalized = String(frequencyId || "").trim();
+  const labels = {
+    "1x_semana": "Day Care 1x por semana",
+    "2x_semana": "Day Care 2x por semana",
+    "3x_semana": "Day Care 3x por semana",
+    "4x_semana": "Day Care 4x por semana",
+    "5x_semana": "Day Care 5x por semana",
+    quinzenal: "Quinzenal",
+    toda_semana: "Toda semana",
+    ultima_semana_mes: "Ultima semana do mes",
+    primeira_semana: "Primeira semana",
+    segunda_semana: "Segunda semana",
+    quarta_semana: "Quarta semana",
+  };
+  return labels[normalized] || normalized || "Plano ativo";
+}
+
+function getCreatedTimestamp(record) {
+  const candidates = [record?.created_date, record?.created_at, record?.data_criacao];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const timestamp = new Date(candidate).getTime();
+    if (Number.isFinite(timestamp)) return timestamp;
+  }
+  return 0;
+}
+
+function formatCompactDate(value) {
+  if (!value) return "-";
+  const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("pt-BR");
+}
+
+function formatCompactTime(startTime, endTime = "") {
+  if (startTime && endTime) return `${String(startTime).slice(0, 5)} as ${String(endTime).slice(0, 5)}`;
+  if (startTime) return String(startTime).slice(0, 5);
+  if (endTime) return String(endTime).slice(0, 5);
+  return "";
+}
+
+function getAppointmentStartDate(appointment) {
+  return (
+    getAppointmentDateKey(appointment) ||
+    String(appointment?.data_hora_entrada || "").slice(0, 10) ||
+    String(appointment?.data_referencia || "").slice(0, 10) ||
+    ""
+  );
+}
+
+function checkinMatchesAppointment(checkin, appointment) {
+  if (!checkin || !appointment) return false;
+  const metadata = parseRecurringMetadata(checkin?.metadata);
+  return checkin.appointment_id === appointment.id
+    || metadata.appointment_id === appointment.id
+    || (appointment.linked_checkin_id && checkin.id === appointment.linked_checkin_id)
+    || (appointment.source_key && metadata.appointment_source_key === appointment.source_key);
+}
+
+function appointmentHasStartedCheckin(appointment, checkins = []) {
+  if (!appointment) return false;
+  if (appointment.linked_checkin_id) return true;
+  if (["presente", "finalizado", "concluido"].includes(String(appointment.status || "").toLowerCase())) {
+    return true;
+  }
+  return (checkins || []).some((checkin) => checkinMatchesAppointment(checkin, appointment));
+}
+
+function buildRecurringAppointmentOption(appointment, packageRecord) {
+  const startDate = getAppointmentStartDate(appointment);
+  const startTime = getAppointmentTimeValue(appointment, "entrada") || appointment?.hora_entrada || "";
+  const endTime = getAppointmentTimeValue(appointment, "saida") || appointment?.hora_saida || "";
+  const metadata = getAppointmentMeta(appointment);
+  const packageLabel = `${appointment?.service_type === "banho_tosa" ? "Banho & Tosa" : appointment?.service_type === "tosa" ? "Tosa" : "Banho"} • ${getRecurringFrequencyLabel(getRecurringScheduleRule(packageRecord) || packageRecord?.frequency)}`;
+
+  return {
+    id: appointment.id,
+    package_id: packageRecord?.id || appointment?.recurring_package_id || "",
+    package_label: packageLabel,
+    service_type: appointment?.service_type || "",
+    date: startDate,
+    date_label: formatCompactDate(startDate),
+    time_label: formatCompactTime(startTime, endTime),
+    has_grooming: Boolean(metadata?.has_grooming),
+    appointment,
+    label: [formatCompactDate(startDate), formatCompactTime(startTime, endTime), packageLabel].filter(Boolean).join(" • "),
+  };
+}
+
+function buildRecurringDogBudgetContext(dogId, recurringPackages = [], appointments = [], checkins = []) {
+  if (!dogId) return null;
+
+  const activePackages = (recurringPackages || [])
+    .filter((item) => item?.pet_id === dogId)
+    .filter((item) => item?.status === "ativo")
+    .sort((left, right) => getCreatedTimestamp(right) - getCreatedTimestamp(left));
+
+  if (activePackages.length === 0) {
+    return {
+      plans: [],
+      dayCarePlan: null,
+      mensalistaEligible: false,
+      mensalistaSummary: "",
+      mensalistaBlockReason: "",
+      hasBathPlan: false,
+      hasGroomingPlan: false,
+      pendingBathOptions: [],
+      pendingBathOnlyOptions: [],
+      pendingGroomingOptions: [],
+    };
+  }
+
+  const plans = activePackages.map((item) => ({
+    id: item.id,
+    service_id: item.service_id,
+    frequency: String(item.frequency || "").trim(),
+    schedule_rule: getRecurringScheduleRule(item),
+  }));
+
+  const activeDayCarePlans = activePackages.filter((item) => item?.service_id === "day_care");
+  const mensalistaEligiblePlan = activeDayCarePlans.find((item) => String(item.frequency || "").trim() !== "quinzenal") || null;
+  const dayCarePlan = mensalistaEligiblePlan || activeDayCarePlans[0] || null;
+
+  const bathPackages = activePackages.filter((item) => ACTIVE_BATH_SERVICE_IDS.has(item?.service_id));
+  const groomingPackages = activePackages.filter((item) => ACTIVE_GROOMING_SERVICE_IDS.has(item?.service_id));
+  const recurringPackageIds = new Set(activePackages.map((item) => item.id));
+
+  const pendingRecurringAppointments = (appointments || [])
+    .filter((appointment) => appointment?.dog_id === dogId)
+    .filter((appointment) => appointment?.recurring_package_id && recurringPackageIds.has(appointment.recurring_package_id))
+    .filter((appointment) => !RECURRING_DISABLED_APPOINTMENT_STATUSES.has(String(appointment?.status || "").toLowerCase()))
+    .filter((appointment) => !appointmentHasStartedCheckin(appointment, checkins))
+    .sort((left, right) => String(getAppointmentStartDate(left)).localeCompare(String(getAppointmentStartDate(right))));
+
+  const pendingBathOptions = pendingRecurringAppointments
+    .filter((appointment) => ACTIVE_BATH_SERVICE_IDS.has(appointment?.service_type))
+    .map((appointment) => buildRecurringAppointmentOption(
+      appointment,
+      activePackages.find((item) => item.id === appointment.recurring_package_id),
+    ));
+
+  const pendingBathOnlyOptions = pendingRecurringAppointments
+    .filter((appointment) => RECURRING_GROOMING_MOVE_TARGET_SERVICE_IDS.has(appointment?.service_type))
+    .filter((appointment) => !Boolean(getAppointmentMeta(appointment)?.has_grooming))
+    .map((appointment) => buildRecurringAppointmentOption(
+      appointment,
+      activePackages.find((item) => item.id === appointment.recurring_package_id),
+    ));
+
+  const pendingGroomingOptions = pendingRecurringAppointments
+    .filter((appointment) => ACTIVE_GROOMING_SERVICE_IDS.has(appointment?.service_type))
+    .filter((appointment) => appointment?.service_type === "tosa" || Boolean(getAppointmentMeta(appointment)?.has_grooming))
+    .map((appointment) => buildRecurringAppointmentOption(
+      appointment,
+      activePackages.find((item) => item.id === appointment.recurring_package_id),
+    ));
+
+  return {
+    plans,
+    dayCarePlan,
+    mensalistaEligible: Boolean(mensalistaEligiblePlan),
+    mensalistaSummary: dayCarePlan
+      ? `${getRecurringFrequencyLabel(getRecurringScheduleRule(dayCarePlan) || dayCarePlan.frequency)} ativo`
+      : "",
+    mensalistaBlockReason: dayCarePlan && !mensalistaEligiblePlan
+      ? "Plano quinzenal nao aplica desconto de mensalista na hospedagem."
+      : "",
+    hasBathPlan: bathPackages.length > 0,
+    hasGroomingPlan: groomingPackages.length > 0,
+    pendingBathOptions,
+    pendingBathOnlyOptions,
+    pendingGroomingOptions,
+  };
+}
+
+function normalizeBudgetCaoWithRecurringContext(cao, recurringContext) {
+  const next = {
+    ...createEmptyCao(),
+    ...cao,
+    servicos: {
+      ...createEmptyCao().servicos,
+      ...(cao?.servicos || {}),
+    },
+    transporte_viagens: Array.isArray(cao?.transporte_viagens) && cao.transporte_viagens.length > 0
+      ? cao.transporte_viagens
+      : createEmptyCao().transporte_viagens,
+  };
+
+  next.day_care_plano_ativo = Boolean(next.servicos?.day_care && recurringContext?.dayCarePlan);
+  next.hosp_is_mensalista = Boolean(next.servicos?.hospedagem && recurringContext?.mensalistaEligible);
+  next.banho_plano_ativo = Boolean(next.servicos?.banho && recurringContext?.hasBathPlan);
+  next.tosa_plano_ativo = Boolean(next.servicos?.tosa && recurringContext?.hasGroomingPlan);
+
+  const selectedBathOption = (recurringContext?.pendingBathOptions || []).find(
+    (item) => item.id === next.banho_reuse_appointment_id,
+  ) || null;
+  next.banho_do_pacote = Boolean(next.servicos?.banho && selectedBathOption);
+  next.banho_reuse_service_type = selectedBathOption?.service_type || "";
+
+  if (!selectedBathOption) {
+    next.banho_reuse_appointment_id = "";
+    next.banho_grooming_resolution = "";
+    next.banho_grooming_target_appointment_id = "";
+  } else if (!selectedBathOption.has_grooming) {
+    next.banho_grooming_resolution = "";
+    next.banho_grooming_target_appointment_id = "";
+  } else {
+    if (!["keep", "move", "credit"].includes(next.banho_grooming_resolution)) {
+      next.banho_grooming_resolution = "keep";
+    }
+
+    const validTargets = (recurringContext?.pendingBathOnlyOptions || []).filter((item) => item.id !== selectedBathOption.id);
+    if (next.banho_grooming_resolution !== "move") {
+      next.banho_grooming_target_appointment_id = "";
+    } else if (!validTargets.some((item) => item.id === next.banho_grooming_target_appointment_id)) {
+      next.banho_grooming_target_appointment_id = "";
+    }
+  }
+
+  const selectedTosaOption = (recurringContext?.pendingGroomingOptions || []).find(
+    (item) => item.id === next.tosa_reuse_appointment_id,
+  ) || null;
+  next.tosa_do_pacote = Boolean(next.servicos?.tosa && selectedTosaOption);
+  next.tosa_reuse_service_type = selectedTosaOption?.service_type || "";
+  if (!selectedTosaOption) {
+    next.tosa_reuse_appointment_id = "";
+  }
+
+  return next;
+}
+
 function buildPrefilledCaoFromAppointment(appointment, dog) {
   const metadata = getAppointmentMeta(appointment);
   const snapshot = metadata.snapshot && typeof metadata.snapshot === "object" ? metadata.snapshot : {};
@@ -180,9 +453,9 @@ function buildPrefilledCaoFromAppointment(appointment, dog) {
   const startTime = getAppointmentTimeValue(appointment, "entrada") || snapshot.hora_entrada || "09:00";
   const endTime = getAppointmentTimeValue(appointment, "saida") || snapshot.hora_saida || "";
   const cao = {
-    ...emptyCao,
+    ...createEmptyCao(),
     dog_id: appointment.dog_id || "",
-    servicos: { ...emptyCao.servicos },
+    servicos: { ...createEmptyCao().servicos },
   };
 
   if (appointment.service_type === "day_care") {
@@ -234,6 +507,30 @@ function buildPrefilledCaoFromAppointment(appointment, dog) {
     cao.banho_observacoes = appointment.observacoes || snapshot.banho_observacoes || "";
     cao.banho_srd_porte = snapshot.banho_srd_porte || "";
     cao.banho_srd_pelagem = snapshot.banho_srd_pelagem || "";
+  } else if (appointment.service_type === "banho_tosa") {
+    const hasGrooming = Boolean(metadata.has_grooming || snapshot?.servicos?.tosa || snapshot?.tosa_tipo);
+    cao.servicos.banho = true;
+    cao.servicos.tosa = hasGrooming;
+    cao.banho_data = serviceDate;
+    cao.banho_horario = startTime || snapshot.banho_horario || "";
+    cao.banho_horario_inicio = startTime || snapshot.banho_horario_inicio || snapshot.banho_horario || "09:00";
+    cao.banho_horario_saida = endTime || snapshot.banho_horario_saida || "";
+    cao.banho_raca = snapshot.banho_raca || dog?.raca || "";
+    cao.banho_plano_ativo = true;
+    cao.banho_do_pacote = Boolean(snapshot.banho_do_pacote || appointment.source_type === "pacote_recorrente_pre_pago");
+    cao.banho_observacoes = appointment.observacoes || snapshot.banho_observacoes || "";
+    cao.banho_srd_porte = snapshot.banho_srd_porte || "";
+    cao.banho_srd_pelagem = snapshot.banho_srd_pelagem || "";
+    if (hasGrooming) {
+      cao.tosa_data = serviceDate;
+      cao.tosa_tipo = snapshot.tosa_tipo || "geral";
+      cao.tosa_subtipo_higienica = snapshot.tosa_subtipo_higienica || "";
+      cao.tosa_plano_ativo = true;
+      cao.tosa_do_pacote = Boolean(snapshot.tosa_do_pacote || appointment.source_type === "pacote_recorrente_pre_pago");
+      cao.tosa_horario_entrada = startTime || snapshot.tosa_horario_entrada || "10:00";
+      cao.tosa_horario_saida = endTime || snapshot.tosa_horario_saida || "";
+      cao.tosa_obs = appointment.observacoes || snapshot.tosa_obs || "";
+    }
   } else if (appointment.service_type === "tosa") {
     cao.servicos.tosa = true;
     cao.tosa_data = serviceDate;
@@ -260,6 +557,12 @@ function buildPrefilledCaoFromAppointment(appointment, dog) {
       observacao: appointment.observacoes || viagem.observacao || "",
     }];
   }
+
+  RECURRING_SNAPSHOT_FIELDS.forEach((field) => {
+    if (snapshot?.[field] !== undefined) {
+      cao[field] = snapshot[field];
+    }
+  });
 
   return cao;
 }
@@ -507,6 +810,8 @@ export default function Orcamentos() {
   const openOrcamentoId = new URLSearchParams(location.search).get("orcamentoId") || "";
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [checkins, setCheckins] = useState([]);
   const [recurringPackages, setRecurringPackages] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [orcamentos, setOrcamentos] = useState([]);
@@ -521,7 +826,7 @@ export default function Orcamentos() {
   const [etapa, setEtapa] = useState("cliente");
   const [clienteSelecionado, setClienteSelecionado] = useState(null);
   const [searchCliente, setSearchCliente] = useState("");
-  const [caes, setCaes] = useState([{ ...emptyCao }]);
+  const [caes, setCaes] = useState([createEmptyCao()]);
   const [observacoes, setObservacoes] = useState("");
   const [calculo, setCalculo] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -726,7 +1031,12 @@ export default function Orcamentos() {
 
           sessionStorage.removeItem(storageKey);
           setClienteSelecionado(selectedCarteira);
-          setCaes(prefilledCaes);
+          setCaes(prefilledCaes.map((cao) =>
+            normalizeBudgetCaoWithRecurringContext(
+              cao,
+              buildRecurringDogBudgetContext(cao?.dog_id, recurringPackages, appointments, checkins),
+            ),
+          ));
           setObservacoes(payload.observacoes || "");
           setPrefillNotice({
             title: "Orçamento dos atendimentos utilizados",
@@ -759,10 +1069,10 @@ export default function Orcamentos() {
       ) || null;
 
       const prefilledCao = {
-        ...emptyCao,
+        ...createEmptyCao(),
         dog_id: resolvedDogId,
         servicos: {
-          ...emptyCao.servicos,
+          ...createEmptyCao().servicos,
         },
       };
 
@@ -772,6 +1082,21 @@ export default function Orcamentos() {
         prefilledCao.banho_horario = "09:00";
         prefilledCao.banho_horario_inicio = "09:00";
         prefilledCao.banho_horario_saida = "10:00";
+      } else if (service === "banho_tosa") {
+        prefilledCao.servicos.banho = true;
+        prefilledCao.servicos.tosa = true;
+        prefilledCao.banho_data = date;
+        prefilledCao.banho_horario = "09:00";
+        prefilledCao.banho_horario_inicio = "09:00";
+        prefilledCao.banho_horario_saida = "10:00";
+        prefilledCao.tosa_data = date;
+        prefilledCao.tosa_horario_entrada = "09:00";
+        prefilledCao.tosa_horario_saida = "10:00";
+      } else if (service === "tosa") {
+        prefilledCao.servicos.tosa = true;
+        prefilledCao.tosa_data = date;
+        prefilledCao.tosa_horario_entrada = "09:00";
+        prefilledCao.tosa_horario_saida = "10:00";
       } else if (service === "hospedagem") {
         prefilledCao.servicos.hospedagem = true;
         prefilledCao.hosp_data_entrada = date;
@@ -832,7 +1157,12 @@ export default function Orcamentos() {
       if (cancelled) return;
 
       setClienteSelecionado(selectedCarteira);
-      setCaes([prefilledCao]);
+      setCaes([
+        normalizeBudgetCaoWithRecurringContext(
+          prefilledCao,
+          buildRecurringDogBudgetContext(prefilledCao?.dog_id, recurringPackages, appointments, checkins),
+        ),
+      ]);
       setObservacoes("");
       setPrefillNotice(nextPrefillNotice);
       setEtapa("caes");
@@ -845,14 +1175,16 @@ export default function Orcamentos() {
     return () => {
       cancelled = true;
     };
-  }, [carteiras, dogs, isLoading, location.search, prefillApplied]);
+  }, [appointments, carteiras, checkins, dogs, isLoading, location.search, prefillApplied, recurringPackages]);
 
   async function loadData() {
     setIsLoading(true);
     try {
-      const [dogsData, carteirasData, recurringPackagesData, responsaveisData, orcamentosData, precosData, userData, appConfigData, providersData, schedulesData] = await Promise.all([
+      const [dogsData, carteirasData, appointmentsData, checkinsData, recurringPackagesData, responsaveisData, orcamentosData, precosData, userData, appConfigData, providersData, schedulesData] = await Promise.all([
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
+        Appointment.listAll ? Appointment.listAll("-created_date", 2000, 10000) : Appointment.list("-created_date", 2000),
+        Checkin.listAll ? Checkin.listAll("-created_date", 2000, 10000) : Checkin.list("-created_date", 2000),
         RecurringPackage.list("-created_at", 1000),
         Responsavel.list("-created_date", 500),
         Orcamento.list("-created_date", 100),
@@ -865,6 +1197,8 @@ export default function Orcamentos() {
 
       setDogs((dogsData || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteirasData || []).filter((cliente) => cliente.ativo !== false));
+      setAppointments(appointmentsData || []);
+      setCheckins(checkinsData || []);
       setRecurringPackages(recurringPackagesData || []);
       setResponsaveis((responsaveisData || []).filter((responsavel) => responsavel.ativo !== false));
       setOrcamentos(orcamentosData || []);
@@ -885,7 +1219,7 @@ export default function Orcamentos() {
     setEtapa("cliente");
     setClienteSelecionado(null);
     setSearchCliente("");
-    setCaes([{ ...emptyCao }]);
+    setCaes([createEmptyCao()]);
     setObservacoes("");
     setCalculo(null);
     setPrefillNotice(null);
@@ -993,6 +1327,34 @@ export default function Orcamentos() {
       .sort((left, right) => String(left.nome).localeCompare(String(right.nome), "pt-BR"));
   }, [sellerProviders, sellerSchedules]);
 
+  const recurringContextByDogId = useMemo(() => {
+    return (dogs || []).reduce((accumulator, dog) => {
+      accumulator[dog.id] = buildRecurringDogBudgetContext(
+        dog.id,
+        recurringPackages,
+        appointments,
+        checkins,
+      );
+      return accumulator;
+    }, {});
+  }, [appointments, checkins, dogs, recurringPackages]);
+
+  function getRecurringValidationError() {
+    for (const cao of caes || []) {
+      if (!cao?.dog_id) continue;
+      const recurringContext = recurringContextByDogId[cao.dog_id] || null;
+      const selectedBathOption = (recurringContext?.pendingBathOptions || []).find(
+        (item) => item.id === cao.banho_reuse_appointment_id,
+      ) || null;
+
+      if (selectedBathOption?.has_grooming && cao.banho_grooming_resolution === "move" && !cao.banho_grooming_target_appointment_id) {
+        return "Selecione qual outro banho do plano vai receber a tosa remanejada antes de continuar.";
+      }
+    }
+
+    return "";
+  }
+
   function getClienteSelecionadoError() {
     if (!clienteSelecionado || selectedDogIds.length === 0 || isClienteSelecionadoElegivel) {
       return "";
@@ -1008,6 +1370,12 @@ export default function Orcamentos() {
       return false;
     }
 
+    const recurringValidationError = getRecurringValidationError();
+    if (recurringValidationError) {
+      alert(recurringValidationError);
+      return false;
+    }
+
     return true;
   }
 
@@ -1018,11 +1386,20 @@ export default function Orcamentos() {
     : 0;
 
   function addCao() {
-    setCaes((prev) => [...prev, { ...emptyCao }]);
+    setCaes((prev) => [...prev, createEmptyCao()]);
   }
 
   function updateCao(index, data) {
-    setCaes((prev) => prev.map((cao, currentIndex) => currentIndex === index ? data : cao));
+    setCaes((prev) => prev.map((cao, currentIndex) => {
+      if (currentIndex !== index) return cao;
+      const recurringContext = buildRecurringDogBudgetContext(
+        data?.dog_id || "",
+        recurringPackages,
+        appointments,
+        checkins,
+      );
+      return normalizeBudgetCaoWithRecurringContext(data, recurringContext);
+    }));
   }
 
   function removeCao(index) {
@@ -1038,6 +1415,12 @@ export default function Orcamentos() {
     const validationError = getClienteSelecionadoError();
     if (validationError) {
       alert(validationError);
+      return;
+    }
+
+    const recurringValidationError = getRecurringValidationError();
+    if (recurringValidationError) {
+      alert(recurringValidationError);
       return;
     }
 
@@ -1303,6 +1686,7 @@ export default function Orcamentos() {
                       allCaes={caes}
                       dogs={getCaesDoCliente()}
                       precos={precos}
+                      recurringContext={recurringContextByDogId[cao.dog_id] || null}
                       onUpdate={updateCao}
                       onRemove={removeCao}
                       canRemove={caes.length > 1}

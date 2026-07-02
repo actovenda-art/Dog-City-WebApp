@@ -55,6 +55,7 @@ import {
   markSessionAsCompleted,
   markSessionAsNoShow,
   normalizeMetadata as normalizeRecurringMetadata,
+  resolvePackageSessionUnitPrice,
 } from "@/lib/recurring-packages";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Badge } from "@/components/ui/badge";
@@ -708,9 +709,73 @@ function normalizeFirstMonthDateList(startDateValue, values) {
   });
 }
 
-function buildProjectedFirstMonthDates(startDateValue, weekdays) {
+function resolveQuinzenalAnchorDate(startDateValue, weekdays) {
+  const startDate = parseDateOnly(startDateValue);
+  const normalizedWeekdays = normalizeWeekdays(weekdays);
+  if (!startDate || normalizedWeekdays.length === 0) return null;
+
+  if (normalizedWeekdays.includes(getDay(startDate))) {
+    return startDate;
+  }
+
+  for (let cursor = startDate; differenceInCalendarDays(cursor, startDate) <= 14; cursor = addDays(cursor, 1)) {
+    if (normalizedWeekdays.includes(getDay(cursor))) {
+      return cursor;
+    }
+  }
+
+  return startDate;
+}
+
+function buildCycleMonthDates(monthDateValue, weekdays, frequencyId = "", startDateValue = monthDateValue) {
+  const monthDate = normalizeDate(monthDateValue instanceof Date ? monthDateValue : parseDateOnly(monthDateValue));
+  const normalizedWeekdays = normalizeWeekdays(weekdays);
+  if (!monthDate || normalizedWeekdays.length === 0) return [];
+
+  if (frequencyId === "quinzenal") {
+    const anchorDate = resolveQuinzenalAnchorDate(startDateValue, normalizedWeekdays);
+    if (!anchorDate) return [];
+
+    const monthStart = startOfMonth(monthDate);
+    const monthEnd = endOfMonth(monthStart);
+    const dates = [];
+    let cursor = anchorDate;
+
+    while (cursor < monthStart) {
+      cursor = addDays(cursor, 14);
+    }
+
+    while (cursor <= monthEnd) {
+      dates.push(formatDateOnly(cursor));
+      cursor = addDays(cursor, 14);
+    }
+
+    return normalizeDateKeyList(dates);
+  }
+
+  const monthStart = startOfMonth(monthDate);
+  const monthEnd = endOfMonth(monthStart);
+  const dates = [];
+
+  for (let cursor = monthStart; cursor <= monthEnd; cursor = addDays(cursor, 1)) {
+    if (normalizedWeekdays.includes(getDay(cursor))) {
+      dates.push(formatDateOnly(cursor));
+    }
+  }
+
+  return normalizeDateKeyList(dates);
+}
+
+function buildProjectedFirstMonthDates(startDateValue, weekdays, frequencyId = "") {
   const startDate = parseDateOnly(startDateValue);
   if (!startDate || weekdays.length === 0) return [];
+
+  if (frequencyId === "quinzenal") {
+    const anchorDate = resolveQuinzenalAnchorDate(startDateValue, weekdays);
+    const anchorKey = anchorDate ? formatDateOnly(anchorDate) : "";
+    return buildCycleMonthDates(startDateValue, weekdays, frequencyId, startDateValue)
+      .filter((dateKey) => dateKey !== anchorKey);
+  }
 
   const lastDay = endOfMonth(startDate);
   const projectedDates = [];
@@ -723,13 +788,17 @@ function buildProjectedFirstMonthDates(startDateValue, weekdays) {
   return normalizeDateKeyList(projectedDates);
 }
 
-function buildFirstMonthRealDates(startDateValue, weekdays) {
+function buildFirstMonthRealDates(startDateValue, weekdays, frequencyId = "") {
   const startDate = parseDateOnly(startDateValue);
   if (!startDate) return [];
 
+  if (frequencyId === "quinzenal") {
+    return buildCycleMonthDates(startDateValue, weekdays, frequencyId, startDateValue);
+  }
+
   return normalizeFirstMonthDateList(startDateValue, [
     formatDateOnly(startDate),
-    ...buildProjectedFirstMonthDates(startDateValue, weekdays),
+    ...buildProjectedFirstMonthDates(startDateValue, weekdays, frequencyId),
   ]);
 }
 
@@ -752,24 +821,6 @@ function buildNextFirstMonthDate(startDateValue, values) {
   }
 
   return formatDateOnly(lastDay);
-}
-
-function buildCycleMonthDates(monthDateValue, weekdays) {
-  const monthDate = normalizeDate(monthDateValue instanceof Date ? monthDateValue : parseDateOnly(monthDateValue));
-  const normalizedWeekdays = normalizeWeekdays(weekdays);
-  if (!monthDate || normalizedWeekdays.length === 0) return [];
-
-  const monthStart = startOfMonth(monthDate);
-  const monthEnd = endOfMonth(monthStart);
-  const dates = [];
-
-  for (let cursor = monthStart; cursor <= monthEnd; cursor = addDays(cursor, 1)) {
-    if (normalizedWeekdays.includes(getDay(cursor))) {
-      dates.push(formatDateOnly(cursor));
-    }
-  }
-
-  return normalizeDateKeyList(dates);
 }
 
 function buildFirstBillingPreview({
@@ -800,7 +851,7 @@ function buildFirstBillingPreview({
   const basePackageValue = Number(packageMonthlyValue || basePerDogValue * packageDogCount || 0) || 0;
 
   if (service !== "day_care") {
-    const realDates = buildFirstMonthRealDates(startDateValue, weekdays);
+    const realDates = buildFirstMonthRealDates(startDateValue, weekdays, frequency);
     const plannedUses = realDates.length || 1;
     return {
       firstDueDate,
@@ -809,7 +860,7 @@ function buildFirstBillingPreview({
       chargedUses: plannedUses,
       cycleSlots: plannedUses,
       isFullPackage: true,
-      projectedDates: buildProjectedFirstMonthDates(startDateValue, weekdays),
+      projectedDates: buildProjectedFirstMonthDates(startDateValue, weekdays, frequency),
       realDates,
       firstPackageValue: basePerDogValue * plannedUses,
       firstPerDogValue: basePerDogValue,
@@ -830,10 +881,10 @@ function buildFirstBillingPreview({
     };
   }
 
-  const projectedDates = buildProjectedFirstMonthDates(startDateValue, weekdays);
+  const projectedDates = buildProjectedFirstMonthDates(startDateValue, weekdays, frequency);
   const realDates = normalizeFirstMonthDateList(startDateValue, firstMonthDates).length > 0
     ? normalizeFirstMonthDateList(startDateValue, firstMonthDates)
-    : buildFirstMonthRealDates(startDateValue, weekdays);
+    : buildFirstMonthRealDates(startDateValue, weekdays, frequency);
   const plannedUses = realDates.length;
   const chargedUses = Math.min(plannedUses, cycleSlots);
   const factor = cycleSlots > 0 ?chargedUses / cycleSlots : 0;
@@ -940,6 +991,7 @@ function buildRecurringPackagePayloadFromPlan(plan) {
   const selectedWeekdays = normalizeWeekdays(operationalConfig.selected_weekdays || plan?.weekdays);
   const serviceId = plan?.service || plan?.tipo_plano || "day_care";
   const startDate = metadata.start_date || formatDateOnly(plan?.created_date ? parseISO(plan.created_date) : new Date());
+  const monthlyValue = getMonthlyValue(plan);
   const recurringWeekdays = serviceId === "hospedagem"
     ? normalizeWeekdays([operationalConfig.lodging_base_weekday ?? selectedWeekdays[0]])
     : selectedWeekdays;
@@ -971,6 +1023,9 @@ function buildRecurringPackagePayloadFromPlan(plan) {
       package_group_key: metadata.package_group_key || plan?.id,
       client_name: plan?.client_name || "",
       plan_metadata: metadata,
+      plan_monthly_value: monthlyValue,
+      plan_monthly_value_snapshot: monthlyValue,
+      price_per_session_snapshot: getSessionUnitPriceFromPlan(plan),
     },
   };
 }
@@ -1195,7 +1250,7 @@ export default function PlanosConfig() {
       monthly_value: getMonthlyValue(representativePlan) ?String(getMonthlyValue(representativePlan)) : "",
       first_month_dates: normalizeFirstMonthDateList(existingStartDate, packageMeta.metadata.first_month_real_dates).length > 0
         ? normalizeFirstMonthDateList(existingStartDate, packageMeta.metadata.first_month_real_dates)
-        : buildFirstMonthRealDates(existingStartDate, existingWeekdays),
+        : buildFirstMonthRealDates(existingStartDate, existingWeekdays, operationalConfig.schedule_rule || representativePlan.frequency || ""),
       vendedor_user_id: representativePlan?.vendedor_user_id || "",
       commission_percentual: representativePlan?.commission_percentual ? String(representativePlan.commission_percentual) : "",
       transport_address: operationalConfig.transport_address || formatClientAddress(clientsById[getPlanClientId(representativePlan)]),
@@ -1243,8 +1298,8 @@ export default function PlanosConfig() {
   const expectedWeekdayCount = getExpectedWeekdayCount(formData.frequency, formData.service);
   const weekdaysLocked = false;
   const projectedFirstMonthDates = useMemo(
-    () => formData.service === "day_care" ? buildProjectedFirstMonthDates(formData.start_date, normalizedWeekdays) : [],
-    [formData.service, formData.start_date, normalizedWeekdays],
+    () => formData.service === "day_care" ? buildProjectedFirstMonthDates(formData.start_date, normalizedWeekdays, formData.frequency) : [],
+    [formData.frequency, formData.service, formData.start_date, normalizedWeekdays],
   );
   const realFirstMonthDates = useMemo(
     () => formData.service === "day_care"
@@ -1315,7 +1370,7 @@ export default function PlanosConfig() {
       weekdays: [],
       weekday_configs: createEmptyWeekdayConfigs(),
       first_month_dates: current.service === "day_care"
-        ? buildFirstMonthRealDates(current.start_date, [])
+        ? buildFirstMonthRealDates(current.start_date, [], "")
         : [],
     }));
   }, [availableFrequencies, formData.frequency]);
@@ -1443,7 +1498,7 @@ export default function PlanosConfig() {
         weekdays: nextWeekdays,
         weekday_configs: normalizeWeekdayConfigs(current.weekday_configs),
         first_month_dates: serviceId === "day_care"
-          ? buildFirstMonthRealDates(current.start_date, nextWeekdays)
+          ? buildFirstMonthRealDates(current.start_date, nextWeekdays, nextFrequencyOptions.some((item) => item.id === current.frequency) ? current.frequency : "")
           : [],
         transport_address: serviceId === "transporte"
           ? (current.transport_address || formatClientAddress(clientsById[current.client_id]))
@@ -1517,7 +1572,7 @@ export default function PlanosConfig() {
         weekdays: nextWeekdays,
         weekday_configs: normalizeWeekdayConfigs(current.weekday_configs),
         first_month_dates: current.service === "day_care"
-          ? buildFirstMonthRealDates(current.start_date, nextWeekdays)
+          ? buildFirstMonthRealDates(current.start_date, nextWeekdays, frequencyId)
           : [],
       };
     });
@@ -1544,9 +1599,27 @@ export default function PlanosConfig() {
     setFormData((current) => {
       const currentWeekdays = normalizeWeekdays(current.weekdays).filter((item) => allowedWeekdayIds.includes(item));
       const exists = currentWeekdays.includes(weekdayId);
-      let nextWeekdays = exists
-        ?currentWeekdays.filter((item) => item !== weekdayId)
-        : [...currentWeekdays, weekdayId].sort((left, right) => left - right);
+      const currentConfigs = normalizeWeekdayConfigs(current.weekday_configs);
+      let nextWeekdays;
+      let nextWeekdayConfigs = currentConfigs;
+
+      if (expectedWeekdayCount === 1 && !exists) {
+        const previousWeekday = currentWeekdays[0];
+        nextWeekdays = [weekdayId];
+        if (previousWeekday != null && !currentConfigs[String(weekdayId)]?.time && !currentConfigs[String(weekdayId)]?.note) {
+          const previousConfig = currentConfigs[String(previousWeekday)];
+          if (previousConfig?.time || previousConfig?.note) {
+            nextWeekdayConfigs = {
+              ...currentConfigs,
+              [String(weekdayId)]: { ...previousConfig },
+            };
+          }
+        }
+      } else {
+        nextWeekdays = exists
+          ?currentWeekdays.filter((item) => item !== weekdayId)
+          : [...currentWeekdays, weekdayId].sort((left, right) => left - right);
+      }
 
       if (expectedWeekdayCount > 0 && nextWeekdays.length > expectedWeekdayCount) {
         nextWeekdays = nextWeekdays.slice(nextWeekdays.length - expectedWeekdayCount);
@@ -1555,8 +1628,9 @@ export default function PlanosConfig() {
       return {
         ...current,
         weekdays: nextWeekdays,
+        weekday_configs: nextWeekdayConfigs,
         first_month_dates: current.service === "day_care"
-          ? buildFirstMonthRealDates(current.start_date, nextWeekdays)
+          ? buildFirstMonthRealDates(current.start_date, nextWeekdays, current.frequency)
           : [],
       };
     });
@@ -1599,7 +1673,11 @@ export default function PlanosConfig() {
       ...current,
       start_date: value,
       first_month_dates: current.service === "day_care"
-        ? buildFirstMonthRealDates(value, normalizeWeekdays(current.weekdays).filter((item) => getAllowedWeekdays(current.service).some((weekday) => weekday.id === item)))
+        ? buildFirstMonthRealDates(
+          value,
+          normalizeWeekdays(current.weekdays).filter((item) => getAllowedWeekdays(current.service).some((weekday) => weekday.id === item)),
+          current.frequency,
+        )
         : [],
     }));
   }
@@ -1679,7 +1757,7 @@ export default function PlanosConfig() {
       metadata.first_month_real_dates,
     ).length > 0
       ? normalizeFirstMonthDateList(metadata.start_date, metadata.first_month_real_dates)
-      : buildFirstMonthRealDates(metadata.start_date, weekdays);
+      : buildFirstMonthRealDates(metadata.start_date, weekdays, plan.frequency);
     const appointmentDates = new Set();
     const recurringSchedule = buildRecurringBillingSchedule(plan, today);
     const packageGroupKey = metadata.package_group_key || plan.id;
@@ -1697,7 +1775,7 @@ export default function PlanosConfig() {
     }
 
     for (const entry of recurringSchedule) {
-      const cycleDates = buildCycleMonthDates(entry.monthDate, weekdays);
+      const cycleDates = buildCycleMonthDates(entry.monthDate, weekdays, plan.frequency, metadata.start_date);
       for (const dateKey of cycleDates) {
         const parsed = parseDateOnly(dateKey);
         if (parsed && parsed >= generationBaseDate) {
@@ -1967,14 +2045,49 @@ export default function PlanosConfig() {
     }
   }
 
-  async function ensureAppointmentForPackageSession(session, packageRecord) {
+  async function ensureAppointmentForPackageSession(session, packageRecord, sessionUnitPrice = null) {
     if (!session?.id || session.deleted_at) return null;
     const sourceKey = `package_session|${session.package_id}|${session.pet_id}|${session.service_id}|${session.scheduled_date}`;
     const existingAppointment = appointments.find((appointment) => appointment.source_key === sourceKey);
-    if (existingAppointment?.id) return existingAppointment;
     const sessionMetadata = parseMetadata(session.metadata);
     const appointmentWindow = buildAppointmentWindow(session.scheduled_date, session.service_id, sessionMetadata);
     const operationalNotes = String(sessionMetadata.operational_observacoes || "").trim();
+    const expectedSessionValue = Math.max(0, Number(sessionUnitPrice ?? packageRecord?.price_per_session ?? 0) || 0);
+    const appointmentMetadata = {
+      package_id: session.package_id,
+      package_session_id: session.id,
+      billing_month: session.billing_month,
+      covered_by_credit: !!session.covered_by_credit,
+      credit_id: session.credit_id || null,
+      transport_address: sessionMetadata.transport_address || null,
+      has_grooming: !!sessionMetadata.has_grooming,
+      grooming_rule: sessionMetadata.grooming_rule || null,
+      lodging_base_weekday: sessionMetadata.lodging_base_weekday ?? null,
+      selected_weekdays: sessionMetadata.selected_weekdays || [],
+      checkin_alert: operationalNotes || sessionMetadata.weekday_note || null,
+    };
+
+    if (existingAppointment?.id) {
+      const currentMetadata = parseMetadata(existingAppointment.metadata);
+      const nextMetadata = {
+        ...currentMetadata,
+        ...appointmentMetadata,
+      };
+      const shouldUpdate =
+        Number(existingAppointment.valor_previsto || 0) !== expectedSessionValue
+        || existingAppointment.charge_type !== (session.covered_by_credit ? "credito_pacote" : "pacote")
+        || JSON.stringify(currentMetadata) !== JSON.stringify(nextMetadata);
+
+      if (shouldUpdate) {
+        return Appointment.update(existingAppointment.id, {
+          valor_previsto: expectedSessionValue,
+          charge_type: session.covered_by_credit ? "credito_pacote" : "pacote",
+          metadata: nextMetadata,
+        });
+      }
+
+      return existingAppointment;
+    }
 
     const appointment = await Appointment.create({
       empresa_id: session.empresa_id || packageRecord?.empresa_id || null,
@@ -1988,24 +2101,12 @@ export default function PlanosConfig() {
       hora_entrada: appointmentWindow.startTime,
       hora_saida: appointmentWindow.endTime,
       observacoes: operationalNotes,
-      valor_previsto: Number(packageRecord?.price_per_session || 0) || 0,
+      valor_previsto: expectedSessionValue,
       charge_type: session.covered_by_credit ? "credito_pacote" : "pacote",
       source_type: "pacote_recorrente_pre_pago",
       package_session_id: session.id,
       recurring_package_id: session.package_id,
-      metadata: {
-        package_id: session.package_id,
-        package_session_id: session.id,
-        billing_month: session.billing_month,
-        covered_by_credit: !!session.covered_by_credit,
-        credit_id: session.credit_id || null,
-        transport_address: sessionMetadata.transport_address || null,
-        has_grooming: !!sessionMetadata.has_grooming,
-        grooming_rule: sessionMetadata.grooming_rule || null,
-        lodging_base_weekday: sessionMetadata.lodging_base_weekday ?? null,
-        selected_weekdays: sessionMetadata.selected_weekdays || [],
-        checkin_alert: operationalNotes || sessionMetadata.weekday_note || null,
-      },
+      metadata: appointmentMetadata,
       source_key: sourceKey,
     });
 
@@ -2105,12 +2206,22 @@ export default function PlanosConfig() {
         const sessionUpdate = applied.sessionUpdates.find((update) => update.id === session.id);
         return { ...session, ...(sessionUpdate || {}) };
       });
+    const resolvedSessionUnitPrice = applied.billing?.unit_price
+      || resolvePackageSessionUnitPrice({
+        packageRecord,
+        sessions: monthSessions,
+        monthKey,
+      });
 
     for (const session of monthSessions) {
       if (!session.invoice_id && billingRecord?.id) {
         await PackageSession.update(session.id, { invoice_id: billingRecord.id });
       }
-      await ensureAppointmentForPackageSession({ ...session, invoice_id: billingRecord?.id || session.invoice_id }, packageRecord);
+      await ensureAppointmentForPackageSession(
+        { ...session, invoice_id: billingRecord?.id || session.invoice_id },
+        packageRecord,
+        resolvedSessionUnitPrice,
+      );
     }
 
     await ensureReceivableForPackageBilling(packageRecord, applied.billing, billingRecord);

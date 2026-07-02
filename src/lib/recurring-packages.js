@@ -2,6 +2,11 @@ const PRE_CANCELLED_STATUSES = new Set(["cancelada_com_credito", "cancelada_sem_
 const CONSUMED_STATUSES = new Set(["realizada", "falta_cobrada", "cancelada_sem_credito"]);
 const CREDITABLE_UNUSED_STATUSES = new Set(["prevista", "agendada", "vencida_nao_utilizada"]);
 const MONTHLY_WEEK_RULES = new Set(["ultima_semana_mes", "primeira_semana", "segunda_semana", "quarta_semana"]);
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+function roundCurrency(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
 
 export const SESSION_STATUSES = {
   PREVISTA: "prevista",
@@ -102,6 +107,10 @@ function normalizeDateSet(values = []) {
   return new Set((Array.isArray(values) ? values : []).map(formatDateKey).filter(Boolean));
 }
 
+function normalizeDateList(values = []) {
+  return [...new Set((Array.isArray(values) ? values : []).map(formatDateKey).filter(Boolean))].sort();
+}
+
 function isPaused(dateKey, pauseRanges = []) {
   const date = parseDateKey(dateKey);
   if (!date) return false;
@@ -137,6 +146,25 @@ function getFrequencyMode(frequency) {
   return "semanal";
 }
 
+function getDayCareBaselineSessionCount(frequency) {
+  switch (String(frequency || "").trim()) {
+    case "1x_semana":
+      return 4;
+    case "2x_semana":
+      return 8;
+    case "3x_semana":
+      return 12;
+    case "4x_semana":
+      return 16;
+    case "5x_semana":
+      return 20;
+    case "quinzenal":
+      return 2;
+    default:
+      return 0;
+  }
+}
+
 function getPlanOperationalConfig(packageRecord) {
   const metadata = normalizeMetadata(packageRecord?.metadata);
   return normalizeMetadata(metadata?.plan_metadata?.operational_config || metadata?.operational_config || {});
@@ -168,6 +196,50 @@ function filterDatesByScheduleRule(dates = [], rule = "", month = null) {
       default:
         return true;
     }
+  });
+}
+
+function getDateDifferenceInDays(leftDate, rightDate) {
+  const left = parseDateKey(leftDate);
+  const right = parseDateKey(rightDate);
+  if (!left || !right) return Number.NaN;
+  return Math.round((left.getTime() - right.getTime()) / DAY_IN_MS);
+}
+
+function getQuinzenalAnchorDate(packageRecord, weekdays = []) {
+  const metadata = normalizeMetadata(packageRecord?.metadata);
+  const planMetadata = normalizeMetadata(metadata?.plan_metadata);
+  const anchorCandidates = normalizeDateList([
+    ...(Array.isArray(planMetadata?.first_month_real_dates) ? planMetadata.first_month_real_dates : []),
+    ...(Array.isArray(metadata?.first_month_real_dates) ? metadata.first_month_real_dates : []),
+  ]);
+  const normalizedWeekdays = normalizeWeekdays(weekdays, packageRecord?.weekday);
+  const baseAnchor = parseDateKey(anchorCandidates[0] || packageRecord?.start_date);
+  if (!baseAnchor) return null;
+  if (normalizedWeekdays.length === 0 || normalizedWeekdays.includes(baseAnchor.getDay())) {
+    return baseAnchor;
+  }
+
+  for (let offset = 1; offset <= 14; offset += 1) {
+    const candidate = new Date(baseAnchor);
+    candidate.setDate(candidate.getDate() + offset);
+    if (normalizedWeekdays.includes(candidate.getDay())) {
+      return parseDateKey(candidate);
+    }
+  }
+
+  return baseAnchor;
+}
+
+function filterQuinzenalDates(dates = [], packageRecord, weekdays = []) {
+  if (!Array.isArray(dates) || dates.length === 0) return [];
+
+  const anchorDate = getQuinzenalAnchorDate(packageRecord, weekdays);
+  if (!anchorDate) return dates;
+
+  return dates.filter((dateKey) => {
+    const differenceInDays = getDateDifferenceInDays(dateKey, anchorDate);
+    return Number.isFinite(differenceInDays) && differenceInDays >= 0 && differenceInDays % 14 === 0;
   });
 }
 
@@ -304,7 +376,7 @@ export function getPackageScheduledDates(packageRecord, monthKey, options = {}) 
   const ruledDates = filterDatesByScheduleRule(dates, scheduleRule, month);
 
   if (scheduleRule === "quinzenal" || frequencyMode === "quinzenal") {
-    return ruledDates.filter((_, index) => index % 2 === 0);
+    return filterQuinzenalDates(ruledDates, packageRecord, weekdays);
   }
 
   if (frequencyMode === "mensal") {
@@ -398,6 +470,60 @@ export function getBillableSessions(sessions = [], monthKey = "") {
     .filter((session) => !session.covered_by_credit);
 }
 
+export function getPackageMonthlyValue(packageRecord) {
+  const metadata = normalizeMetadata(packageRecord?.metadata);
+  const planMetadata = normalizeMetadata(metadata?.plan_metadata);
+  const candidates = [
+    packageRecord?.monthly_value,
+    packageRecord?.valor_mensal,
+    metadata?.monthly_value,
+    metadata?.plan_monthly_value,
+    metadata?.plan_monthly_value_snapshot,
+    planMetadata?.monthly_value,
+    planMetadata?.valor_mensal,
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = Number(candidate || 0);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return roundCurrency(parsed);
+    }
+  }
+
+  const baselineUnitPrice = Math.max(0, Number(packageRecord?.price_per_session || 0) || 0);
+  if (!baselineUnitPrice) return 0;
+
+  if (packageRecord?.service_id === "day_care") {
+    const baselineSessionCount = getDayCareBaselineSessionCount(packageRecord?.frequency);
+    if (baselineSessionCount > 0) {
+      return roundCurrency(baselineUnitPrice * baselineSessionCount);
+    }
+  }
+
+  return roundCurrency(baselineUnitPrice);
+}
+
+export function resolvePackageSessionUnitPrice({ packageRecord, sessions = [], month, year, monthKey = "" } = {}) {
+  const resolvedMonthKey = monthKey || buildMonthKey(month, year);
+  const monthlyValue = getPackageMonthlyValue(packageRecord);
+  if (monthlyValue <= 0) {
+    return Math.max(0, Number(packageRecord?.price_per_session || 0) || 0);
+  }
+
+  const monthSessions = (sessions || [])
+    .filter((session) => !session.deleted_at)
+    .filter((session) => session.package_id === packageRecord?.id)
+    .filter((session) => !resolvedMonthKey || session.billing_month === resolvedMonthKey);
+  const billableSessions = getBillableSessions(monthSessions, resolvedMonthKey);
+  const divisor = billableSessions.length || monthSessions.length;
+
+  if (divisor <= 0) {
+    return Math.max(0, Number(packageRecord?.price_per_session || 0) || 0);
+  }
+
+  return roundCurrency(monthlyValue / divisor);
+}
+
 export function calculateMonthlyBilling({ packageRecord, sessions = [], credits = [], month, year, referenceDate = new Date() } = {}) {
   const monthKey = buildMonthKey(month, year);
   const monthSessions = (sessions || [])
@@ -411,8 +537,14 @@ export function calculateMonthlyBilling({ packageRecord, sessions = [], credits 
   const creditEligibleSessions = getBillableSessions(monthSessions, monthKey);
   const creditsUsed = Math.min(availableCredits.length, creditEligibleSessions.length);
   const chargedSessions = Math.max(0, creditEligibleSessions.length - creditsUsed);
-  const unitPrice = Math.max(0, Number(packageRecord?.price_per_session || 0) || 0);
-  const totalAmount = Number((chargedSessions * unitPrice).toFixed(2));
+  const monthlyValue = getPackageMonthlyValue(packageRecord);
+  const divisor = creditEligibleSessions.length;
+  const unitPrice = divisor > 0
+    ? roundCurrency(monthlyValue / divisor)
+    : Math.max(0, Number(packageRecord?.price_per_session || 0) || 0);
+  const totalAmount = divisor > 0 && chargedSessions > 0
+    ? roundCurrency(monthlyValue * (chargedSessions / divisor))
+    : 0;
 
   return {
     package_id: packageRecord?.id || null,
@@ -423,6 +555,7 @@ export function calculateMonthlyBilling({ packageRecord, sessions = [], credits 
     pre_cancelled_sessions: preCancelledSessions,
     credits_used: creditsUsed,
     charged_sessions: chargedSessions,
+    monthly_value: monthlyValue,
     unit_price: unitPrice,
     total_amount: totalAmount,
     creditEligibleSessions,

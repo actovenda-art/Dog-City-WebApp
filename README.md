@@ -9,6 +9,12 @@ npm install
 npm run dev
 ```
 
+## Ambiente oficial do frontend
+
+- O arquivo oficial versionado do frontend e `.env.local`.
+- Esse arquivo deve conter apenas variaveis publicas do cliente, sempre com prefixo `VITE_`.
+- Segredos reais devem ficar fora do frontend, em variaveis do provedor de deploy, Supabase secrets ou servicos de backend.
+
 ## Build
 
 ```bash

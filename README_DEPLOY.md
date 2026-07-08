@@ -5,8 +5,10 @@ Passos recomendados:
 
 1. Suba o repositorio para o GitHub.
 2. Crie o projeto no Supabase e copie `Project URL` e `anon key`.
-3. Configure `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` no provedor de deploy.
-4. No Vercel, use:
+3. O arquivo oficial versionado do frontend e `.env.local`, usado como base de configuracao do cliente.
+4. Configure no provedor de deploy os mesmos valores publicos do `.env.local` quando necessario.
+5. Nunca coloque secrets de servidor, tokens privados ou `service_role` no `.env.local` ou em variaveis `VITE_*`.
+6. No Vercel, use:
    - Build Command: `npm run build`
    - Output Directory: `dist`
 

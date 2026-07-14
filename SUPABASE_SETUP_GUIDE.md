@@ -13,6 +13,10 @@
 
 ## Variaveis de ambiente
 
+O arquivo oficial versionado do frontend e `.env.local`.
+Mantenha nele somente variaveis publicas do cliente.
+Qualquer secret real deve ficar no Supabase, no provedor de deploy ou em backend dedicado.
+
 ```env
 VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_ANON_KEY=sua-chave-anonima

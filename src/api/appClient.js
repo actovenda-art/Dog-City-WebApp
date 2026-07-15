@@ -258,7 +258,7 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
   const lancamentoRlsBlocked = error.code === '42501'
     && rawMessage.toLowerCase().includes('lancamento');
 
-  const message = missingLancamentoColumn
+  const technicalMessage = missingLancamentoColumn
     ? `${rawMessage}. Execute os arquivos supabase-schema-lancamento-contas-pagar.sql e supabase-schema-controle-gerencial.sql no Supabase.`
     : missingDogColumn
       ? `${rawMessage}. Execute o arquivo supabase-schema-dogs-extended-profile.sql no Supabase.`
@@ -277,8 +277,13 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
     : lancamentoRlsBlocked
       ? `${rawMessage}. Execute o arquivo supabase-policies-finance-unlock.sql no Supabase.`
       : rawMessage;
+  const isProd = typeof import.meta !== 'undefined' && import.meta.env?.PROD === true;
+  const userMessage = isProd
+    ? 'Ocorreu um erro inesperado. Tente novamente ou entre em contato com o suporte.'
+    : technicalMessage;
+  if (isProd) console.error('[AppError]', technicalMessage);
 
-  const wrapped = new Error(message);
+  const wrapped = new Error(userMessage);
   if (error.code) wrapped.code = error.code;
   wrapped.cause = error;
   return wrapped;

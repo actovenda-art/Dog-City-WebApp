@@ -42,3 +42,9 @@ dist-ssr
 
 .env
 !.env.local
+.env.codexmock
+.env.*.local
+.env.local
+.tmp-playwright/
+tmp_*.sql
+temp_*.sql

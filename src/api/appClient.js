@@ -322,8 +322,24 @@ function getMockScopedUnitIds() {
   return selectedUnitIds.length > 0 ? selectedUnitIds : ['empresa_demo'];
 }
 
+function normalizeProfileCpf(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 11 ? digits : '';
+}
+
+function createDuplicateProfileCpfError(entityLabel) {
+  const error = new Error(`Este CPF já está cadastrado para outro ${entityLabel} nesta unidade.`);
+  error.code = 'PROFILE_DUPLICATE_CPF';
+  return error;
+}
+
 function createMockEntity(name, options = {}) {
-  const { unitScoped = false } = options;
+  const {
+    unitScoped = false,
+    softDelete = false,
+    documentField = '',
+    entityLabel = 'perfil',
+  } = options;
   const resolveMockUnitCode = (item = {}) => {
     const explicitUnitCode = item?.empresa_codigo || item?.empresaCode || item?.unit_code || item?.unitCode;
     if (explicitUnitCode) return normalizeEntityUnitCode(explicitUnitCode);
@@ -436,8 +452,36 @@ function createMockEntity(name, options = {}) {
     };
   };
 
-  const getScopedMockItems = () => ensureMockEntityCodes(readStorage(name))
-    .filter((item) => !unitScoped || !item.empresa_id || getMockScopedUnitIds().includes(item.empresa_id));
+  const isRestorableProfile = (item) => {
+    if (!item?.deleted_at) return false;
+    if (!item?.deletion_expires_at) return true;
+    return new Date(item.deletion_expires_at).getTime() > Date.now();
+  };
+
+  const assertUniqueProfileCpf = (items, candidate, ignoredId = '') => {
+    if (!softDelete || !documentField) return;
+    const cpf = normalizeProfileCpf(candidate?.[documentField]);
+    if (!cpf) return;
+
+    const candidateUnitId = candidate?.empresa_id || (unitScoped ? getMockScopedUnitId() : '');
+    const duplicated = items.some((item) => (
+      item?.id !== ignoredId
+      && normalizeProfileCpf(item?.[documentField]) === cpf
+      && (!unitScoped || (item?.empresa_id || candidateUnitId) === candidateUnitId)
+      && (!item?.deleted_at || isRestorableProfile(item))
+    ));
+
+    if (duplicated) throw createDuplicateProfileCpfError(entityLabel);
+  };
+
+  const getScopedMockItems = ({ includeDeleted = false, onlyDeleted = false } = {}) => ensureMockEntityCodes(readStorage(name))
+    .filter((item) => !unitScoped || !item.empresa_id || getMockScopedUnitIds().includes(item.empresa_id))
+    .filter((item) => {
+      if (!softDelete) return true;
+      if (onlyDeleted) return isRestorableProfile(item);
+      if (includeDeleted) return true;
+      return !item?.deleted_at;
+    });
 
   return {
     list: (sort, limit) => Promise.resolve(
@@ -445,6 +489,9 @@ function createMockEntity(name, options = {}) {
     ),
     listAll: (sort, limit) => Promise.resolve(
       applyMockQueryOptions(getScopedMockItems(), { sort, limit }).data
+    ),
+    listDeleted: (sort = '-deleted_at', limit = 1000) => Promise.resolve(
+      applyMockQueryOptions(getScopedMockItems({ onlyDeleted: true }), { sort, limit }).data
     ),
     filter: (query = {}, sort, limit) => {
       const scopedQuery = { ...(query || {}) };
@@ -477,6 +524,7 @@ function createMockEntity(name, options = {}) {
       const items = ensureMockEntityCodes(readStorage(name));
       const item = { ...data };
       if (unitScoped && !item.empresa_id) item.empresa_id = getMockScopedUnitId();
+      assertUniqueProfileCpf(items, item);
       if (hasInternalEntityCodeConfig(name)) {
         item.codigo = getInternalEntityCode(item) || buildInternalEntityCode({
           entityName: name,
@@ -497,6 +545,7 @@ function createMockEntity(name, options = {}) {
       const idx = items.findIndex((item) => item.id === id);
       if (idx === -1) return Promise.reject(new Error('Not found'));
       const nextItem = { ...items[idx], ...data, updated_date: new Date().toISOString() };
+      assertUniqueProfileCpf(items, nextItem, id);
       if (hasInternalEntityCodeConfig(name)) {
         nextItem.codigo = getInternalEntityCode(items[idx]) || getInternalEntityCode(nextItem) || buildInternalEntityCode({
           entityName: name,
@@ -514,9 +563,46 @@ function createMockEntity(name, options = {}) {
       const items = ensureMockEntityCodes(readStorage(name));
       const idx = items.findIndex((item) => item.id === id);
       if (idx === -1) return Promise.reject(new Error('Not found'));
+
+      if (softDelete) {
+        const deletedAt = new Date();
+        items[idx] = {
+          ...items[idx],
+          ativo: false,
+          deleted_at: deletedAt.toISOString(),
+          deletion_expires_at: new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          updated_date: deletedAt.toISOString(),
+        };
+        writeStorage(name, items);
+        return Promise.resolve(items[idx]);
+      }
+
       const [removed] = items.splice(idx, 1);
       writeStorage(name, items);
       return Promise.resolve(removed);
+    },
+    restore: (id) => {
+      if (!softDelete) return Promise.reject(new Error('Esta entidade não permite restauração.'));
+      if (unitScoped) ensureSingleUnitWrite(name);
+      const items = ensureMockEntityCodes(readStorage(name));
+      const idx = items.findIndex((item) => item.id === id);
+      if (idx === -1) return Promise.reject(new Error('Perfil excluído não encontrado.'));
+      if (!isRestorableProfile(items[idx])) {
+        return Promise.reject(new Error('O prazo de 30 dias para desfazer esta exclusão terminou.'));
+      }
+
+      const restored = {
+        ...items[idx],
+        ativo: true,
+        deleted_at: null,
+        deletion_expires_at: null,
+        deleted_by: null,
+        updated_date: new Date().toISOString(),
+      };
+      assertUniqueProfileCpf(items, restored, id);
+      items[idx] = restored;
+      writeStorage(name, items);
+      return Promise.resolve(restored);
     },
   };
 }
@@ -536,7 +622,15 @@ const defaultEntities = {};
   'UserProfile', 'ContaReceber', 'Client', 'PedidoInterno',
   'CentroCusto',
 ].forEach((name) => {
-  defaultEntities[name] = createMockEntity(name, { unitScoped: UNIT_SCOPED_ENTITIES.has(name) });
+  const profileOptions = name === 'Responsavel'
+    ? { softDelete: true, documentField: 'cpf', entityLabel: 'Responsável' }
+    : name === 'Carteira' || name === 'Client'
+      ? { softDelete: true, documentField: 'cpf_cnpj', entityLabel: 'Responsável Financeiro' }
+      : {};
+  defaultEntities[name] = createMockEntity(name, {
+    unitScoped: UNIT_SCOPED_ENTITIES.has(name),
+    ...profileOptions,
+  });
 });
 
 function ensureMockRows(key, rows = []) {

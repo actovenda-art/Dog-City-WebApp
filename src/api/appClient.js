@@ -257,6 +257,8 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
   );
   const lancamentoRlsBlocked = error.code === '42501'
     && rawMessage.toLowerCase().includes('lancamento');
+  const duplicateProfileCpf = error.code === 'PROFILE_DUPLICATE_CPF'
+    || /cpf já está cadastrado para outro|profile_duplicate_cpf/i.test(rawMessage);
 
   const technicalMessage = missingLancamentoColumn
     ? `${rawMessage}. Execute os arquivos supabase-schema-lancamento-contas-pagar.sql e supabase-schema-controle-gerencial.sql no Supabase.`
@@ -278,9 +280,11 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
       ? `${rawMessage}. Execute o arquivo supabase-policies-finance-unlock.sql no Supabase.`
       : rawMessage;
   const isProd = typeof import.meta !== 'undefined' && import.meta.env?.PROD === true;
-  const userMessage = isProd
-    ? 'Ocorreu um erro inesperado. Tente novamente ou entre em contato com o suporte.'
-    : technicalMessage;
+  const userMessage = duplicateProfileCpf
+    ? rawMessage.split(' | ')[0]
+    : isProd
+      ? 'Ocorreu um erro inesperado. Tente novamente ou entre em contato com o suporte.'
+      : technicalMessage;
   if (isProd) console.error('[AppError]', technicalMessage);
 
   const wrapped = new Error(userMessage);
@@ -5123,6 +5127,8 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       ascending = undefined,
       limit = undefined,
       offset = 0,
+      includeDeleted = false,
+      onlyDeleted = false,
     } = options || {};
 
     if (entityOptions.unitScoped && !Object.prototype.hasOwnProperty.call(eq || {}, 'empresa_id') && !Object.prototype.hasOwnProperty.call(inFilters || {}, 'empresa_id')) {
@@ -5130,6 +5136,14 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       const unitId = unitIds[0] || await resolveScopedUnitId();
       if (unitIds.length > 1) query = query.in('empresa_id', unitIds);
       else if (unitId) query = query.eq('empresa_id', unitId);
+    }
+
+    if (entityOptions.softDelete) {
+      if (onlyDeleted) {
+        query = query.not('deleted_at', 'is', null).gt('deletion_expires_at', new Date().toISOString());
+      } else if (!includeDeleted) {
+        query = query.is('deleted_at', null);
+      }
     }
 
     Object.entries(eq || {}).forEach(([field, value]) => {
@@ -5186,6 +5200,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     unitScoped: options.unitScoped || false,
     list: async (sort, limit) => {
       let query = supabase.from(table).select('*');
+      if (options.softDelete) query = query.is('deleted_at', null);
       if (options.unitScoped) {
         const unitIds = getSelectedScopedUnitIds();
         const unitId = unitIds[0] || await resolveScopedUnitId();
@@ -5208,6 +5223,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
 
       while (results.length < maxRows) {
         let query = supabase.from(table).select('*');
+        if (options.softDelete) query = query.is('deleted_at', null);
         if (options.unitScoped) {
           const unitIds = getSelectedScopedUnitIds();
           const unitId = unitIds[0] || await resolveScopedUnitId();
@@ -5232,8 +5248,33 @@ if (SUPABASE_URL && SUPABASE_ANON) {
 
       return results;
     },
+    listDeleted: async (sort = '-deleted_at', limit = 1000) => {
+      if (!options.softDelete) return [];
+      let query = supabase
+        .from(table)
+        .select('*')
+        .not('deleted_at', 'is', null)
+        .gt('deletion_expires_at', new Date().toISOString());
+      if (options.unitScoped) {
+        const unitIds = getSelectedScopedUnitIds();
+        const unitId = unitIds[0] || await resolveScopedUnitId();
+        if (unitIds.length > 1) query = query.in('empresa_id', unitIds);
+        else if (unitId) query = query.eq('empresa_id', unitId);
+      }
+      if (sort && typeof sort === 'string') {
+        const field = sort.replace(/^-/, '');
+        query = query.order(field, { ascending: !sort.startsWith('-') });
+      }
+      if (typeof limit === 'number') query = query.limit(limit);
+      const { data, error } = await query;
+      if (error) throw toAppError(error, `Erro ao listar perfis excluídos em ${table}.`);
+      return data || [];
+    },
     filter: async (queryObj = {}, sort, limit) => {
       let query = supabase.from(table).select('*');
+      if (options.softDelete && !Object.prototype.hasOwnProperty.call(queryObj || {}, 'deleted_at')) {
+        query = query.is('deleted_at', null);
+      }
       if (queryObj && Object.keys(queryObj).length) query = query.match(queryObj);
       if (options.unitScoped && !Object.prototype.hasOwnProperty.call(queryObj || {}, 'empresa_id')) {
         const unitIds = getSelectedScopedUnitIds();
@@ -5321,6 +5362,28 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     },
     delete: async (id) => {
       if (options.unitScoped) ensureSingleUnitWrite(table);
+      if (options.softDelete) {
+        const deletedAt = new Date();
+        const { data: authData } = await supabase.auth.getUser();
+        const deletionPayload = {
+          ativo: false,
+          deleted_at: deletedAt.toISOString(),
+          deletion_expires_at: new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          deleted_by: authData?.user?.id || null,
+          updated_date: deletedAt.toISOString(),
+        };
+        let query = supabase.from(table).update(deletionPayload).eq('id', id).is('deleted_at', null);
+        if (options.unitScoped) {
+          const unitId = await resolveScopedUnitId();
+          if (unitId) query = query.eq('empresa_id', unitId);
+        }
+        const { data, error } = await query.select();
+        if (error) throw toAppError(error, `Erro ao excluir perfil em ${table}.`);
+        const deletedRows = Array.isArray(data) ? data.filter(Boolean) : (data ? [data] : []);
+        if (!deletedRows.length) throw new Error('O perfil não foi excluído porque já estava removido ou está fora da unidade ativa.');
+        return deletedRows[0];
+      }
+
       let query = supabase.from(table).delete().eq('id', id);
       if (options.unitScoped) {
         const unitId = await resolveScopedUnitId();
@@ -5338,6 +5401,32 @@ if (SUPABASE_URL && SUPABASE_ANON) {
         throw noRowsError;
       }
       return deletedRows[0];
+    },
+    restore: async (id) => {
+      if (!options.softDelete) throw new Error('Esta entidade não permite restauração.');
+      if (options.unitScoped) ensureSingleUnitWrite(table);
+      const restorePayload = {
+        ativo: true,
+        deleted_at: null,
+        deletion_expires_at: null,
+        deleted_by: null,
+        updated_date: new Date().toISOString(),
+      };
+      let query = supabase
+        .from(table)
+        .update(restorePayload)
+        .eq('id', id)
+        .not('deleted_at', 'is', null)
+        .gt('deletion_expires_at', new Date().toISOString());
+      if (options.unitScoped) {
+        const unitId = await resolveScopedUnitId();
+        if (unitId) query = query.eq('empresa_id', unitId);
+      }
+      const { data, error } = await query.select();
+      if (error) throw toAppError(error, `Erro ao restaurar perfil em ${table}.`);
+      const restoredRows = Array.isArray(data) ? data.filter(Boolean) : (data ? [data] : []);
+      if (!restoredRows.length) throw new Error('O prazo de 30 dias para desfazer esta exclusão terminou.');
+      return restoredRows[0];
     },
   });
 
@@ -5397,7 +5486,15 @@ if (SUPABASE_URL && SUPABASE_ANON) {
   const supabaseEntities = {};
   Object.keys(entityToTable).forEach((entityName) => {
     const table = entityToTable[entityName] || toSnake(entityName);
-    supabaseEntities[entityName] = createSupabaseEntity(table, { unitScoped: UNIT_SCOPED_ENTITIES.has(entityName) });
+    const profileOptions = entityName === 'Responsavel'
+      ? { softDelete: true, documentField: 'cpf', entityLabel: 'Responsável' }
+      : entityName === 'Carteira' || entityName === 'Client'
+        ? { softDelete: true, documentField: 'cpf_cnpj', entityLabel: 'Responsável Financeiro' }
+        : {};
+    supabaseEntities[entityName] = createSupabaseEntity(table, {
+      unitScoped: UNIT_SCOPED_ENTITIES.has(entityName),
+      ...profileOptions,
+    });
   });
 
   const supabaseFunctions = {

@@ -42,8 +42,10 @@ import {
   FileText,
   Link2,
   Pencil,
+  RotateCcw,
   Save,
   ShieldCheck,
+  Trash2,
   Upload,
   Users,
   Wallet,
@@ -409,6 +411,19 @@ function ProfileDetailField({ label, value, className = "" }) {
   );
 }
 
+function formatProfileDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 ProfileLineHeader.propTypes = {
   columns: PropTypes.string.isRequired,
   children: PropTypes.node.isRequired,
@@ -600,6 +615,8 @@ export default function Perfis() {
   const [dogs, setDogs] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
+  const [deletedResponsaveis, setDeletedResponsaveis] = useState([]);
+  const [deletedCarteiras, setDeletedCarteiras] = useState([]);
   const [contasReceber, setContasReceber] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -618,6 +635,9 @@ export default function Perfis() {
   const [searchDogCart, setSearchDogCart] = useState("");
   const [linkDialog, setLinkDialog] = useState(EMPTY_LINK_DIALOG_STATE);
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [deletedProfilesOpen, setDeletedProfilesOpen] = useState(false);
+  const [deleteProfileTarget, setDeleteProfileTarget] = useState(null);
+  const [isManagingProfile, setIsManagingProfile] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -627,10 +647,12 @@ export default function Perfis() {
     if (showLoader) setIsLoading(true);
 
     try {
-      const [dogsData, responsaveisData, carteirasData, contasData, me] = await Promise.all([
+      const [dogsData, responsaveisData, carteirasData, deletedResponsaveisData, deletedCarteirasData, contasData, me] = await Promise.all([
         Dog.list("-created_date", 1000),
         Responsavel.list("-created_date", 1000),
         Carteira.list("-created_date", 1000),
+        Responsavel.listDeleted("-deleted_at", 1000),
+        Carteira.listDeleted("-deleted_at", 1000),
         ContaReceber.listAll ? ContaReceber.listAll("-created_date", 1000, 10000) : ContaReceber.list("-created_date", 5000),
         User.me().catch(() => null),
       ]);
@@ -638,6 +660,8 @@ export default function Perfis() {
       setDogs(dogsData || []);
       setResponsaveis(responsaveisData || []);
       setCarteiras(carteirasData || []);
+      setDeletedResponsaveis(deletedResponsaveisData || []);
+      setDeletedCarteiras(deletedCarteirasData || []);
       setContasReceber(contasData || []);
       setCurrentUser(me);
       return true;
@@ -808,6 +832,20 @@ export default function Perfis() {
   );
 
   const totalProfiles = dogs.length + responsaveis.length + carteiras.length;
+  const deletedProfiles = useMemo(() => [
+    ...deletedResponsaveis.map((item) => ({
+      ...item,
+      profileType: "responsavel",
+      profileLabel: "Responsável",
+      profileName: item.nome_completo || "Responsável sem nome",
+    })),
+    ...deletedCarteiras.map((item) => ({
+      ...item,
+      profileType: "carteira",
+      profileLabel: "Responsável Financeiro",
+      profileName: item.nome_razao_social || "Responsável financeiro sem nome",
+    })),
+  ].sort((left, right) => new Date(right.deleted_at || 0) - new Date(left.deleted_at || 0)), [deletedResponsaveis, deletedCarteiras]);
   const selectedResponsavelDogIds = useMemo(
     () => getLinkedDogIds(responsavelForm),
     [responsavelForm]
@@ -974,8 +1012,12 @@ export default function Perfis() {
       }
 
       if (importedResponsavel.acao === "delete") {
-        await Responsavel.delete(existingResponsavel.id);
+        const deletedResponsavel = await Responsavel.delete(existingResponsavel.id);
         setResponsaveis((current) => current.filter((item) => item.id !== existingResponsavel.id));
+        setDeletedResponsaveis((current) => [
+          deletedResponsavel,
+          ...current.filter((item) => item.id !== existingResponsavel.id),
+        ]);
         closeResponsavelDetails();
         setPageFeedback({
           tone: "success",
@@ -1221,6 +1263,88 @@ export default function Perfis() {
     setViewingCarteiraId("");
   };
 
+  const requestProfileDeletion = (type, profile) => {
+    if (!profile?.id) return;
+    setDeleteProfileTarget({
+      type,
+      id: profile.id,
+      name: type === "responsavel"
+        ? profile.nome_completo || "Responsável"
+        : profile.nome_razao_social || "Responsável Financeiro",
+    });
+  };
+
+  const handleDeleteProfile = async () => {
+    if (!deleteProfileTarget?.id) return;
+    setIsManagingProfile(true);
+
+    try {
+      const isResponsavel = deleteProfileTarget.type === "responsavel";
+      const entity = isResponsavel ? Responsavel : Carteira;
+      const deletedProfile = await entity.delete(deleteProfileTarget.id);
+
+      if (isResponsavel) {
+        setResponsaveis((current) => current.filter((item) => item.id !== deleteProfileTarget.id));
+        setDeletedResponsaveis((current) => [deletedProfile, ...current.filter((item) => item.id !== deletedProfile.id)]);
+        closeResponsavelDetails();
+      } else {
+        setCarteiras((current) => current.filter((item) => item.id !== deleteProfileTarget.id));
+        setDeletedCarteiras((current) => [deletedProfile, ...current.filter((item) => item.id !== deletedProfile.id)]);
+        closeCarteiraDetails();
+      }
+
+      setDeleteProfileTarget(null);
+      setPageFeedback({
+        tone: "success",
+        title: "Perfil excluído",
+        message: "O perfil saiu das telas operacionais. A exclusão pode ser desfeita em Perfis excluídos durante 30 dias.",
+      });
+    } catch (error) {
+      console.error("Erro ao excluir perfil:", error);
+      setPageFeedback({
+        tone: "error",
+        title: "Não foi possível excluir o perfil",
+        message: error?.message || "Tente novamente em instantes.",
+      });
+    } finally {
+      setIsManagingProfile(false);
+    }
+  };
+
+  const handleRestoreProfile = async (profile) => {
+    if (!profile?.id || !profile?.profileType) return;
+    setIsManagingProfile(true);
+
+    try {
+      const isResponsavel = profile.profileType === "responsavel";
+      const entity = isResponsavel ? Responsavel : Carteira;
+      const restoredProfile = await entity.restore(profile.id);
+
+      if (isResponsavel) {
+        setDeletedResponsaveis((current) => current.filter((item) => item.id !== profile.id));
+        setResponsaveis((current) => [restoredProfile, ...current.filter((item) => item.id !== profile.id)]);
+      } else {
+        setDeletedCarteiras((current) => current.filter((item) => item.id !== profile.id));
+        setCarteiras((current) => [restoredProfile, ...current.filter((item) => item.id !== profile.id)]);
+      }
+
+      setPageFeedback({
+        tone: "success",
+        title: "Perfil restaurado",
+        message: `${profile.profileName} voltou a aparecer nas telas operacionais.`,
+      });
+    } catch (error) {
+      console.error("Erro ao restaurar perfil:", error);
+      setPageFeedback({
+        tone: "error",
+        title: "Não foi possível restaurar o perfil",
+        message: error?.message || "Tente novamente em instantes.",
+      });
+    } finally {
+      setIsManagingProfile(false);
+    }
+  };
+
   const openResponsavelEditor = (responsavelId) => {
     const target = responsaveis.find((item) => item.id === responsavelId);
     if (!target) return;
@@ -1326,6 +1450,20 @@ export default function Perfis() {
     setIsSaving(true);
 
     try {
+      const normalizedCpf = String(responsavelForm.cpf || "").replace(/\D/g, "");
+      const duplicatedCpf = responsaveis.some((item) => (
+        item.id !== editingResponsavelId
+        && String(item.cpf || "").replace(/\D/g, "") === normalizedCpf
+      ));
+      if (normalizedCpf && duplicatedCpf) {
+        setEditorFeedback({
+          tone: "error",
+          title: "CPF já cadastrado",
+          message: "Este CPF já está vinculado a outro Responsável nesta unidade.",
+        });
+        return;
+      }
+
       const cpfValidation = await validateCpfWithGov({
         cpf: responsavelForm.cpf,
         fullName: formattedName,
@@ -1397,6 +1535,19 @@ export default function Perfis() {
 
     try {
       const cpfOrCnpjDigits = String(carteiraForm.cpf_cnpj || "").replace(/\D/g, "");
+
+      const duplicatedCpf = cpfOrCnpjDigits.length === 11 && carteiras.some((item) => (
+        item.id !== editingCarteiraId
+        && String(item.cpf_cnpj || "").replace(/\D/g, "") === cpfOrCnpjDigits
+      ));
+      if (duplicatedCpf) {
+        setEditorFeedback({
+          tone: "error",
+          title: "CPF já cadastrado",
+          message: "Este CPF já está vinculado a outro Responsável Financeiro nesta unidade.",
+        });
+        return;
+      }
 
       if (cpfOrCnpjDigits.length === 11) {
         const cpfValidation = await validateCpfWithGov({
@@ -1573,6 +1724,14 @@ export default function Perfis() {
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <Button
+              variant="outline"
+              onClick={() => setDeletedProfilesOpen(true)}
+              className="h-9 w-full rounded-full border-gray-200 px-3 text-xs text-gray-700 hover:bg-gray-100 sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Perfis excluídos{deletedProfiles.length ? ` (${deletedProfiles.length})` : ""}
+            </Button>
             <Link to={createPageUrl("Cadastro")}>
               <Button variant="outline" className="h-9 w-full rounded-full border-blue-200 px-3 text-xs text-blue-700 hover:bg-blue-50 sm:h-10 sm:w-auto sm:px-4 sm:text-sm">
                 <FileText className="mr-2 h-4 w-4" />
@@ -1938,6 +2097,14 @@ export default function Perfis() {
                     <Pencil className="mr-2 h-4 w-4" />
                     Editar
                   </Button>
+                  <Button
+                    variant="outline"
+                    className="justify-start border-red-200 text-red-700 hover:bg-red-50 sm:col-span-2 xl:col-span-1"
+                    onClick={() => requestProfileDeletion("responsavel", viewingResponsavel)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Excluir perfil
+                  </Button>
                 </div>
               </div>
 
@@ -2062,6 +2229,14 @@ export default function Perfis() {
               <DialogFooter className="border-t border-gray-100 px-5 py-4 sm:px-6">
                 <Button variant="outline" onClick={closeCarteiraDetails} className="w-full sm:w-auto">Fechar</Button>
                 <Button
+                  variant="outline"
+                  className="w-full border-red-200 text-red-700 hover:bg-red-50 sm:w-auto"
+                  onClick={() => requestProfileDeletion("carteira", viewingCarteira)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Excluir perfil
+                </Button>
+                <Button
                   className="w-full sm:w-auto"
                   onClick={() => {
                     closeCarteiraDetails();
@@ -2074,6 +2249,72 @@ export default function Perfis() {
               </DialogFooter>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deletedProfilesOpen} onOpenChange={setDeletedProfilesOpen}>
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Perfis excluídos</DialogTitle>
+            <DialogDescription>
+              Perfis removidos deixam de aparecer na operação imediatamente e podem ser restaurados durante 30 dias.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deletedProfiles.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-gray-200 px-5 py-10 text-center">
+              <p className="text-sm font-semibold text-gray-900">Nenhum perfil no período de recuperação</p>
+              <p className="mt-1 text-sm text-gray-500">Quando um perfil for excluído, ele ficará disponível aqui por até 30 dias.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200">
+              {deletedProfiles.map((profile) => (
+                <div key={`${profile.profileType}-${profile.id}`} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-gray-900">{profile.profileName}</p>
+                      <Badge variant="outline" className="text-[10px]">{profile.profileLabel}</Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">Excluído em {formatProfileDate(profile.deleted_at)}</p>
+                    <p className="mt-0.5 text-xs font-medium text-amber-700">Desfazer até {formatProfileDate(profile.deletion_expires_at)}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleRestoreProfile(profile)}
+                    disabled={isManagingProfile}
+                    className="w-full border-emerald-200 text-emerald-700 hover:bg-emerald-50 sm:w-auto"
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Desfazer exclusão
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletedProfilesOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteProfileTarget)} onOpenChange={(open) => !open && !isManagingProfile && setDeleteProfileTarget(null)}>
+        <DialogContent className="w-[94vw] max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Excluir este perfil?</DialogTitle>
+            <DialogDescription>
+              {deleteProfileTarget?.name} deixará de aparecer em cadastros, vínculos e telas operacionais. O histórico relacionado será preservado e a exclusão poderá ser desfeita durante 30 dias.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteProfileTarget(null)} disabled={isManagingProfile}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteProfile} disabled={isManagingProfile}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              {isManagingProfile ? "Excluindo..." : "Excluir perfil"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -205,6 +205,11 @@ Arquivos financeiros recentes de referencia:
 - `supabase-test-finance-wallet-*.sql`
 - `supabase-audit-finance-wallet-*.sql`
 
+Ciclo de vida dos perfis de clientes:
+
+- `supabase/supabase-schema-profile-lifecycle.sql`: exclusao logica de Responsaveis e Responsaveis Financeiros, recuperacao por 30 dias e unicidade de CPF por categoria/unidade
+- `supabase/supabase-test-profile-lifecycle.sql`: regressao transacional de duplicidade, reserva do CPF durante a recuperacao, restauracao e expiracao do prazo
+
 ## Edge Functions Supabase
 
 Functions presentes em [`supabase/functions/`](./supabase/functions):
@@ -302,4 +307,3 @@ Se voce esta chegando agora, comece por estes arquivos:
 - nao subir segredo real para o frontend
 - nao aplicar SQL destrutivo sem validacao explicita
 - tratar `README`, SQL e docs como parte do produto, nao como acessorios
-

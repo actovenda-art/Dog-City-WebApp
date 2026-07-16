@@ -329,6 +329,40 @@ function withSchemaHint(error: unknown, fallback: string) {
   return message || fallback;
 }
 
+function isDuplicateProfileCpfError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /PROFILE_DUPLICATE_CPF|CPF já está cadastrado para outro/i.test(message);
+}
+
+async function ensureProfileCpfAvailable(
+  table: "responsavel" | "carteira",
+  documentField: "cpf" | "cpf_cnpj",
+  empresaId: string,
+  documentValue: unknown,
+  profileLabel: string,
+) {
+  const cpf = normalizeCpf(documentValue);
+  if (cpf.length !== 11) return;
+
+  const { data, error } = await admin
+    .from(table)
+    .select(`id, ${documentField}, deleted_at, deletion_expires_at`)
+    .eq("empresa_id", empresaId);
+
+  if (error) throw error;
+
+  const now = Date.now();
+  const duplicated = (data || []).some((item) => {
+    if (normalizeCpf(item?.[documentField]) !== cpf) return false;
+    if (!item?.deleted_at) return true;
+    return !item?.deletion_expires_at || new Date(item.deletion_expires_at).getTime() > now;
+  });
+
+  if (duplicated) {
+    throw new Error(`Este CPF já está cadastrado para outro ${profileLabel} nesta unidade. PROFILE_DUPLICATE_CPF`);
+  }
+}
+
 function getCpfLightConfig() {
   return {
     endpoint: Deno.env.get("CPF_LIGHT_BASE_URL")
@@ -593,6 +627,7 @@ async function loadResponsavelById(responsavelId: string, empresaId: string) {
     .select("id, empresa_id, nome_completo, como_gostaria_de_ser_chamado, cpf, celular, celular_alternativo, email")
     .eq("id", responsavelId)
     .eq("empresa_id", empresaId)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (error?.message?.includes("como_gostaria_de_ser_chamado")) {
@@ -601,6 +636,7 @@ async function loadResponsavelById(responsavelId: string, empresaId: string) {
       .select("id, empresa_id, nome_completo, cpf, celular, celular_alternativo, email")
       .eq("id", responsavelId)
       .eq("empresa_id", empresaId)
+      .is("deleted_at", null)
       .maybeSingle();
     data = fallbackResult.data;
     error = fallbackResult.error;
@@ -619,6 +655,7 @@ async function loadCarteiraById(carteiraId: string, empresaId: string) {
     .select("id, empresa_id, nome_razao_social, cpf_cnpj, celular, email, cep, numero_residencia, street, neighborhood, city, state, vencimento_planos, contato_orcamentos")
     .eq("id", carteiraId)
     .eq("empresa_id", empresaId)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (error || !data) {
@@ -634,6 +671,7 @@ async function appendDogsToExistingRecord(table: "responsavel" | "carteira", rec
     .select(DOG_SLOT_SELECT)
     .eq("id", recordId)
     .eq("empresa_id", empresaId)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (error || !data) {
@@ -981,6 +1019,26 @@ async function handleSubmit(payload: Record<string, unknown>) {
     const caes = Array.isArray(formPayload.caes) ? formPayload.caes as Record<string, unknown>[] : [];
     const now = new Date().toISOString();
 
+    if (registrationMode === "full") {
+      await ensureProfileCpfAvailable(
+        "responsavel",
+        "cpf",
+        link.empresa_id,
+        responsavel.cpf,
+        "Responsável",
+      );
+    }
+
+    if (registrationMode !== "dog_only") {
+      await ensureProfileCpfAvailable(
+        "carteira",
+        "cpf_cnpj",
+        link.empresa_id,
+        financeiro.cpf_cnpj,
+        "Responsável Financeiro",
+      );
+    }
+
     const createdDogIds: string[] = [];
     for (const cao of caes) {
       const dogMeals = buildDogMealSlots(cao);
@@ -1070,7 +1128,10 @@ async function handleSubmit(payload: Record<string, unknown>) {
       }
 
       if (responsavelError || !responsavelRow?.id) {
-        return jsonResponse({ error: withSchemaHint(responsavelError, "Nao foi possivel criar o responsavel.") }, 500);
+        return jsonResponse(
+          { error: withSchemaHint(responsavelError, "Nao foi possivel criar o responsavel.") },
+          isDuplicateProfileCpfError(responsavelError) ? 409 : 500,
+        );
       }
 
       responsavelId = responsavelRow.id;
@@ -1177,7 +1238,10 @@ async function handleSubmit(payload: Record<string, unknown>) {
         .maybeSingle();
 
       if (carteiraError || !carteiraRow?.id) {
-        return jsonResponse({ error: withSchemaHint(carteiraError, "Nao foi possivel criar o responsavel financeiro.") }, 500);
+        return jsonResponse(
+          { error: withSchemaHint(carteiraError, "Nao foi possivel criar o responsavel financeiro.") },
+          isDuplicateProfileCpfError(carteiraError) ? 409 : 500,
+        );
       }
 
       carteiraId = carteiraRow.id;
@@ -1232,7 +1296,10 @@ async function handleSubmit(payload: Record<string, unknown>) {
       dog_ids: createdDogIds,
     });
   } catch (error) {
-    return jsonResponse({ error: withSchemaHint(error, "Nao foi possivel concluir o cadastro.") }, 500);
+    return jsonResponse(
+      { error: withSchemaHint(error, "Nao foi possivel concluir o cadastro.") },
+      isDuplicateProfileCpfError(error) ? 409 : 500,
+    );
   }
 }
 

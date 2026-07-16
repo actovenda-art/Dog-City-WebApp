@@ -7,7 +7,11 @@ import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integr
 import { createPageUrl, openImageViewer } from "@/utils";
 import { MISSING_BRANDING_IMAGE_URL, notifyBrandingChanged } from "@/hooks/use-branding";
 import { ACTIVE_UNIT_EVENT, getStoredUnitSelection, setStoredUnitSelection } from "@/lib/unit-context";
-import { GOOGLE_REVIEW_PUBLIC_URL } from "@/lib/google-review";
+import {
+  GOOGLE_REVIEW_CONFIG_KEY,
+  GOOGLE_REVIEW_PUBLIC_URL,
+  GOOGLE_REVIEW_TARGET_URL,
+} from "@/lib/google-review";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -416,6 +420,15 @@ function getStatusBadgeClass(status) {
   return "bg-emerald-100 text-emerald-700";
 }
 
+function normalizeExternalUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 function getInitialAdminTab() {
   if (typeof window === "undefined") return "unidades";
   const storedValue = window.localStorage.getItem(ADMIN_ACTIVE_TAB_STORAGE_KEY) || "unidades";
@@ -447,6 +460,8 @@ export default function AdministracaoSistema() {
   const [isUploadingFranchiseLogo, setIsUploadingFranchiseLogo] = useState(false);
   const [isUploadingUnitAsset, setIsUploadingUnitAsset] = useState(false);
   const [hasCopiedGoogleReviewLink, setHasCopiedGoogleReviewLink] = useState(false);
+  const [googleReviewTargetUrl, setGoogleReviewTargetUrl] = useState(GOOGLE_REVIEW_TARGET_URL);
+  const [isSavingGoogleReviewUrl, setIsSavingGoogleReviewUrl] = useState(false);
   const [unitAddressLoading, setUnitAddressLoading] = useState(false);
   const [unitSelectionDialog, setUnitSelectionDialog] = useState({ open: false, unit: null });
   const profileImportInputRef = useRef(null);
@@ -584,6 +599,13 @@ export default function AdministracaoSistema() {
       logoLabel: franchiseLogoAsset?.metadata?.original_name || franchiseLogoAsset?.label || "",
     });
   }, [assets]);
+
+  useEffect(() => {
+    const reviewConfig = configs.find(
+      (item) => item.key === GOOGLE_REVIEW_CONFIG_KEY && !item.empresa_id && item.ativo !== false,
+    );
+    setGoogleReviewTargetUrl(reviewConfig?.value?.url || GOOGLE_REVIEW_TARGET_URL);
+  }, [configs]);
 
   useEffect(() => {
     const selectedNameConfig = configs.find((item) => item.key === "branding.company_name" && item.empresa_id === selectedUnitId)
@@ -1257,6 +1279,44 @@ export default function AdministracaoSistema() {
     }
   }
 
+  async function handleSaveGoogleReviewUrl() {
+    const normalizedUrl = normalizeExternalUrl(googleReviewTargetUrl);
+    if (!normalizedUrl) {
+      alert("Informe um link completo válido, começando com https:// ou http://.");
+      return;
+    }
+
+    setIsSavingGoogleReviewUrl(true);
+    try {
+      const existingConfig = configs.find(
+        (item) => item.key === GOOGLE_REVIEW_CONFIG_KEY && !item.empresa_id,
+      );
+      const payload = {
+        key: GOOGLE_REVIEW_CONFIG_KEY,
+        label: "Link de avaliação no Google",
+        description: "Destino público usado pelo endereço curto /avaliar",
+        value: { url: normalizedUrl },
+        ativo: true,
+        empresa_id: null,
+      };
+
+      if (existingConfig?.id) {
+        await AppConfig.update(existingConfig.id, payload);
+      } else {
+        await AppConfig.create(payload);
+      }
+
+      setGoogleReviewTargetUrl(normalizedUrl);
+      await loadData();
+      alert("Link de avaliação atualizado.");
+    } catch (error) {
+      console.error("Erro ao salvar link de avaliação:", error);
+      alert(formatApiError(error, "Não foi possível salvar o link de avaliação."));
+    } finally {
+      setIsSavingGoogleReviewUrl(false);
+    }
+  }
+
   async function handleFranchiseLogoUpload(file) {
     if (!file) return;
 
@@ -1649,6 +1709,20 @@ export default function AdministracaoSistema() {
                     <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600">
                       Compartilhe o endereço curto com clientes para abrir diretamente a página de avaliações da Dog City Brasil - Sousas.
                     </p>
+                    <div className="mt-4 max-w-2xl">
+                      <Label htmlFor="google-review-target-url">Link estendido do Google</Label>
+                      <Textarea
+                        id="google-review-target-url"
+                        value={googleReviewTargetUrl}
+                        onChange={(event) => setGoogleReviewTargetUrl(event.target.value)}
+                        rows={4}
+                        className="mt-2 resize-y break-all bg-white text-sm"
+                        placeholder="https://www.google.com/..."
+                      />
+                      <p className="mt-2 text-xs leading-5 text-gray-500">
+                        Cole manualmente o link completo da ficha ou da avaliação. O endereço curto abaixo permanecerá o mesmo.
+                      </p>
+                    </div>
                     <div className="mt-4 max-w-xl">
                       <Label htmlFor="google-review-public-url">Link público de avaliação</Label>
                       <Input
@@ -1663,6 +1737,15 @@ export default function AdministracaoSistema() {
                 </div>
 
                 <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                  <Button
+                    type="button"
+                    onClick={handleSaveGoogleReviewUrl}
+                    disabled={isSavingGoogleReviewUrl}
+                    className="bg-emerald-600 text-white hover:bg-emerald-700"
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {isSavingGoogleReviewUrl ? "Salvando..." : "Salvar destino"}
+                  </Button>
                   <Button type="button" onClick={handleCopyGoogleReviewLink} className="bg-blue-600 text-white hover:bg-blue-700">
                     {hasCopiedGoogleReviewLink ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
                     {hasCopiedGoogleReviewLink ? "Link copiado" : "Copiar link"}

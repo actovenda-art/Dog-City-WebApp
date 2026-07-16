@@ -1,8 +1,8 @@
-import { GOOGLE_REVIEW_TARGET_URL } from "../../shared/google-review.js";
+import { GOOGLE_REVIEW_CONFIG_KEY, GOOGLE_REVIEW_TARGET_URL } from "../../shared/google-review.js";
 
 const DEFAULT_SITE_URL = "https://dogcitybrasil.com.br";
 
-export { GOOGLE_REVIEW_TARGET_URL };
+export { GOOGLE_REVIEW_CONFIG_KEY, GOOGLE_REVIEW_TARGET_URL };
 export const GOOGLE_REVIEW_SHORT_PATH = "/avaliar";
 
 const configuredSiteUrl = String(import.meta.env.VITE_SITE_URL || "").trim();

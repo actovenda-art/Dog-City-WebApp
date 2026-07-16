@@ -1,1 +1,2 @@
+export const GOOGLE_REVIEW_CONFIG_KEY = "branding.google_review_url";
 export const GOOGLE_REVIEW_TARGET_URL = "https://www.google.com/search?sca_esv=641454aca0393425&sxsrf=APpeQnu6n2ALppJ6CUDQqAVVNieBiqFvvQ:1784228633661&si=APenkKm7iecQ4G6P-TsbSMFKIQtv3EFIqRAFw-i8uEbk55Z-_857hnRKM2722zgsoH26o_Gv-fH_Wazn58eQTCM5KsB5thQZTgMg2cgG08SPbjgGBi07tlogIUlfczfVFYam74Z9T6-ygzpb_9wU8ARLiJiYx6eQxg%3D%3D&q=Dog+City+Brasil+-+Sousas+Coment%C3%A1rios&sa=X&ved=2ahUKEwj66qDP8deVAxXutpUCHUrAMi4Q0bkNegQINBAF&biw=1536&bih=776&dpr=1.25#lrd=0x94c8d1738185c0eb:0x822e28d07a2eb61b,3,,,,";

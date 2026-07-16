@@ -146,8 +146,9 @@ function getFrequencyMode(frequency) {
   return "semanal";
 }
 
-function getDayCareBaselineSessionCount(frequency) {
-  switch (String(frequency || "").trim()) {
+function getDayCareBaselineSessionCount(packageRecord) {
+  const frequency = String(packageRecord?.frequency || "").trim();
+  switch (frequency) {
     case "1x_semana":
       return 4;
     case "2x_semana":
@@ -161,7 +162,8 @@ function getDayCareBaselineSessionCount(frequency) {
     case "quinzenal":
       return 2;
     default:
-      return 0;
+      if (frequency !== "semanal") return 0;
+      return normalizeWeekdays(packageRecord?.weekdays, packageRecord?.weekday).length * 4;
   }
 }
 
@@ -494,7 +496,7 @@ export function getPackageMonthlyValue(packageRecord) {
   if (!baselineUnitPrice) return 0;
 
   if (packageRecord?.service_id === "day_care") {
-    const baselineSessionCount = getDayCareBaselineSessionCount(packageRecord?.frequency);
+    const baselineSessionCount = getDayCareBaselineSessionCount(packageRecord);
     if (baselineSessionCount > 0) {
       return roundCurrency(baselineUnitPrice * baselineSessionCount);
     }
@@ -504,6 +506,10 @@ export function getPackageMonthlyValue(packageRecord) {
 }
 
 export function resolvePackageSessionUnitPrice({ packageRecord, sessions = [], month, year, monthKey = "" } = {}) {
+  if (packageRecord?.service_id !== "day_care") {
+    return Math.max(0, Number(packageRecord?.price_per_session || 0) || 0);
+  }
+
   const resolvedMonthKey = monthKey || buildMonthKey(month, year);
   const monthlyValue = getPackageMonthlyValue(packageRecord);
   if (monthlyValue <= 0) {
@@ -539,11 +545,15 @@ export function calculateMonthlyBilling({ packageRecord, sessions = [], credits 
   const chargedSessions = Math.max(0, creditEligibleSessions.length - creditsUsed);
   const monthlyValue = getPackageMonthlyValue(packageRecord);
   const divisor = creditEligibleSessions.length;
-  const unitPrice = divisor > 0
+  const baseSessionPrice = Math.max(0, Number(packageRecord?.price_per_session || 0) || 0);
+  const isFixedMonthlyDayCare = packageRecord?.service_id === "day_care";
+  const unitPrice = isFixedMonthlyDayCare && divisor > 0
     ? roundCurrency(monthlyValue / divisor)
-    : Math.max(0, Number(packageRecord?.price_per_session || 0) || 0);
-  const totalAmount = divisor > 0 && chargedSessions > 0
-    ? roundCurrency(monthlyValue * (chargedSessions / divisor))
+    : baseSessionPrice;
+  const totalAmount = chargedSessions > 0
+    ? isFixedMonthlyDayCare && divisor > 0
+      ? roundCurrency(monthlyValue * (chargedSessions / divisor))
+      : roundCurrency(unitPrice * chargedSessions)
     : 0;
 
   return {

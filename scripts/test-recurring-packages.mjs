@@ -4,6 +4,7 @@ import {
   applyCreditsToSessions,
   calculateMonthlyBilling,
   generateMonthlySessions,
+  getPackageMonthlyValue,
 } from "../src/lib/recurring-packages.js";
 
 const packageRecord = {
@@ -119,5 +120,64 @@ const mayBilling = calculateMonthlyBilling({
 assert.equal(mayBilling.expected_sessions, 4, "Maio/2026 deve gerar 4 segundas-feiras");
 assert.equal(mayBilling.credits_used, 0, "Créditos usados em abril não podem reaparecer em maio");
 assert.equal(mayBilling.charged_sessions, 4, "Maio deve cobrar as 4 fichas sem créditos restantes");
+
+const legacyWeeklyDayCarePackage = {
+  id: "pkg_day_care_loki_legacy",
+  empresa_id: "dogcity",
+  client_id: "cliente_cleber",
+  pet_id: "loki",
+  service_id: "day_care",
+  weekday: 3,
+  weekdays: [3],
+  frequency: "semanal",
+  price_per_session: 106.25,
+  start_date: "2026-05-06",
+  status: "ativo",
+  metadata: {
+    plan_config_id: "plan_day_care_loki",
+  },
+};
+
+assert.equal(
+  getPackageMonthlyValue(legacyWeeklyDayCarePackage),
+  425,
+  "Pacote semanal legado deve reconstruir o valor mensal a partir das quatro ocorrências-base",
+);
+
+const juneDayCareSessions = generateMonthlySessions({
+  packages: [legacyWeeklyDayCarePackage],
+  existingSessions: [],
+  month: 6,
+  year: 2026,
+}).sessionsToCreate.map((session, index) => ({ ...session, id: `june_day_care_${index + 1}` }));
+const juneDayCareBilling = calculateMonthlyBilling({
+  packageRecord: legacyWeeklyDayCarePackage,
+  sessions: juneDayCareSessions,
+  credits: [],
+  month: 6,
+  year: 2026,
+});
+
+assert.equal(juneDayCareBilling.expected_sessions, 4, "Junho/2026 deve ter quatro quartas-feiras");
+assert.equal(juneDayCareBilling.unit_price, 106.25, "Quatro sessões devem ratear R$ 425,00 em R$ 106,25");
+assert.equal(juneDayCareBilling.total_amount, 425, "O total mensal de junho deve permanecer em R$ 425,00");
+
+const julyDayCareSessions = generateMonthlySessions({
+  packages: [legacyWeeklyDayCarePackage],
+  existingSessions: [],
+  month: 7,
+  year: 2026,
+}).sessionsToCreate.map((session, index) => ({ ...session, id: `july_day_care_${index + 1}` }));
+const julyDayCareBilling = calculateMonthlyBilling({
+  packageRecord: legacyWeeklyDayCarePackage,
+  sessions: julyDayCareSessions,
+  credits: [],
+  month: 7,
+  year: 2026,
+});
+
+assert.equal(julyDayCareBilling.expected_sessions, 5, "Julho/2026 deve ter cinco quartas-feiras");
+assert.equal(julyDayCareBilling.unit_price, 85, "Cinco sessões devem ratear R$ 425,00 em R$ 85,00");
+assert.equal(julyDayCareBilling.total_amount, 425, "O total mensal de julho deve permanecer em R$ 425,00");
 
 console.log("recurring-packages: cenário obrigatório aprovado");

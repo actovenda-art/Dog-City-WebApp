@@ -52,6 +52,7 @@ import Despesas from "./Despesas";
 import ConfigurarIntegracoes from "./ConfigurarIntegracoes";
 import AdministracaoSistema from "./AdministracaoSistema";
 import VisualizadorImagem from "./VisualizadorImagem";
+import GoogleReviewRedirect from "./GoogleReviewRedirect";
 
 const PAGES = {
   Login,
@@ -323,6 +324,7 @@ function PagesContent() {
 
   return (
     <Routes>
+      <Route path="/avaliar" element={<GoogleReviewRedirect />} />
       <Route path="/" element={<DefaultHomeRedirect authEnabled={authEnabled} authReady={authReady} currentUser={currentUser} />} />
 
       <Route

@@ -7,6 +7,7 @@ import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integr
 import { createPageUrl, openImageViewer } from "@/utils";
 import { MISSING_BRANDING_IMAGE_URL, notifyBrandingChanged } from "@/hooks/use-branding";
 import { ACTIVE_UNIT_EVENT, getStoredUnitSelection, setStoredUnitSelection } from "@/lib/unit-context";
+import { GOOGLE_REVIEW_PUBLIC_URL } from "@/lib/google-review";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +21,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { Building2, FileText, Image, KeyRound, Palette, Pencil, Plus, Save, Settings, Tags, Trash2 } from "lucide-react";
-import { Download, Upload } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Star, Upload } from "lucide-react";
 
 const EMPTY_PROFILE = {
   codigo: "",
@@ -445,9 +446,11 @@ export default function AdministracaoSistema() {
   const [isUploading, setIsUploading] = useState(false);
   const [isUploadingFranchiseLogo, setIsUploadingFranchiseLogo] = useState(false);
   const [isUploadingUnitAsset, setIsUploadingUnitAsset] = useState(false);
+  const [hasCopiedGoogleReviewLink, setHasCopiedGoogleReviewLink] = useState(false);
   const [unitAddressLoading, setUnitAddressLoading] = useState(false);
   const [unitSelectionDialog, setUnitSelectionDialog] = useState({ open: false, unit: null });
   const profileImportInputRef = useRef(null);
+  const googleReviewCopyTimerRef = useRef(null);
 
   useEffect(() => {
     loadData();
@@ -457,6 +460,12 @@ export default function AdministracaoSistema() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(ADMIN_ACTIVE_TAB_STORAGE_KEY, activeTab);
   }, [activeTab]);
+
+  useEffect(() => () => {
+    if (googleReviewCopyTimerRef.current) {
+      window.clearTimeout(googleReviewCopyTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     const handleUnitChanged = (event) => {
@@ -1231,6 +1240,23 @@ export default function AdministracaoSistema() {
     }
   }
 
+  async function handleCopyGoogleReviewLink() {
+    try {
+      await navigator.clipboard.writeText(GOOGLE_REVIEW_PUBLIC_URL);
+      setHasCopiedGoogleReviewLink(true);
+
+      if (googleReviewCopyTimerRef.current) {
+        window.clearTimeout(googleReviewCopyTimerRef.current);
+      }
+      googleReviewCopyTimerRef.current = window.setTimeout(() => {
+        setHasCopiedGoogleReviewLink(false);
+      }, 2500);
+    } catch (error) {
+      console.error("Erro ao copiar link de avaliação:", error);
+      alert("Não foi possível copiar o link automaticamente.");
+    }
+  }
+
   async function handleFranchiseLogoUpload(file) {
     if (!file) return;
 
@@ -1608,6 +1634,45 @@ export default function AdministracaoSistema() {
                   {franchiseBrandingForm.logoLabel ? (
                     <p className="text-xs text-gray-500">Arquivo atual: {franchiseBrandingForm.logoLabel}</p>
                   ) : null}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="mb-6 overflow-hidden border-amber-200 bg-white">
+              <CardContent className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1fr_auto] lg:items-center">
+                <div className="flex min-w-0 items-start gap-4">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50">
+                    <Star className="h-5 w-5 fill-amber-400 text-amber-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-950">Avaliação da empresa no Google</h3>
+                    <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600">
+                      Compartilhe o endereço curto com clientes para abrir diretamente a página de avaliações da Dog City Brasil - Sousas.
+                    </p>
+                    <div className="mt-4 max-w-xl">
+                      <Label htmlFor="google-review-public-url">Link público de avaliação</Label>
+                      <Input
+                        id="google-review-public-url"
+                        value={GOOGLE_REVIEW_PUBLIC_URL}
+                        readOnly
+                        onFocus={(event) => event.currentTarget.select()}
+                        className="mt-2 bg-gray-50 font-medium text-gray-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                  <Button type="button" onClick={handleCopyGoogleReviewLink} className="bg-blue-600 text-white hover:bg-blue-700">
+                    {hasCopiedGoogleReviewLink ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                    {hasCopiedGoogleReviewLink ? "Link copiado" : "Copiar link"}
+                  </Button>
+                  <Button asChild variant="outline">
+                    <a href={GOOGLE_REVIEW_PUBLIC_URL} target="_blank" rel="noreferrer">
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Abrir avaliação
+                    </a>
+                  </Button>
                 </div>
               </CardContent>
             </Card>

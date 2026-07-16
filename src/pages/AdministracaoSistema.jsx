@@ -1,12 +1,24 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useRef } from "react";
 import { appClient } from "@/api/appClient";
 import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User, UserProfile, UserUnitAccess } from "@/api/entities";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { createPageUrl, openImageViewer } from "@/utils";
 import { MISSING_BRANDING_IMAGE_URL, notifyBrandingChanged } from "@/hooks/use-branding";
 import { ACTIVE_UNIT_EVENT, getStoredUnitSelection, setStoredUnitSelection } from "@/lib/unit-context";
+import {
+  ACCESS_LEVELS,
+  getPermissionLabel,
+  getResourcePermissionLevel,
+  hasPermission,
+  isGroupAvailableForScope,
+  KNOWN_PERMISSION_IDS,
+  normalizeKnownPermissions,
+  permissionIdForLevel,
+  PERMISSION_GROUPS,
+  setGroupPermissionState,
+  setResourcePermissionLevel,
+} from "@/lib/access-permissions";
 import {
   GOOGLE_REVIEW_CONFIG_KEY,
   GOOGLE_REVIEW_PUBLIC_URL,
@@ -25,7 +37,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { Building2, FileText, Image, KeyRound, Palette, Pencil, Plus, Save, Settings, Tags, Trash2 } from "lucide-react";
-import { Check, Copy, ExternalLink, Star, Upload } from "lucide-react";
+import { Check, Copy, ExternalLink, Star } from "lucide-react";
 
 const EMPTY_PROFILE = {
   codigo: "",
@@ -49,86 +61,6 @@ const DEFAULT_FRANCHISE_BRANDING = {
 const FRANCHISE_LOGO_KEY = "branding.franchise.logo";
 const ADMIN_TABS = ["unidades", "acessos", "branding"];
 const ADMIN_ACTIVE_TAB_STORAGE_KEY = "dogcity.admin-central.active-tab";
-
-const PERMISSION_GROUPS = [
-  {
-    id: "usuarios",
-    label: "Usuários e acessos",
-    description: "Convites, perfis e manutenção de acessos por unidade.",
-    permissions: [
-      { id: "usuarios:*", label: "Controle total de usuários" },
-      { id: "usuarios:read", label: "Consultar usuários" },
-      { id: "usuarios:update", label: "Editar usuários" },
-    ],
-  },
-  {
-    id: "unidade",
-    label: "Unidade e branding",
-    description: "Dados institucionais da unidade, branding e administração local.",
-    permissions: [
-      { id: "empresa:*", label: "Controle total da unidade" },
-      { id: "empresa:read", label: "Consultar dados da unidade" },
-      { id: "empresa:update", label: "Editar dados da unidade" },
-      { id: "branding:*", label: "Gerenciar branding" },
-    ],
-  },
-  {
-    id: "agenda",
-    label: "Agenda e operação",
-    description: "Agendamentos, registrador, check-in e fluxo operacional.",
-    permissions: [
-      { id: "agenda:*", label: "Controle total da agenda" },
-      { id: "agenda:read", label: "Consultar agenda" },
-      { id: "agenda:update", label: "Editar agenda" },
-      { id: "checkin:*", label: "Check-in e check-out" },
-    ],
-  },
-  {
-    id: "cadastros",
-    label: "Comercial e cadastros",
-    description: "Perfis de cães, cadastros e orçamentos.",
-    permissions: [
-      { id: "dogs:*", label: "Controle total de cadastros" },
-      { id: "dogs:read", label: "Consultar cadastros" },
-      { id: "dogs:update", label: "Editar cadastros" },
-      { id: "orcamentos:*", label: "Controle total de orçamentos" },
-      { id: "orcamentos:read", label: "Consultar orçamentos" },
-      { id: "orcamentos:update", label: "Editar orçamentos" },
-    ],
-  },
-  {
-    id: "financeiro",
-    label: "Financeiro e preços",
-    description: "Extrato, cobranças, contas e tabelas de preços.",
-    permissions: [
-      { id: "financeiro:*", label: "Controle total do financeiro" },
-      { id: "financeiro:read", label: "Consultar financeiro" },
-      { id: "financeiro:update", label: "Editar financeiro" },
-      { id: "precos:*", label: "Gerenciar preços e descontos" },
-    ],
-  },
-  {
-    id: "tarefas",
-    label: "Tarefas internas",
-    description: "Pedidos internos e fluxos operacionais internos.",
-    permissions: [
-      { id: "tarefas:*", label: "Controle total das tarefas" },
-      { id: "tarefas:read", label: "Consultar tarefas" },
-      { id: "tarefas:update", label: "Editar tarefas" },
-    ],
-  },
-  {
-    id: "plataforma",
-    label: "Administração central",
-    description: "Controles globais do sistema, multiunidade e armazenamento.",
-    permissions: [
-      { id: "platform:*", label: "Controle total da plataforma" },
-      { id: "storage:*", label: "Storage e backup" },
-    ],
-  },
-];
-
-const KNOWN_PERMISSION_IDS = PERMISSION_GROUPS.flatMap((group) => group.permissions.map((permission) => permission.id));
 
 const SERVICE_OPTIONS = [
   "Day Care",
@@ -190,7 +122,7 @@ function parsePermissions(value) {
 }
 
 function splitProfilePermissions(values) {
-  const normalizedPermissions = parsePermissions(values);
+  const normalizedPermissions = normalizeKnownPermissions(parsePermissions(values));
   return {
     selected: normalizedPermissions.filter((permission) => KNOWN_PERMISSION_IDS.includes(permission)),
   };
@@ -344,7 +276,7 @@ function formatDisplayDate(value) {
 
   try {
     return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T12:00:00`));
-  } catch (error) {
+  } catch {
     return value;
   }
 }
@@ -571,10 +503,39 @@ export default function AdministracaoSistema() {
   );
 
   const selectedPermissionDetails = useMemo(
-    () => PERMISSION_GROUPS.flatMap((group) => group.permissions)
-      .filter((permission) => selectedPermissionSet.has(permission.id)),
+    () => [...selectedPermissionSet].map((permissionId) => ({
+      id: permissionId,
+      label: getPermissionLabel(permissionId),
+    })),
     [selectedPermissionSet]
   );
+
+  const availablePermissionGroups = useMemo(
+    () => PERMISSION_GROUPS.filter((group) => isGroupAvailableForScope(group, profileForm.escopo)),
+    [profileForm.escopo]
+  );
+
+  const isPlatformAdministrator = Boolean(
+    currentUser?.is_platform_admin || currentUser?.company_role === "platform_admin"
+  );
+  const canViewUnits = isPlatformAdministrator || hasPermission(currentUser, "empresa:read");
+  const canManageUnits = isPlatformAdministrator || hasPermission(currentUser, "empresa:update");
+  const canViewAccessProfiles = isPlatformAdministrator || hasPermission(currentUser, "usuarios:read");
+  const canManageAccessProfiles = isPlatformAdministrator || hasPermission(currentUser, "usuarios:update");
+  const canManageBranding = isPlatformAdministrator || hasPermission(currentUser, "branding:*");
+  const canManagePrices = isPlatformAdministrator || hasPermission(currentUser, "precos:*");
+  const adminTabItems = useMemo(() => [
+    canViewUnits ? { value: "unidades", label: "Unidades" } : null,
+    canViewAccessProfiles ? { value: "acessos", label: "Perfis de Acesso" } : null,
+    canManageBranding ? { value: "branding", label: "Branding" } : null,
+  ].filter(Boolean), [canManageBranding, canViewAccessProfiles, canViewUnits]);
+
+  useEffect(() => {
+    if (isLoading || adminTabItems.length === 0) return;
+    if (!adminTabItems.some((item) => item.value === activeTab)) {
+      setActiveTab(adminTabItems[0].value);
+    }
+  }, [activeTab, adminTabItems, isLoading]);
 
   const isUnitUnionActive = selectedUnitIds.length > 1;
 
@@ -660,18 +621,67 @@ export default function AdministracaoSistema() {
     setShowProfileModal(true);
   }
 
-  function toggleProfilePermission(permissionId) {
+  function canGrantProfilePermission(permissionId) {
+    return Boolean(
+      currentUser?.is_platform_admin
+      || currentUser?.company_role === "platform_admin"
+      || hasPermission(currentUser, permissionId)
+    );
+  }
+
+  function setProfilePermissionLevel(resourceId, level) {
+    const permissionId = permissionIdForLevel(resourceId, level);
+    if (permissionId && !canGrantProfilePermission(permissionId)) return;
+
     setProfileForm((current) => {
-      const currentPermissions = new Set(current.permissoesSelecionadas || []);
-      if (currentPermissions.has(permissionId)) {
-        currentPermissions.delete(permissionId);
-      } else {
-        currentPermissions.add(permissionId);
-      }
+      return {
+        ...current,
+        permissoesSelecionadas: setResourcePermissionLevel(
+          current.permissoesSelecionadas,
+          resourceId,
+          level,
+        ),
+      };
+    });
+  }
+
+  function toggleProfilePermissionGroup(group) {
+    const isFullySelected = group.resources.every((resource) => (
+      getResourcePermissionLevel(profileForm.permissoesSelecionadas, resource.id)
+      === resource.levels[resource.levels.length - 1]
+    ));
+
+    if (!isFullySelected) {
+      const canGrantEntireGroup = group.resources.every((resource) => {
+        const highestLevel = resource.levels[resource.levels.length - 1];
+        return canGrantProfilePermission(permissionIdForLevel(resource.id, highestLevel));
+      });
+      if (!canGrantEntireGroup) return;
+    }
+
+    setProfileForm((current) => ({
+      ...current,
+      permissoesSelecionadas: setGroupPermissionState(
+        current.permissoesSelecionadas,
+        group,
+        !isFullySelected,
+      ),
+    }));
+  }
+
+  function handleProfileScopeChange(scope) {
+    setProfileForm((current) => {
+      const allowedResourceIds = new Set(
+        PERMISSION_GROUPS
+          .filter((group) => isGroupAvailableForScope(group, scope))
+          .flatMap((group) => group.resources.map((resource) => resource.id))
+      );
 
       return {
         ...current,
-        permissoesSelecionadas: Array.from(currentPermissions).sort(),
+        escopo: scope,
+        permissoesSelecionadas: normalizeKnownPermissions(current.permissoesSelecionadas)
+          .filter((permission) => allowedResourceIds.has(permission.split(":")[0])),
       };
     });
   }
@@ -950,7 +960,7 @@ export default function AdministracaoSistema() {
       return;
     }
 
-    const mergedPermissions = [...(profileForm.permissoesSelecionadas || [])];
+    const mergedPermissions = normalizeKnownPermissions(profileForm.permissoesSelecionadas || []);
 
     if (mergedPermissions.length === 0) {
       alert("Selecione pelo menos uma permissão para esse perfil.");
@@ -966,7 +976,7 @@ export default function AdministracaoSistema() {
         nome: profileForm.nome,
         descricao: profileForm.descricao,
         escopo: profileForm.escopo,
-        permissoes: [...new Set(mergedPermissions)],
+        permissoes: mergedPermissions,
         ativo: profileForm.ativo,
       };
       await appClient.functions.userAdmin(payload);
@@ -1262,12 +1272,14 @@ export default function AdministracaoSistema() {
                 Separar
               </Button>
             ) : null}
-            <Link to={createPageUrl("ConfiguracoesPrecos")}>
-              <Button variant="outline">
-                <Tags className="w-4 h-4 mr-2" />
-                Preços e descontos
-              </Button>
-            </Link>
+            {canManagePrices ? (
+              <Link to={createPageUrl("ConfiguracoesPrecos")}>
+                <Button variant="outline">
+                  <Tags className="w-4 h-4 mr-2" />
+                  Preços e descontos
+                </Button>
+              </Link>
+            ) : null}
           </div>
         </div>
 
@@ -1298,23 +1310,21 @@ export default function AdministracaoSistema() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <PageSubTabs
-            items={[
-              { value: "unidades", label: "Unidades" },
-              { value: "acessos", label: "Perfis de Acesso" },
-              { value: "branding", label: "Branding" },
-            ]}
+            items={adminTabItems}
           />
 
-          <TabsContent value="unidades">
+          {canViewUnits ? <TabsContent value="unidades">
             <Card className="bg-white border-gray-200">
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle className="flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-blue-600" />
                   Unidades Dog City Brasil
                 </CardTitle>
-                <Button variant="outline" onClick={() => openUnitModal()}>
-                  Cadastrar unidade
-                </Button>
+                {canManageUnits ? (
+                  <Button variant="outline" onClick={() => openUnitModal()}>
+                    Cadastrar unidade
+                  </Button>
+                ) : null}
               </CardHeader>
               <CardContent className="space-y-4">
                 {units.map((unit) => {
@@ -1386,10 +1396,12 @@ export default function AdministracaoSistema() {
                         </div>
 
                         <div className="flex flex-col gap-2 xl:min-w-[180px]">
-                          <Button variant="outline" onClick={(event) => { event.stopPropagation(); openUnitModal(unit); }}>
-                            <Pencil className="w-4 h-4 mr-2" />
-                            Editar ficha
-                          </Button>
+                          {canManageUnits ? (
+                            <Button variant="outline" onClick={(event) => { event.stopPropagation(); openUnitModal(unit); }}>
+                              <Pencil className="w-4 h-4 mr-2" />
+                              Editar ficha
+                            </Button>
+                          ) : null}
                           {unitMeta.logo_url ? (
                             <Button variant="outline" onClick={(event) => { event.stopPropagation(); openImageViewer(unitMeta.logo_url, `Logo ${unit.nome_fantasia}`); }}>
                               <Image className="w-4 h-4 mr-2" />
@@ -1419,52 +1431,69 @@ export default function AdministracaoSistema() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
+          </TabsContent> : null}
 
-          <TabsContent value="acessos">
+          {canViewAccessProfiles ? <TabsContent value="acessos">
             <Card className="bg-white border-gray-200">
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle className="flex items-center gap-2">
                   <KeyRound className="w-5 h-5 text-emerald-600" />
                   Tipos de acesso
               </CardTitle>
-                <div>
+                {canManageAccessProfiles ? <div>
                   <Button onClick={() => openProfileModal()} className="bg-blue-600 hover:bg-blue-700 text-white">
                     Novo perfil
                   </Button>
-                </div>
+                </div> : null}
               </CardHeader>
               <CardContent className="space-y-3">
-                {profiles.map((profile) => (
-                  <div key={profile.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-gray-900">{profile.nome}</p>
-                        <Badge variant="outline">{profile.codigo}</Badge>
-                        <Badge className={profile.ativo !== false ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}>
-                          {profile.ativo !== false ? "Ativo" : "Inativo"}
-                        </Badge>
+                {profiles.map((profile) => {
+                  const profilePermissions = normalizeKnownPermissions(profile.permissoes || []);
+                  return (
+                    <div key={profile.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-gray-900">{profile.nome}</p>
+                          <Badge variant="outline">{profile.codigo}</Badge>
+                          <Badge className={profile.ativo !== false ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}>
+                            {profile.ativo !== false ? "Ativo" : "Inativo"}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">{profile.descricao || "Sem descrição cadastrada."}</p>
+                        <p className="text-xs text-gray-500 mt-2">Escopo: {profile.escopo === "plataforma" ? "Administração central" : "Unidade"}</p>
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {profilePermissions.slice(0, 5).map((permission) => (
+                            <Badge key={permission} variant="outline" className="bg-white text-slate-600">
+                              {getPermissionLabel(permission)}
+                            </Badge>
+                          ))}
+                          {profilePermissions.length > 5 ? (
+                            <Badge variant="outline" className="bg-white text-slate-500">
+                              +{profilePermissions.length - 5}
+                            </Badge>
+                          ) : null}
+                          {profilePermissions.length === 0 ? (
+                            <span className="text-xs font-medium text-rose-600">Sem permissões válidas</span>
+                          ) : null}
+                        </div>
                       </div>
-                      <p className="text-sm text-gray-600 mt-1">{profile.descricao || "Sem descrição cadastrada."}</p>
-                      <p className="text-xs text-gray-500 mt-2">Escopo: {profile.escopo === "plataforma" ? "Administração central" : "Unidade"}</p>
-                      <p className="text-xs text-gray-500 mt-1">Permissões: {Array.isArray(profile.permissoes) ? profile.permissoes.length : 0}</p>
+                      {canManageAccessProfiles ? <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button variant="outline" onClick={() => openProfileModal(profile)}>
+                          Editar
+                        </Button>
+                        <Button variant="outline" onClick={() => handleDeleteProfile(profile)} disabled={isSaving} className="border-rose-200 text-rose-600 hover:bg-rose-50">
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Excluir
+                        </Button>
+                      </div> : null}
                     </div>
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <Button variant="outline" onClick={() => openProfileModal(profile)}>
-                        Editar
-                      </Button>
-                      <Button variant="outline" onClick={() => handleDeleteProfile(profile)} disabled={isSaving} className="border-rose-200 text-rose-600 hover:bg-rose-50">
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Excluir
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
-          </TabsContent>
+          </TabsContent> : null}
 
-          <TabsContent value="branding">
+          {canManageBranding ? <TabsContent value="branding">
             <Card className="mb-6 border-purple-200 bg-white">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1675,7 +1704,7 @@ export default function AdministracaoSistema() {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
+          </TabsContent> : null}
         </Tabs>
       </div>
 
@@ -1775,13 +1804,15 @@ export default function AdministracaoSistema() {
                     </div>
                     <div>
                       <Label>Escopo</Label>
-                      <Select value={profileForm.escopo} onValueChange={(value) => setProfileForm((current) => ({ ...current, escopo: value }))}>
+                      <Select value={profileForm.escopo} onValueChange={handleProfileScopeChange}>
                         <SelectTrigger className="mt-2">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="empresa">Unidade</SelectItem>
-                          <SelectItem value="plataforma">Administração central</SelectItem>
+                          {(currentUser?.is_platform_admin || currentUser?.company_role === "platform_admin") ? (
+                            <SelectItem value="plataforma">Administração central</SelectItem>
+                          ) : null}
                         </SelectContent>
                       </Select>
                     </div>
@@ -1815,7 +1846,7 @@ export default function AdministracaoSistema() {
                     <div>
                       <Label className="text-blue-900">Permissões</Label>
                       <p className="mt-1 text-xs text-blue-700">
-                        Selecione os blocos de acesso abaixo. Perfis sem permissões explícitas podem liberar acesso amplo demais.
+                        Escolha um nível para cada área. Perfis sem permissões não acessam áreas protegidas.
                       </p>
                     </div>
                     <Badge className="border border-blue-200 bg-white text-blue-700">
@@ -1837,52 +1868,110 @@ export default function AdministracaoSistema() {
                 </div>
 
                 <div className="grid gap-3">
-                  {PERMISSION_GROUPS.map((group) => {
-                    const isRecommendedForScope = group.id === "plataforma"
-                      ? profileForm.escopo === "plataforma"
-                      : true;
-                    const groupSelectedCount = group.permissions.filter((permission) => selectedPermissionSet.has(permission.id)).length;
+                  {availablePermissionGroups.map((group) => {
+                    const selectedResources = group.resources.filter((resource) => (
+                      getResourcePermissionLevel(profileForm.permissoesSelecionadas, resource.id) !== "none"
+                    ));
+                    const isFullySelected = group.resources.every((resource) => (
+                      getResourcePermissionLevel(profileForm.permissoesSelecionadas, resource.id)
+                      === resource.levels[resource.levels.length - 1]
+                    ));
+                    const canGrantEntireGroup = group.resources.every((resource) => {
+                      const highestLevel = resource.levels[resource.levels.length - 1];
+                      return canGrantProfilePermission(permissionIdForLevel(resource.id, highestLevel));
+                    });
 
                     return (
-                      <div
-                        key={group.id}
-                        className={`rounded-2xl border p-4 shadow-sm ${isRecommendedForScope ? "border-gray-200 bg-white" : "border-dashed border-gray-200 bg-gray-50"}`}
-                      >
+                      <div key={group.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                         <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <p className="font-medium text-gray-900">{group.label}</p>
                             <p className="mt-1 text-xs text-gray-500">{group.description}</p>
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            {groupSelectedCount > 0 ? (
+                          <div className="flex items-center gap-2">
+                            {selectedResources.length > 0 ? (
                               <Badge className="bg-emerald-100 text-emerald-700">
-                                {groupSelectedCount} ativa(s)
+                                {selectedResources.length} área(s)
                               </Badge>
                             ) : null}
-                            {!isRecommendedForScope ? (
-                              <Badge variant="outline">Mais comum na administração central</Badge>
-                            ) : null}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => toggleProfilePermissionGroup(group)}
+                              disabled={!isFullySelected && !canGrantEntireGroup}
+                              className="h-8 text-xs"
+                            >
+                              {isFullySelected ? "Limpar grupo" : "Liberar grupo"}
+                            </Button>
                           </div>
                         </div>
 
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                          {group.permissions.map((permission) => {
-                            const isSelected = selectedPermissionSet.has(permission.id);
+                        <div className="mt-4 divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200">
+                          {group.resources.map((resource) => {
+                            const selectedLevel = getResourcePermissionLevel(
+                              profileForm.permissoesSelecionadas,
+                              resource.id,
+                            );
+                            const levelOptions = ACCESS_LEVELS.filter((level) => resource.levels.includes(level.id));
+
                             return (
-                              <button
-                                key={permission.id}
-                                type="button"
-                                onClick={() => toggleProfilePermission(permission.id)}
-                              className={`rounded-2xl border px-3 py-3 text-left text-sm transition-colors ${
-                                isSelected
-                                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900"
-                              }`}
-                            >
-                              <span className="block font-medium">{permission.label}</span>
-                            </button>
-                          );
-                        })}
+                              <div key={resource.id} className="grid gap-3 bg-white p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900">{resource.label}</p>
+                                  <p className="mt-0.5 text-xs leading-5 text-gray-500">{resource.description}</p>
+                                </div>
+                                <div
+                                  role="radiogroup"
+                                  aria-label={`Nível de acesso para ${resource.label}`}
+                                  className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 sm:flex"
+                                >
+                                  <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={selectedLevel === "none"}
+                                    onClick={() => setProfilePermissionLevel(resource.id, "none")}
+                                    className={`rounded-lg px-2.5 py-2 text-xs font-medium transition ${
+                                      selectedLevel === "none"
+                                        ? "bg-white text-slate-900 shadow-sm"
+                                        : "text-slate-500 hover:text-slate-800"
+                                    }`}
+                                  >
+                                    Sem acesso
+                                  </button>
+                                  {levelOptions.map((level) => {
+                                    const permissionId = permissionIdForLevel(resource.id, level.id);
+                                    const isSelected = selectedLevel === level.id;
+                                    const isAllowed = canGrantProfilePermission(permissionId);
+                                    const label = level.id === "all" && resource.allLabel
+                                      ? resource.allLabel
+                                      : level.shortLabel;
+
+                                    return (
+                                      <button
+                                        key={level.id}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={isSelected}
+                                        disabled={!isAllowed && !isSelected}
+                                        onClick={() => setProfilePermissionLevel(resource.id, level.id)}
+                                        className={`rounded-lg px-2.5 py-2 text-xs font-medium transition ${
+                                          isSelected
+                                            ? "bg-emerald-600 text-white shadow-sm"
+                                            : isAllowed
+                                              ? "text-slate-600 hover:bg-white hover:text-slate-900"
+                                              : "cursor-not-allowed text-slate-300"
+                                        }`}
+                                      >
+                                        {isSelected ? <Check className="mr-1 inline h-3.5 w-3.5" /> : null}
+                                        {label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );

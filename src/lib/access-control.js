@@ -1,3 +1,8 @@
+import { normalizePermission, normalizePermissions, permissionMatches } from "./access-permissions.js";
+
+const readAccess = (resource) => [`${resource}:read`, `${resource}:update`, `${resource}:*`];
+const updateAccess = (resource) => [`${resource}:update`, `${resource}:*`];
+
 const PAGE_ACCESS_REQUIREMENTS = {
   Login: [],
   AuthCallback: [],
@@ -5,46 +10,41 @@ const PAGE_ACCESS_REQUIREMENTS = {
   CadastroClientePublico: [],
   VisualizadorImagem: [],
 
-  Dev_Dashboard: ["platform:*", "usuarios:*", "usuarios:read", "usuarios:update"],
-  AdministracaoSistema: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "branding:*", "precos:*"],
-  Backup: ["platform:*", "storage:*", "empresa:*", "empresa:update"],
+  Dev_Dashboard: ["platform:*", ...readAccess("usuarios")],
+  AdministracaoSistema: [
+    "platform:*",
+    ...readAccess("usuarios"),
+    ...readAccess("empresa"),
+    "branding:*",
+  ],
+  Backup: ["platform:*", "storage:*", ...updateAccess("empresa")],
 
-  Registrador: ["platform:*", "empresa:*", "empresa:update", "checkin:*", "agenda:*"],
-  Agendamentos: ["platform:*", "empresa:*", "empresa:update", "agenda:*"],
-  Agenda_Comercial: ["platform:*", "empresa:*", "empresa:update", "agenda:*", "orcamentos:*"],
-  Cadastro: ["platform:*", "empresa:*", "empresa:update", "dogs:*"],
-  Perfis: ["platform:*", "empresa:*", "empresa:update", "dogs:*"],
-  PerfilCao: ["platform:*", "empresa:*", "empresa:update", "dogs:*"],
-  Planos: ["platform:*", "empresa:*", "empresa:update", "agenda:*", "dogs:*"],
-  PlanosConfig: ["platform:*", "empresa:*", "empresa:update", "agenda:*", "dogs:*"],
-  PedidosInternos: ["platform:*", "empresa:*", "empresa:update", "tarefas:*", "tarefas:read", "tarefas:update"],
+  Registrador: ["platform:*", "checkin:*", ...updateAccess("agenda")],
+  Agendamentos: ["platform:*", ...readAccess("agenda")],
+  Agenda_Comercial: ["platform:*", ...readAccess("agenda"), ...readAccess("orcamentos")],
+  Cadastro: ["platform:*", ...readAccess("dogs")],
+  Perfis: ["platform:*", ...readAccess("dogs")],
+  PerfilCao: ["platform:*", ...readAccess("dogs")],
+  Planos: ["platform:*", ...readAccess("agenda"), ...readAccess("dogs")],
+  PlanosConfig: ["platform:*", ...readAccess("agenda"), ...readAccess("dogs")],
+  PedidosInternos: ["platform:*", ...readAccess("tarefas")],
 
-  Movimentacoes: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
-  CarteirasFinanceiras: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
-  Receitas: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
-  Despesas: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
-  ContasPagar: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
-  ContasReceber: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
-  Cockpit: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
-  ControleGerencial: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "financeiro:*", "financeiro:read"],
-  Escalacao: ["platform:*", "empresa:*", "empresa:read", "empresa:update"],
+  Movimentacoes: ["platform:*", ...readAccess("financeiro")],
+  CarteirasFinanceiras: ["platform:*", ...readAccess("financeiro")],
+  Receitas: ["platform:*", ...readAccess("financeiro")],
+  Despesas: ["platform:*", ...readAccess("financeiro")],
+  ContasPagar: ["platform:*", ...readAccess("financeiro")],
+  ContasReceber: ["platform:*", ...readAccess("financeiro")],
+  Cockpit: ["platform:*", ...readAccess("financeiro")],
+  ControleGerencial: ["platform:*", ...readAccess("financeiro")],
+  Escalacao: ["platform:*", ...readAccess("empresa")],
 
-  Orcamentos: ["platform:*", "empresa:*", "empresa:update", "orcamentos:*"],
-  HistoricoOrcamentos: ["platform:*", "empresa:*", "empresa:update", "orcamentos:*", "orcamentos:read"],
-  ConfiguracoesPrecos: ["platform:*", "empresa:*", "empresa:update", "precos:*"],
-  ConfigurarIntegracoes: ["platform:*", "empresa:*", "empresa:update", "financeiro:*", "branding:*"],
-  RelatoriosCaes: ["platform:*", "empresa:*", "empresa:read", "empresa:update", "dogs:*"],
+  Orcamentos: ["platform:*", ...readAccess("orcamentos")],
+  HistoricoOrcamentos: ["platform:*", ...readAccess("orcamentos")],
+  ConfiguracoesPrecos: ["platform:*", "precos:*"],
+  ConfigurarIntegracoes: ["platform:*", ...updateAccess("financeiro"), "branding:*"],
+  RelatoriosCaes: ["platform:*", ...readAccess("dogs")],
 };
-
-function normalizePermission(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function normalizePermissions(values) {
-  return Array.isArray(values)
-    ? [...new Set(values.map(normalizePermission).filter(Boolean))]
-    : [];
-}
 
 function buildAccessHaystack(user) {
   return [
@@ -212,24 +212,6 @@ export function canViewSensitivePersonalData(user) {
   return isManagerialProfile(user);
 }
 
-function permissionMatches(granted, required) {
-  const normalizedGranted = normalizePermission(granted);
-  const normalizedRequired = normalizePermission(required);
-
-  if (!normalizedGranted || !normalizedRequired) return false;
-  if (normalizedGranted === "*" || normalizedGranted === normalizedRequired) return true;
-
-  if (normalizedGranted.endsWith("*")) {
-    return normalizedRequired.startsWith(normalizedGranted.slice(0, -1));
-  }
-
-  if (normalizedRequired.endsWith("*")) {
-    return normalizedGranted.startsWith(normalizedRequired.slice(0, -1));
-  }
-
-  return false;
-}
-
 export function getPageAccessRequirements(pageName) {
   return PAGE_ACCESS_REQUIREMENTS[pageName] || [];
 }
@@ -245,9 +227,7 @@ export function hasPageAccess(user, pageName) {
     user.access_profile_permissions || user.accessProfilePermissions || []
   );
 
-  if (grantedPermissions.length === 0) {
-    return true;
-  }
+  if (grantedPermissions.length === 0) return false;
 
   return requirements.some((required) => grantedPermissions.some((granted) => permissionMatches(granted, required)));
 }

@@ -27,6 +27,20 @@ const MANAGERIAL_NOTIFICATION_PERMISSIONS = [
   "storage:*",
   "platform:*",
 ];
+const KNOWN_ACCESS_PERMISSIONS = new Set([
+  "usuarios:*", "usuarios:read", "usuarios:update",
+  "empresa:*", "empresa:read", "empresa:update",
+  "branding:*",
+  "agenda:*", "agenda:read", "agenda:update",
+  "checkin:*",
+  "dogs:*", "dogs:read", "dogs:update",
+  "orcamentos:*", "orcamentos:read", "orcamentos:update",
+  "financeiro:*", "financeiro:read", "financeiro:update",
+  "precos:*",
+  "tarefas:*", "tarefas:read", "tarefas:update",
+  "platform:*", "storage:*",
+]);
+const CENTRAL_ACCESS_PERMISSIONS = new Set(["platform:*", "storage:*"]);
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? serviceRoleKey;
@@ -96,6 +110,10 @@ type InviteRow = {
   invite_accepted_at?: string | null;
   onboarding_completed_at?: string | null;
   invite_expires_at?: string | null;
+  expires_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+  invite_metadata?: Record<string, unknown> | null;
+  source_table?: string | null;
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -201,6 +219,7 @@ function hasPermission(permissions: string[], requiredPermission: string) {
   const resource = requiredPermission.split(":")[0];
   return permissions.includes(requiredPermission)
     || permissions.includes(`${resource}:*`)
+    || (requiredPermission.endsWith(":read") && permissions.includes(`${resource}:update`))
     || permissions.includes("platform:*");
 }
 
@@ -340,15 +359,6 @@ async function findAuthUserByEmail(email: string) {
   const normalizedEmail = sanitizeText(email).toLowerCase();
   if (!normalizedEmail) return null;
 
-  try {
-    const { data } = await admin.auth.admin.getUserByEmail(normalizedEmail);
-    if (data?.user?.email && sanitizeText(data.user.email).toLowerCase() === normalizedEmail) {
-      return data.user;
-    }
-  } catch {
-    // fallback below
-  }
-
   let page = 1;
   const perPage = 200;
   while (page <= 20) {
@@ -443,7 +453,7 @@ async function loadInviteByToken(token: string) {
       expires_at: (userInvite as Record<string, unknown>).invite_expires_at,
       metadata: (userInvite as Record<string, unknown>).invite_metadata,
       source_table: "users",
-    } as InviteRow;
+    } as unknown as InviteRow;
   }
 
   const { data, error } = await admin
@@ -1075,7 +1085,7 @@ async function handleSaveAccessProfile(request: Request, payload: Record<string,
   const nome = sanitizeText(payload.nome);
   const descricao = sanitizeText(payload.descricao) || null;
   const escopo = sanitizeText(payload.escopo) || "empresa";
-  const permissoes = uniqueTextList(payload.permissoes);
+  const permissoes = uniqueTextList(payload.permissoes).map((permission) => permission.toLowerCase());
   const ativo = payload.ativo !== false;
 
   if (!codigo || !nome) {
@@ -1086,8 +1096,30 @@ async function handleSaveAccessProfile(request: Request, payload: Record<string,
     return jsonResponse({ error: "Selecione pelo menos uma permissao para o perfil." }, 400);
   }
 
+  const invalidPermissions = permissoes.filter((permission) => !KNOWN_ACCESS_PERMISSIONS.has(permission));
+  if (invalidPermissions.length > 0) {
+    return jsonResponse({ error: `Permissoes invalidas: ${invalidPermissions.join(", ")}.` }, 400);
+  }
+
+  if (!["empresa", "plataforma"].includes(escopo)) {
+    return jsonResponse({ error: "Escopo do perfil de acesso invalido." }, 400);
+  }
+
+  if (escopo !== "plataforma" && permissoes.some((permission) => CENTRAL_ACCESS_PERMISSIONS.has(permission))) {
+    return jsonResponse({ error: "Permissoes da administracao central exigem perfil de escopo central." }, 400);
+  }
+
   if (!ctx.profile?.is_platform_admin && escopo === "plataforma") {
     return jsonResponse({ error: "Somente administradores da plataforma podem salvar perfis de escopo central." }, 403);
+  }
+
+  if (!ctx.profile?.is_platform_admin) {
+    const delegatedPermission = permissoes.find((permission) => !hasPermission(ctx.permissions, permission));
+    if (delegatedPermission) {
+      return jsonResponse({
+        error: `Seu perfil nao pode conceder a permissao ${delegatedPermission}.`,
+      }, 403);
+    }
   }
 
   const now = new Date().toISOString();

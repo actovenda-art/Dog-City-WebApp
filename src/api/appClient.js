@@ -5668,7 +5668,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
           details = '';
         }
         const baseMessage = details || error.message || 'Falha na aprovação autenticada do responsável.';
-        const shouldHintDeploy = /edge function|failed to send a request|non-2xx|not found/i.test(baseMessage);
+        const shouldHintDeploy = /failed to send a request|edge function.*not found|function.*not found|status.?404/i.test(baseMessage);
         throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function responsavel-approval no Supabase.` : baseMessage);
       }
       return data;

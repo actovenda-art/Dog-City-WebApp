@@ -9,11 +9,6 @@ const corsHeaders = {
 const DEFAULT_TOKEN_URL = "https://cdpj.partners.bancointer.com.br/oauth/v2/token";
 const DEFAULT_API_BASE_URL = "https://cdpj.partners.bancointer.com.br";
 const DEFAULT_EXTRATO_PATH = "/banking/v2/extrato";
-const DEFAULT_EXTRATO_PDF_PATHS = [
-  "/banking/v2/extrato",
-  "/banking/v2/extrato/exportar",
-  "/banking/v2/extrato/arquivo",
-];
 const DEFAULT_BALANCE_PATHS = ["/banking/v2/saldo", "/banking/v1/saldo"];
 const DEFAULT_BANKING_SCOPE = "extrato.read saldo.read";
 const DEFAULT_CHARGE_READ_SCOPE = "boleto-cobranca.read";
@@ -2877,119 +2872,6 @@ function normalizeBase64Payload(value: unknown) {
   return match ? match[1] : text;
 }
 
-function encodeBase64(bytes: Uint8Array) {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    const chunk = bytes.subarray(index, Math.min(index + chunkSize, bytes.length));
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
-}
-
-async function fetchStatementPdfForRange(
-  config: IntegrationConfig,
-  accessToken: string,
-  httpClient: Deno.HttpClient,
-  fromDate: string,
-  toDate: string,
-) {
-  const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
-  const configuredExtratoPath = sanitizeText(getConfigValue(config, "extrato_path"), DEFAULT_EXTRATO_PATH);
-  const pathCandidates = Array.from(new Set([configuredExtratoPath, ...DEFAULT_EXTRATO_PDF_PATHS].filter(Boolean)));
-  const extraHeaders = (config.extra_headers || getConfigValue<Record<string, unknown>>(config, "extra_headers") || {}) as Record<string, unknown>;
-  const queryBuilders = [
-    (url: URL) => {
-      url.searchParams.set("dataInicio", fromDate);
-      url.searchParams.set("dataFim", toDate);
-      url.searchParams.set("tipoArquivo", "PDF");
-    },
-    (url: URL) => {
-      url.searchParams.set("dataInicio", fromDate);
-      url.searchParams.set("dataFim", toDate);
-      url.searchParams.set("formatoArquivo", "PDF");
-    },
-    (url: URL) => {
-      url.searchParams.set("dataInicio", fromDate);
-      url.searchParams.set("dataFim", toDate);
-      url.searchParams.set("fileFormat", "PDF");
-    },
-  ];
-  const errors: string[] = [];
-
-  for (const path of pathCandidates) {
-    for (const applyQuery of queryBuilders) {
-      const url = new URL(path, apiBaseUrl);
-      applyQuery(url);
-
-      const headers: Record<string, string> = {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/pdf, application/json",
-      };
-
-      Object.entries(extraHeaders).forEach(([key, value]) => {
-        if (value !== null && value !== undefined) {
-          headers[key] = String(value);
-        }
-      });
-
-      const response = await fetch(url.toString(), {
-        method: "GET",
-        headers,
-        client: httpClient,
-      });
-
-      const contentType = sanitizeText(response.headers.get("content-type"), "").toLowerCase();
-      const bytes = new Uint8Array(await response.arrayBuffer());
-
-      if (!response.ok) {
-        const preview = new TextDecoder().decode(bytes).slice(0, 500);
-        errors.push(`${path}:${response.status}:${preview}`);
-        continue;
-      }
-
-      if (contentType.includes("application/pdf")) {
-        return {
-          base64: encodeBase64(bytes),
-          mimeType: "application/pdf",
-          source: "statement_pdf_api",
-          path,
-        };
-      }
-
-      const rawText = new TextDecoder().decode(bytes);
-      let parsed: Record<string, unknown> = {};
-      try {
-        parsed = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        parsed = { raw: rawText };
-      }
-
-      const embeddedPdfBase64 = normalizeBase64Payload(firstDefined(
-        parsed.base64,
-        parsed.pdf,
-        parsed.arquivo,
-        parsed.file,
-        parsed.documento,
-        parsed.comprovante_pdf_base64,
-      ));
-
-      if (embeddedPdfBase64) {
-        return {
-          base64: embeddedPdfBase64,
-          mimeType: "application/pdf",
-          source: "statement_pdf_json",
-          path,
-        };
-      }
-
-      errors.push(`${path}:${response.status}:sem_pdf:${JSON.stringify(parsed).slice(0, 500)}`);
-    }
-  }
-
-  throw new Error(`Falha ao exportar PDF do extrato no Banco Inter: ${errors.join(" | ")}`);
-}
-
 async function loadTransactionReceiptForConfig(
   config: IntegrationConfig,
   {
@@ -3039,8 +2921,7 @@ async function loadTransactionReceiptForConfig(
   const embeddedPdfBase64 = normalizeBase64Payload(firstDefined(
     rawData.comprovante_pdf_base64,
     rawData.comprovanteBase64,
-    rawData.pdf_base64,
-    rawData.pdfBase64,
+    rawData.receipt_pdf_base64,
     rawData.receiptBase64,
   ));
 
@@ -3064,8 +2945,6 @@ async function loadTransactionReceiptForConfig(
     rawData.comprovanteUrl,
     rawData.receipt_url,
     rawData.receiptUrl,
-    rawData.pdf_url,
-    rawData.pdfUrl,
   ));
 
   if (directReceiptUrl) {
@@ -3081,46 +2960,6 @@ async function loadTransactionReceiptForConfig(
       url: directReceiptUrl,
       source: "direct_url",
     };
-  }
-
-  try {
-    const statementDate = sanitizeText(firstDefined(
-      movement.data_movimento,
-      movement.data,
-      rawData.dataMovimento,
-      rawData.dataLancamento,
-      rawData.dataEntrada,
-    ));
-
-    if (statementDate) {
-      const { accessToken, httpClient } = await getAccessToken(config);
-      const statementPdf = await fetchStatementPdfForRange(
-        config,
-        accessToken,
-        httpClient,
-        statementDate,
-        statementDate,
-      );
-
-      return {
-        success: true,
-        action: "transactionReceipt",
-        empresa_id: empresaId,
-        integracao_id: config.id,
-        movement_id: movement.id,
-        transaction_id: movement.id,
-        file_name: `extrato-${statementDate}.pdf`,
-        mime_type: statementPdf.mimeType,
-        base64: statementPdf.base64,
-        source: statementPdf.source,
-        statement_range: {
-          from: statementDate,
-          to: statementDate,
-        },
-      };
-    }
-  } catch (statementError) {
-    console.warn("Nao foi possivel exportar o PDF do extrato para a transacao:", serializeError(statementError));
   }
 
   const providerReference = sanitizeText(firstDefined(
@@ -3145,8 +2984,8 @@ async function loadTransactionReceiptForConfig(
     receipt_available: false,
     provider_reference: providerReference || null,
     message: providerReference
-      ? "A transação possui referência bancária, mas a integração atual ainda não recebeu um PDF de comprovante para esse tipo de lançamento."
-      : "A transação foi sincronizada apenas pelo extrato do Banco Inter, sem um identificador oficial de comprovante. Para esse lançamento, o banco não disponibilizou um PDF reaproveitável no payload atual.",
+      ? "A transação possui referência bancária, mas o Banco Inter não disponibilizou um comprovante individual para este lançamento."
+      : "A transação foi importada pelo extrato bancário e não possui comprovante individual disponibilizado pelo Banco Inter.",
   };
 }
 

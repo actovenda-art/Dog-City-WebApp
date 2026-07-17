@@ -5549,11 +5549,15 @@ if (SUPABASE_URL && SUPABASE_ANON) {
           body: payload,
         });
         if (error) {
-          throw new Error(await parseFunctionError(error));
+          const functionError = new Error(await parseFunctionError(error));
+          functionError.functionResponseReceived = Boolean(error?.context);
+          functionError.cause = error;
+          throw functionError;
         }
         return data;
       } catch (invokeError) {
-        if (!functionUrl || !SUPABASE_ANON) {
+        // An HTTP error means the function already ran; retry only genuine transport failures.
+        if (invokeError?.functionResponseReceived || invokeError?.context || !functionUrl || !SUPABASE_ANON) {
           throw invokeError;
         }
 

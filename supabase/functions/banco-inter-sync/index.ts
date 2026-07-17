@@ -15,14 +15,34 @@ const DEFAULT_CHARGE_READ_SCOPE = "boleto-cobranca.read";
 const DEFAULT_CHARGE_WRITE_SCOPE = "boleto-cobranca.write";
 const DEFAULT_CHARGE_PATH = "/cobranca/v3/cobrancas";
 const INTER_TOKEN_CACHE_TTL_MS = 55 * 60 * 1000;
+const INTER_TOKEN_RATE_LIMIT_DEFAULT_SECONDS = 60;
 
-const interTokenCache = new Map<string, {
+type InterTokenResult = {
   accessToken: string;
   httpClient: Deno.HttpClient;
   tokenResponse: Record<string, unknown>;
   tokenStatus: number;
+};
+
+type CachedInterToken = InterTokenResult & {
   expiresAt: number;
-}>();
+};
+
+class BancoInterAuthError extends Error {
+  status: number;
+  retryAfterSeconds: number | null;
+
+  constructor(message: string, status = 502, retryAfterSeconds: number | null = null) {
+    super(message);
+    this.name = "BancoInterAuthError";
+    this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+const interTokenCache = new Map<string, CachedInterToken>();
+const interTokenRequests = new Map<string, Promise<InterTokenResult>>();
+const interTokenCooldowns = new Map<string, number>();
 
 type IntegrationConfig = {
   id: string;
@@ -124,10 +144,10 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-function jsonResponse(body: unknown, status = 200) {
+function jsonResponse(body: unknown, status = 200, additionalHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...additionalHeaders },
   });
 }
 
@@ -738,19 +758,37 @@ function buildScopeRegistrationHint(scope: string, parsed: Record<string, unknow
   return `O client_id do Banco Inter não possui o scope '${scope}' habilitado. Ative esse scope no Portal do Desenvolvedor Inter para a aplicação usada nesta integração.`;
 }
 
-function buildTokenRateLimitHint(scope: string, parsed: Record<string, unknown>) {
-  const rawMessage = JSON.stringify(parsed).toLowerCase();
-  if (!rawMessage.includes("429")) {
-    const values = Object.values(parsed).map((value) => String(value).toLowerCase());
-    if (!values.some((value) => value.includes("too many") || value.includes("rate limit"))) {
-      return null;
-    }
-  }
-  return `O Banco Inter limitou temporariamente a geração do token para o scope '${scope}'. Vamos reutilizar tokens em cache quando possível, mas pode ser necessário aguardar alguns instantes antes de tentar novamente.`;
+function buildTokenRateLimitHint(scope: string, retryAfterSeconds: number) {
+  return `O Banco Inter limitou temporariamente a geração do token para o scope '${scope}'. Aguarde cerca de ${retryAfterSeconds} segundos antes de atualizar novamente; nenhuma tentativa adicional de autenticação será feita durante esse intervalo.`;
 }
 
-function resolveTokenCacheKey(clientId: string, scope: string, tokenAuthMode: string) {
-  return [clientId, scope, tokenAuthMode].join("::");
+function resolveTokenCacheKey(clientId: string, scope: string) {
+  return [clientId, scope].join("::");
+}
+
+function resolveRetryAfterSeconds(response: Response) {
+  const retryAfter = sanitizeText(response.headers.get("retry-after"));
+  const numericSeconds = Number(retryAfter);
+  if (Number.isFinite(numericSeconds) && numericSeconds > 0) {
+    return Math.min(Math.max(Math.ceil(numericSeconds), 1), 15 * 60);
+  }
+
+  const retryAt = Date.parse(retryAfter);
+  if (Number.isFinite(retryAt)) {
+    return Math.min(Math.max(Math.ceil((retryAt - Date.now()) / 1000), 1), 15 * 60);
+  }
+
+  return INTER_TOKEN_RATE_LIMIT_DEFAULT_SECONDS;
+}
+
+function getTokenCooldownSeconds(cacheKey: string) {
+  const cooldownUntil = interTokenCooldowns.get(cacheKey);
+  if (!cooldownUntil) return 0;
+  if (cooldownUntil <= Date.now()) {
+    interTokenCooldowns.delete(cacheKey);
+    return 0;
+  }
+  return Math.max(Math.ceil((cooldownUntil - Date.now()) / 1000), 1);
 }
 
 function buildInterApi401Hint(config: IntegrationConfig, parsed: Record<string, unknown>) {
@@ -818,87 +856,118 @@ async function getAccessToken(
   const modes = configuredTokenAuthMode === "auto"
     ? ["basic", "body"]
     : [configuredTokenAuthMode];
-  const errors: string[] = [];
-
-  for (const tokenAuthMode of modes) {
-    const cacheKey = resolveTokenCacheKey(clientId, scope, tokenAuthMode);
-    const cachedToken = getCachedInterToken(cacheKey);
-    if (cachedToken) {
-      return {
-        accessToken: cachedToken.accessToken,
-        httpClient: cachedToken.httpClient,
-        tokenResponse: cachedToken.tokenResponse,
-        tokenStatus: cachedToken.tokenStatus,
-      };
-    }
-
-    const httpClient = await createHttpClient(config);
-    const formData = new URLSearchParams();
-    formData.set("grant_type", "client_credentials");
-    if (scope) formData.set("scope", scope);
-    if (tokenAuthMode !== "basic") {
-      formData.set("client_id", clientId);
-      formData.set("client_secret", clientSecret);
-    }
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
+  const cacheKey = resolveTokenCacheKey(clientId, scope);
+  const cachedToken = getCachedInterToken(cacheKey);
+  if (cachedToken) {
+    return {
+      accessToken: cachedToken.accessToken,
+      httpClient: cachedToken.httpClient,
+      tokenResponse: cachedToken.tokenResponse,
+      tokenStatus: cachedToken.tokenStatus,
     };
-
-    if (tokenAuthMode === "basic") {
-      headers.Authorization = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
-    }
-
-    const response = await fetch(tokenUrl, {
-      method: "POST",
-      headers,
-      body: formData.toString(),
-      client: httpClient,
-    });
-
-    const rawText = await response.text();
-    let parsed: Record<string, unknown> = {};
-    try {
-      parsed = rawText ? JSON.parse(rawText) : {};
-    } catch {
-      parsed = { raw: rawText };
-    }
-
-    if (!response.ok) {
-      const scopeHint = buildScopeRegistrationHint(scope, parsed);
-      if (scopeHint) {
-        errors.push(`${tokenAuthMode}:${response.status}:${scopeHint}`);
-        continue;
-      }
-      const rateLimitHint = response.status === 429 ? buildTokenRateLimitHint(scope, parsed) : null;
-      if (rateLimitHint) {
-        errors.push(`${tokenAuthMode}:${response.status}:${rateLimitHint}`);
-        continue;
-      }
-      errors.push(`${tokenAuthMode}:${response.status}:${JSON.stringify(parsed)}`);
-      continue;
-    }
-
-    const accessToken = sanitizeText(firstDefined(parsed.access_token, parsed.token));
-    if (!accessToken) {
-      errors.push(`${tokenAuthMode}:${response.status}:sem access_token`);
-      continue;
-    }
-
-    interTokenCache.set(cacheKey, {
-      accessToken,
-      httpClient,
-      tokenResponse: parsed,
-      tokenStatus: response.status,
-      expiresAt: Date.now() + resolveTokenCacheTtl(parsed),
-    });
-
-    return { accessToken, httpClient, tokenResponse: parsed, tokenStatus: response.status };
   }
 
   const actionLabel = options.actionLabel ? `${options.actionLabel}: ` : "";
-  throw new Error(`Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${errors.join(" | ")}`);
+  const cooldownSeconds = getTokenCooldownSeconds(cacheKey);
+  if (cooldownSeconds > 0) {
+    throw new BancoInterAuthError(
+      `Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': autenticação temporariamente pausada após limite do Banco Inter. Tente novamente em cerca de ${cooldownSeconds} segundos.`,
+      429,
+      cooldownSeconds,
+    );
+  }
+
+  const inFlightRequest = interTokenRequests.get(cacheKey);
+  if (inFlightRequest) return await inFlightRequest;
+
+  const tokenRequest = (async (): Promise<InterTokenResult> => {
+    const errors: string[] = [];
+
+    for (const tokenAuthMode of modes) {
+      const httpClient = await createHttpClient(config);
+      const formData = new URLSearchParams();
+      formData.set("grant_type", "client_credentials");
+      if (scope) formData.set("scope", scope);
+      if (tokenAuthMode !== "basic") {
+        formData.set("client_id", clientId);
+        formData.set("client_secret", clientSecret);
+      }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      };
+
+      if (tokenAuthMode === "basic") {
+        headers.Authorization = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
+      }
+
+      const response = await fetch(tokenUrl, {
+        method: "POST",
+        headers,
+        body: formData.toString(),
+        client: httpClient,
+      });
+
+      const rawText = await response.text();
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        parsed = { raw: rawText };
+      }
+
+      if (!response.ok) {
+        const scopeHint = buildScopeRegistrationHint(scope, parsed);
+        if (scopeHint) {
+          throw new BancoInterAuthError(
+            `Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${tokenAuthMode}:${response.status}:${scopeHint}`,
+          );
+        }
+
+        if (response.status === 429) {
+          const retryAfterSeconds = resolveRetryAfterSeconds(response);
+          interTokenCooldowns.set(cacheKey, Date.now() + retryAfterSeconds * 1000);
+          const rateLimitHint = buildTokenRateLimitHint(scope, retryAfterSeconds);
+          throw new BancoInterAuthError(
+            `Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${tokenAuthMode}:429:${rateLimitHint}`,
+            429,
+            retryAfterSeconds,
+          );
+        }
+
+        errors.push(`${tokenAuthMode}:${response.status}:${JSON.stringify(parsed)}`);
+        continue;
+      }
+
+      const accessToken = sanitizeText(firstDefined(parsed.access_token, parsed.token));
+      if (!accessToken) {
+        errors.push(`${tokenAuthMode}:${response.status}:sem access_token`);
+        continue;
+      }
+
+      const tokenResult = { accessToken, httpClient, tokenResponse: parsed, tokenStatus: response.status };
+      interTokenCooldowns.delete(cacheKey);
+      interTokenCache.set(cacheKey, {
+        ...tokenResult,
+        expiresAt: Date.now() + resolveTokenCacheTtl(parsed),
+      });
+      return tokenResult;
+    }
+
+    throw new BancoInterAuthError(
+      `Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${errors.join(" | ")}`,
+    );
+  })();
+
+  interTokenRequests.set(cacheKey, tokenRequest);
+  try {
+    return await tokenRequest;
+  } finally {
+    if (interTokenRequests.get(cacheKey) === tokenRequest) {
+      interTokenRequests.delete(cacheKey);
+    }
+  }
 }
 
 async function fetchExtrato(
@@ -3316,7 +3385,11 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: `Acao nao suportada: ${action}` }, 400);
   } catch (error) {
     const message = serializeError(error);
-    return jsonResponse({ error: "Falha na integracao com Banco Inter.", details: message }, 500);
+    const status = error instanceof BancoInterAuthError ? error.status : 500;
+    const retryHeaders = error instanceof BancoInterAuthError && error.retryAfterSeconds
+      ? { "Retry-After": String(error.retryAfterSeconds) }
+      : {};
+    return jsonResponse({ error: "Falha na integracao com Banco Inter.", details: message }, status, retryHeaders);
   }
 });
 

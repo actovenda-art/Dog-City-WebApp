@@ -16,12 +16,14 @@ const DEFAULT_CHARGE_WRITE_SCOPE = "boleto-cobranca.write";
 const DEFAULT_PIX_READ_SCOPE = "pix.read";
 const DEFAULT_PIX_PAYMENT_READ_SCOPE = "pagamento-pix.read";
 const DEFAULT_BOLETO_PAYMENT_READ_SCOPE = "pagamento-boleto.read";
+const DEFAULT_RECEIPT_PDF_SCOPE = "extrato.read";
 const DEFAULT_CHARGE_PATH = "/cobranca/v3/cobrancas";
 const DEFAULT_PIX_PATH = "/pix/v2/pix";
 const DEFAULT_PIX_PAYMENT_PATH = "/banking/v2/pix";
 const DEFAULT_BOLETO_PAYMENT_PATH = "/banking/v2/pagamento";
 const INTER_TOKEN_CACHE_TTL_MS = 55 * 60 * 1000;
 const INTER_TOKEN_RATE_LIMIT_DEFAULT_SECONDS = 60;
+const MAX_RECEIPT_PDF_BYTES = 12 * 1024 * 1024;
 
 type InterTokenResult = {
   accessToken: string;
@@ -261,6 +263,14 @@ function sanitizeText(value: unknown, fallback = "") {
   if (value === null || value === undefined) return fallback;
   const text = String(value).trim();
   return text || fallback;
+}
+
+function configBoolean(value: unknown, fallback = false) {
+  if (typeof value === "boolean") return value;
+  const normalized = sanitizeText(value).toLowerCase();
+  if (["true", "1", "yes", "sim", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "nao", "off"].includes(normalized)) return false;
+  return fallback;
 }
 
 function hasTimeFragment(value: unknown) {
@@ -1010,6 +1020,8 @@ async function fetchExtrato(
     Authorization: `Bearer ${accessToken}`,
     Accept: "application/json",
   };
+  const accountNumber = sanitizeText(getConfigValue(config, "account_number")).replace(/\D/g, "");
+  if (accountNumber) headers["x-conta-corrente"] = accountNumber;
 
   Object.entries(extraHeaders).forEach(([key, value]) => {
     if (value !== null && value !== undefined) {
@@ -1107,6 +1119,8 @@ async function fetchScopedInterJson(
     Authorization: `Bearer ${accessToken}`,
     Accept: "application/json",
   };
+  const accountNumber = sanitizeText(getConfigValue(config, "account_number")).replace(/\D/g, "");
+  if (accountNumber) headers["x-conta-corrente"] = accountNumber;
   const extraHeaders = (config.extra_headers || getConfigValue<Record<string, unknown>>(config, "extra_headers") || {}) as Record<string, unknown>;
   Object.entries(extraHeaders).forEach(([key, value]) => {
     if (value !== null && value !== undefined) headers[key] = String(value);
@@ -3127,6 +3141,393 @@ function normalizeBase64Payload(value: unknown) {
   return match ? match[1] : text;
 }
 
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function isPdfBytes(bytes: Uint8Array) {
+  return bytes.length >= 4
+    && bytes[0] === 0x25
+    && bytes[1] === 0x50
+    && bytes[2] === 0x44
+    && bytes[3] === 0x46;
+}
+
+function normalizeOfficialPdfBase64(value: unknown) {
+  const normalized = sanitizeText(value)
+    .replace(/^data:application\/pdf;base64,/i, "")
+    .replace(/\s+/g, "");
+  if (!normalized || normalized.length < 8) return null;
+
+  try {
+    const prefix = atob(normalized.slice(0, Math.min(normalized.length, 24)));
+    return prefix.startsWith("%PDF") ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+function findOfficialReceiptArtifact(payload: unknown, depth = 0): { base64?: string; url?: string } | null {
+  if (depth > 4 || payload === null || payload === undefined) return null;
+  if (typeof payload === "string") {
+    const base64 = normalizeOfficialPdfBase64(payload);
+    if (base64) return { base64 };
+    if (/^https?:\/\//i.test(payload)) return { url: payload };
+    return null;
+  }
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const artifact = findOfficialReceiptArtifact(item, depth + 1);
+      if (artifact) return artifact;
+    }
+    return null;
+  }
+  if (typeof payload !== "object") return null;
+
+  const source = payload as Record<string, unknown>;
+  const preferredKeys = [
+    "pdf",
+    "base64",
+    "arquivo",
+    "file",
+    "comprovante",
+    "comprovantePdf",
+    "comprovante_pdf",
+    "receipt",
+    "receiptPdf",
+    "receipt_pdf",
+    "url",
+    "downloadUrl",
+    "download_url",
+    "data",
+    "result",
+    "payload",
+    "response",
+    "content",
+  ];
+  for (const key of preferredKeys) {
+    if (!(key in source)) continue;
+    const artifact = findOfficialReceiptArtifact(source[key], depth + 1);
+    if (artifact) return artifact;
+  }
+  for (const [key, value] of Object.entries(source)) {
+    if (preferredKeys.includes(key)) continue;
+    if (!value || typeof value !== "object") continue;
+    const artifact = findOfficialReceiptArtifact(value, depth + 1);
+    if (artifact) return artifact;
+  }
+  return null;
+}
+
+function resolveReceiptPathTemplate(
+  template: string,
+  identifiers: ReturnType<typeof resolveInterTransactionIdentifiers>,
+  movementDate: string,
+) {
+  const values: Record<string, string> = {
+    idtransacao: identifiers.idTransacao,
+    codigotransacao: identifiers.codigoTransacao,
+    codigosolicitacao: identifiers.codigoSolicitacao,
+    endtoendid: identifiers.endToEndId,
+    txid: identifiers.txid,
+    nsu: identifiers.nsu,
+    autenticacao: identifiers.autenticacao,
+    datainicio: movementDate,
+    datafim: movementDate,
+  };
+  let missingIdentifier = false;
+  const resolved = template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, key: string) => {
+    const normalizedKey = key.replace(/_/g, "").toLowerCase();
+    const value = values[normalizedKey];
+    if (!value) {
+      missingIdentifier = true;
+      return "";
+    }
+    return encodeURIComponent(value);
+  });
+  return missingIdentifier ? null : resolved;
+}
+
+async function readOfficialReceiptResponse(
+  response: Response,
+  {
+    requestUrl,
+    headers,
+    httpClient,
+  }: {
+    requestUrl: URL;
+    headers: Record<string, string>;
+    httpClient: Deno.HttpClient;
+  },
+) {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_RECEIPT_PDF_BYTES) {
+    throw new Error("O comprovante retornado excede o limite de 12 MB.");
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length > MAX_RECEIPT_PDF_BYTES) {
+    throw new Error("O comprovante retornado excede o limite de 12 MB.");
+  }
+  if (isPdfBytes(bytes)) return { base64: bytesToBase64(bytes) };
+
+  const rawText = new TextDecoder().decode(bytes);
+  let parsed: unknown = rawText;
+  try {
+    parsed = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    parsed = rawText;
+  }
+  const artifact = findOfficialReceiptArtifact(parsed);
+  if (!artifact) throw new Error("A API respondeu sem um PDF, base64 ou URL de comprovante reconhecivel.");
+  if (artifact.base64) return artifact;
+
+  const artifactUrl = new URL(artifact.url || "", requestUrl);
+  if (artifactUrl.origin !== requestUrl.origin) {
+    if (artifactUrl.protocol !== "https:") throw new Error("A API retornou uma URL de comprovante insegura.");
+    return { url: artifactUrl.toString() };
+  }
+
+  const fileResponse = await fetch(artifactUrl.toString(), {
+    method: "GET",
+    headers,
+    client: httpClient,
+  });
+  if (!fileResponse.ok) {
+    throw new Error(`Falha ao baixar o arquivo do comprovante (${fileResponse.status}).`);
+  }
+  const fileBytes = new Uint8Array(await fileResponse.arrayBuffer());
+  if (fileBytes.length > MAX_RECEIPT_PDF_BYTES || !isPdfBytes(fileBytes)) {
+    throw new Error("A URL retornada nao entregou um PDF valido dentro do limite de 12 MB.");
+  }
+  return { base64: bytesToBase64(fileBytes) };
+}
+
+async function fetchConfiguredOfficialReceiptPdf(
+  config: IntegrationConfig,
+  movement: Record<string, unknown>,
+  rawData: Record<string, unknown>,
+) {
+  if (!configBoolean(getConfigValue(config, "receipt_pdf_enabled"))) {
+    return { receipt: null, warning: null };
+  }
+
+  const configuredTemplates = sanitizeText(getConfigValue(config, "receipt_pdf_path_templates"))
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!configuredTemplates.length) {
+    return {
+      receipt: null,
+      warning: "O comprovante oficial esta habilitado, mas nenhum endpoint foi configurado.",
+    };
+  }
+
+  const identifiers = resolveInterTransactionIdentifiers(rawData);
+  const movementDate = formatDateOnly(sanitizeText(
+    firstDefined(movement.data_movimento, movement.data, movement.created_date),
+    new Date().toISOString(),
+  ));
+  const resolvedTemplates = configuredTemplates
+    .map((template) => resolveReceiptPathTemplate(template, identifiers, movementDate))
+    .filter((template): template is string => Boolean(template));
+  if (!resolvedTemplates.length) {
+    return {
+      receipt: null,
+      warning: "A transacao nao possui o identificador exigido pelos endpoints de comprovante configurados.",
+    };
+  }
+
+  const { accessToken, httpClient } = await getAccessToken(config, {
+    scopeConfigKey: "receipt_pdf_scope",
+    fallbackScope: DEFAULT_RECEIPT_PDF_SCOPE,
+    actionLabel: "consultar o comprovante individual",
+  });
+  const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
+  const apiOrigin = new URL(apiBaseUrl).origin;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: "application/pdf, application/json;q=0.9, application/octet-stream;q=0.8",
+  };
+  const accountNumber = sanitizeText(getConfigValue(config, "account_number")).replace(/\D/g, "");
+  if (accountNumber) headers["x-conta-corrente"] = accountNumber;
+  const extraHeaders = (config.extra_headers || getConfigValue<Record<string, unknown>>(config, "extra_headers") || {}) as Record<string, unknown>;
+  Object.entries(extraHeaders).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) headers[key] = String(value);
+  });
+
+  const errors: string[] = [];
+  for (let index = 0; index < resolvedTemplates.length; index += 1) {
+    try {
+      const url = new URL(resolvedTemplates[index], apiBaseUrl);
+      if (url.origin !== apiOrigin) {
+        throw new Error("O endpoint configurado precisa usar o mesmo dominio da API Base URL.");
+      }
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers,
+        client: httpClient,
+      });
+      if (!response.ok) {
+        const rawError = await response.text();
+        throw new Error(`HTTP ${response.status}${rawError ? `: ${rawError.slice(0, 300)}` : ""}`);
+      }
+      const artifact = await readOfficialReceiptResponse(response, { requestUrl: url, headers, httpClient });
+      return {
+        receipt: {
+          ...artifact,
+          mime_type: "application/pdf",
+          source: "banco_inter_official_receipt_pdf",
+        },
+        warning: null,
+      };
+    } catch (error) {
+      errors.push(`Endpoint ${index + 1}: ${serializeError(error)}`);
+    }
+  }
+
+  return {
+    receipt: null,
+    warning: `O Banco Inter nao entregou o comprovante oficial. ${errors.join(" | ")}`,
+  };
+}
+
+async function diagnoseInterCapabilities(config: IntegrationConfig) {
+  const receiptEnabled = configBoolean(getConfigValue(config, "receipt_pdf_enabled"));
+  const receiptTemplates = sanitizeText(getConfigValue(config, "receipt_pdf_path_templates"));
+  const definitions = [
+    {
+      key: "banking_read",
+      label: "Extrato e saldo",
+      scopeConfigKey: null,
+      fallbackScope: DEFAULT_BANKING_SCOPE,
+      actionLabel: "validar extrato e saldo",
+    },
+    {
+      key: "pix_received_read",
+      label: "Pix recebidos",
+      scopeConfigKey: "pix_read_scope",
+      fallbackScope: DEFAULT_PIX_READ_SCOPE,
+      actionLabel: "validar consulta de Pix recebidos",
+    },
+    {
+      key: "pix_payment_read",
+      label: "Pagamentos Pix",
+      scopeConfigKey: "pix_payment_read_scope",
+      fallbackScope: DEFAULT_PIX_PAYMENT_READ_SCOPE,
+      actionLabel: "validar consulta de pagamentos Pix",
+    },
+    {
+      key: "boleto_payment_read",
+      label: "Pagamentos de boletos",
+      scopeConfigKey: "boleto_payment_read_scope",
+      fallbackScope: DEFAULT_BOLETO_PAYMENT_READ_SCOPE,
+      actionLabel: "validar consulta de pagamentos de boletos",
+    },
+    {
+      key: "charge_read",
+      label: "Consulta de cobrancas",
+      scopeConfigKey: "charge_read_scope",
+      fallbackScope: DEFAULT_CHARGE_READ_SCOPE,
+      actionLabel: "validar consulta de cobrancas",
+    },
+    {
+      key: "charge_write",
+      label: "Emissao de cobrancas",
+      scopeConfigKey: "charge_write_scope",
+      fallbackScope: DEFAULT_CHARGE_WRITE_SCOPE,
+      actionLabel: "validar emissao de cobrancas",
+    },
+    {
+      key: "official_receipt_pdf",
+      label: "Comprovante individual oficial",
+      scopeConfigKey: "receipt_pdf_scope",
+      fallbackScope: DEFAULT_RECEIPT_PDF_SCOPE,
+      actionLabel: "validar comprovante individual",
+      configurationRequired: !receiptEnabled || !receiptTemplates,
+    },
+  ];
+
+  const capabilities: Array<Record<string, unknown>> = [];
+  let rateLimited = false;
+  for (const definition of definitions) {
+    const scope = resolveScopedTokenScope(config, {
+      scopeConfigKey: definition.scopeConfigKey || undefined,
+      fallbackScope: definition.fallbackScope,
+    });
+
+    if (definition.configurationRequired) {
+      capabilities.push({
+        key: definition.key,
+        label: definition.label,
+        scope,
+        status: "configuration_required",
+        message: "Habilite o comprovante e informe o endpoint oficial disponibilizado para a nova API.",
+      });
+      continue;
+    }
+    if (rateLimited) {
+      capabilities.push({
+        key: definition.key,
+        label: definition.label,
+        scope,
+        status: "not_tested",
+        message: "Nao testado para evitar novas requisicoes durante o limite temporario do Inter.",
+      });
+      continue;
+    }
+
+    try {
+      await getAccessToken(config, {
+        scopeConfigKey: definition.scopeConfigKey || undefined,
+        fallbackScope: definition.fallbackScope,
+        actionLabel: definition.actionLabel,
+      });
+      capabilities.push({
+        key: definition.key,
+        label: definition.label,
+        scope,
+        status: "available",
+        message: definition.key === "official_receipt_pdf"
+          ? "Scope aceito e endpoint configurado. O PDF sera validado ao abrir um comprovante real."
+          : "Scope aceito pelo OAuth do Banco Inter.",
+      });
+      await wait(350);
+    } catch (error) {
+      const message = serializeError(error);
+      const isRateLimit = error instanceof BancoInterAuthError && error.status === 429;
+      if (isRateLimit) rateLimited = true;
+      capabilities.push({
+        key: definition.key,
+        label: definition.label,
+        scope,
+        status: isRateLimit
+          ? "rate_limited"
+          : error instanceof BancoInterAuthError
+          ? "unavailable"
+          : "error",
+        message,
+      });
+    }
+  }
+
+  const unavailableCount = capabilities.filter((item) => item.status !== "available").length;
+  return {
+    success: unavailableCount === 0,
+    action: "diagnoseCapabilities",
+    integracao_id: config.id,
+    capabilities,
+    message: unavailableCount === 0
+      ? "Todas as capacidades configuradas foram aceitas pelo OAuth do Banco Inter."
+      : `${unavailableCount} capacidade(s) ainda exigem permissao, configuracao ou nova tentativa.`,
+  };
+}
+
 function getInterTransactionDetails(rawData: Record<string, unknown>) {
   return rawData.detalhes && typeof rawData.detalhes === "object"
     ? rawData.detalhes as Record<string, unknown>
@@ -3492,6 +3893,30 @@ async function loadTransactionReceiptForConfig(
     };
   }
 
+  let officialPdfWarning: string | null = null;
+  try {
+    const officialPdfResult = await fetchConfiguredOfficialReceiptPdf(config, movement, enrichedRawData);
+    officialPdfWarning = officialPdfResult.warning;
+    if (officialPdfResult.receipt) {
+      return {
+        success: true,
+        action: "transactionReceipt",
+        empresa_id: empresaId,
+        integracao_id: config.id,
+        movement_id: movement.id,
+        transaction_id: movement.id,
+        receipt_available: true,
+        receipt_format: "pdf",
+        official_pdf: true,
+        file_name: `comprovante-${movement.id}.pdf`,
+        ...officialPdfResult.receipt,
+        message: "Comprovante individual consultado em tempo real no Banco Inter.",
+      };
+    }
+  } catch (error) {
+    officialPdfWarning = serializeError(error);
+  }
+
   let liveDetailsPayload: unknown = null;
   let detailLookupWarning: string | null = null;
   try {
@@ -3520,10 +3945,10 @@ async function loadTransactionReceiptForConfig(
       identifiers.txid,
     )) || null,
     details: buildLiveReceiptDetails(movement, enrichedRawData, liveDetailsPayload),
-    warning: detailLookupWarning || liveLookupWarning || null,
+    warning: officialPdfWarning || detailLookupWarning || liveLookupWarning || null,
     message: liveDetailsPayload
       ? "Dados da transação consultados em tempo real no Banco Inter."
-      : "Detalhes recuperados do extrato completo do Banco Inter; não existe PDF individual para este tipo de lançamento.",
+      : "Detalhes recuperados do extrato completo do Banco Inter. O PDF oficial sera usado automaticamente quando o endpoint estiver disponivel e configurado.",
   };
 }
 
@@ -3598,6 +4023,11 @@ Deno.serve(async (request) => {
         empresaIdOverride: sanitizeText(payload.empresa_id),
         debug: Boolean(payload.debug),
       });
+      return jsonResponse(data);
+    }
+
+    if (action === "diagnoseCapabilities") {
+      const data = await diagnoseInterCapabilities(config);
       return jsonResponse(data);
     }
 

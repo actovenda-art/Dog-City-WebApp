@@ -227,6 +227,27 @@ Importante:
 - secrets dessas functions ficam no Supabase, nao no frontend
 - `SUPABASE_SERVICE_ROLE_KEY` e similares nao devem aparecer em `.env.local`
 
+### Troca da integracao Banco Inter
+
+A tela `Administracao > Integracoes` separa as credenciais dos scopes usados por cada capacidade:
+
+- extrato e saldo: `extrato.read saldo.read`
+- Pix recebidos: `pix.read`
+- consulta de pagamentos Pix: `pagamento-pix.read`
+- consulta de pagamentos de boletos: `pagamento-boleto.read`
+- consulta de cobrancas: `boleto-cobranca.read`
+- emissao de cobrancas: `boleto-cobranca.write`
+
+Ao substituir a aplicacao do Inter:
+
+1. troque `client_id`, `client_secret`, conta e o par de certificado/chave da mesma integracao;
+2. salve os scopes concedidos no Portal do Desenvolvedor;
+3. use `Diagnosticar permissoes` antes de sincronizar ou emitir cobrancas;
+4. para comprovante individual, habilite a opcao e informe o endpoint oficial disponibilizado no contrato da nova API;
+5. informe um endpoint por linha quando o Inter publicar rotas diferentes por tipo de transacao.
+
+Os endpoints de comprovante aceitam os placeholders `{idTransacao}`, `{codigoTransacao}`, `{codigoSolicitacao}`, `{endToEndId}`, `{txid}`, `{nsu}`, `{dataInicio}` e `{dataFim}`. A Edge Function aceita resposta PDF binaria, JSON com base64, JSON com URL ou URL assinada. Se o PDF oficial nao estiver disponivel, o app preserva o fallback de detalhes bancarios estruturados e nunca substitui o comprovante por um extrato diario.
+
 ## Gateway de WhatsApp
 
 Existe um servico separado em [`services/whatsapp-gateway/`](./services/whatsapp-gateway) para manter sessoes persistentes do `whatsapp-web.js`.

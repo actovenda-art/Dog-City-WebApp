@@ -1986,6 +1986,30 @@ const mockFunctions = {
       };
     }
 
+    if (payload?.action === 'diagnoseCapabilities') {
+      const capabilities = [
+        ['banking_read', 'Extrato e saldo', 'extrato.read saldo.read'],
+        ['pix_received_read', 'Pix recebidos', 'pix.read'],
+        ['pix_payment_read', 'Pagamentos Pix', 'pagamento-pix.read'],
+        ['boleto_payment_read', 'Pagamentos de boletos', 'pagamento-boleto.read'],
+        ['charge_read', 'Consulta de cobrancas', 'boleto-cobranca.read'],
+        ['charge_write', 'Emissao de cobrancas', 'boleto-cobranca.write'],
+        ['official_receipt_pdf', 'Comprovante individual oficial', 'extrato.read'],
+      ].map(([key, label, scope]) => ({
+        key,
+        label,
+        scope,
+        status: 'available',
+        message: 'Scope aceito pelo mock do Banco Inter.',
+      }));
+      return {
+        success: true,
+        action: 'diagnoseCapabilities',
+        message: 'Todas as capacidades configuradas foram aceitas pelo mock do Banco Inter.',
+        capabilities,
+      };
+    }
+
     if (payload?.action === 'test') {
       return { success: true, message: 'Mock Banco Inter conectado.' };
     }

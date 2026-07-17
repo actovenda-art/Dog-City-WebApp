@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import { ACTIVE_UNIT_EVENT, getStoredUnitSelection, setStoredUnitSelection } from "@/lib/unit-context";
 import {
@@ -24,6 +25,7 @@ import {
   RefreshCcw,
   Save,
   Settings,
+  ShieldCheck,
   Smartphone,
   XCircle,
 } from "lucide-react";
@@ -35,8 +37,34 @@ const DEFAULT_FORM = {
   auto_sync_enabled: true,
   auto_sync_interval_minutes: 60,
   scope: "extrato.read saldo.read",
+  pix_read_scope: "pix.read",
+  pix_payment_read_scope: "pagamento-pix.read",
+  boleto_payment_read_scope: "pagamento-boleto.read",
+  charge_read_scope: "boleto-cobranca.read",
+  charge_write_scope: "boleto-cobranca.write",
+  receipt_pdf_enabled: false,
+  receipt_pdf_scope: "extrato.read",
+  receipt_pdf_path_templates: "",
   token_url: "https://cdpj.partners.bancointer.com.br/oauth/v2/token",
   api_base_url: "https://cdpj.partners.bancointer.com.br",
+};
+
+const INTER_SCOPE_FIELDS = [
+  { key: "scope", label: "Extrato e saldo", description: "Sincronização bancária e saldo atual." },
+  { key: "pix_read_scope", label: "Pix recebidos", description: "Detalhes de Pix creditados na conta." },
+  { key: "pix_payment_read_scope", label: "Pagamentos Pix", description: "Consulta de Pix enviados pela conta." },
+  { key: "boleto_payment_read_scope", label: "Pagamentos de boletos", description: "Consulta de boletos pagos pela conta." },
+  { key: "charge_read_scope", label: "Cobranças emitidas", description: "Consulta, status e PDF de cobranças." },
+  { key: "charge_write_scope", label: "Emissão de cobranças", description: "Emissão e manutenção de cobranças." },
+];
+
+const CAPABILITY_STATUS_META = {
+  available: { label: "Disponível", className: "bg-green-100 text-green-700" },
+  configuration_required: { label: "Configurar", className: "bg-amber-100 text-amber-700" },
+  rate_limited: { label: "Limite temporario", className: "bg-amber-100 text-amber-700" },
+  not_tested: { label: "Não testado", className: "bg-gray-100 text-gray-600" },
+  unavailable: { label: "Sem permissão", className: "bg-red-100 text-red-700" },
+  error: { label: "Com erro", className: "bg-red-100 text-red-700" },
 };
 
 const DEFAULT_WHATSAPP_SLOTS = [
@@ -131,13 +159,24 @@ function getWhatsappStatusView(status) {
 function buildFormData(config) {
   if (!config) return { ...DEFAULT_FORM };
 
+  const storedConfig = config.config && typeof config.config === "object" ? config.config : {};
+  const storedValue = (key, fallback) => storedConfig[key] ?? config[key] ?? fallback;
+
   return {
     client_id: config.credenciais?.client_id || "",
     client_secret: config.credenciais?.client_secret || "",
     account_number: config.credenciais?.account_number || "",
     auto_sync_enabled: config.auto_sync_enabled !== false,
     auto_sync_interval_minutes: config.auto_sync_interval_minutes || 60,
-    scope: config.scope || DEFAULT_FORM.scope,
+    scope: storedValue("scope", DEFAULT_FORM.scope),
+    pix_read_scope: storedValue("pix_read_scope", DEFAULT_FORM.pix_read_scope),
+    pix_payment_read_scope: storedValue("pix_payment_read_scope", DEFAULT_FORM.pix_payment_read_scope),
+    boleto_payment_read_scope: storedValue("boleto_payment_read_scope", DEFAULT_FORM.boleto_payment_read_scope),
+    charge_read_scope: storedValue("charge_read_scope", DEFAULT_FORM.charge_read_scope),
+    charge_write_scope: storedValue("charge_write_scope", DEFAULT_FORM.charge_write_scope),
+    receipt_pdf_enabled: storedValue("receipt_pdf_enabled", DEFAULT_FORM.receipt_pdf_enabled) === true,
+    receipt_pdf_scope: storedValue("receipt_pdf_scope", DEFAULT_FORM.receipt_pdf_scope),
+    receipt_pdf_path_templates: storedValue("receipt_pdf_path_templates", DEFAULT_FORM.receipt_pdf_path_templates),
     token_url: config.token_url || DEFAULT_FORM.token_url,
     api_base_url: config.api_base_url || DEFAULT_FORM.api_base_url,
   };
@@ -191,8 +230,10 @@ export default function ConfigurarIntegracoes() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [capabilityResult, setCapabilityResult] = useState(null);
   const [importResult, setImportResult] = useState(null);
   const [dataInicio, setDataInicio] = useState(format(subDays(new Date(), 30), "yyyy-MM-dd"));
   const [dataFim, setDataFim] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -378,10 +419,19 @@ export default function ConfigurarIntegracoes() {
         sync_backfill_days: config?.sync_backfill_days || 3,
         next_sync_at: config?.next_sync_at || new Date().toISOString(),
         config: {
+          ...(config?.config && typeof config.config === "object" ? config.config : {}),
           account_number: formData.account_number.trim(),
           auto_sync_enabled: !!formData.auto_sync_enabled,
           auto_sync_interval_minutes: Math.max(15, Number(formData.auto_sync_interval_minutes) || 60),
           scope: formData.scope.trim(),
+          pix_read_scope: formData.pix_read_scope.trim(),
+          pix_payment_read_scope: formData.pix_payment_read_scope.trim(),
+          boleto_payment_read_scope: formData.boleto_payment_read_scope.trim(),
+          charge_read_scope: formData.charge_read_scope.trim(),
+          charge_write_scope: formData.charge_write_scope.trim(),
+          receipt_pdf_enabled: !!formData.receipt_pdf_enabled,
+          receipt_pdf_scope: formData.receipt_pdf_scope.trim(),
+          receipt_pdf_path_templates: formData.receipt_pdf_path_templates.trim(),
           token_url: formData.token_url.trim(),
           api_base_url: formData.api_base_url.trim(),
         },
@@ -398,6 +448,7 @@ export default function ConfigurarIntegracoes() {
       await loadConfig();
       setIsEditing(false);
       resetFiles();
+      setCapabilityResult(null);
       setTestResult({
         success: true,
         message: shouldCreateScopedCopy
@@ -521,6 +572,37 @@ export default function ConfigurarIntegracoes() {
       primaryUnitId,
       selectedUnitIds: [primaryUnitId],
     });
+  };
+
+  const diagnosticarPermissoes = async () => {
+    if (!config?.id) {
+      setCapabilityResult({
+        success: false,
+        message: "Salve a configuração antes de diagnosticar as permissões.",
+        capabilities: [],
+      });
+      return;
+    }
+
+    setIsDiagnosing(true);
+    setCapabilityResult(null);
+
+    try {
+      const data = await bancoInter({
+        action: "diagnoseCapabilities",
+        integracao_id: config.id,
+        empresa_id: currentUser?.empresa_id || config?.empresa_id || null,
+      });
+      setCapabilityResult(data);
+    } catch (error) {
+      setCapabilityResult({
+        success: false,
+        message: error?.message || "Erro ao diagnosticar permissões do Banco Inter.",
+        capabilities: [],
+      });
+    } finally {
+      setIsDiagnosing(false);
+    }
   };
 
   const syncWhatsappSlot = async (slot, action) => {
@@ -803,17 +885,76 @@ export default function ConfigurarIntegracoes() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-4 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
                   <div>
-                    <Label>Scope OAuth</Label>
-                    <Input
-                      value={formData.scope}
-                      onChange={(event) => setFormData({ ...formData, scope: event.target.value })}
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-blue-700" />
+                      <p className="font-medium text-gray-900">Permissões da API</p>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-600">
+                      Cada recurso usa seu próprio scope. Isso permite trocar a aplicação do Inter sem alterar o código.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {INTER_SCOPE_FIELDS.map((field) => (
+                      <div key={field.key} className="rounded-lg border border-blue-100 bg-white p-3">
+                        <Label>{field.label}</Label>
+                        <p className="mt-0.5 text-xs text-gray-500">{field.description}</p>
+                        <Input
+                          value={formData[field.key]}
+                          onChange={(event) => setFormData({ ...formData, [field.key]: event.target.value })}
+                          disabled={config && !isEditing}
+                          className="mt-2"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-medium text-gray-900">Comprovante individual oficial</p>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Habilite ao trocar para uma API com essa permissão e informe o endpoint publicado no contrato do Inter.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={!!formData.receipt_pdf_enabled}
+                      onCheckedChange={(checked) => setFormData({ ...formData, receipt_pdf_enabled: checked })}
                       disabled={config && !isEditing}
-                      className="mt-1"
                     />
                   </div>
 
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label>Scope do comprovante</Label>
+                      <Input
+                        value={formData.receipt_pdf_scope}
+                        onChange={(event) => setFormData({ ...formData, receipt_pdf_scope: event.target.value })}
+                        disabled={(config && !isEditing) || !formData.receipt_pdf_enabled}
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <Label>Endpoints do comprovante</Label>
+                      <Textarea
+                        value={formData.receipt_pdf_path_templates}
+                        onChange={(event) => setFormData({ ...formData, receipt_pdf_path_templates: event.target.value })}
+                        disabled={(config && !isEditing) || !formData.receipt_pdf_enabled}
+                        placeholder="Um endpoint por linha. Ex.: /banking/v2/.../{codigoTransacao}"
+                        className="mt-1 min-h-24 font-mono text-xs"
+                      />
+                      <p className="mt-2 text-xs text-gray-500">
+                        Identificadores aceitos: {"{idTransacao}"}, {"{codigoTransacao}"}, {"{codigoSolicitacao}"}, {"{endToEndId}"}, {"{txid}"}, {"{nsu}"}, {"{dataInicio}"} e {"{dataFim}"}.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label>Token URL</Label>
                     <Input
@@ -910,6 +1051,7 @@ export default function ConfigurarIntegracoes() {
                         setFormData(buildFormData(config));
                         resetFiles();
                         setTestResult(null);
+                        setCapabilityResult(null);
                       }}
                     >
                       Cancelar
@@ -922,14 +1064,24 @@ export default function ConfigurarIntegracoes() {
             <Separator />
 
             <div>
-              <h3 className="font-semibold text-gray-900 mb-3">1. Testar conexão</h3>
-              <Button
-                onClick={testarConexao}
-                disabled={isTesting || !canUseIntegration}
-                className="w-full bg-orange-600 hover:bg-orange-700 text-white"
-              >
-                {isTesting ? "Testando..." : "Testar conexão com Banco Inter"}
-              </Button>
+              <h3 className="font-semibold text-gray-900 mb-3">1. Validar integração</h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button
+                  onClick={testarConexao}
+                  disabled={isTesting || isDiagnosing || !canUseIntegration}
+                  className="bg-orange-600 text-white hover:bg-orange-700"
+                >
+                  {isTesting ? "Testando..." : "Testar conexão"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={diagnosticarPermissoes}
+                  disabled={isTesting || isDiagnosing || !canUseIntegration}
+                >
+                  <ShieldCheck className="mr-2 h-4 w-4" />
+                  {isDiagnosing ? "Diagnosticando..." : "Diagnosticar permissões"}
+                </Button>
+              </div>
 
               {!canUseIntegration && (
                 <p className="mt-2 text-xs text-gray-500">
@@ -968,6 +1120,40 @@ export default function ConfigurarIntegracoes() {
                             : testResult.details}
                         </pre>
                       )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {capabilityResult && (
+                <div className="mt-3 rounded-lg border border-gray-200 bg-white p-4">
+                  <div className="flex items-start gap-2">
+                    {capabilityResult.success ? (
+                      <CheckCircle className="mt-0.5 h-5 w-5 text-green-600" />
+                    ) : (
+                      <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900">{capabilityResult.message}</p>
+                      <div className="mt-3 space-y-2">
+                        {(capabilityResult.capabilities || []).map((capability) => {
+                          const status = CAPABILITY_STATUS_META[capability.status] || CAPABILITY_STATUS_META.error;
+                          return (
+                            <div key={capability.key} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-sm font-medium text-gray-900">{capability.label}</p>
+                                <Badge className={status.className}>{status.label}</Badge>
+                              </div>
+                              <p className="mt-1 break-all font-mono text-[11px] text-gray-500">
+                                {capability.scope || "Sem scope configurado"}
+                              </p>
+                              {capability.message && (
+                                <p className="mt-1 text-xs text-gray-600">{capability.message}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>

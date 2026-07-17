@@ -1239,6 +1239,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState(null);
   const [receiptLoadingId, setReceiptLoadingId] = useState(null);
+  const [transactionReceipt, setTransactionReceipt] = useState(null);
   const [visibleCount, setVisibleCount] = useState(MOVEMENTS_PAGE_SIZE);
   const [cacheHydrated, setCacheHydrated] = useState(false);
   const [hasLoadedFullDataset, setHasLoadedFullDataset] = useState(false);
@@ -2538,8 +2539,13 @@ export default function Movimentacoes({ walletOnly = false }) {
         return;
       }
 
+      if (data?.details) {
+        setTransactionReceipt(data);
+        return;
+      }
+
       if (!data?.base64) {
-        throw new Error("A API do banco não retornou um PDF para este comprovante.");
+        throw new Error("A API do banco não retornou detalhes ou PDF para este comprovante.");
       }
 
       const binary = window.atob(data.base64);
@@ -3197,6 +3203,74 @@ export default function Movimentacoes({ walletOnly = false }) {
           </>
         ) : null}
       </div>
+
+      <Dialog open={Boolean(transactionReceipt)} onOpenChange={(open) => !open && setTransactionReceipt(null)}>
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[640px] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex flex-wrap items-center gap-2">
+              <DialogTitle>Comprovante da transação</DialogTitle>
+              <Badge className="border border-emerald-200 bg-emerald-50 text-emerald-700">
+                Consultado no Banco Inter
+              </Badge>
+            </div>
+            <DialogDescription>
+              {transactionReceipt?.message || "Dados bancários consultados em tempo real."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
+            <div className="flex flex-col gap-1 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  {transactionReceipt?.details?.transaction_type || "Movimentação bancária"}
+                </p>
+                <p className="mt-1 text-base font-semibold text-slate-900">
+                  {transactionReceipt?.details?.description || "Transação Banco Inter"}
+                </p>
+              </div>
+              <p className={`text-xl font-bold ${transactionReceipt?.details?.direction === "Saída" ? "text-rose-600" : "text-emerald-600"}`}>
+                {transactionReceipt?.details?.direction === "Saída" ? "-" : "+"}
+                {formatCurrency(transactionReceipt?.details?.amount || 0)}
+              </p>
+            </div>
+
+            <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+              {[
+                ["Data", transactionReceipt?.details?.transaction_date ? formatMovementDateTime(transactionReceipt.details.transaction_date) : null],
+                ["Situação", transactionReceipt?.details?.status],
+                ["Contraparte", transactionReceipt?.details?.counterparty_name],
+                ["Documento", transactionReceipt?.details?.counterparty_document],
+                ["Referência bancária", transactionReceipt?.details?.provider_reference],
+                ["End-to-End Pix", transactionReceipt?.details?.end_to_end_id],
+                ["TXID", transactionReceipt?.details?.txid],
+                ["NSU", transactionReceipt?.details?.nsu],
+                ["Autenticação", transactionReceipt?.details?.authentication],
+              ].filter(([, value]) => value).map(([label, value]) => (
+                <div key={label} className="min-w-0">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+                  <dd className="mt-1 break-all font-medium text-slate-900">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          {transactionReceipt?.warning ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {transactionReceipt.warning}
+            </p>
+          ) : null}
+
+          {!transactionReceipt?.official_pdf ? (
+            <p className="text-xs leading-5 text-slate-500">
+              O Banco Inter não fornece PDF individual para todo lançamento do extrato. Este comprovante apresenta os dados identificadores retornados pela API oficial.
+            </p>
+          ) : null}
+
+          <DialogFooter>
+            <Button type="button" onClick={() => setTransactionReceipt(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="max-h-[90vh] w-[95vw] max-w-[720px] overflow-y-auto">

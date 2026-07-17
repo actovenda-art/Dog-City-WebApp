@@ -8,12 +8,18 @@ const corsHeaders = {
 
 const DEFAULT_TOKEN_URL = "https://cdpj.partners.bancointer.com.br/oauth/v2/token";
 const DEFAULT_API_BASE_URL = "https://cdpj.partners.bancointer.com.br";
-const DEFAULT_EXTRATO_PATH = "/banking/v2/extrato";
+const DEFAULT_EXTRATO_PATH = "/banking/v2/extrato/completo";
 const DEFAULT_BALANCE_PATHS = ["/banking/v2/saldo", "/banking/v1/saldo"];
 const DEFAULT_BANKING_SCOPE = "extrato.read saldo.read";
 const DEFAULT_CHARGE_READ_SCOPE = "boleto-cobranca.read";
 const DEFAULT_CHARGE_WRITE_SCOPE = "boleto-cobranca.write";
+const DEFAULT_PIX_READ_SCOPE = "pix.read";
+const DEFAULT_PIX_PAYMENT_READ_SCOPE = "pagamento-pix.read";
+const DEFAULT_BOLETO_PAYMENT_READ_SCOPE = "pagamento-boleto.read";
 const DEFAULT_CHARGE_PATH = "/cobranca/v3/cobrancas";
+const DEFAULT_PIX_PATH = "/pix/v2/pix";
+const DEFAULT_PIX_PAYMENT_PATH = "/banking/v2/pix";
+const DEFAULT_BOLETO_PAYMENT_PATH = "/banking/v2/pagamento";
 const INTER_TOKEN_CACHE_TTL_MS = 55 * 60 * 1000;
 const INTER_TOKEN_RATE_LIMIT_DEFAULT_SECONDS = 60;
 
@@ -503,7 +509,7 @@ async function loadMovementRowsPaginated<T extends Record<string, unknown>>(
 
     if (error) throw error;
 
-    const batch = (data || []) as T[];
+    const batch = (data || []) as unknown as T[];
     rows.push(...batch);
 
     if (batch.length < batchSize) break;
@@ -573,6 +579,9 @@ function inferCounterpartyName(
   rawTransaction: Record<string, unknown>,
   description: string,
 ) {
+  const details = rawTransaction.detalhes && typeof rawTransaction.detalhes === "object"
+    ? rawTransaction.detalhes as Record<string, unknown>
+    : {};
   const value = sanitizeText(firstDefined(
     rawTransaction.nomeRemetente,
     rawTransaction.nomePagador,
@@ -584,11 +593,18 @@ function inferCounterpartyName(
     rawTransaction.creditorName,
     rawTransaction.debtorName,
     rawTransaction.cliente,
+    details.nomePagador,
+    details.nomeRecebedor,
+    details.nomeEmpresaPagador,
+    details.nomeEmpresaRecebedor,
   ));
   return value || description || null;
 }
 
 function inferCounterpartyBank(rawTransaction: Record<string, unknown>) {
+  const details = rawTransaction.detalhes && typeof rawTransaction.detalhes === "object"
+    ? rawTransaction.detalhes as Record<string, unknown>
+    : {};
   return sanitizeText(firstDefined(
     rawTransaction.banco,
     rawTransaction.bancoDestino,
@@ -597,18 +613,27 @@ function inferCounterpartyBank(rawTransaction: Record<string, unknown>) {
     rawTransaction.instituicao,
     rawTransaction.bankName,
     rawTransaction.bank,
+    details.nomeEmpresaPagador,
+    details.nomeEmpresaRecebedor,
   )) || null;
 }
 
 function inferReference(rawTransaction: Record<string, unknown>, externalId: string) {
+  const details = rawTransaction.detalhes && typeof rawTransaction.detalhes === "object"
+    ? rawTransaction.detalhes as Record<string, unknown>
+    : {};
   return sanitizeText(firstDefined(
     rawTransaction.referencia,
     rawTransaction.documento,
     rawTransaction.identificador,
+    rawTransaction.idTransacao,
     rawTransaction.codigoTransacao,
     rawTransaction.transactionId,
     rawTransaction.nsu,
     rawTransaction.nsudoc,
+    details.codigoSolicitacao,
+    details.endToEndId,
+    details.txId,
     externalId,
   )) || null;
 }
@@ -667,6 +692,7 @@ function buildStableTransactionFingerprintPayload(transaction: Record<string, un
   return {
     id: sanitizeText(firstDefined(
       transaction.id,
+      transaction.idTransacao,
       transaction.codigoTransacao,
       transaction.transactionId,
       transaction.identificador,
@@ -979,10 +1005,6 @@ async function fetchExtrato(
 ) {
   const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
   const extratoPath = sanitizeText(getConfigValue(config, "extrato_path"), DEFAULT_EXTRATO_PATH);
-  const url = new URL(extratoPath, apiBaseUrl);
-  url.searchParams.set("dataInicio", fromDate);
-  url.searchParams.set("dataFim", toDate);
-
   const extraHeaders = (config.extra_headers || getConfigValue<Record<string, unknown>>(config, "extra_headers") || {}) as Record<string, unknown>;
   const headers: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
@@ -995,12 +1017,106 @@ async function fetchExtrato(
     }
   });
 
+  const pageSize = 1000;
+  const transactions: Record<string, unknown>[] = [];
+  let page = 0;
+  let httpStatus = 200;
+  let lastPayload: Record<string, unknown> = {};
+
+  while (page < 100) {
+    const url = new URL(extratoPath, apiBaseUrl);
+    url.searchParams.set("dataInicio", fromDate);
+    url.searchParams.set("dataFim", toDate);
+    url.searchParams.set("pagina", String(page));
+    url.searchParams.set("tamanhoPagina", String(pageSize));
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers,
+      client: httpClient,
+    });
+
+    const rawText = await response.text();
+    let parsed: unknown = {};
+    try {
+      parsed = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      parsed = { raw: rawText };
+    }
+
+    if (!response.ok) {
+      throw new Error(`Falha ao consultar extrato completo no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
+    }
+
+    httpStatus = response.status;
+    const batch = getTransactionArray(parsed);
+    transactions.push(...batch);
+    lastPayload = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+
+    const totalPages = Number(firstDefined(lastPayload.totalPaginas, lastPayload.total_pages));
+    const explicitlyLastPage = firstDefined(lastPayload.ultimaPagina, lastPayload.last) === true;
+    const hasKnownTotal = Number.isFinite(totalPages) && totalPages > 0;
+    if (
+      Array.isArray(parsed)
+      || explicitlyLastPage
+      || (hasKnownTotal && page + 1 >= totalPages)
+      || (!hasKnownTotal && batch.length < pageSize)
+    ) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return {
+    payload: { ...lastPayload, transacoes: transactions },
+    httpStatus,
+  };
+}
+
+async function fetchScopedInterJson(
+  config: IntegrationConfig,
+  {
+    path,
+    scopeConfigKey,
+    fallbackScope,
+    actionLabel,
+    searchParams,
+  }: {
+    path: string;
+    scopeConfigKey: string;
+    fallbackScope: string;
+    actionLabel: string;
+    searchParams?: Record<string, string>;
+  },
+) {
+  const { accessToken, httpClient } = await getAccessToken(config, {
+    scopeConfigKey,
+    fallbackScope,
+    actionLabel,
+  });
+  const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
+  const url = new URL(path, apiBaseUrl);
+  Object.entries(searchParams || {}).forEach(([key, value]) => {
+    if (value) url.searchParams.set(key, value);
+  });
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: "application/json",
+  };
+  const extraHeaders = (config.extra_headers || getConfigValue<Record<string, unknown>>(config, "extra_headers") || {}) as Record<string, unknown>;
+  Object.entries(extraHeaders).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) headers[key] = String(value);
+  });
+
   const response = await fetch(url.toString(), {
     method: "GET",
     headers,
     client: httpClient,
   });
-
   const rawText = await response.text();
   let parsed: unknown = {};
   try {
@@ -1010,10 +1126,10 @@ async function fetchExtrato(
   }
 
   if (!response.ok) {
-    throw new Error(`Falha ao consultar extrato no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
+    throw new Error(`Falha ao ${actionLabel} no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
   }
 
-  return { payload: parsed, httpStatus: response.status };
+  return parsed;
 }
 
 async function fetchExtratoResilient(
@@ -1585,7 +1701,9 @@ async function resolveBudgetPaymentExtratoId(row: Record<string, unknown>) {
 
   const expectedName = normalizeSearchText(
     firstDefined(
-      row?.metadata && typeof row.metadata === "object" ? row.metadata.responsavel_nome : null,
+      row?.metadata && typeof row.metadata === "object"
+        ? (row.metadata as Record<string, unknown>).responsavel_nome
+        : null,
       row.responsavel_nome,
       row.nome_contraparte,
     ),
@@ -1753,8 +1871,8 @@ async function normalizeTransactions(
         return leftTimestamp - rightTimestamp;
       }
 
-      const leftId = sanitizeText(firstDefined(left.id, left.codigoTransacao, left.transactionId, left.nsudoc, left.documento, left.nsu), "");
-      const rightId = sanitizeText(firstDefined(right.id, right.codigoTransacao, right.transactionId, right.nsudoc, right.documento, right.nsu), "");
+      const leftId = sanitizeText(firstDefined(left.id, left.idTransacao, left.codigoTransacao, left.transactionId, left.nsudoc, left.documento, left.nsu), "");
+      const rightId = sanitizeText(firstDefined(right.id, right.idTransacao, right.codigoTransacao, right.transactionId, right.nsudoc, right.documento, right.nsu), "");
       return leftId.localeCompare(rightId);
     });
   const normalizedRows: NormalizedTransaction[] = [];
@@ -1803,6 +1921,7 @@ async function normalizeTransactions(
       : resolvedCounterpartyName || rawDescription;
     const sourceId = sanitizeText(firstDefined(
       transaction.id,
+      transaction.idTransacao,
       transaction.codigoTransacao,
       transaction.transactionId,
       transaction.identificador,
@@ -2014,6 +2133,46 @@ function mergeManualComplements(
   };
 }
 
+function reconcileRowsWithSyntheticMovements(
+  incomingRows: NormalizedTransaction[],
+  existingSyntheticRows: Record<string, unknown>[],
+) {
+  const usedSyntheticIds = new Set<string>();
+  const matchedSyntheticIds = new Set<string>();
+  const rows = incomingRows.map((incomingRow) => {
+    const comparableCandidates = existingSyntheticRows.filter((existingRow) => {
+      const existingId = sanitizeText(existingRow.id);
+      return existingId
+        && !usedSyntheticIds.has(existingId)
+        && sanitizeText(existingRow.data_movimento) === incomingRow.data_movimento
+        && sanitizeText(existingRow.tipo) === incomingRow.tipo
+        && Math.abs(toNumber(existingRow.valor) - incomingRow.valor) < 0.005;
+    });
+    const exactDescriptionCandidates = comparableCandidates.filter((existingRow) => (
+      normalizeReceiptMatchText(existingRow.descricao) === normalizeReceiptMatchText(incomingRow.descricao)
+    ));
+    const candidates = exactDescriptionCandidates.length ? exactDescriptionCandidates : comparableCandidates;
+    if (candidates.length !== 1) return incomingRow;
+
+    const existingRow = candidates[0];
+    const existingId = sanitizeText(existingRow.id);
+    usedSyntheticIds.add(existingId);
+    matchedSyntheticIds.add(existingId);
+    const providerTransactionId = incomingRow.id;
+    return mergeManualComplements({
+      ...incomingRow,
+      id: existingId,
+      metadata_financeira: {
+        ...incomingRow.metadata_financeira,
+        provider_transaction_id: providerTransactionId,
+        transaction_id_source: "api_enriched_legacy_id_preserved",
+      },
+    }, existingRow);
+  });
+
+  return { rows, matchedSyntheticIds };
+}
+
 async function persistTransactions(
   empresaId: string,
   rows: NormalizedTransaction[],
@@ -2037,10 +2196,26 @@ async function persistTransactions(
   }
 
   const uniqueRows = Array.from(uniqueRowsByTransactionId.values());
+  const existingSyntheticRows: Record<string, unknown>[] = [];
+  const movementDates = Array.from(new Set(uniqueRows.map((row) => row.data_movimento).filter(Boolean)));
+  for (const dateChunk of chunkArray(movementDates, 100)) {
+    const { data, error } = await supabase
+      .from("extratobancario")
+      .select("id, data_movimento, tipo, valor, descricao, carteira_nome, observacoes, rateio, metadata_financeira, conciliado, status")
+      .eq("empresa_id", empresaId)
+      .eq("source_provider", "banco_inter")
+      .like("id", "api_synthetic_%")
+      .in("data_movimento", dateChunk);
+
+    if (error) throw error;
+    existingSyntheticRows.push(...(data || []));
+  }
+  const reconciliation = reconcileRowsWithSyntheticMovements(uniqueRows, existingSyntheticRows);
+  const reconciledRows = reconciliation.rows;
   const todayRows = refreshToday
-    ? uniqueRows.filter((row) => row.data_movimento === today)
+    ? reconciledRows.filter((row) => row.data_movimento === today)
     : [];
-  const historicalRows = uniqueRows.filter((row) => !refreshToday || row.data_movimento !== today);
+  const historicalRows = reconciledRows.filter((row) => !refreshToday || row.data_movimento !== today);
 
   const historicalExistingIds = new Set<string>();
   if (historicalRows.length) {
@@ -2061,6 +2236,16 @@ async function persistTransactions(
   }
 
   const historicalRowsToInsert = historicalRows.filter((row) => !historicalExistingIds.has(row.id));
+  const historicalRowsToUpdate = historicalRows.filter((row) => reconciliation.matchedSyntheticIds.has(row.id));
+
+  for (const row of historicalRowsToUpdate) {
+    const { error } = await supabase
+      .from("extratobancario")
+      .update(row)
+      .eq("empresa_id", empresaId)
+      .eq("id", row.id);
+    if (error) throw error;
+  }
 
   let refreshedTodayCount = 0;
   if (refreshToday) {
@@ -2114,6 +2299,7 @@ async function persistTransactions(
     importedCount: historicalRowsToInsert.length + refreshedTodayCount,
     refreshedTodayCount,
     historicalInsertedCount: historicalRowsToInsert.length,
+    enrichedLegacyCount: historicalRowsToUpdate.length,
     discardedExistingCount: historicalExistingIds.size,
     discardedInPayloadCount,
   };
@@ -2941,6 +3127,203 @@ function normalizeBase64Payload(value: unknown) {
   return match ? match[1] : text;
 }
 
+function getInterTransactionDetails(rawData: Record<string, unknown>) {
+  return rawData.detalhes && typeof rawData.detalhes === "object"
+    ? rawData.detalhes as Record<string, unknown>
+    : {};
+}
+
+function resolveInterTransactionIdentifiers(rawData: Record<string, unknown>) {
+  const details = getInterTransactionDetails(rawData);
+  return {
+    idTransacao: sanitizeText(firstDefined(rawData.idTransacao, rawData.id, rawData.transactionId)),
+    codigoTransacao: sanitizeText(firstDefined(rawData.codigoTransacao, rawData.idTransacao, rawData.transactionId)),
+    codigoSolicitacao: sanitizeText(firstDefined(rawData.codigoSolicitacao, details.codigoSolicitacao)),
+    endToEndId: sanitizeText(firstDefined(rawData.endToEndId, rawData.e2eId, details.endToEndId, details.endToEnd)),
+    txid: sanitizeText(firstDefined(rawData.txid, rawData.txId, details.txid, details.txId)),
+    nsu: sanitizeText(firstDefined(rawData.nsu, rawData.nsudoc, details.nsu)),
+    autenticacao: sanitizeText(firstDefined(rawData.autenticacao, details.autenticacao)),
+  };
+}
+
+function normalizeReceiptMatchText(value: unknown) {
+  return sanitizeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function resolveRawTransactionDescription(rawData: Record<string, unknown>) {
+  return sanitizeText(firstDefined(
+    rawData.descricao,
+    rawData.historico,
+    rawData.titulo,
+    rawData.title,
+  ));
+}
+
+function findMatchingCompleteTransaction(
+  movement: Record<string, unknown>,
+  storedRawData: Record<string, unknown>,
+  payload: unknown,
+) {
+  const movementDate = formatDateOnly(sanitizeText(
+    firstDefined(movement.data_movimento, movement.data, movement.created_date),
+    new Date().toISOString(),
+  ));
+  const movementType = sanitizeText(movement.tipo).toLowerCase();
+  const movementAmount = Math.abs(toNumber(movement.valor));
+  const storedDescription = normalizeReceiptMatchText(firstDefined(
+    storedRawData.descricao,
+    storedRawData.historico,
+    movement.descricao,
+  ));
+
+  const candidates = getTransactionArray(payload).filter((transaction) => {
+    const rawDate = formatDateOnly(sanitizeText(getRawInterTransactionDateTime(transaction)));
+    const rawAmount = Math.abs(toNumber(firstDefined(
+      transaction.valor,
+      transaction.amount,
+      transaction.valorLancamento,
+      transaction.valorTransacao,
+    )));
+    return rawDate === movementDate
+      && inferTipo(transaction, rawAmount) === movementType
+      && Math.abs(rawAmount - movementAmount) < 0.005;
+  });
+
+  if (candidates.length <= 1) return candidates[0] || null;
+
+  const scored = candidates.map((transaction) => {
+    const candidateDescription = normalizeReceiptMatchText(resolveRawTransactionDescription(transaction));
+    let score = 0;
+    if (candidateDescription && candidateDescription === storedDescription) score += 4;
+    if (
+      candidateDescription
+      && storedDescription
+      && (candidateDescription.includes(storedDescription) || storedDescription.includes(candidateDescription))
+    ) score += 2;
+    return { transaction, score };
+  }).sort((left, right) => right.score - left.score);
+
+  if (!scored[0]?.score || scored[0].score === scored[1]?.score) return null;
+  return scored[0].transaction;
+}
+
+function maskBankDocument(value: unknown) {
+  const digits = sanitizeText(value).replace(/\D/g, "");
+  if (digits.length === 11) return `***.***.***-${digits.slice(-2)}`;
+  if (digits.length === 14) return `**.***.***/****-${digits.slice(-2)}`;
+  return digits ? `***${digits.slice(-4)}` : null;
+}
+
+function resolveLiveReceiptRecord(payload: unknown) {
+  if (Array.isArray(payload)) {
+    return payload[0] && typeof payload[0] === "object" ? payload[0] as Record<string, unknown> : {};
+  }
+  if (!payload || typeof payload !== "object") return {};
+  const source = payload as Record<string, unknown>;
+  if (source.transacaoPix && typeof source.transacaoPix === "object") {
+    return source.transacaoPix as Record<string, unknown>;
+  }
+  return source;
+}
+
+async function fetchLiveTransactionDetails(
+  config: IntegrationConfig,
+  movement: Record<string, unknown>,
+  rawData: Record<string, unknown>,
+) {
+  const identifiers = resolveInterTransactionIdentifiers(rawData);
+  const transactionType = sanitizeText(firstDefined(rawData.tipoTransacao, rawData.tipo, rawData.titulo)).toUpperCase();
+  const direction = sanitizeText(movement.tipo).toLowerCase();
+
+  if (transactionType === "PIX" && direction === "entrada" && identifiers.endToEndId) {
+    const pixPath = sanitizeText(getConfigValue(config, "pix_path"), DEFAULT_PIX_PATH);
+    return await fetchScopedInterJson(config, {
+      path: `${pixPath.replace(/\/$/, "")}/${encodeURIComponent(identifiers.endToEndId)}`,
+      scopeConfigKey: "pix_read_scope",
+      fallbackScope: DEFAULT_PIX_READ_SCOPE,
+      actionLabel: "consultar o Pix recebido",
+    });
+  }
+
+  if (transactionType === "PIX" && direction === "saida" && identifiers.codigoSolicitacao) {
+    const pixPaymentPath = sanitizeText(getConfigValue(config, "pix_payment_path"), DEFAULT_PIX_PAYMENT_PATH);
+    return await fetchScopedInterJson(config, {
+      path: `${pixPaymentPath.replace(/\/$/, "")}/${encodeURIComponent(identifiers.codigoSolicitacao)}`,
+      scopeConfigKey: "pix_payment_read_scope",
+      fallbackScope: DEFAULT_PIX_PAYMENT_READ_SCOPE,
+      actionLabel: "consultar o pagamento Pix",
+    });
+  }
+
+  if (["PAGAMENTO", "BOLETO"].includes(transactionType) && direction === "saida" && identifiers.codigoTransacao) {
+    const boletoPaymentPath = sanitizeText(getConfigValue(config, "boleto_payment_path"), DEFAULT_BOLETO_PAYMENT_PATH);
+    return await fetchScopedInterJson(config, {
+      path: boletoPaymentPath,
+      scopeConfigKey: "boleto_payment_read_scope",
+      fallbackScope: DEFAULT_BOLETO_PAYMENT_READ_SCOPE,
+      actionLabel: "consultar o pagamento de boleto",
+      searchParams: { codigoTransacao: identifiers.codigoTransacao },
+    });
+  }
+
+  return null;
+}
+
+function buildLiveReceiptDetails(
+  movement: Record<string, unknown>,
+  rawData: Record<string, unknown>,
+  livePayload: unknown,
+) {
+  const rawDetails = getInterTransactionDetails(rawData);
+  const live = resolveLiveReceiptRecord(livePayload);
+  const liveReceiver = live.recebedor && typeof live.recebedor === "object"
+    ? live.recebedor as Record<string, unknown>
+    : {};
+  const identifiers = resolveInterTransactionIdentifiers({ ...rawData, ...live });
+  const direction = sanitizeText(movement.tipo).toLowerCase();
+  const counterpartyName = direction === "entrada"
+    ? firstDefined(rawDetails.nomePagador, rawData.nomePagador, live.pagador, movement.nome_contraparte)
+    : firstDefined(liveReceiver.nome, rawDetails.nomeRecebedor, rawData.nomeRecebedor, live.nomeBeneficiario, movement.nome_contraparte);
+  const counterpartyDocument = direction === "entrada"
+    ? firstDefined(rawDetails.cpfCnpjPagador, rawData.cpfCnpjPagador, live.cpfCnpjPagador)
+    : firstDefined(liveReceiver.cpfCnpj, rawDetails.cpfCnpjRecebedor, rawData.cpfCnpjRecebedor, live.cpfCnpjBeneficiario);
+
+  return {
+    description: sanitizeText(firstDefined(resolveRawTransactionDescription(rawData), movement.descricao)),
+    direction: direction === "saida" ? "Saída" : "Entrada",
+    amount: Math.abs(toNumber(firstDefined(live.valor, live.valorPago, rawData.valor, movement.valor))),
+    transaction_date: sanitizeText(firstDefined(
+      live.dataHoraMovimento,
+      live.dataPagamento,
+      rawData.dataTransacao,
+      rawData.dataInclusao,
+      movement.data_hora_transacao,
+      movement.data_movimento,
+    )),
+    transaction_type: normalizeDisplayLabel(firstDefined(rawData.tipoTransacao, rawData.tipo, rawData.titulo)) || "Movimentação bancária",
+    counterparty_name: normalizeDisplayName(counterpartyName) || null,
+    counterparty_document: maskBankDocument(counterpartyDocument),
+    status: normalizeDisplayLabel(firstDefined(live.status, live.statusPagamento, rawData.status, movement.status)) || null,
+    provider_reference: sanitizeText(firstDefined(
+      identifiers.codigoSolicitacao,
+      identifiers.codigoTransacao,
+      identifiers.idTransacao,
+      identifiers.endToEndId,
+      identifiers.txid,
+      movement.referencia,
+    )) || null,
+    end_to_end_id: identifiers.endToEndId || sanitizeText(firstDefined(live.endToEnd, live.endToEndId)) || null,
+    txid: identifiers.txid || null,
+    nsu: identifiers.nsu || sanitizeText(live.nsu) || null,
+    authentication: identifiers.autenticacao || sanitizeText(live.autenticacao) || null,
+  };
+}
+
 async function loadTransactionReceiptForConfig(
   config: IntegrationConfig,
   {
@@ -3031,30 +3414,116 @@ async function loadTransactionReceiptForConfig(
     };
   }
 
-  const providerReference = sanitizeText(firstDefined(
-    rawData.id,
-    rawData.codigoTransacao,
-    rawData.transactionId,
-    rawData.identificador,
-    rawData.nsudoc,
-    rawData.documento,
-    rawData.nsu,
-    rawData.endToEndId,
-    rawData.e2eId,
-  ));
+  let enrichedRawData = rawData;
+  let liveLookupWarning: string | null = null;
+  const movementDate = formatDateOnly(firstDefined(movement.data_movimento, movement.data, movement.created_date));
+
+  try {
+    const { accessToken, httpClient } = await getAccessToken(config, {
+      fallbackScope: "extrato.read",
+      actionLabel: "consultar o extrato completo da transação",
+    });
+    const completeStatement = await fetchExtrato(config, accessToken, httpClient, movementDate, movementDate);
+    const matchedTransaction = findMatchingCompleteTransaction(movement, rawData, completeStatement.payload);
+
+    if (matchedTransaction) {
+      const previousDetails = getInterTransactionDetails(rawData);
+      const matchedDetails = getInterTransactionDetails(matchedTransaction);
+      enrichedRawData = {
+        ...rawData,
+        ...matchedTransaction,
+        detalhes: { ...previousDetails, ...matchedDetails },
+      };
+      const identifiers = resolveInterTransactionIdentifiers(enrichedRawData);
+      const providerReference = sanitizeText(firstDefined(
+        identifiers.codigoSolicitacao,
+        identifiers.codigoTransacao,
+        identifiers.idTransacao,
+        identifiers.endToEndId,
+        identifiers.txid,
+        movement.referencia,
+      ));
+      const previousMetadata = movement.metadata_financeira && typeof movement.metadata_financeira === "object"
+        ? movement.metadata_financeira as Record<string, unknown>
+        : {};
+      const { error: enrichmentError } = await supabase
+        .from("extratobancario")
+        .update({
+          raw_data: enrichedRawData,
+          referencia: providerReference || movement.referencia || null,
+          metadata_financeira: {
+            ...previousMetadata,
+            receipt_enriched_at: new Date().toISOString(),
+            receipt_source: "banco_inter_extrato_completo",
+          },
+          updated_date: new Date().toISOString(),
+        })
+        .eq("empresa_id", empresaId)
+        .eq("id", movement.id);
+      if (enrichmentError) liveLookupWarning = serializeError(enrichmentError);
+    } else {
+      liveLookupWarning = "O lançamento não pôde ser associado com segurança a uma transação única do extrato completo.";
+    }
+  } catch (error) {
+    liveLookupWarning = serializeError(error);
+  }
+
+  const identifiers = resolveInterTransactionIdentifiers(enrichedRawData);
+  const hasBankReference = Boolean(
+    identifiers.idTransacao
+    || identifiers.codigoTransacao
+    || identifiers.codigoSolicitacao
+    || identifiers.endToEndId
+    || identifiers.txid,
+  );
+
+  if (!hasBankReference && enrichedRawData === rawData) {
+    return {
+      success: false,
+      action: "transactionReceipt",
+      empresa_id: empresaId,
+      integracao_id: config.id,
+      movement_id: movement.id,
+      transaction_id: movement.id,
+      receipt_available: false,
+      message: liveLookupWarning
+        ? `Não foi possível consultar os detalhes bancários desta transação. ${liveLookupWarning}`
+        : "O Banco Inter não retornou um identificador individual para esta transação.",
+    };
+  }
+
+  let liveDetailsPayload: unknown = null;
+  let detailLookupWarning: string | null = null;
+  try {
+    liveDetailsPayload = await fetchLiveTransactionDetails(config, movement, enrichedRawData);
+  } catch (error) {
+    const detailError = serializeError(error);
+    if (!detailError.includes("(404)")) detailLookupWarning = detailError;
+  }
 
   return {
-    success: false,
+    success: true,
     action: "transactionReceipt",
     empresa_id: empresaId,
     integracao_id: config.id,
     movement_id: movement.id,
     transaction_id: movement.id,
-    receipt_available: false,
-    provider_reference: providerReference || null,
-    message: providerReference
-      ? "A transação possui referência bancária, mas o Banco Inter não disponibilizou um comprovante individual para este lançamento."
-      : "A transação foi importada pelo extrato bancário e não possui comprovante individual disponibilizado pelo Banco Inter.",
+    receipt_available: true,
+    receipt_format: "bank_details",
+    official_pdf: false,
+    source: liveDetailsPayload ? "banco_inter_transaction_api" : "banco_inter_extrato_completo",
+    provider_reference: sanitizeText(firstDefined(
+      identifiers.codigoSolicitacao,
+      identifiers.codigoTransacao,
+      identifiers.idTransacao,
+      identifiers.endToEndId,
+      identifiers.txid,
+    )) || null,
+    details: buildLiveReceiptDetails(movement, enrichedRawData, liveDetailsPayload),
+    warning: detailLookupWarning || liveLookupWarning || null,
+    message: liveDetailsPayload
+      ? "Dados da transação consultados em tempo real no Banco Inter."
+      : "Detalhes recuperados do extrato completo do Banco Inter; não existe PDF individual para este tipo de lançamento.",
   };
 }
 
@@ -3386,7 +3855,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     const message = serializeError(error);
     const status = error instanceof BancoInterAuthError ? error.status : 500;
-    const retryHeaders = error instanceof BancoInterAuthError && error.retryAfterSeconds
+    const retryHeaders: Record<string, string> = error instanceof BancoInterAuthError && error.retryAfterSeconds
       ? { "Retry-After": String(error.retryAfterSeconds) }
       : {};
     return jsonResponse({ error: "Falha na integracao com Banco Inter.", details: message }, status, retryHeaders);

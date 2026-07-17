@@ -1961,6 +1961,31 @@ const mockFunctions = {
       };
     }
 
+    if (payload?.action === 'transactionReceipt') {
+      return {
+        success: true,
+        action: 'transactionReceipt',
+        movement_id: payload?.movement_id || 'mock-transaction',
+        receipt_available: true,
+        receipt_format: 'bank_details',
+        official_pdf: false,
+        source: 'mock_banco_inter_transaction_api',
+        message: 'Dados da transação consultados em tempo real no Banco Inter.',
+        details: {
+          description: 'Pix recebido',
+          direction: 'Entrada',
+          amount: 150,
+          transaction_date: new Date().toISOString(),
+          transaction_type: 'Pix',
+          counterparty_name: 'Cliente de teste',
+          counterparty_document: '***.***.***-00',
+          status: 'Processado',
+          provider_reference: crypto.randomUUID(),
+          end_to_end_id: 'E0041696820260717000000000000000',
+        },
+      };
+    }
+
     if (payload?.action === 'test') {
       return { success: true, message: 'Mock Banco Inter conectado.' };
     }

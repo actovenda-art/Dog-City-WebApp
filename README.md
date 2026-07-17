@@ -249,6 +249,23 @@ Deploy padrao:
 - backend: Supabase
 - gateway WhatsApp: Render ou infraestrutura equivalente
 
+O frontend esta temporariamente sem workflow de deploy no GitHub Actions. Um `push` para `main` nao substitui a publicacao manual no Vercel.
+
+Na primeira publicacao de uma maquina, vincule a pasta ao projeto existente:
+
+```bash
+npx vercel login
+npx vercel link
+```
+
+Para publicar a versao atual em producao:
+
+```bash
+npx vercel deploy --prod --logs
+```
+
+Confirme no Vercel que o deployment esta como `Ready` e `Production` antes de considerar a interface publicada.
+
 O [`vercel.json`](./vercel.json) ja contem:
 
 - rewrite SPA para `index.html`

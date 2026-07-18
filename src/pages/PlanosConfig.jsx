@@ -48,13 +48,18 @@ import {
   buildMonthKey as buildRecurringMonthKey,
   calculateMonthlyBilling,
   cancelSession,
+  deduplicateRecurringPlanCharges,
   formatDateKey as formatRecurringDateKey,
   generateMonthlySessions,
+  getAutomaticRecurringMonthKeys,
   getAvailableCredits,
   getMonthKey as getRecurringMonthKey,
+  isRecordLinkedToRecurringPlanGroup,
   markSessionAsCompleted,
   markSessionAsNoShow,
+  mergeRecurringPlanAppointments,
   normalizeMetadata as normalizeRecurringMetadata,
+  resolveRecurringPackageIdsForPlanGroup,
   resolvePackageSessionUnitPrice,
 } from "@/lib/recurring-packages";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
@@ -1098,12 +1103,15 @@ export default function PlanosConfig() {
     const activePrepaidPackages = prepaidPackages.filter((item) => item.status === "ativo");
     if (!activePrepaidPackages.length) return;
 
-    const monthKey = format(new Date(), "yyyy-MM");
-    const storageKey = `dogcity_prepaid_month_sync:${monthKey}:${activePrepaidPackages.length}`;
+    const monthKeys = getAutomaticRecurringMonthKeys(new Date());
+    const packageSignature = activePrepaidPackages.map((item) => item.id).sort().join(",");
+    const storageKey = `dogcity_prepaid_month_sync:${monthKeys.join(",")}:${packageSignature}`;
     if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(storageKey)) return;
 
     isPrepaidSilentSyncRunningRef.current = true;
-    Promise.all(activePrepaidPackages.map((packageRecord) => syncSinglePrepaidPackageMonth(packageRecord, monthKey)))
+    Promise.all(monthKeys.flatMap((monthKey) =>
+      activePrepaidPackages.map((packageRecord) => syncSinglePrepaidPackageMonth(packageRecord, monthKey)),
+    ))
       .then(() => {
         if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, "1");
         return loadData({ skipSilentSync: true });
@@ -1114,7 +1122,7 @@ export default function PlanosConfig() {
       .finally(() => {
         isPrepaidSilentSyncRunningRef.current = false;
       });
-  }, [isLoading, prepaidPackages.length]);
+  }, [isLoading, prepaidPackages]);
 
   async function loadData({ skipSilentSync = false } = {}) {
     setIsLoading(true);
@@ -2050,12 +2058,15 @@ export default function PlanosConfig() {
     const sourceKey = `package_session|${session.package_id}|${session.pet_id}|${session.service_id}|${session.scheduled_date}`;
     const existingAppointment = appointments.find((appointment) => appointment.source_key === sourceKey);
     const sessionMetadata = parseMetadata(session.metadata);
+    const packageMetadata = normalizeRecurringMetadata(packageRecord?.metadata);
     const appointmentWindow = buildAppointmentWindow(session.scheduled_date, session.service_id, sessionMetadata);
     const operationalNotes = String(sessionMetadata.operational_observacoes || "").trim();
     const expectedSessionValue = Math.max(0, Number(sessionUnitPrice ?? packageRecord?.price_per_session ?? 0) || 0);
     const appointmentMetadata = {
       package_id: session.package_id,
       package_session_id: session.id,
+      plan_id: packageMetadata.plan_config_id || sessionMetadata.plan_config_id || null,
+      package_group_key: packageMetadata.package_group_key || sessionMetadata.package_group_key || null,
       billing_month: session.billing_month,
       covered_by_credit: !!session.covered_by_credit,
       credit_id: session.credit_id || null,
@@ -2121,6 +2132,7 @@ export default function PlanosConfig() {
     if (!billingRecord?.id || billing.total_amount <= 0) return null;
     const sourceKey = `package_billing|${packageRecord.id}|${billing.billing_month}`;
     const existingCharge = receivables.find((item) => item.source_key === sourceKey);
+    const packageMetadata = normalizeRecurringMetadata(packageRecord?.metadata);
     const dueDayValue = clientsById[packageRecord.client_id]?.vencimento_planos || "";
     const dueDate = buildDueDateForMonth(parseDateOnly(`${billing.billing_month}-01`), Number(dueDayValue)) || parseDateOnly(`${billing.billing_month}-01`);
     const serviceMeta = getServiceMeta(packageRecord.service_id);
@@ -2143,6 +2155,8 @@ export default function PlanosConfig() {
       metadata: {
         ...parseMetadata(existingCharge?.metadata),
         package_id: packageRecord.id,
+        plan_id: packageMetadata.plan_config_id || null,
+        package_group_key: packageMetadata.package_group_key || null,
         package_billing_id: billingRecord.id,
         billing_month: billing.billing_month,
         expected_sessions: billing.expected_sessions,
@@ -2782,6 +2796,11 @@ export default function PlanosConfig() {
         const metadata = parseMetadata(representativePlan.metadata_gerencial);
         const firstCycle = metadata.first_cycle || null;
         const monthlyValuePerDog = getMonthlyValue(representativePlan);
+        const recurringPackageIds = resolveRecurringPackageIdsForPlanGroup({
+          packages: prepaidPackages,
+          planIds: group.planIds,
+          packageGroupKey: group.packageGroupKey,
+        });
 
         return {
           ...group,
@@ -2800,6 +2819,7 @@ export default function PlanosConfig() {
           monthlyValuePerDog,
           firstCycleValue: Number(firstCycle?.total_value || 0) || 0,
           firstMonthDates: normalizeFirstMonthDateList(metadata.start_date, metadata.first_month_real_dates),
+          recurringPackageIds,
         };
       })
       .sort((left, right) => {
@@ -2807,7 +2827,7 @@ export default function PlanosConfig() {
         const rightDate = right.representativePlan?.created_date ? new Date(right.representativePlan.created_date).getTime() : 0;
         return rightDate - leftDate;
       });
-  }, [clientsById, dogsById, plans]);
+  }, [clientsById, dogsById, plans, prepaidPackages]);
 
   const filteredPlanGroups = useMemo(
     () => planGroups.filter((group) => {
@@ -2833,11 +2853,12 @@ export default function PlanosConfig() {
     const entries = new Map();
 
     planGroups.forEach((group) => {
-      const groupCharges = receivables
-        .filter((item) => {
-          const metadata = parseMetadata(item.metadata);
-          return group.planIds.includes(metadata.plan_id) || metadata.package_group_key === group.packageGroupKey;
-        })
+      const groupCharges = deduplicateRecurringPlanCharges(receivables
+        .filter((item) => isRecordLinkedToRecurringPlanGroup(item, {
+          planIds: group.planIds,
+          packageGroupKey: group.packageGroupKey,
+          recurringPackageIds: group.recurringPackageIds,
+        })))
         .sort((left, right) => `${left.vencimento || ""}`.localeCompare(`${right.vencimento || ""}`));
 
       entries.set(group.id, groupCharges);
@@ -2852,9 +2873,12 @@ export default function PlanosConfig() {
     const today = normalizeDate(new Date());
     const monthMap = new Map();
     const groupedCharges = groupReceivablesMap.get(paymentsItem.id) || [];
-    const groupedAppointments = appointments.filter((appointment) => {
-      const metadata = parseMetadata(appointment.metadata);
-      return paymentsItem.planIds.includes(metadata.plan_id) || metadata.package_group_key === paymentsItem.packageGroupKey;
+    const groupedAppointments = mergeRecurringPlanAppointments({
+      appointments,
+      sessions: packageSessions,
+      planIds: paymentsItem.planIds,
+      packageGroupKey: paymentsItem.packageGroupKey,
+      recurringPackageIds: paymentsItem.recurringPackageIds,
     });
 
     groupedAppointments.forEach((appointment) => {
@@ -2960,7 +2984,7 @@ export default function PlanosConfig() {
           helper,
         };
       });
-  }, [appointments, checkinsById, groupReceivablesMap, paymentsItem]);
+  }, [appointments, checkinsById, groupReceivablesMap, packageSessions, paymentsItem]);
 
   const deletePreview = useMemo(() => {
     if (!deleteItem || !deleteDate) return null;
@@ -2972,9 +2996,12 @@ export default function PlanosConfig() {
     const groupCharges = groupReceivablesMap.get(deleteItem.id) || [];
     const monthCharges = groupCharges.filter((charge) => getMonthKey(charge.vencimento) === monthKey);
     const futureCharges = groupCharges.filter((charge) => getMonthKey(charge.vencimento) > monthKey);
-    const groupAppointments = appointments.filter((appointment) => {
-      const appointmentMeta = parseMetadata(appointment.metadata);
-      return deleteItem.planIds.includes(appointmentMeta.plan_id);
+    const groupAppointments = mergeRecurringPlanAppointments({
+      appointments,
+      sessions: packageSessions,
+      planIds: deleteItem.planIds,
+      packageGroupKey: deleteItem.packageGroupKey,
+      recurringPackageIds: deleteItem.recurringPackageIds,
     });
     const monthAppointments = groupAppointments.filter((appointment) => getMonthKey(appointment.data_referencia || appointment.data_hora_entrada) === monthKey);
     const keptAppointments = monthAppointments.filter((appointment) => {
@@ -3013,7 +3040,7 @@ export default function PlanosConfig() {
       suggestedRefund,
       suggestedCharge,
     };
-  }, [appointments, deleteDate, deleteItem, groupReceivablesMap]);
+  }, [appointments, deleteDate, deleteItem, groupReceivablesMap, packageSessions]);
 
   const prepaidMonthKey = /^\d{4}-\d{2}$/.test(prepaidMonth) ? prepaidMonth : format(new Date(), "yyyy-MM");
   const prepaidPackageViews = useMemo(() => {
@@ -3095,18 +3122,23 @@ export default function PlanosConfig() {
     if (!detailItem) return [];
 
     const currentMonthKey = getMonthKey(new Date());
+    const detailAppointments = mergeRecurringPlanAppointments({
+      appointments,
+      sessions: packageSessions,
+      planIds: detailItem.planIds,
+      packageGroupKey: detailItem.packageGroupKey,
+      recurringPackageIds: detailItem.recurringPackageIds,
+    });
     return [...new Set(
-      appointments
+      detailAppointments
         .filter((appointment) => {
-          const metadata = parseMetadata(appointment.metadata);
-          if (!detailItem.planIds.includes(metadata.plan_id)) return false;
           if (["cancelado", "desconsiderado"].includes(appointment.status)) return false;
           return getMonthKey(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10)) === currentMonthKey;
         })
         .map((appointment) => appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10))
         .filter(Boolean),
     )].sort();
-  }, [appointments, detailItem]);
+  }, [appointments, detailItem, packageSessions]);
   const detailCurrentMonthLabel = useMemo(() => formatMonthLabel(new Date()), []);
 
   if (isLoading) {

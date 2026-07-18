@@ -3,8 +3,13 @@ import assert from "node:assert/strict";
 import {
   applyCreditsToSessions,
   calculateMonthlyBilling,
+  deduplicateRecurringPlanCharges,
   generateMonthlySessions,
+  getAutomaticRecurringMonthKeys,
   getPackageMonthlyValue,
+  isRecordLinkedToRecurringPlanGroup,
+  mergeRecurringPlanAppointments,
+  resolveRecurringPackageIdsForPlanGroup,
 } from "../src/lib/recurring-packages.js";
 
 const packageRecord = {
@@ -179,5 +184,104 @@ const julyDayCareBilling = calculateMonthlyBilling({
 assert.equal(julyDayCareBilling.expected_sessions, 5, "Julho/2026 deve ter cinco quartas-feiras");
 assert.equal(julyDayCareBilling.unit_price, 85, "Cinco sessões devem ratear R$ 425,00 em R$ 85,00");
 assert.equal(julyDayCareBilling.total_amount, 425, "O total mensal de julho deve permanecer em R$ 425,00");
+
+assert.deepEqual(
+  getAutomaticRecurringMonthKeys(new Date(2026, 6, 24, 12, 0, 0)),
+  ["2026-07"],
+  "Antes do dia 25, a sincronizacao automatica deve garantir somente o mes atual",
+);
+assert.deepEqual(
+  getAutomaticRecurringMonthKeys(new Date(2026, 6, 25, 12, 0, 0)),
+  ["2026-07", "2026-08"],
+  "No dia 25, a sincronizacao automatica deve antecipar o proximo mes",
+);
+
+const recurringPackages = [{
+  id: "pkg_loki_v2",
+  pet_id: "loki",
+  service_id: "day_care",
+  metadata: {
+    plan_config_id: "plan_loki",
+    package_group_key: "group_loki",
+  },
+}];
+const recurringPackageIds = resolveRecurringPackageIdsForPlanGroup({
+  packages: recurringPackages,
+  planIds: ["plan_loki"],
+  packageGroupKey: "group_loki",
+});
+
+assert.deepEqual(recurringPackageIds, ["pkg_loki_v2"], "O pacote V2 deve ser ligado ao plano de origem");
+assert.equal(
+  isRecordLinkedToRecurringPlanGroup(
+    { recurring_package_id: "pkg_loki_v2", metadata: { package_id: "pkg_loki_v2" } },
+    { planIds: ["plan_loki"], packageGroupKey: "group_loki", recurringPackageIds },
+  ),
+  true,
+  "Agendamentos V2 devem ser reconhecidos pelo recurring_package_id",
+);
+
+const lokiSessions = ["06", "13", "20", "27"].map((day, index) => ({
+  id: `session_loki_${day}`,
+  package_id: "pkg_loki_v2",
+  client_id: "client_loki",
+  pet_id: "loki",
+  service_id: "day_care",
+  scheduled_date: `2026-05-${day}`,
+  billing_month: "2026-05",
+  status: index === 0 ? "falta_nao_cobrada" : "realizada",
+}));
+const currentAppointments = lokiSessions.map((session) => ({
+  id: `appointment_${session.id}`,
+  dog_id: "loki",
+  service_type: "day_care",
+  data_referencia: session.scheduled_date,
+  status: session.status === "realizada" ? "finalizado" : "agendado",
+  package_session_id: session.id,
+  recurring_package_id: "pkg_loki_v2",
+  metadata: { package_id: "pkg_loki_v2", package_session_id: session.id },
+}));
+const legacyAppointments = lokiSessions.map((session) => ({
+  id: `legacy_${session.id}`,
+  dog_id: "loki",
+  service_type: "day_care",
+  data_referencia: session.scheduled_date,
+  status: "agendado",
+  metadata: { plan_id: "plan_loki", package_group_key: "group_loki" },
+}));
+const mergedAppointments = mergeRecurringPlanAppointments({
+  appointments: [...legacyAppointments, ...currentAppointments],
+  sessions: lokiSessions,
+  planIds: ["plan_loki"],
+  packageGroupKey: "group_loki",
+  recurringPackageIds,
+});
+
+assert.equal(mergedAppointments.length, 4, "A transicao legado/V2 nao pode duplicar os agendamentos de maio");
+assert.equal(mergedAppointments.filter((appointment) => appointment.status === "finalizado").length, 3);
+assert.equal(mergedAppointments.filter((appointment) => appointment.status === "faltou").length, 1);
+
+const deduplicatedCharges = deduplicateRecurringPlanCharges([
+  {
+    id: "legacy_charge",
+    dog_id: "loki",
+    servico: "day_care",
+    vencimento: "2026-05-20",
+    valor: 425,
+    metadata: { plan_id: "plan_loki", month_key: "2026-05" },
+  },
+  {
+    id: "current_charge",
+    dog_id: "loki",
+    servico: "day_care",
+    vencimento: "2026-05-20",
+    valor: 425,
+    recurring_package_id: "pkg_loki_v2",
+    metadata: { package_id: "pkg_loki_v2", billing_month: "2026-05" },
+  },
+]);
+
+assert.deepEqual(deduplicatedCharges.map((charge) => charge.id), ["current_charge"]);
+assert.equal(deduplicatedCharges.reduce((total, charge) => total + charge.valor, 0), 425);
 
 console.log("recurring-packages: cenário obrigatório aprovado");

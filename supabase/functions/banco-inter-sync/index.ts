@@ -48,6 +48,16 @@ class BancoInterAuthError extends Error {
   }
 }
 
+class BudgetUnavailableError extends Error {
+  status: number;
+
+  constructor(message: string, status = 409) {
+    super(message);
+    this.name = "BudgetUnavailableError";
+    this.status = status;
+  }
+}
+
 const interTokenCache = new Map<string, CachedInterToken>();
 const interTokenRequests = new Map<string, Promise<InterTokenResult>>();
 const interTokenCooldowns = new Map<string, number>();
@@ -151,6 +161,71 @@ if (!supabaseUrl || !serviceRoleKey) {
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+
+function getBusinessDateKey() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Fortaleza",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+async function expireDueBudgets(empresaId = "", orcamentoId = "") {
+  const referenceDate = getBusinessDateKey();
+  const { data, error } = await supabase.rpc("finance_expire_budgets", {
+    p_empresa_id: sanitizeText(empresaId) || null,
+    p_orcamento_id: sanitizeText(orcamentoId) || null,
+    p_reference_date: referenceDate,
+  });
+
+  if (error) {
+    throw new Error(`Falha ao aplicar a expiração automática do orçamento: ${error.message}`);
+  }
+
+  return Array.isArray(data) ? (data[0] || null) : data;
+}
+
+async function enforceBudgetAvailability(options: {
+  orcamentoId: string;
+  empresaId?: string;
+  requireApproved?: boolean;
+}) {
+  const orcamentoId = sanitizeText(options.orcamentoId);
+  const empresaId = sanitizeText(options.empresaId);
+  if (!orcamentoId) {
+    throw new BudgetUnavailableError("Orçamento não informado.", 400);
+  }
+
+  await expireDueBudgets(empresaId, orcamentoId);
+
+  let query = supabase
+    .from("orcamento")
+    .select("id, empresa_id, status, data_validade")
+    .eq("id", orcamentoId);
+  if (empresaId) query = query.eq("empresa_id", empresaId);
+
+  const { data: budget, error } = await query.maybeSingle();
+  if (error) {
+    throw new Error(`Falha ao validar a disponibilidade do orçamento: ${error.message}`);
+  }
+  if (!budget) {
+    throw new BudgetUnavailableError("Orçamento não localizado.", 404);
+  }
+
+  const validityDate = sanitizeText(budget.data_validade).slice(0, 10);
+  const status = sanitizeText(budget.status).toLowerCase();
+  if (status === "expirado" || (validityDate && validityDate < getBusinessDateKey())) {
+    throw new BudgetUnavailableError(
+      "A validade do orçamento terminou. A cobrança não será emitida nem consultada no Banco Inter.",
+    );
+  }
+  if (options.requireApproved && status !== "aprovado") {
+    throw new BudgetUnavailableError("Somente um orçamento aprovado e dentro da validade pode emitir cobrança.");
+  }
+
+  return budget;
+}
 
 function jsonResponse(body: unknown, status = 200, additionalHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -1096,19 +1171,21 @@ async function fetchScopedInterJson(
     fallbackScope,
     actionLabel,
     searchParams,
+    auth,
   }: {
     path: string;
     scopeConfigKey: string;
     fallbackScope: string;
     actionLabel: string;
     searchParams?: Record<string, string>;
+    auth?: InterTokenResult | null;
   },
 ) {
-  const { accessToken, httpClient } = await getAccessToken(config, {
-    scopeConfigKey,
-    fallbackScope,
-    actionLabel,
-  });
+  const { accessToken, httpClient } = auth || await getAccessToken(config, {
+      scopeConfigKey,
+      fallbackScope,
+      actionLabel,
+    });
   const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
   const url = new URL(path, apiBaseUrl);
   Object.entries(searchParams || {}).forEach(([key, value]) => {
@@ -3636,6 +3713,7 @@ async function fetchLiveTransactionDetails(
   config: IntegrationConfig,
   movement: Record<string, unknown>,
   rawData: Record<string, unknown>,
+  auth?: InterTokenResult | null,
 ) {
   const identifiers = resolveInterTransactionIdentifiers(rawData);
   const transactionType = sanitizeText(firstDefined(rawData.tipoTransacao, rawData.tipo, rawData.titulo)).toUpperCase();
@@ -3648,6 +3726,7 @@ async function fetchLiveTransactionDetails(
       scopeConfigKey: "pix_read_scope",
       fallbackScope: DEFAULT_PIX_READ_SCOPE,
       actionLabel: "consultar o Pix recebido",
+      auth,
     });
   }
 
@@ -3658,6 +3737,7 @@ async function fetchLiveTransactionDetails(
       scopeConfigKey: "pix_payment_read_scope",
       fallbackScope: DEFAULT_PIX_PAYMENT_READ_SCOPE,
       actionLabel: "consultar o pagamento Pix",
+      auth,
     });
   }
 
@@ -3669,10 +3749,32 @@ async function fetchLiveTransactionDetails(
       fallbackScope: DEFAULT_BOLETO_PAYMENT_READ_SCOPE,
       actionLabel: "consultar o pagamento de boleto",
       searchParams: { codigoTransacao: identifiers.codigoTransacao },
+      auth,
     });
   }
 
   return null;
+}
+
+function resolveReceiptLookupScope(
+  movement: Record<string, unknown>,
+  rawData: Record<string, unknown>,
+) {
+  const transactionType = sanitizeText(firstDefined(
+    rawData.tipoTransacao,
+    rawData.tipo,
+    rawData.titulo,
+  )).toUpperCase();
+  const direction = sanitizeText(movement.tipo).toLowerCase();
+  const scopes = ["extrato.read"];
+
+  if (transactionType === "PIX") {
+    scopes.push(direction === "saida" ? DEFAULT_PIX_PAYMENT_READ_SCOPE : DEFAULT_PIX_READ_SCOPE);
+  } else if (["PAGAMENTO", "BOLETO", "BOLETO_COBRANCA"].includes(transactionType) && direction === "saida") {
+    scopes.push(DEFAULT_BOLETO_PAYMENT_READ_SCOPE);
+  }
+
+  return normalizeScope(scopes.join(" "));
 }
 
 function buildLiveReceiptDetails(
@@ -3817,14 +3919,22 @@ async function loadTransactionReceiptForConfig(
 
   let enrichedRawData = rawData;
   let liveLookupWarning: string | null = null;
+  let receiptAuth: InterTokenResult | null = null;
   const movementDate = formatDateOnly(firstDefined(movement.data_movimento, movement.data, movement.created_date));
 
   try {
-    const { accessToken, httpClient } = await getAccessToken(config, {
-      fallbackScope: "extrato.read",
-      actionLabel: "consultar o extrato completo da transação",
+    receiptAuth = await getAccessToken(config, {
+      scopeConfigKey: "receipt_lookup_scope",
+      fallbackScope: resolveReceiptLookupScope(movement, rawData),
+      actionLabel: "consultar os dados do comprovante",
     });
-    const completeStatement = await fetchExtrato(config, accessToken, httpClient, movementDate, movementDate);
+    const completeStatement = await fetchExtrato(
+      config,
+      receiptAuth.accessToken,
+      receiptAuth.httpClient,
+      movementDate,
+      movementDate,
+    );
     const matchedTransaction = findMatchingCompleteTransaction(movement, rawData, completeStatement.payload);
 
     if (matchedTransaction) {
@@ -3919,12 +4029,21 @@ async function loadTransactionReceiptForConfig(
 
   let liveDetailsPayload: unknown = null;
   let detailLookupWarning: string | null = null;
-  try {
-    liveDetailsPayload = await fetchLiveTransactionDetails(config, movement, enrichedRawData);
-  } catch (error) {
-    const detailError = serializeError(error);
-    if (!detailError.includes("(404)")) detailLookupWarning = detailError;
+  if (receiptAuth) {
+    try {
+      liveDetailsPayload = await fetchLiveTransactionDetails(config, movement, enrichedRawData, receiptAuth);
+    } catch (error) {
+      const detailError = serializeError(error);
+      if (!detailError.includes("(404)")) detailLookupWarning = detailError;
+    }
   }
+
+  const receiptDetails = buildLiveReceiptDetails(movement, enrichedRawData, liveDetailsPayload);
+  const hasImportedOfficialDetails = Boolean(
+    receiptDetails.provider_reference
+    && receiptDetails.transaction_date
+    && receiptDetails.amount > 0,
+  );
 
   return {
     success: true,
@@ -3944,15 +4063,27 @@ async function loadTransactionReceiptForConfig(
       identifiers.endToEndId,
       identifiers.txid,
     )) || null,
-    details: buildLiveReceiptDetails(movement, enrichedRawData, liveDetailsPayload),
-    warning: officialPdfWarning || detailLookupWarning || liveLookupWarning || null,
+    details: receiptDetails,
+    warning: officialPdfWarning
+      || detailLookupWarning
+      || (!hasImportedOfficialDetails ? liveLookupWarning : null)
+      || null,
     message: liveDetailsPayload
       ? "Dados da transação consultados em tempo real no Banco Inter."
-      : "Detalhes recuperados do extrato completo do Banco Inter. O PDF oficial sera usado automaticamente quando o endpoint estiver disponivel e configurado.",
+      : receiptAuth
+      ? "Comprovante individual recuperado a partir dos dados oficiais da transação no Banco Inter."
+      : "Comprovante individual montado com os dados oficiais já importados do Banco Inter.",
   };
 }
 
 async function handleScheduledSync() {
+  let budgetExpiration = null;
+  try {
+    budgetExpiration = await expireDueBudgets();
+  } catch (error) {
+    console.warn("banco-inter-sync budget expiration warning", serializeError(error));
+  }
+
   const configs = await loadConfigs();
   const now = new Date();
   const dueConfigs = configs.filter((config) => {
@@ -3982,6 +4113,7 @@ async function handleScheduledSync() {
   return {
     success: true,
     processed_configs: dueConfigs.length,
+    budget_expiration: budgetExpiration,
     results,
   };
 }
@@ -4089,6 +4221,12 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: "Nesta fase, somente boleto bancário com Pix do Banco Inter está habilitado." }, 400);
     }
 
+      await enforceBudgetAvailability({
+        orcamentoId,
+        empresaId: sanitizeText(payload.empresa_id || config.empresa_id),
+        requireApproved: true,
+      });
+
       const existingRow = await loadLatestBudgetPaymentByBudget(orcamentoId, metodo);
       const requestedPayerFingerprint = buildBudgetChargePayerFingerprint(payload);
       const existingPayerFingerprint = existingRow?.metadata && typeof existingRow.metadata === "object"
@@ -4190,6 +4328,11 @@ Deno.serve(async (request) => {
         return jsonResponse({ error: "Cobrança do orçamento não localizada." }, 404);
       }
 
+      await enforceBudgetAvailability({
+        orcamentoId: sanitizeText(existingRow.orcamento_id),
+        empresaId: sanitizeText(existingRow.empresa_id || payload.empresa_id || config.empresa_id),
+      });
+
       const charge = await fetchChargeForBudget(config, sanitizeText(existingRow.codigo_solicitacao));
       const now = new Date().toISOString();
       const mappedStatus = mapInterChargeStatus(charge.situacao);
@@ -4238,6 +4381,11 @@ Deno.serve(async (request) => {
         return jsonResponse({ error: "Cobrança do orçamento não localizada." }, 404);
       }
 
+      await enforceBudgetAvailability({
+        orcamentoId: sanitizeText(existingRow.orcamento_id),
+        empresaId: sanitizeText(existingRow.empresa_id || payload.empresa_id || config.empresa_id),
+      });
+
       const pdf = await fetchChargePdfForBudget(config, sanitizeText(existingRow.codigo_solicitacao));
       await saveBudgetPaymentRow({
         ...existingRow,
@@ -4284,7 +4432,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: `Acao nao suportada: ${action}` }, 400);
   } catch (error) {
     const message = serializeError(error);
-    const status = error instanceof BancoInterAuthError ? error.status : 500;
+    const status = error instanceof BancoInterAuthError || error instanceof BudgetUnavailableError ? error.status : 500;
     const retryHeaders: Record<string, string> = error instanceof BancoInterAuthError && error.retryAfterSeconds
       ? { "Retry-After": String(error.retryAfterSeconds) }
       : {};

@@ -249,6 +249,9 @@ export function shouldIncludeAppointment(appointment, orcamentosById = {}) {
   if (!appointment) return false;
   if (appointment.source_type !== "orcamento_aprovado" && !appointment.orcamento_id) return true;
 
+  const appointmentMetadata = getAppointmentMeta(appointment);
+  if (appointmentMetadata?.budget_expiry_preserved === true) return true;
+
   const orcamento = appointment.orcamento_id ? orcamentosById?.[appointment.orcamento_id] : null;
   if (!orcamento) {
     return appointment.source_type !== "orcamento_aprovado";
@@ -266,7 +269,11 @@ export function shouldIncludeLinkedRecord(record, appointmentsById = {}, orcamen
 
   if (record.orcamento_id) {
     const directOrcamento = orcamentosById?.[record.orcamento_id];
-    return isApprovedOrcamento(directOrcamento);
+    if (isApprovedOrcamento(directOrcamento)) return true;
+    if (record.appointment_id) {
+      return shouldIncludeAppointment(appointmentsById?.[record.appointment_id], orcamentosById);
+    }
+    return getAppointmentMeta(record)?.budget_expiry_preserved === true;
   }
 
   if (record.appointment_id) {

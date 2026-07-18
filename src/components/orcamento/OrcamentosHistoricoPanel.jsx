@@ -4,6 +4,7 @@ import {
   bancoInter,
   financeApplyCompensatoryCredit,
   financeApproveBudgetWithAuthorization,
+  financeExpireBudgets,
   financeProcessBudgetCancellationV2,
   financePreviewBudgetConsumption,
   financeShadowSync,
@@ -77,6 +78,20 @@ function formatCurrency(value) {
 
 function formatDate(value) {
   return value ? format(new Date(value), "dd/MM/yyyy", { locale: ptBR }) : "-";
+}
+
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isBudgetExpired(orcamento, referenceDate = getLocalDateKey()) {
+  if (!orcamento) return false;
+  if (String(orcamento.status || "").trim().toLowerCase() === "expirado") return true;
+  const validityDate = String(orcamento.data_validade || "").slice(0, 10);
+  return Boolean(validityDate && validityDate < referenceDate);
 }
 
 function normalizeDigits(value) {
@@ -643,9 +658,13 @@ export default function OrcamentosHistoricoPanel({
     () => normalizeBudgetChargeStatus(activeBudgetBoleto?.status),
     [activeBudgetBoleto?.status],
   );
+  const selectedBudgetExpired = React.useMemo(
+    () => isBudgetExpired(selectedOrcamento),
+    [selectedOrcamento],
+  );
   const shouldShowBudgetChargeDetails = React.useMemo(
-    () => isBudgetChargeActive(activeBudgetBoleto?.status),
-    [activeBudgetBoleto?.status],
+    () => !selectedBudgetExpired && isBudgetChargeActive(activeBudgetBoleto?.status),
+    [activeBudgetBoleto?.status, selectedBudgetExpired],
   );
   const issueBudgetChargeButtonLabel = React.useMemo(() => {
     if (isIssuingBudgetPayment) return "Solicitando...";
@@ -819,14 +838,22 @@ export default function OrcamentosHistoricoPanel({
   async function loadData() {
     setIsLoading(true);
     try {
-      const [orcData, dogsData, carteirasData, recurringPackagesData, responsaveisData, precosData, currentUser, integracoesData, receivableRows, budgetPaymentRows] = await Promise.all([
+      const loadedCurrentUser = await User.me();
+      try {
+        await financeExpireBudgets({
+          empresa_id: loadedCurrentUser?.empresa_id || null,
+        });
+      } catch (expirationError) {
+        console.error("Erro ao aplicar expiração automática dos orçamentos:", expirationError);
+      }
+
+      const [orcData, dogsData, carteirasData, recurringPackagesData, responsaveisData, precosData, integracoesData, receivableRows, budgetPaymentRows] = await Promise.all([
         Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
         RecurringPackage.list("-created_at", 1000),
         Responsavel.list("-created_date", 500),
         TabelaPrecos.list("-created_date", 1000),
-        User.me(),
         IntegracaoConfig.list("-created_date", 100),
         ContaReceber.listAll("-created_date", 1000, 10000),
         OrcamentoPagamento.list("-created_date", 1000).catch(() => []),
@@ -837,8 +864,8 @@ export default function OrcamentosHistoricoPanel({
       setContasReceber(receivableRows || []);
       setRecurringPackages(recurringPackagesData || []);
       setResponsaveis(responsaveisData || []);
-      setCurrentUser(currentUser || null);
-      setPrecos(buildPricingConfig(precosData || [], currentUser?.empresa_id || null));
+      setCurrentUser(loadedCurrentUser || null);
+      setPrecos(buildPricingConfig(precosData || [], loadedCurrentUser?.empresa_id || null));
       setWhatsappConfigs((integracoesData || []).filter((item) => (item.provider || item.nome) === "whatsapp_web"));
       setBudgetPayments(budgetPaymentRows || []);
     } catch (error) {
@@ -857,6 +884,14 @@ export default function OrcamentosHistoricoPanel({
   }
 
   function openApprovalDialog(orcamento) {
+    if (isBudgetExpired(orcamento)) {
+      showFeedback(
+        "Orçamento expirado",
+        "A validade deste orçamento terminou. Ele permanece disponível apenas para consulta.",
+        "warning",
+      );
+      return;
+    }
     const dogIds = (orcamento?.caes || []).map((cao) => cao?.dog_id).filter(Boolean);
     const linkedResponsaveis = getLinkedResponsaveisForDogIds(responsaveis, dogIds);
     if (!linkedResponsaveis.length) {
@@ -949,6 +984,14 @@ export default function OrcamentosHistoricoPanel({
 
   function openBudgetPaymentDialog() {
     if (!selectedOrcamento?.id) return;
+    if (selectedBudgetExpired) {
+      showFeedback(
+        "Orçamento expirado",
+        "A validade deste orçamento terminou. Nenhuma cobrança será emitida ou consultada no Banco Inter.",
+        "warning",
+      );
+      return;
+    }
     setPaymentTab("boleto");
     setPaymentDialogOpen(true);
   }
@@ -967,6 +1010,14 @@ export default function OrcamentosHistoricoPanel({
   }
 
   async function issueBudgetCharge() {
+    if (selectedBudgetExpired) {
+      showFeedback(
+        "Orçamento expirado",
+        "A validade deste orçamento terminou. Crie um novo orçamento para emitir outra cobrança.",
+        "warning",
+      );
+      return;
+    }
     if (!selectedOrcamento?.id || !selectedBudgetCarteira?.id) {
       showFeedback("Orçamento incompleto", "Selecione um orçamento com responsável financeiro vinculado antes de emitir a cobrança.", "warning");
       return;
@@ -1041,6 +1092,16 @@ export default function OrcamentosHistoricoPanel({
 
   async function syncBudgetChargeStatus({ silent = false, paymentId = activeBudgetBoleto?.id } = {}) {
     if (!paymentId) return null;
+    if (selectedBudgetExpired) {
+      if (!silent) {
+        showFeedback(
+          "Orçamento expirado",
+          "A cobrança não será consultada porque a validade do orçamento terminou.",
+          "warning",
+        );
+      }
+      return null;
+    }
     if (!silent) {
       setIsRefreshingBudgetPayment(true);
     }
@@ -1086,6 +1147,14 @@ export default function OrcamentosHistoricoPanel({
 
   async function downloadBudgetChargePdf() {
     if (!activeBudgetBoleto?.id) return;
+    if (selectedBudgetExpired) {
+      showFeedback(
+        "Orçamento expirado",
+        "Os dados bancários desta cobrança não ficam disponíveis após o vencimento do orçamento.",
+        "warning",
+      );
+      return;
+    }
     setIsDownloadingBudgetPayment(true);
     try {
       const response = await bancoInter({
@@ -1113,7 +1182,7 @@ export default function OrcamentosHistoricoPanel({
   }
 
   useEffect(() => {
-    if (!paymentDialogOpen || !activeBudgetBoleto?.id) return;
+    if (!paymentDialogOpen || !activeBudgetBoleto?.id || selectedBudgetExpired) return;
     const refreshKey = `${selectedOrcamento?.id || ""}:${activeBudgetBoleto.id}:${activeBudgetBoleto.updated_date || activeBudgetBoleto.created_date || ""}`;
     if (lastSilentBudgetRefreshRef.current === refreshKey) return;
     lastSilentBudgetRefreshRef.current = refreshKey;
@@ -1124,6 +1193,7 @@ export default function OrcamentosHistoricoPanel({
     activeBudgetBoleto?.updated_date,
     activeBudgetBoleto?.created_date,
     selectedOrcamento?.id,
+    selectedBudgetExpired,
   ]);
 
   function openOrcamentoDetail(orcamento) {
@@ -1522,6 +1592,10 @@ export default function OrcamentosHistoricoPanel({
 
   async function saveSelectedOrcamentoChanges() {
     if (!selectedOrcamento?.id) return;
+    if (selectedBudgetExpired) {
+      showFeedback("Orçamento expirado", "Este orçamento está disponível apenas para consulta.", "warning");
+      return;
+    }
     if (selectedStatusDraft === selectedOrcamento.status) return;
 
     if (selectedStatusDraft === "cancelado" && budgetFinanceContext?.cancellation_v2_enabled) {
@@ -1725,6 +1799,10 @@ export default function OrcamentosHistoricoPanel({
 
   async function openAppointmentsEditor(orcamento) {
     if (!orcamento?.id) return;
+    if (isBudgetExpired(orcamento)) {
+      showFeedback("Orçamento expirado", "Os agendamentos deste orçamento não podem mais ser editados.", "warning");
+      return;
+    }
     setEditingOrcamento(orcamento);
     setShowAppointmentsEditor(true);
   }
@@ -2047,6 +2125,15 @@ export default function OrcamentosHistoricoPanel({
                 <span>{formatDate(selectedOrcamento.data_validade)}</span>
               </div>
 
+              {selectedBudgetExpired ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-semibold">Orçamento expirado e disponível somente para consulta.</p>
+                  <p className="mt-1">
+                    Novas cobranças, alterações e aprovações estão bloqueadas. Agendamentos sem pagamento e sem check-in são removidos automaticamente.
+                  </p>
+                </div>
+              ) : null}
+
               {selectedOrcamento.cliente_id && budgetFinanceContext?.wallet_budget_balance_enabled ? (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                   <div className="flex items-start justify-between gap-3">
@@ -2165,6 +2252,7 @@ export default function OrcamentosHistoricoPanel({
                       variant={selectedStatusDraft === status ? "default" : "outline"}
                       size="sm"
                       onClick={() => setSelectedStatusDraft(status)}
+                      disabled={selectedBudgetExpired}
                     >
                       {status.charAt(0).toUpperCase() + status.slice(1)}
                     </Button>
@@ -2175,6 +2263,9 @@ export default function OrcamentosHistoricoPanel({
                     Alteração pendente. Clique em salvar para aplicar.
                   </p>
                 )}
+                {selectedBudgetExpired ? (
+                  <p className="mt-2 text-sm text-amber-700">O status não pode ser reaberto depois do término da validade.</p>
+                ) : null}
               </div>
 
               {selectedStatusDraft === "cancelado" && budgetFinanceContext?.cancellation_v2_enabled ? (
@@ -2415,7 +2506,7 @@ export default function OrcamentosHistoricoPanel({
             <Button
               variant="outline"
               onClick={() => openApprovalDialog(selectedOrcamento)}
-              disabled={!selectedOrcamento?.id}
+              disabled={!selectedOrcamento?.id || selectedBudgetExpired}
             >
               <Link2 className="mr-2 h-4 w-4" />
               Solicitar aprovação
@@ -2424,7 +2515,7 @@ export default function OrcamentosHistoricoPanel({
               <Button
                 variant="outline"
                 onClick={openBudgetPaymentDialog}
-                disabled={!selectedOrcamento?.id || !selectedOrcamento?.cliente_id}
+                disabled={!selectedOrcamento?.id || !selectedOrcamento?.cliente_id || selectedBudgetExpired}
               >
                 <ReceiptText className="mr-2 h-4 w-4" />
                 Pagamento
@@ -2433,14 +2524,14 @@ export default function OrcamentosHistoricoPanel({
             <Button
               variant="outline"
               onClick={() => openAppointmentsEditor(selectedOrcamento)}
-              disabled={!selectedOrcamento?.id}
+              disabled={!selectedOrcamento?.id || selectedBudgetExpired}
             >
               <Pencil className="mr-2 h-4 w-4" />
               Editar
             </Button>
             <Button
               onClick={saveSelectedOrcamentoChanges}
-              disabled={!selectedOrcamento?.id || selectedStatusDraft === selectedOrcamento?.status || isSavingStatus}
+              disabled={!selectedOrcamento?.id || selectedBudgetExpired || selectedStatusDraft === selectedOrcamento?.status || isSavingStatus}
               className="bg-blue-600 text-white hover:bg-blue-700"
             >
               <Save className="mr-2 h-4 w-4" />
@@ -2524,14 +2615,14 @@ export default function OrcamentosHistoricoPanel({
                     </div>
 
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Button onClick={issueBudgetCharge} disabled={isIssuingBudgetPayment}>
+                      <Button onClick={issueBudgetCharge} disabled={selectedBudgetExpired || isIssuingBudgetPayment}>
                         {issueBudgetChargeButtonLabel}
                       </Button>
-                      <Button variant="outline" onClick={refreshBudgetChargeStatus} disabled={!activeBudgetBoleto?.id || isRefreshingBudgetPayment}>
+                      <Button variant="outline" onClick={refreshBudgetChargeStatus} disabled={selectedBudgetExpired || !activeBudgetBoleto?.id || isRefreshingBudgetPayment}>
                         <RefreshCw className="mr-2 h-4 w-4" />
                         {isRefreshingBudgetPayment ? "Atualizando..." : "Atualizar situação"}
                       </Button>
-                      <Button variant="outline" onClick={downloadBudgetChargePdf} disabled={!activeBudgetBoleto?.id || !activeBudgetBoleto?.pdf_disponivel || !shouldShowBudgetChargeDetails || isDownloadingBudgetPayment}>
+                      <Button variant="outline" onClick={downloadBudgetChargePdf} disabled={selectedBudgetExpired || !activeBudgetBoleto?.id || !activeBudgetBoleto?.pdf_disponivel || !shouldShowBudgetChargeDetails || isDownloadingBudgetPayment}>
                         <Download className="mr-2 h-4 w-4" />
                         {isDownloadingBudgetPayment ? "Preparando PDF..." : "Baixar PDF"}
                       </Button>

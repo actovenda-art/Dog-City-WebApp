@@ -27,6 +27,22 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function getBusinessDateKey() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Fortaleza",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function isBudgetExpired(orcamento: Record<string, unknown> | null | undefined) {
+  if (!orcamento) return false;
+  const status = sanitizeText(orcamento.status).toLowerCase();
+  const validityDate = sanitizeText(orcamento.data_validade).slice(0, 10);
+  return status === "expirado" || Boolean(validityDate && validityDate < getBusinessDateKey());
+}
+
 function sanitizeText(value: unknown) {
   if (value === null || value === undefined) return "";
   return String(value).trim();
@@ -174,6 +190,14 @@ async function loadRequestContextByToken(token: string) {
       : Promise.resolve({ data: null, error: null }),
   ]);
 
+  if (requestRow.status === "pendente" && isBudgetExpired(orcamentoResult.data)) {
+    await admin
+      .from("responsavel_approval_request")
+      .update({ status: "expirado", updated_at: new Date().toISOString() })
+      .eq("id", requestRow.id);
+    requestRow.status = "expirado";
+  }
+
   const dogIds = Array.isArray(requestRow.dog_ids) ? requestRow.dog_ids.filter(Boolean) : [];
   let dogs: Array<Record<string, unknown>> = [];
   if (dogIds.length) {
@@ -274,6 +298,9 @@ async function handleCreateRequest(request: Request, body: Record<string, unknow
   ]);
 
   if (!orcamento) return jsonResponse({ error: "Orcamento nao encontrado." }, 404);
+  if (isBudgetExpired(orcamento)) {
+    return jsonResponse({ error: "A validade do orcamento terminou. Crie um novo orcamento para solicitar aprovacao." }, 409);
+  }
   if (!responsavel) return jsonResponse({ error: "Responsavel nao encontrado." }, 404);
   if (!access || access.ativo === false) {
     return jsonResponse({ error: "Este responsavel ainda nao possui login liberado no cadastro." }, 409);

@@ -1851,11 +1851,144 @@ function applyMockBudgetPaymentToWallet(row = {}) {
   };
 }
 
+function expireMockBudgets(payload = {}) {
+  const referenceDate = String(payload?.reference_date || new Date().toISOString().slice(0, 10));
+  const empresaId = String(payload?.empresa_id || '').trim();
+  const orcamentoId = String(payload?.orcamento_id || '').trim();
+  const budgets = readStorage('Orcamento');
+  let appointments = readStorage('Appointment');
+  const checkins = readStorage('Checkin');
+  let obligations = readStorage('ObrigacaoFinanceira');
+  let receivables = readStorage('ContaReceber');
+  let payments = readStorage('OrcamentoPagamento');
+  let processedBudgets = 0;
+  let expiredBudgets = 0;
+  let removedAppointments = 0;
+  let preservedAppointments = 0;
+  let cancelledObligations = 0;
+  let removedReceivables = 0;
+  let expiredPayments = 0;
+
+  const isLinkedAppointment = (appointment, budget) => {
+    const metadata = appointment?.metadata && typeof appointment.metadata === 'object' ? appointment.metadata : {};
+    return appointment?.orcamento_id === budget.id
+      || metadata?.orcamento_id === budget.id
+      || String(appointment?.source_key || '').startsWith(`orcamento|${budget.id}|`);
+  };
+
+  budgets.forEach((budget, budgetIndex) => {
+    if (!budget?.data_validade || String(budget.data_validade).slice(0, 10) >= referenceDate) return;
+    if (empresaId && budget?.empresa_id !== empresaId) return;
+    if (orcamentoId && budget?.id !== orcamentoId) return;
+
+    const linkedAppointments = appointments.filter((item) => isLinkedAppointment(item, budget));
+    const hasActivePayment = payments.some((item) =>
+      item?.orcamento_id === budget.id
+      && !['recebido', 'pago', 'baixado', 'cancelado', 'cancelada', 'expirado'].includes(String(item?.status || '').toLowerCase())
+    );
+    const hasUnprocessedAppointment = linkedAppointments.some((item) => item?.metadata?.budget_expiry_processed_for !== budget.id);
+    if (!['rascunho', 'enviado', 'aprovado'].includes(String(budget?.status || '').toLowerCase()) && !hasActivePayment && !hasUnprocessedAppointment) return;
+
+    processedBudgets += 1;
+    linkedAppointments.forEach((appointment) => {
+      const used = Boolean(appointment?.linked_checkin_id)
+        || ['presente', 'finalizado', 'concluido', 'realizado'].includes(String(appointment?.status || '').toLowerCase())
+        || checkins.some((item) => item?.appointment_id === appointment.id);
+      const budgetPaid = payments.some((item) =>
+        item?.orcamento_id === budget.id
+        && (['recebido', 'pago'].includes(String(item?.status || '').toLowerCase()) || item?.pago_em || item?.credited_wallet_movement_id)
+      );
+      const appointmentPaid = obligations.some((item) =>
+        item?.orcamento_id === budget.id
+        && item?.appointment_id === appointment.id
+        && (
+          ['quitada', 'parcial'].includes(String(item?.status || '').toLowerCase())
+          || Number(item?.valor_em_aberto || 0) <= 0
+          || Number(item?.valor_em_aberto || 0) < Number(item?.valor_final || item?.valor_original || 0)
+        )
+      );
+
+      if (used || budgetPaid || appointmentPaid) {
+        appointments = appointments.map((item) => item?.id === appointment.id ? {
+          ...item,
+          metadata: {
+            ...(item?.metadata || {}),
+            budget_expiry_processed_for: budget.id,
+            budget_expiry_preserved: true,
+            budget_expiry_preserve_reason: used ? 'checkin_or_operational_record' : 'payment_evidence',
+            budget_expired_on: referenceDate,
+          },
+        } : item);
+        preservedAppointments += 1;
+        return;
+      }
+
+      obligations = obligations.map((item) => {
+        if (item?.orcamento_id !== budget.id || item?.appointment_id !== appointment.id) return item;
+        if (!['aberta', 'vencida'].includes(String(item?.status || '').toLowerCase())) return item;
+        cancelledObligations += 1;
+        return {
+          ...item,
+          status: 'cancelada',
+          valor_em_aberto: 0,
+          cancelado_motivo: 'Orçamento expirado antes do pagamento e da utilização do serviço.',
+        };
+      });
+      const receivableCountBefore = receivables.length;
+      receivables = receivables.filter((item) => !(
+        item?.orcamento_id === budget.id
+        && item?.appointment_id === appointment.id
+        && !item?.data_recebimento
+        && !['pago', 'quitado', 'quitada', 'recebido'].includes(String(item?.status || '').toLowerCase())
+      ));
+      removedReceivables += receivableCountBefore - receivables.length;
+      appointments = appointments.filter((item) => item?.id !== appointment.id);
+      removedAppointments += 1;
+    });
+
+    payments = payments.map((item) => {
+      if (item?.orcamento_id !== budget.id) return item;
+      if (['recebido', 'pago', 'baixado', 'cancelado', 'cancelada', 'expirado'].includes(String(item?.status || '').toLowerCase())) return item;
+      expiredPayments += 1;
+      return {
+        ...item,
+        status: 'expirado',
+        linha_digitavel: null,
+        codigo_barras: null,
+        pix_copia_cola: null,
+        pdf_disponivel: false,
+      };
+    });
+
+    if (['rascunho', 'enviado', 'aprovado'].includes(String(budget?.status || '').toLowerCase())) {
+      budgets[budgetIndex] = { ...budget, status: 'expirado', updated_date: new Date().toISOString() };
+      expiredBudgets += 1;
+    }
+  });
+
+  writeStorage('Orcamento', budgets);
+  writeStorage('Appointment', appointments);
+  writeStorage('ObrigacaoFinanceira', obligations);
+  writeStorage('ContaReceber', receivables);
+  writeStorage('OrcamentoPagamento', payments);
+
+  return {
+    processed_budgets: processedBudgets,
+    expired_budgets: expiredBudgets,
+    removed_appointments: removedAppointments,
+    preserved_appointments: preservedAppointments,
+    cancelled_obligations: cancelledObligations,
+    removed_receivables: removedReceivables,
+    expired_payments: expiredPayments,
+  };
+}
+
 const mockFunctions = {
   notificacoesOrcamento: async (payload) => {
     console.info('[mock] notificacoesOrcamento called with', payload);
     return { ok: true };
   },
+  financeExpireBudgets: async (payload = {}) => expireMockBudgets(payload),
   bancoInter: async (payload = {}) => {
     console.info('[mock] bancoInter called with', payload);
     if (payload?.action === 'issueBudgetCharge') {
@@ -1869,6 +2002,12 @@ const mockFunctions = {
       if (!orcamentoId) throw new Error('orcamento_id é obrigatório para emitir a cobrança do orçamento.');
       if (!carteiraId) throw new Error('carteira_id é obrigatório para emitir a cobrança do orçamento.');
       if (!Number.isFinite(valor) || valor <= 0) throw new Error('valor precisa ser maior que zero para emitir a cobrança do orçamento.');
+
+      expireMockBudgets({ empresa_id: empresaId, orcamento_id: orcamentoId });
+      const budget = readStorage('Orcamento').find((item) => item?.id === orcamentoId);
+      if (!budget || String(budget?.status || '').toLowerCase() !== 'aprovado') {
+        throw new Error('Este orçamento está expirado ou não está aprovado e não pode emitir uma nova cobrança.');
+      }
 
       const rows = readStorage('OrcamentoPagamento');
       const existing = rows.find((item) =>
@@ -1932,6 +2071,18 @@ const mockFunctions = {
       const index = rows.findIndex((item) => item?.id === paymentId || item?.codigo_solicitacao === paymentId);
       if (index < 0) throw new Error('Cobrança do orçamento não localizada.');
 
+      expireMockBudgets({ empresa_id: rows[index]?.empresa_id, orcamento_id: rows[index]?.orcamento_id });
+      const refreshedPayment = readStorage('OrcamentoPagamento').find((item) => item?.id === rows[index]?.id);
+      const refreshedBudget = readStorage('Orcamento').find((item) => item?.id === rows[index]?.orcamento_id);
+      const budgetValidity = String(refreshedBudget?.data_validade || '').slice(0, 10);
+      if (
+        String(refreshedPayment?.status || '').toLowerCase() === 'expirado'
+        || String(refreshedBudget?.status || '').toLowerCase() === 'expirado'
+        || (budgetValidity && budgetValidity < new Date().toISOString().slice(0, 10))
+      ) {
+        throw new Error('A validade do orçamento terminou. A cobrança não será consultada no Banco Inter.');
+      }
+
       let row = rows[index];
       if ((payload?.simulate_payment || row?.metadata?.mock_auto_paid) && !row?.pago_em) {
         row = {
@@ -1954,6 +2105,15 @@ const mockFunctions = {
       const paymentId = String(payload?.orcamento_pagamento_id || '').trim();
       const row = readStorage('OrcamentoPagamento').find((item) => item?.id === paymentId || item?.codigo_solicitacao === paymentId);
       if (!row) throw new Error('Cobrança do orçamento não localizada.');
+      expireMockBudgets({ empresa_id: row?.empresa_id, orcamento_id: row?.orcamento_id });
+      const budget = readStorage('Orcamento').find((item) => item?.id === row?.orcamento_id);
+      const budgetValidity = String(budget?.data_validade || '').slice(0, 10);
+      if (
+        String(budget?.status || '').toLowerCase() === 'expirado'
+        || (budgetValidity && budgetValidity < new Date().toISOString().slice(0, 10))
+      ) {
+        throw new Error('A validade do orçamento terminou. O PDF da cobrança não está mais disponível.');
+      }
       return {
         ok: true,
         file_name: `boleto-orcamento-${row.orcamento_id || row.id}.pdf`,
@@ -5760,6 +5920,17 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       });
       if (error) {
         throw toAppError(error, 'Erro ao sincronizar shadow financeiro do orÃ§amento.');
+      }
+      return Array.isArray(data) ? (data[0] || null) : data;
+    },
+    financeExpireBudgets: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_expire_budgets', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_orcamento_id: payload?.orcamento_id || null,
+        p_reference_date: payload?.reference_date || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao aplicar a expiração dos orçamentos vencidos.');
       }
       return Array.isArray(data) ? (data[0] || null) : data;
     },

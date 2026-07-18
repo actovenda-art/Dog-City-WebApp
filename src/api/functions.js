@@ -62,6 +62,14 @@ export const financeShadowSync = async (...args) => {
 	return f.financeShadowSync(...args);
 };
 
+export const financeExpireBudgets = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeExpireBudgets !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeExpireBudgets is not available'));
+	}
+	return f.financeExpireBudgets(...args);
+};
+
 export const financeWalletAdminReadAccounts = async (...args) => {
 	const f = getFunctions();
 	if (!f || typeof f.financeWalletAdminReadAccounts !== 'function') {

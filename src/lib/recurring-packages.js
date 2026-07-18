@@ -57,6 +57,17 @@ export function buildMonthKey(month, year) {
   return `${parsedYear}-${String(parsedMonth).padStart(2, "0")}`;
 }
 
+export function getAutomaticRecurringMonthKeys(referenceDate = new Date(), generationDay = 25) {
+  const reference = parseDateKey(referenceDate);
+  if (!reference) return [];
+
+  const currentMonthKey = buildMonthKey(reference.getMonth() + 1, reference.getFullYear());
+  if (reference.getDate() < generationDay) return [currentMonthKey];
+
+  const nextMonth = new Date(reference.getFullYear(), reference.getMonth() + 1, 1, 12, 0, 0, 0);
+  return [currentMonthKey, buildMonthKey(nextMonth.getMonth() + 1, nextMonth.getFullYear())];
+}
+
 export function parseMonthKey(monthKey) {
   const match = String(monthKey || "").match(/^(\d{4})-(\d{2})$/);
   if (!match) return null;
@@ -165,6 +176,178 @@ function getDayCareBaselineSessionCount(packageRecord) {
       if (frequency !== "semanal") return 0;
       return normalizeWeekdays(packageRecord?.weekdays, packageRecord?.weekday).length * 4;
   }
+}
+
+function normalizeIdSet(values = []) {
+  return new Set((Array.isArray(values) ? values : []).map((value) => String(value || "").trim()).filter(Boolean));
+}
+
+function getRecurringRecordPackageId(record) {
+  const metadata = normalizeMetadata(record?.metadata);
+  return String(record?.recurring_package_id || record?.package_id || metadata.package_id || "").trim();
+}
+
+function isCurrentRecurringRecord(record) {
+  return Boolean(
+    getRecurringRecordPackageId(record)
+    || record?.package_session_id
+    || normalizeMetadata(record?.metadata).package_session_id,
+  );
+}
+
+function getRecurringRecordMonthKey(record) {
+  const metadata = normalizeMetadata(record?.metadata);
+  const explicitMonth = String(record?.billing_month || metadata.billing_month || metadata.month_key || "").trim();
+  if (/^\d{4}-\d{2}$/.test(explicitMonth)) return explicitMonth;
+
+  const dateValue = record?.scheduled_date
+    || record?.data_referencia
+    || record?.data_hora_entrada
+    || record?.vencimento
+    || record?.data_prestacao;
+  return String(dateValue || "").slice(0, 7);
+}
+
+function getRecurringRecordLogicalKey(record) {
+  const petId = record?.dog_id || record?.pet_id || "";
+  const serviceId = record?.service_type || record?.service_id || record?.servico || "";
+  const dateValue = record?.scheduled_date || record?.data_referencia || record?.data_hora_entrada;
+  return [petId, serviceId, formatDateKey(dateValue)].join("|");
+}
+
+export function resolveRecurringPackageIdsForPlanGroup({ packages = [], planIds = [], packageGroupKey = "" } = {}) {
+  const planIdSet = normalizeIdSet(planIds);
+  const normalizedGroupKey = String(packageGroupKey || "").trim();
+
+  return (packages || [])
+    .filter((packageRecord) => {
+      const metadata = normalizeMetadata(packageRecord?.metadata);
+      const planConfigId = String(metadata.plan_config_id || "").trim();
+      const recordGroupKey = String(metadata.package_group_key || "").trim();
+      return (planConfigId && planIdSet.has(planConfigId))
+        || (normalizedGroupKey && recordGroupKey === normalizedGroupKey);
+    })
+    .map((packageRecord) => packageRecord?.id)
+    .filter(Boolean);
+}
+
+export function isRecordLinkedToRecurringPlanGroup(record, {
+  planIds = [],
+  packageGroupKey = "",
+  recurringPackageIds = [],
+} = {}) {
+  if (!record) return false;
+
+  const metadata = normalizeMetadata(record.metadata);
+  const planIdSet = normalizeIdSet(planIds);
+  const packageIdSet = normalizeIdSet(recurringPackageIds);
+  const recordPlanId = String(metadata.plan_id || metadata.plan_config_id || "").trim();
+  const recordGroupKey = String(metadata.package_group_key || "").trim();
+  const recordPackageId = getRecurringRecordPackageId(record);
+
+  return (recordPlanId && planIdSet.has(recordPlanId))
+    || (packageGroupKey && recordGroupKey === String(packageGroupKey))
+    || (recordPackageId && packageIdSet.has(recordPackageId));
+}
+
+export function deduplicateRecurringPlanCharges(charges = []) {
+  const currentKeys = new Set(
+    (charges || [])
+      .filter(isCurrentRecurringRecord)
+      .map((charge) => [
+        charge?.dog_id || charge?.pet_id || "",
+        charge?.servico || charge?.service_id || "",
+        getRecurringRecordMonthKey(charge),
+      ].join("|")),
+  );
+
+  return (charges || []).filter((charge) => {
+    if (isCurrentRecurringRecord(charge)) return true;
+    const key = [
+      charge?.dog_id || charge?.pet_id || "",
+      charge?.servico || charge?.service_id || "",
+      getRecurringRecordMonthKey(charge),
+    ].join("|");
+    return !currentKeys.has(key);
+  });
+}
+
+function normalizePackageSessionAppointment(session, appointment = null) {
+  const sessionStatus = String(session?.status || "").toLowerCase();
+  const mappedStatus = [SESSION_STATUSES.FALTA_COBRADA, SESSION_STATUSES.FALTA_NAO_COBRADA].includes(sessionStatus)
+      ? "faltou"
+      : [
+          SESSION_STATUSES.CANCELADA_COM_CREDITO,
+          SESSION_STATUSES.CANCELADA_SEM_CREDITO,
+          SESSION_STATUSES.CONVERTIDA_EM_CREDITO,
+        ].includes(sessionStatus)
+        ? "cancelado"
+        : appointment?.status || "agendado";
+  const metadata = {
+    ...normalizeMetadata(appointment?.metadata),
+    ...normalizeMetadata(session?.metadata),
+    package_id: session?.package_id || appointment?.recurring_package_id || null,
+    package_session_id: session?.id || appointment?.package_session_id || null,
+    billing_month: session?.billing_month || null,
+    package_session_status: sessionStatus || null,
+  };
+
+  return {
+    ...(appointment || {}),
+    id: appointment?.id || `package-session:${session?.id}`,
+    empresa_id: appointment?.empresa_id || session?.empresa_id || null,
+    dog_id: appointment?.dog_id || session?.pet_id || null,
+    cliente_id: appointment?.cliente_id || session?.client_id || null,
+    service_type: appointment?.service_type || session?.service_id || null,
+    data_referencia: appointment?.data_referencia || session?.scheduled_date || null,
+    package_session_id: session?.id || appointment?.package_session_id || null,
+    recurring_package_id: session?.package_id || appointment?.recurring_package_id || null,
+    status: mappedStatus,
+    metadata,
+    has_persisted_appointment: Boolean(appointment?.id),
+  };
+}
+
+export function mergeRecurringPlanAppointments({
+  appointments = [],
+  sessions = [],
+  planIds = [],
+  packageGroupKey = "",
+  recurringPackageIds = [],
+} = {}) {
+  const relation = { planIds, packageGroupKey, recurringPackageIds };
+  const packageIdSet = normalizeIdSet(recurringPackageIds);
+  const relatedAppointments = (appointments || []).filter((appointment) =>
+    isRecordLinkedToRecurringPlanGroup(appointment, relation),
+  );
+  const appointmentsBySessionId = new Map();
+
+  relatedAppointments.forEach((appointment) => {
+    const metadata = normalizeMetadata(appointment.metadata);
+    const sessionId = String(appointment.package_session_id || metadata.package_session_id || "").trim();
+    if (sessionId) appointmentsBySessionId.set(sessionId, appointment);
+  });
+
+  const sessionAppointments = (sessions || [])
+    .filter((session) => !session?.deleted_at && packageIdSet.has(String(session?.package_id || "")))
+    .map((session) => {
+      const linkedAppointment = appointmentsBySessionId.get(String(session.id))
+        || relatedAppointments.find((appointment) => appointment.id === session.appointment_id)
+        || null;
+      return normalizePackageSessionAppointment(session, linkedAppointment);
+    });
+  const consumedAppointmentIds = new Set(sessionAppointments.map((appointment) => appointment.has_persisted_appointment ? appointment.id : null).filter(Boolean));
+  const currentWithoutSession = relatedAppointments.filter((appointment) =>
+    isCurrentRecurringRecord(appointment) && !consumedAppointmentIds.has(appointment.id),
+  );
+  const currentAppointments = [...sessionAppointments, ...currentWithoutSession];
+  const currentLogicalKeys = new Set(currentAppointments.map(getRecurringRecordLogicalKey));
+  const compatibleLegacyAppointments = relatedAppointments.filter((appointment) =>
+    !isCurrentRecurringRecord(appointment)
+    && !currentLogicalKeys.has(getRecurringRecordLogicalKey(appointment)),
+  );
+
+  return [...currentAppointments, ...compatibleLegacyAppointments];
 }
 
 function getPlanOperationalConfig(packageRecord) {
@@ -402,6 +585,7 @@ export function generateMonthlySessions({ packages = [], existingSessions = [], 
   const logs = [];
 
   (packages || []).forEach((packageRecord) => {
+    const packageMetadata = normalizeMetadata(packageRecord?.metadata);
     const dates = getPackageScheduledDates(packageRecord, monthKey, { blockedDates, holidays });
     dates.forEach((dateKey, index) => {
       const uniqueKey = [packageRecord.id, packageRecord.pet_id, packageRecord.service_id, dateKey].join("|");
@@ -426,6 +610,8 @@ export function generateMonthlySessions({ packages = [], existingSessions = [], 
         metadata: {
           generated_by: "monthly_package_generator",
           package_frequency: packageRecord.frequency,
+          plan_config_id: packageMetadata.plan_config_id || null,
+          package_group_key: packageMetadata.package_group_key || null,
           ...operationalMetadata,
         },
       };
@@ -768,6 +954,7 @@ export function closeMonth({ packageRecord, sessions = [], credits = [], month, 
 }
 
 export function buildBillingPayload(packageRecord, billing, existingBilling = null) {
+  const packageMetadata = normalizeMetadata(packageRecord?.metadata);
   return {
     empresa_id: packageRecord?.empresa_id || null,
     package_id: packageRecord?.id,
@@ -785,6 +972,9 @@ export function buildBillingPayload(packageRecord, billing, existingBilling = nu
     metadata: {
       ...normalizeMetadata(existingBilling?.metadata),
       generated_by: "recurring_package_billing",
+      package_id: packageRecord?.id || null,
+      plan_config_id: packageMetadata.plan_config_id || null,
+      package_group_key: packageMetadata.package_group_key || null,
       recalculated_at: new Date().toISOString(),
     },
   };

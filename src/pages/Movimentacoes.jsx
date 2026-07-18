@@ -3223,36 +3223,36 @@ export default function Movimentacoes({ walletOnly = false }) {
       </div>
 
       <Dialog open={Boolean(transactionReceipt)} onOpenChange={(open) => !open && setTransactionReceipt(null)}>
-        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[640px] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex flex-wrap items-center gap-2">
-              <DialogTitle>Comprovante da transação</DialogTitle>
-              <Badge className="border border-emerald-200 bg-emerald-50 text-emerald-700">
+        <DialogContent className="max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[640px] gap-3 overflow-y-auto !rounded-[24px] border-slate-200 bg-white p-4 shadow-2xl sm:max-h-[90vh] sm:w-[95vw] sm:gap-4 sm:p-6">
+          <DialogHeader className="pr-7 text-left">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <DialogTitle className="text-base leading-tight sm:text-lg">Comprovante da transação</DialogTitle>
+              <Badge className="whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 sm:text-xs">
                 Consultado no Banco Inter
               </Badge>
             </div>
-            <DialogDescription>
+            <DialogDescription className="text-xs leading-5 sm:text-sm">
               {transactionReceipt?.message || "Dados bancários consultados em tempo real."}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
-            <div className="flex flex-col gap-1 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 sm:p-5">
+            <div className="flex flex-col gap-1 border-b border-slate-200 pb-3 sm:flex-row sm:items-end sm:justify-between sm:pb-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 sm:text-xs">
                   {transactionReceipt?.details?.transaction_type || "Movimentação bancária"}
                 </p>
-                <p className="mt-1 text-base font-semibold text-slate-900">
+                <p className="mt-1 text-sm font-semibold leading-snug text-slate-900 sm:text-base">
                   {transactionReceipt?.details?.description || "Transação Banco Inter"}
                 </p>
               </div>
-              <p className={`text-xl font-bold ${transactionReceipt?.details?.direction === "Saída" ? "text-rose-600" : "text-emerald-600"}`}>
+              <p className={`text-lg font-bold sm:text-xl ${transactionReceipt?.details?.direction === "Saída" ? "text-rose-600" : "text-emerald-600"}`}>
                 {transactionReceipt?.details?.direction === "Saída" ? "-" : "+"}
                 {formatCurrency(transactionReceipt?.details?.amount || 0)}
               </p>
             </div>
 
-            <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+            <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-3 text-xs sm:mt-4 sm:grid-cols-2 sm:gap-y-4 sm:text-sm">
               {[
                 ["Data", transactionReceipt?.details?.transaction_date ? formatMovementDateTime(transactionReceipt.details.transaction_date) : null],
                 ["Situação", transactionReceipt?.details?.status],
@@ -3265,7 +3265,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                 ["Autenticação", transactionReceipt?.details?.authentication],
               ].filter(([, value]) => value).map(([label, value]) => (
                 <div key={label} className="min-w-0">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-slate-500 sm:text-xs">{label}</dt>
                   <dd className="mt-1 break-all font-medium text-slate-900">{value}</dd>
                 </div>
               ))}
@@ -3284,14 +3284,14 @@ export default function Movimentacoes({ walletOnly = false }) {
             </p>
           ) : null}
 
-          <DialogFooter>
+          <DialogFooter className="gap-2 pt-1 sm:pt-0">
             {!transactionReceipt?.official_pdf && transactionReceipt?.details ? (
-              <Button type="button" variant="outline" onClick={handleDownloadTransactionReceipt} disabled={isReceiptDownloading}>
+              <Button type="button" variant="outline" className="rounded-xl" onClick={handleDownloadTransactionReceipt} disabled={isReceiptDownloading}>
                 <Download className="mr-2 h-4 w-4" />
                 {isReceiptDownloading ? "Baixando..." : "Baixar"}
               </Button>
             ) : null}
-            <Button type="button" onClick={() => setTransactionReceipt(null)}>Fechar</Button>
+            <Button type="button" className="rounded-xl" onClick={() => setTransactionReceipt(null)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

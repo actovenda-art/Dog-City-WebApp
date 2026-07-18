@@ -204,6 +204,8 @@ Arquivos financeiros recentes de referencia:
 - `supabase-schema-finance-wallet-*.sql`
 - `supabase-test-finance-wallet-*.sql`
 - `supabase-audit-finance-wallet-*.sql`
+- `supabase/supabase-schema-banco-inter-token-cache.sql`: cache OAuth criptografado e lease de renovacao do Banco Inter
+- `supabase/supabase-test-banco-inter-token-cache.sql`: smoke de RLS e concorrencia do cache OAuth
 
 Ciclo de vida dos perfis de clientes:
 
@@ -247,6 +249,26 @@ Ao substituir a aplicacao do Inter:
 5. informe um endpoint por linha quando o Inter publicar rotas diferentes por tipo de transacao.
 
 Os endpoints de comprovante aceitam os placeholders `{idTransacao}`, `{codigoTransacao}`, `{codigoSolicitacao}`, `{endToEndId}`, `{txid}`, `{nsu}`, `{dataInicio}` e `{dataFim}`. A Edge Function aceita resposta PDF binaria, JSON com base64, JSON com URL ou URL assinada. Se o PDF oficial nao estiver disponivel, o app preserva o fallback de detalhes bancarios estruturados e nunca substitui o comprovante por um extrato diario.
+
+### Cache OAuth do Banco Inter
+
+`banco-inter-sync` persiste cada token por integracao e conjunto de scopes em `banco_inter_token_cache`. O token nunca e salvo em texto aberto: a Edge Function usa AES-GCM, IV aleatorio e dados adicionais vinculados a integracao, scopes e fingerprint do `client_id`.
+
+Controles obrigatorios:
+
+- `BANCO_INTER_TOKEN_ENCRYPTION_KEY` existe somente nos secrets do Supabase;
+- nunca copie essa chave para `.env.local`, Vercel ou frontend;
+- nao rotacione a chave sem necessidade: a rotacao invalida os tokens ainda vigentes, que serao descartados e renovados;
+- a tabela possui RLS e nao concede acesso a `anon` ou `authenticated`;
+- o lease `finance_claim_banco_inter_token_refresh(...)` garante que apenas uma instancia gere o token quando houver cold start concorrente;
+- tokens vencidos ou que nao pertencam mais ao `client_id` configurado nao sao reutilizados.
+
+Aplicacao e teste do contrato:
+
+```bash
+npx supabase db query --linked --file supabase/supabase-schema-banco-inter-token-cache.sql
+npx supabase db query --linked --file supabase/supabase-test-banco-inter-token-cache.sql
+```
 
 ## Gateway de WhatsApp
 

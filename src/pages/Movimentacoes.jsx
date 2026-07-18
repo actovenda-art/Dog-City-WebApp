@@ -52,6 +52,7 @@ import {
   ChevronLeft,
   ChevronDown,
   CheckCircle2,
+  Download,
   FileText,
   FileWarning,
   ListFilter,
@@ -129,15 +130,6 @@ const WALLET_OPERATION_LABELS = {
   entrada_direcionada: "Entrada direcionada",
 };
 const WALLET_OPERATION_MODAL_LABEL = "Alteração manual";
-
-function escapeReceiptHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
 
 const MOVEMENTS_PAGE_SIZE = 50;
 const MOVEMENT_CACHE_KEY = "movimentacoes:last-overview";
@@ -1249,6 +1241,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [refreshResult, setRefreshResult] = useState(null);
   const [receiptLoadingId, setReceiptLoadingId] = useState(null);
   const [transactionReceipt, setTransactionReceipt] = useState(null);
+  const [isReceiptDownloading, setIsReceiptDownloading] = useState(false);
   const [visibleCount, setVisibleCount] = useState(MOVEMENTS_PAGE_SIZE);
   const [cacheHydrated, setCacheHydrated] = useState(false);
   const [hasLoadedFullDataset, setHasLoadedFullDataset] = useState(false);
@@ -2574,75 +2567,20 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
   };
 
-  const handlePrintTransactionReceipt = () => {
+  const handleDownloadTransactionReceipt = async () => {
     const details = transactionReceipt?.details;
     if (!details) return;
 
-    const receiptWindow = window.open("", "_blank", "width=760,height=900");
-    if (!receiptWindow) {
-      alert("Permita a abertura de pop-ups para imprimir o comprovante.");
-      return;
+    try {
+      setIsReceiptDownloading(true);
+      const { downloadTransactionReceiptPdf } = await import("@/lib/transaction-receipt-pdf");
+      downloadTransactionReceiptPdf(transactionReceipt);
+    } catch (error) {
+      console.error("Falha ao gerar comprovante em PDF", error);
+      alert("Não foi possível gerar o PDF do comprovante.");
+    } finally {
+      setIsReceiptDownloading(false);
     }
-    receiptWindow.opener = null;
-
-    const rows = [
-      ["Data", details.transaction_date ? formatMovementDateTime(details.transaction_date) : null],
-      ["Situação", details.status],
-      ["Contraparte", details.counterparty_name],
-      ["Documento", details.counterparty_document],
-      ["Referência bancária", details.provider_reference],
-      ["End-to-End Pix", details.end_to_end_id],
-      ["TXID", details.txid],
-      ["NSU", details.nsu],
-      ["Autenticação", details.authentication],
-    ].filter(([, value]) => value);
-    const amountPrefix = details.direction === "Saída" ? "-" : "+";
-
-    receiptWindow.document.write(`<!doctype html>
-      <html lang="pt-BR">
-        <head>
-          <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <title>Comprovante da transação</title>
-          <style>
-            * { box-sizing: border-box; }
-            body { margin: 0; padding: 40px; color: #0f172a; font-family: Arial, sans-serif; background: #f8fafc; }
-            main { max-width: 680px; margin: 0 auto; padding: 32px; border: 1px solid #e2e8f0; border-radius: 20px; background: white; }
-            .eyebrow { margin: 0; color: #64748b; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-            h1 { margin: 8px 0 4px; font-size: 24px; }
-            .source { margin: 0; color: #475569; font-size: 13px; }
-            .summary { display: flex; justify-content: space-between; gap: 24px; margin: 28px 0 8px; padding: 20px 0; border-block: 1px solid #e2e8f0; }
-            .description { margin: 6px 0 0; font-size: 16px; font-weight: 700; }
-            .amount { margin: 0; color: ${details.direction === "Saída" ? "#e11d48" : "#059669"}; font-size: 24px; font-weight: 800; white-space: nowrap; }
-            dl { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 28px; margin: 24px 0 0; }
-            dt { color: #64748b; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-            dd { margin: 5px 0 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
-            footer { margin-top: 30px; color: #64748b; font-size: 11px; line-height: 1.5; }
-            @media print { body { padding: 0; background: white; } main { max-width: none; border: 0; } }
-            @media (max-width: 560px) { body { padding: 16px; } main { padding: 22px; } .summary { flex-direction: column; } dl { grid-template-columns: 1fr; } }
-          </style>
-        </head>
-        <body>
-          <main>
-            <p class="eyebrow">Dog City Brasil</p>
-            <h1>Comprovante da transação</h1>
-            <p class="source">Dados identificadores retornados pela API oficial do Banco Inter.</p>
-            <section class="summary">
-              <div>
-                <p class="eyebrow">${escapeReceiptHtml(details.transaction_type || "Movimentação bancária")}</p>
-                <p class="description">${escapeReceiptHtml(details.description || "Transação Banco Inter")}</p>
-              </div>
-              <p class="amount">${escapeReceiptHtml(`${amountPrefix}${formatCurrency(details.amount || 0)}`)}</p>
-            </section>
-            <dl>
-              ${rows.map(([label, value]) => `<div><dt>${escapeReceiptHtml(label)}</dt><dd>${escapeReceiptHtml(value)}</dd></div>`).join("")}
-            </dl>
-            <footer>Documento gerado pelo sistema Dog City Brasil a partir dos dados oficiais da transação consultados no Banco Inter.</footer>
-          </main>
-          <script>window.addEventListener("load", () => window.print());<\/script>
-        </body>
-      </html>`);
-    receiptWindow.document.close();
   };
 
   return (
@@ -3348,8 +3286,9 @@ export default function Movimentacoes({ walletOnly = false }) {
 
           <DialogFooter>
             {!transactionReceipt?.official_pdf && transactionReceipt?.details ? (
-              <Button type="button" variant="outline" onClick={handlePrintTransactionReceipt}>
-                Imprimir ou salvar em PDF
+              <Button type="button" variant="outline" onClick={handleDownloadTransactionReceipt} disabled={isReceiptDownloading}>
+                <Download className="mr-2 h-4 w-4" />
+                {isReceiptDownloading ? "Baixando..." : "Baixar"}
               </Button>
             ) : null}
             <Button type="button" onClick={() => setTransactionReceipt(null)}>Fechar</Button>

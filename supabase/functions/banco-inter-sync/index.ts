@@ -23,6 +23,10 @@ const DEFAULT_PIX_PAYMENT_PATH = "/banking/v2/pix";
 const DEFAULT_BOLETO_PAYMENT_PATH = "/banking/v2/pagamento";
 const INTER_TOKEN_CACHE_TTL_MS = 55 * 60 * 1000;
 const INTER_TOKEN_RATE_LIMIT_DEFAULT_SECONDS = 60;
+const INTER_TOKEN_REFRESH_LEASE_SECONDS = 20;
+const INTER_TOKEN_REFRESH_WAIT_MS = 15_000;
+const INTER_TOKEN_REFRESH_POLL_MS = 350;
+const INTER_TOKEN_EXPIRY_SAFETY_MS = 30_000;
 const MAX_RECEIPT_PDF_BYTES = 12 * 1024 * 1024;
 
 type InterTokenResult = {
@@ -61,6 +65,7 @@ class BudgetUnavailableError extends Error {
 const interTokenCache = new Map<string, CachedInterToken>();
 const interTokenRequests = new Map<string, Promise<InterTokenResult>>();
 const interTokenCooldowns = new Map<string, number>();
+let persistentTokenCryptoKeyPromise: Promise<CryptoKey> | null = null;
 
 type IntegrationConfig = {
   id: string;
@@ -663,44 +668,63 @@ function countTransactions(payload: unknown) {
 function inferCounterpartyName(
   rawTransaction: Record<string, unknown>,
   description: string,
+  direction: "entrada" | "saida",
 ) {
   const details = rawTransaction.detalhes && typeof rawTransaction.detalhes === "object"
     ? rawTransaction.detalhes as Record<string, unknown>
     : {};
-  const value = sanitizeText(firstDefined(
-    rawTransaction.nomeRemetente,
-    rawTransaction.nomePagador,
-    rawTransaction.nomeFavorecido,
-    rawTransaction.nomeRecebedor,
-    rawTransaction.contraparte,
-    rawTransaction.beneficiario,
-    rawTransaction.pagador,
-    rawTransaction.creditorName,
-    rawTransaction.debtorName,
-    rawTransaction.cliente,
-    details.nomePagador,
-    details.nomeRecebedor,
-    details.nomeEmpresaPagador,
-    details.nomeEmpresaRecebedor,
-  ));
+  const value = direction === "saida"
+    ? sanitizeText(firstDefined(
+      rawTransaction.nomeFavorecido,
+      rawTransaction.nomeRecebedor,
+      rawTransaction.beneficiario,
+      rawTransaction.creditorName,
+      details.nomeRecebedor,
+      rawTransaction.contraparte,
+      rawTransaction.cliente,
+    ))
+    : sanitizeText(firstDefined(
+      rawTransaction.nomeRemetente,
+      rawTransaction.nomePagador,
+      rawTransaction.pagador,
+      rawTransaction.debtorName,
+      details.nomePagador,
+      rawTransaction.contraparte,
+      rawTransaction.cliente,
+    ));
   return value || description || null;
 }
 
-function inferCounterpartyBank(rawTransaction: Record<string, unknown>) {
+function inferCounterpartyBank(
+  rawTransaction: Record<string, unknown>,
+  direction: "entrada" | "saida",
+) {
   const details = rawTransaction.detalhes && typeof rawTransaction.detalhes === "object"
     ? rawTransaction.detalhes as Record<string, unknown>
     : {};
-  return sanitizeText(firstDefined(
-    rawTransaction.banco,
-    rawTransaction.bancoDestino,
-    rawTransaction.bancoOrigem,
-    rawTransaction.nomeBanco,
-    rawTransaction.instituicao,
-    rawTransaction.bankName,
-    rawTransaction.bank,
-    details.nomeEmpresaPagador,
-    details.nomeEmpresaRecebedor,
-  )) || null;
+  return direction === "saida"
+    ? sanitizeText(firstDefined(
+      rawTransaction.bancoDestino,
+      rawTransaction.nomeBancoDestino,
+      rawTransaction.instituicaoDestino,
+      details.nomeEmpresaRecebedor,
+      rawTransaction.banco,
+      rawTransaction.nomeBanco,
+      rawTransaction.instituicao,
+      rawTransaction.bankName,
+      rawTransaction.bank,
+    )) || null
+    : sanitizeText(firstDefined(
+      rawTransaction.bancoOrigem,
+      rawTransaction.nomeBancoOrigem,
+      rawTransaction.instituicaoOrigem,
+      details.nomeEmpresaPagador,
+      rawTransaction.banco,
+      rawTransaction.nomeBanco,
+      rawTransaction.instituicao,
+      rawTransaction.bankName,
+      rawTransaction.bank,
+    )) || null;
 }
 
 function inferReference(rawTransaction: Record<string, unknown>, externalId: string) {
@@ -943,6 +967,216 @@ function resolveTokenCacheTtl(parsed: Record<string, unknown>) {
   return INTER_TOKEN_CACHE_TTL_MS;
 }
 
+function encodeTokenBytesBase64(bytes: Uint8Array) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function decodeTokenBytesBase64(value: string) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+async function getPersistentTokenCryptoKey() {
+  if (persistentTokenCryptoKeyPromise) return await persistentTokenCryptoKeyPromise;
+
+  const secret = sanitizeText(Deno.env.get("BANCO_INTER_TOKEN_ENCRYPTION_KEY"));
+  if (!secret) {
+    throw new Error("BANCO_INTER_TOKEN_ENCRYPTION_KEY nao configurada.");
+  }
+
+  persistentTokenCryptoKeyPromise = (async () => {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+    return await crypto.subtle.importKey(
+      "raw",
+      digest,
+      { name: "AES-GCM" },
+      false,
+      ["encrypt", "decrypt"],
+    );
+  })();
+
+  return await persistentTokenCryptoKeyPromise;
+}
+
+function buildPersistentTokenAdditionalData(
+  config: IntegrationConfig,
+  scope: string,
+  clientFingerprint: string,
+) {
+  return new TextEncoder().encode(`${config.id}|${scope}|${clientFingerprint}`);
+}
+
+async function removePersistentInterToken(config: IntegrationConfig, scope: string) {
+  const { error } = await supabase
+    .from("banco_inter_token_cache")
+    .delete()
+    .eq("integracao_id", config.id)
+    .eq("scope", scope);
+  if (error) throw error;
+}
+
+async function readPersistentInterToken(
+  config: IntegrationConfig,
+  scope: string,
+  clientFingerprint: string,
+): Promise<CachedInterToken | null> {
+  const { data, error } = await supabase
+    .from("banco_inter_token_cache")
+    .select("client_fingerprint, token_ciphertext, token_iv, expires_at")
+    .eq("integracao_id", config.id)
+    .eq("scope", scope)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.token_ciphertext || !data?.token_iv || !data?.expires_at) return null;
+
+  const expiresAt = Date.parse(data.expires_at);
+  const isInvalid = data.client_fingerprint !== clientFingerprint
+    || !Number.isFinite(expiresAt)
+    || expiresAt <= Date.now() + INTER_TOKEN_EXPIRY_SAFETY_MS;
+  if (isInvalid) {
+    await removePersistentInterToken(config, scope);
+    return null;
+  }
+
+  try {
+    const key = await getPersistentTokenCryptoKey();
+    const decrypted = await crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: decodeTokenBytesBase64(data.token_iv),
+        additionalData: buildPersistentTokenAdditionalData(config, scope, clientFingerprint),
+      },
+      key,
+      decodeTokenBytesBase64(data.token_ciphertext),
+    );
+    const accessToken = new TextDecoder().decode(decrypted);
+    if (!accessToken) throw new Error("Token persistido vazio.");
+
+    return {
+      accessToken,
+      httpClient: await createHttpClient(config),
+      tokenResponse: { source: "encrypted_persistent_cache", expires_at: data.expires_at },
+      tokenStatus: 200,
+      expiresAt,
+    };
+  } catch (error) {
+    await removePersistentInterToken(config, scope).catch(() => undefined);
+    console.warn("banco-inter-sync discarded unreadable persistent token", serializeError(error));
+    return null;
+  }
+}
+
+async function claimPersistentInterTokenRefresh(
+  config: IntegrationConfig,
+  scope: string,
+  clientFingerprint: string,
+  owner: string,
+) {
+  const { data, error } = await supabase.rpc("finance_claim_banco_inter_token_refresh", {
+    p_integracao_id: config.id,
+    p_scope: scope,
+    p_client_fingerprint: clientFingerprint,
+    p_owner: owner,
+    p_lease_seconds: INTER_TOKEN_REFRESH_LEASE_SECONDS,
+  });
+  if (error) throw error;
+  return data === true;
+}
+
+async function waitForPersistentInterToken(
+  config: IntegrationConfig,
+  scope: string,
+  clientFingerprint: string,
+) {
+  const deadline = Date.now() + INTER_TOKEN_REFRESH_WAIT_MS;
+  while (Date.now() < deadline) {
+    await wait(INTER_TOKEN_REFRESH_POLL_MS);
+    const cached = await readPersistentInterToken(config, scope, clientFingerprint);
+    if (cached) return cached;
+  }
+  return null;
+}
+
+async function persistInterToken(
+  config: IntegrationConfig,
+  scope: string,
+  clientFingerprint: string,
+  owner: string | null,
+  accessToken: string,
+  expiresAt: number,
+) {
+  const key = await getPersistentTokenCryptoKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv,
+      additionalData: buildPersistentTokenAdditionalData(config, scope, clientFingerprint),
+    },
+    key,
+    new TextEncoder().encode(accessToken),
+  ));
+  const payload = {
+    client_fingerprint: clientFingerprint,
+    token_ciphertext: encodeTokenBytesBase64(ciphertext),
+    token_iv: encodeTokenBytesBase64(iv),
+    expires_at: new Date(expiresAt).toISOString(),
+    refresh_owner: null,
+    refreshing_until: null,
+    updated_date: new Date().toISOString(),
+  };
+
+  if (owner) {
+    const { data, error } = await supabase
+      .from("banco_inter_token_cache")
+      .update(payload)
+      .eq("integracao_id", config.id)
+      .eq("scope", scope)
+      .eq("refresh_owner", owner)
+      .select("integracao_id")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("Lease de renovacao do token nao pertence mais a esta instancia.");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("banco_inter_token_cache")
+    .upsert({
+      integracao_id: config.id,
+      scope,
+      ...payload,
+    }, { onConflict: "integracao_id,scope" });
+  if (error) throw error;
+}
+
+async function releasePersistentInterTokenRefresh(
+  config: IntegrationConfig,
+  scope: string,
+  owner: string,
+) {
+  const { error } = await supabase
+    .from("banco_inter_token_cache")
+    .update({
+      refresh_owner: null,
+      refreshing_until: null,
+      updated_date: new Date().toISOString(),
+    })
+    .eq("integracao_id", config.id)
+    .eq("scope", scope)
+    .eq("refresh_owner", owner);
+  if (error) throw error;
+}
+
 async function getAccessToken(
   config: IntegrationConfig,
   options: {
@@ -968,6 +1202,7 @@ async function getAccessToken(
     ? ["basic", "body"]
     : [configuredTokenAuthMode];
   const cacheKey = resolveTokenCacheKey(clientId, scope);
+  const clientFingerprint = await sha256Hex(clientId);
   const cachedToken = getCachedInterToken(cacheKey);
   if (cachedToken) {
     return {
@@ -976,6 +1211,21 @@ async function getAccessToken(
       tokenResponse: cachedToken.tokenResponse,
       tokenStatus: cachedToken.tokenStatus,
     };
+  }
+
+  try {
+    const persistentToken = await readPersistentInterToken(config, scope, clientFingerprint);
+    if (persistentToken) {
+      interTokenCache.set(cacheKey, persistentToken);
+      return {
+        accessToken: persistentToken.accessToken,
+        httpClient: persistentToken.httpClient,
+        tokenResponse: persistentToken.tokenResponse,
+        tokenStatus: persistentToken.tokenStatus,
+      };
+    }
+  } catch (error) {
+    console.warn("banco-inter-sync persistent token read warning", serializeError(error));
   }
 
   const actionLabel = options.actionLabel ? `${options.actionLabel}: ` : "";
@@ -992,83 +1242,140 @@ async function getAccessToken(
   if (inFlightRequest) return await inFlightRequest;
 
   const tokenRequest = (async (): Promise<InterTokenResult> => {
-    const errors: string[] = [];
+    let refreshOwner: string | null = crypto.randomUUID();
+    let refreshLeaseAcquired = false;
 
-    for (const tokenAuthMode of modes) {
-      const httpClient = await createHttpClient(config);
-      const formData = new URLSearchParams();
-      formData.set("grant_type", "client_credentials");
-      if (scope) formData.set("scope", scope);
-      if (tokenAuthMode !== "basic") {
-        formData.set("client_id", clientId);
-        formData.set("client_secret", clientSecret);
-      }
-
-      const headers: Record<string, string> = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      };
-
-      if (tokenAuthMode === "basic") {
-        headers.Authorization = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
-      }
-
-      const response = await fetch(tokenUrl, {
-        method: "POST",
-        headers,
-        body: formData.toString(),
-        client: httpClient,
-      });
-
-      const rawText = await response.text();
-      let parsed: Record<string, unknown> = {};
+    try {
       try {
-        parsed = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        parsed = { raw: rawText };
+        refreshLeaseAcquired = await claimPersistentInterTokenRefresh(
+          config,
+          scope,
+          clientFingerprint,
+          refreshOwner,
+        );
+
+        if (!refreshLeaseAcquired) {
+          const sharedToken = await waitForPersistentInterToken(config, scope, clientFingerprint);
+          if (sharedToken) {
+            interTokenCache.set(cacheKey, sharedToken);
+            return sharedToken;
+          }
+
+          refreshLeaseAcquired = await claimPersistentInterTokenRefresh(
+            config,
+            scope,
+            clientFingerprint,
+            refreshOwner,
+          );
+          if (!refreshLeaseAcquired) {
+            throw new BancoInterAuthError(
+              `O token do Banco Inter para o scope '${scope}' ainda esta sendo renovado por outra instancia. Tente novamente em alguns segundos.`,
+              503,
+              2,
+            );
+          }
+        }
+      } catch (error) {
+        if (error instanceof BancoInterAuthError) throw error;
+        console.warn("banco-inter-sync token refresh coordination warning", serializeError(error));
+        refreshOwner = null;
+        refreshLeaseAcquired = false;
       }
 
-      if (!response.ok) {
-        const scopeHint = buildScopeRegistrationHint(scope, parsed);
-        if (scopeHint) {
-          throw new BancoInterAuthError(
-            `Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${tokenAuthMode}:${response.status}:${scopeHint}`,
-          );
+      const errors: string[] = [];
+
+      for (const tokenAuthMode of modes) {
+        const httpClient = await createHttpClient(config);
+        const formData = new URLSearchParams();
+        formData.set("grant_type", "client_credentials");
+        if (scope) formData.set("scope", scope);
+        if (tokenAuthMode !== "basic") {
+          formData.set("client_id", clientId);
+          formData.set("client_secret", clientSecret);
         }
 
-        if (response.status === 429) {
-          const retryAfterSeconds = resolveRetryAfterSeconds(response);
-          interTokenCooldowns.set(cacheKey, Date.now() + retryAfterSeconds * 1000);
-          const rateLimitHint = buildTokenRateLimitHint(scope, retryAfterSeconds);
-          throw new BancoInterAuthError(
-            `Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${tokenAuthMode}:429:${rateLimitHint}`,
-            429,
-            retryAfterSeconds,
-          );
+        const headers: Record<string, string> = {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        };
+
+        if (tokenAuthMode === "basic") {
+          headers.Authorization = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
         }
 
-        errors.push(`${tokenAuthMode}:${response.status}:${JSON.stringify(parsed)}`);
-        continue;
+        const response = await fetch(tokenUrl, {
+          method: "POST",
+          headers,
+          body: formData.toString(),
+          client: httpClient,
+        });
+
+        const rawText = await response.text();
+        let parsed: Record<string, unknown> = {};
+        try {
+          parsed = rawText ? JSON.parse(rawText) : {};
+        } catch {
+          parsed = { raw: rawText };
+        }
+
+        if (!response.ok) {
+          const scopeHint = buildScopeRegistrationHint(scope, parsed);
+          if (scopeHint) {
+            throw new BancoInterAuthError(
+              `Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${tokenAuthMode}:${response.status}:${scopeHint}`,
+            );
+          }
+
+          if (response.status === 429) {
+            const retryAfterSeconds = resolveRetryAfterSeconds(response);
+            interTokenCooldowns.set(cacheKey, Date.now() + retryAfterSeconds * 1000);
+            const rateLimitHint = buildTokenRateLimitHint(scope, retryAfterSeconds);
+            throw new BancoInterAuthError(
+              `Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${tokenAuthMode}:429:${rateLimitHint}`,
+              429,
+              retryAfterSeconds,
+            );
+          }
+
+          errors.push(`${tokenAuthMode}:${response.status}:${JSON.stringify(parsed)}`);
+          continue;
+        }
+
+        const accessToken = sanitizeText(firstDefined(parsed.access_token, parsed.token));
+        if (!accessToken) {
+          errors.push(`${tokenAuthMode}:${response.status}:sem access_token`);
+          continue;
+        }
+
+        const tokenResult = { accessToken, httpClient, tokenResponse: parsed, tokenStatus: response.status };
+        const expiresAt = Date.now() + resolveTokenCacheTtl(parsed);
+        interTokenCooldowns.delete(cacheKey);
+        interTokenCache.set(cacheKey, { ...tokenResult, expiresAt });
+        try {
+          await persistInterToken(
+            config,
+            scope,
+            clientFingerprint,
+            refreshLeaseAcquired ? refreshOwner : null,
+            accessToken,
+            expiresAt,
+          );
+        } catch (error) {
+          console.warn("banco-inter-sync persistent token write warning", serializeError(error));
+        }
+        return tokenResult;
       }
 
-      const accessToken = sanitizeText(firstDefined(parsed.access_token, parsed.token));
-      if (!accessToken) {
-        errors.push(`${tokenAuthMode}:${response.status}:sem access_token`);
-        continue;
+      throw new BancoInterAuthError(
+        `Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${errors.join(" | ")}`,
+      );
+    } finally {
+      if (refreshLeaseAcquired && refreshOwner) {
+        await releasePersistentInterTokenRefresh(config, scope, refreshOwner).catch((error) => {
+          console.warn("banco-inter-sync token refresh release warning", serializeError(error));
+        });
       }
-
-      const tokenResult = { accessToken, httpClient, tokenResponse: parsed, tokenStatus: response.status };
-      interTokenCooldowns.delete(cacheKey);
-      interTokenCache.set(cacheKey, {
-        ...tokenResult,
-        expiresAt: Date.now() + resolveTokenCacheTtl(parsed),
-      });
-      return tokenResult;
     }
-
-    throw new BancoInterAuthError(
-      `Falha ao autenticar no Banco Inter para ${actionLabel}scope '${scope}': ${errors.join(" | ")}`,
-    );
   })();
 
   interTokenRequests.set(cacheKey, tokenRequest);
@@ -1995,7 +2302,7 @@ async function normalizeTransactions(
       transaction.nomeFavorecido,
     ), "Movimentacao Banco Inter");
     const parsedDescription = parseBancoInterDescription(transaction);
-    const counterpartyName = inferCounterpartyName(transaction, rawDescription);
+    const counterpartyName = inferCounterpartyName(transaction, rawDescription, normalizedType);
     const resolvedCounterpartyName = normalizeDisplayName(parsedDescription.counterpartyName || counterpartyName || rawDescription) || null;
     const resolvedMethod = parsedDescription.method || normalizeDisplayLabel(firstDefined(transaction.tipoTransacao, transaction.formaPagamento, transaction.tipoPagamento)) || null;
     const resolvedTransactionType = parsedDescription.detailLabel || normalizeDisplayLabel(firstDefined(
@@ -2023,7 +2330,7 @@ async function normalizeTransactions(
     const stableFingerprintPayload = buildStableTransactionFingerprintPayload(transaction);
     const fallbackKey = await sha256Hex(`${empresaId}|${stableSerialize(stableFingerprintPayload)}`);
     const transactionId = sourceId || `api_synthetic_${fallbackKey}`;
-    const counterpartyBank = inferCounterpartyBank(transaction);
+    const counterpartyBank = inferCounterpartyBank(transaction, normalizedType);
     const reference = inferReference(transaction, transactionId);
     const notes = sanitizeText(firstDefined(
       transaction.observacoes,

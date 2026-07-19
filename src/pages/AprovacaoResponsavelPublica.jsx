@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { responsavelApproval } from "@/api/functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle2, Dog, LoaderCircle, LockKeyhole, MessageSquareWarning, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Dog, LockKeyhole, MessageSquareWarning, ShieldCheck, XCircle } from "lucide-react";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value) || 0);
@@ -128,14 +129,7 @@ export default function AprovacaoResponsavelPublica() {
   const dogs = Array.isArray(context?.dogs) ? context.dogs : [];
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
-        <div className="text-center text-white">
-          <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-orange-400" />
-          <p className="mt-4 text-sm text-slate-300">Carregando solicitação...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (errorMessage && !request) {

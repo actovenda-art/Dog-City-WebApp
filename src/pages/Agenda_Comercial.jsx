@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Schedule } from "@/api/entities/Schedule";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Dog } from "@/api/entities";
 import { Client } from "@/api/entities";
 import { Card, CardContent } from "@/components/ui/card";
@@ -262,14 +263,7 @@ export default function Agenda_Comercial() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando agenda...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

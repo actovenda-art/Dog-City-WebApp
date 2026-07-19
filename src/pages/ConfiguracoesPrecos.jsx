@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { TabelaPrecos, User } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -438,11 +439,7 @@ export default function ConfiguracoesPrecos() {
   }, [rowsByCategory.racas]);
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-16 w-16 animate-spin rounded-full border-b-4 border-blue-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   const renderRow = (item, colorClass, valueClass) => (

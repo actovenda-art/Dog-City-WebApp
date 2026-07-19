@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Carteira, CarteiraConta, ExtratoBancario, Receita, User } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { financeWalletAdminApplyOperation } from "@/api/functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -244,11 +245,7 @@ export default function Receitas() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-16 w-16 animate-spin rounded-full border-b-4 border-green-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

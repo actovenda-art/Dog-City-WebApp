@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Dog } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Responsavel } from "@/api/entities";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -102,7 +103,7 @@ export default function RelatoriosCaes() {
 
   const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-  if (isLoading) return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div></div>;
+  if (isLoading) return <LoadingScreen />;
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">

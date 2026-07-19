@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useState } from "react";
 import { Appointment, Carteira, Checkin, ContaReceber, Dog, IntegracaoConfig, Orcamento, OrcamentoPagamento, PackageSession, RecurringPackage, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import {
   bancoInter,
   financeApplyCompensatoryCredit,
@@ -1893,11 +1894,7 @@ export default function OrcamentosHistoricoPanel({
       : "bg-blue-100 text-blue-700";
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-4 border-blue-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   const content = (

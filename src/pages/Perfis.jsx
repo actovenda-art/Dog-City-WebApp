@@ -1,4 +1,5 @@
 import PropTypes from "prop-types";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Carteira, ContaReceber, Dog, Responsavel, User } from "@/api/entities";
 import { clientRegistration } from "@/api/functions";
@@ -1703,11 +1704,7 @@ export default function Perfis() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-16 w-16 animate-spin rounded-full border-b-4 border-blue-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

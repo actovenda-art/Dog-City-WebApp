@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { User } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
 import { getSafeNextPathFromSearch, isSameAppLocation } from "@/lib/auth-navigation";
@@ -107,19 +108,7 @@ export default function DefinirPin() {
   }
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md border-slate-800 bg-slate-900 text-white">
-          <CardContent className="p-8 text-center">
-            <LoaderCircle className="w-10 h-10 mx-auto animate-spin text-orange-400" />
-            <h1 className="mt-4 text-2xl font-semibold">Preparando acesso</h1>
-            <p className="mt-2 text-sm text-slate-300">
-              Estamos conferindo se este usuário precisa definir um novo PIN.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

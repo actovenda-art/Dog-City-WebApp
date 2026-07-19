@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ServiceProvided } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Appointment } from "@/api/entities";
 import { Replacement } from "@/api/entities";
 import { Dog } from "@/api/entities";
@@ -198,11 +199,7 @@ export default function ServicosPrestados() {
     valorHoje: servicosHoje.reduce((acc, s) => acc + (s.value || 0), 0),
   };
 
-  if (isLoading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
-    </div>
-  );
+  if (isLoading) return <LoadingScreen />;
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">

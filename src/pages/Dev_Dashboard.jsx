@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Empresa, PerfilAcesso, User, UserProfile, UserUnitAccess } from "@/api/entities";
 import { SendEmail } from "@/api/integrations";
 import { createPageUrl } from "@/utils";
@@ -570,11 +571,7 @@ export default function Dev_Dashboard() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

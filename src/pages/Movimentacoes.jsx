@@ -45,6 +45,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -2582,6 +2583,10 @@ export default function Movimentacoes({ walletOnly = false }) {
       setIsReceiptDownloading(false);
     }
   };
+
+  if (isInitialLoading && !cacheHydrated) {
+    return <LoadingScreen />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-2.5 sm:p-6">

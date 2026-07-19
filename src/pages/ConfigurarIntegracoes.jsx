@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { format, subDays } from "date-fns";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { IntegracaoConfig, User } from "@/api/entities";
 import { bancoInter, whatsappBridge } from "@/api/functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -674,11 +675,7 @@ export default function ConfigurarIntegracoes() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (isUnitUnionActive) {

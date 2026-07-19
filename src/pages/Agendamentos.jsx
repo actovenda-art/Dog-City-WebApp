@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, User } from "@/api/entities";
 import {
   buildDogOwnerIndex,
@@ -1100,11 +1101,7 @@ export default function Agendamentos() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f6f8fc]">
-        <div className="h-16 w-16 animate-spin rounded-full border-b-4 border-blue-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

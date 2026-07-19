@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { PlanConfig as Plano } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Dog } from "@/api/entities";
 import { Carteira } from "@/api/entities";
 import { Schedule } from "@/api/entities/Schedule";
@@ -229,11 +230,7 @@ export default function Planos() {
     }).length
   };
 
-  if (isLoading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
-    </div>
-  );
+  if (isLoading) return <LoadingScreen />;
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">

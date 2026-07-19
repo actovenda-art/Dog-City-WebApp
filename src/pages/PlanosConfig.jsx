@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { addDays, addMonths, addWeeks, differenceInCalendarDays, endOfMonth, format, getDay, isSameDay, isSameMonth, isWeekend, nextDay, parseISO, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -3142,11 +3143,7 @@ export default function PlanosConfig() {
   const detailCurrentMonthLabel = useMemo(() => formatMonthLabel(new Date()), []);
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-16 w-16 animate-spin rounded-full border-b-4 border-purple-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

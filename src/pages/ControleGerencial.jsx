@@ -15,6 +15,7 @@ import {
   ServiceProvided,
   User,
 } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import {
   financeReportsV2Context,
   financeReportsV2Summary,
@@ -713,11 +714,7 @@ export default function ControleGerencial() {
   }), [absentDogs.length, expensesByCostCenter, fixedClientRows.length, fixedReceiptsByService, payableRows, receivablesByBudget]);
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="h-16 w-16 animate-spin rounded-full border-b-4 border-blue-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

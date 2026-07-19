@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { PedidoInterno } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Plus, Pencil, Trash2, Clock, CheckCircle, XCircle, Pause, FileText, Upload, GripVertical, Calendar, Tag, Sparkles
+  Plus, Pencil, Trash2, Clock, CheckCircle, XCircle, Pause, FileText, Upload, GripVertical, Calendar, Tag
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -184,17 +185,7 @@ export default function PedidosInternos() {
   const getPedidosByStatus = (status) => pedidos.filter(p => p.status === status);
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-        <div className="text-center">
-          <div className="relative">
-            <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-200 border-t-blue-600 mx-auto"></div>
-            <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-blue-600" />
-          </div>
-          <p className="text-slate-600 mt-4 font-medium">Carregando tarefas...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

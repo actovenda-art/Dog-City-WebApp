@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Empresa, User, UserProfile } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import { getSafeNextPathFromSearch, isSameAppLocation } from "@/lib/auth-navigation";
@@ -12,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { createPageUrl, openImageViewer } from "@/utils";
 import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
-import { AlertTriangle, KeyRound, LoaderCircle, Upload, UserRound } from "lucide-react";
+import { AlertTriangle, KeyRound, Upload, UserRound } from "lucide-react";
 
 const EMPTY_FORM = {
   full_name: "",
@@ -390,14 +391,7 @@ export default function CompletarCadastro() {
   }
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-center text-white">
-          <LoaderCircle className="w-10 h-10 mx-auto animate-spin text-orange-400" />
-          <p className="mt-4 text-sm text-slate-300">Carregando ficha de cadastro...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

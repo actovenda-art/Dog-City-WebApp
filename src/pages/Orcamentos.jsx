@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment, Checkin, RecurringPackage, AppConfig, ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { useLocation } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1491,11 +1492,7 @@ export default function Orcamentos() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-16 w-16 animate-spin rounded-full border-b-4 border-blue-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

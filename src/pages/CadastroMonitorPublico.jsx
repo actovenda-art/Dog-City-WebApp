@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { monitorRegistration } from "@/api/functions";
 import { useBranding } from "@/hooks/use-branding";
 import { Button } from "@/components/ui/button";
@@ -198,11 +199,7 @@ export default function CadastroMonitorPublico() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <LoaderCircle className="h-8 w-8 animate-spin text-blue-600" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (success) {

@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { clientRegistration } from "@/api/functions";
 import { useBranding } from "@/hooks/use-branding";
 import { Button } from "@/components/ui/button";
@@ -1866,14 +1867,7 @@ export default function CadastroClientePublico() {
   const shouldShowContinueButton = currentStep < visibleStepDefinitions.length - 1 || (currentStepDefinition?.id === "caes" && !isLastDogSection);
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="text-center">
-          <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-blue-600" />
-          <p className="mt-4 text-sm text-slate-600">Carregando ficha de cadastro...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (successMessage) {

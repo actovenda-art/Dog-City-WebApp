@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Appointment, AuditLog, Carteira, Checkin, ContaReceber, Dog, Notificacao, Orcamento, PerfilAcesso, Responsavel, ServiceProvided, ServiceProvider, ServiceProviderSchedule, TabelaPrecos, User } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import {
@@ -1986,14 +1987,7 @@ export default function Registrador() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-b-4 border-blue-600" />
-          <p className="text-sm text-gray-600">Carregando Registrador...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

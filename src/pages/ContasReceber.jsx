@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Appointment, Checkin, Client, ContaReceber, Dog, Orcamento, ServiceProvided } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import {
   filterAppointmentsByApprovedOrcamentos,
   getAppointmentDateKey,
@@ -258,7 +259,7 @@ export default function ContasReceber() {
     setIsSaving(false);
   }
 
-  if (isLoading) return <div className="flex min-h-screen items-center justify-center"><div className="h-16 w-16 animate-spin rounded-full border-b-4 border-blue-600" /></div>;
+  if (isLoading) return <LoadingScreen />;
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">

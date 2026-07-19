@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { CentroCusto, Lancamento, User, ExtratoBancario, Despesa } from "@/api/entities";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -444,11 +445,7 @@ export default function ContasPagar() {
   const totalPendente = pendentes.reduce((acc, l) => acc + ((l.valor || 0) - (l.valor_quitado || 0)), 0);
   const totalVencido = pendentes.filter(l => new Date(l.vencimento) < new Date()).reduce((acc, l) => acc + ((l.valor || 0) - (l.valor_quitado || 0)), 0);
 
-  if (isLoading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-red-600"></div>
-    </div>
-  );
+  if (isLoading) return <LoadingScreen />;
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">

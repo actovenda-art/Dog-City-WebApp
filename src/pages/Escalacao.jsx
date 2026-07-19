@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarClock, CheckCircle2, Clock3, Coffee, Copy, Link as LinkIcon, Plus, ShieldCheck, Users } from "lucide-react";
+import LoadingScreen from "@/components/layout/LoadingScreen";
 import { useLocation } from "react-router-dom";
 
 import { ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
@@ -721,14 +722,7 @@ export default function Escalacao() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-b-4 border-blue-600" />
-          <p className="text-sm text-gray-600">Carregando escalação...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

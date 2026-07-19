@@ -1908,10 +1908,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       rowCount: rows.length,
       latestDate,
       effectiveBalance,
-      creditTotal: Number(walletStatementRows?.creditTotal || 0),
-      debitTotal: Number(walletStatementRows?.debitTotal || 0),
       openDebitTotal: Number(walletStatementRows?.openDebitTotal || 0),
-      settledDebitTotal: Number(walletStatementRows?.settledDebitTotal || 0),
       paidDebitCount: Number(walletStatementRows?.paidDebitCount || 0),
       pendingDebitCount: Number(walletStatementRows?.pendingDebitCount || 0),
     };
@@ -2050,11 +2047,6 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
     return walletTimelineRows;
   }, [walletTimelineFilter, walletTimelineRows]);
-  const walletTimelineCounts = useMemo(() => ({
-    all: walletTimelineRows.length,
-    transactions: walletTimelineRows.filter((row) => row.filterGroup === "transaction").length,
-    activities: walletTimelineRows.filter((row) => row.filterGroup === "activity").length,
-  }), [walletTimelineRows]);
   const walletReversalServiceOptions = useMemo(
     () => buildWalletReversalServiceOptions({
       walletAccountId: walletReversalForm.carteira_conta_id || selectedWalletRuntimeAccountId,
@@ -2894,7 +2886,7 @@ export default function Movimentacoes({ walletOnly = false }) {
 
                   <div className="space-y-4">
                       <section className="overflow-hidden rounded-[20px] border border-slate-300/80 bg-slate-200 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:rounded-[22px]">
-                        <div className="grid grid-cols-2 gap-px sm:grid-cols-3 xl:grid-cols-6">
+                        <div className="grid grid-cols-2 gap-px lg:grid-cols-[1.25fr_0.8fr_1fr]">
                           <div className="bg-gradient-to-br from-blue-50 to-white px-3 py-3.5 sm:px-4">
                             <div className="flex items-center gap-1.5 text-blue-700">
                               <Wallet className="h-3.5 w-3.5" />
@@ -2903,63 +2895,18 @@ export default function Movimentacoes({ walletOnly = false }) {
                             <p className="mt-1.5 text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">
                               {formatCurrency(walletStatementSummary.effectiveBalance)}
                             </p>
-                          </div>
-
-                          <div className="bg-white px-3 py-3.5 sm:px-4">
-                            <div className="flex items-center gap-1.5 text-emerald-700">
-                              <ArrowUpCircle className="h-3.5 w-3.5" />
-                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Créditos recebidos</p>
-                            </div>
-                            <p className="mt-1.5 text-lg font-bold tracking-tight text-emerald-700 sm:text-xl">
-                              {formatCurrency(walletStatementSummary.creditTotal)}
+                            <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-slate-500 sm:text-[11px]">
+                              {walletStatementSummary.rowCount > 0
+                                ? walletStatementSummary.openDebitTotal > 0
+                                  ? `Saldo após a quitação cronológica. Débitos em aberto: ${formatCurrency(walletStatementSummary.openDebitTotal)}.`
+                                  : `Saldo após quitar ${walletStatementSummary.paidDebitCount} lançamento(s) em ordem cronológica.`
+                                : "Sem lançamentos na carteira até o momento."}
                             </p>
                           </div>
 
                           <div className="bg-white px-3 py-3.5 sm:px-4">
-                            <div className="flex items-center gap-1.5 text-slate-500">
-                              <ArrowDownCircle className="h-3.5 w-3.5" />
-                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Débitos lançados</p>
-                            </div>
-                            <p className="mt-1.5 text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
-                              {formatCurrency(walletStatementSummary.debitTotal)}
-                            </p>
-                          </div>
-
-                          <div className="bg-white px-3 py-3.5 sm:px-4">
-                            <div className="flex items-center gap-1.5 text-red-600">
-                              <FileWarning className="h-3.5 w-3.5" />
-                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Débitos em aberto</p>
-                            </div>
-                            <p className="mt-1.5 text-lg font-bold tracking-tight text-red-600 sm:text-xl">
-                              {formatCurrency(walletStatementSummary.openDebitTotal)}
-                            </p>
-                          </div>
-
-                          <div className="bg-white px-3 py-3.5 sm:px-4">
-                            <div className="flex items-center gap-1.5 text-emerald-700">
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Serviços quitados</p>
-                            </div>
-                            <p className="mt-1.5 text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
-                              {walletStatementSummary.paidDebitCount}
-                            </p>
-                          </div>
-
-                          <div className="bg-white px-3 py-3.5 sm:px-4">
-                            <div className="flex items-center gap-1.5 text-amber-600">
-                              <Calendar className="h-3.5 w-3.5" />
-                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Serviços pendentes</p>
-                            </div>
-                            <p className="mt-1.5 text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
-                              {walletStatementSummary.pendingDebitCount}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-px border-t border-slate-200 bg-slate-200 sm:grid-cols-[0.9fr_0.8fr_1.4fr]">
-                          <div className="bg-slate-50 px-3 py-2.5 sm:px-4">
                             <div className="flex items-center gap-2">
-                              <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Situação</p>
+                              <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Situação</p>
                               <Badge
                                 variant="outline"
                                 className={`whitespace-nowrap rounded-full px-2 py-0 text-[10px] font-bold ${
@@ -2978,18 +2925,14 @@ export default function Movimentacoes({ walletOnly = false }) {
                             </p>
                           </div>
 
-                          <div className="bg-slate-50 px-3 py-2.5 sm:px-4">
-                            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Vencimento padrão</p>
+                          <div className="col-span-2 min-w-0 bg-white px-3 py-3.5 sm:px-4 lg:col-span-1">
+                            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Vencimento padrão</p>
                             <p className="mt-1 text-sm font-semibold text-slate-900">
                               {selectedWalletAccount.carteira_vencimento_padrao
                                 ? `Dia ${selectedWalletAccount.carteira_vencimento_padrao}`
                                 : "Não informado"}
                             </p>
-                          </div>
-
-                          <div className="col-span-2 min-w-0 bg-slate-50 px-3 py-2.5 sm:col-span-1 sm:px-4">
-                            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Cães vinculados</p>
-                            <p className="mt-1 truncate text-sm font-medium text-slate-700" title={selectedWalletAccount.linked_dog_labels?.join(", ") || "Nenhum cão vinculado"}>
+                            <p className="mt-1.5 truncate text-[11px] text-slate-500" title={selectedWalletAccount.linked_dog_labels?.join(", ") || "Nenhum cão vinculado"}>
                               {selectedWalletAccount.linked_dog_labels?.length
                                 ? selectedWalletAccount.linked_dog_labels.join(", ")
                                 : "Nenhum cão vinculado"}
@@ -3023,9 +2966,9 @@ export default function Movimentacoes({ walletOnly = false }) {
 
                               <div className="grid w-full grid-cols-3 gap-1.5 sm:flex sm:w-auto sm:shrink-0">
                                 {[
-                                  { value: "all", label: "Todos", count: walletTimelineCounts.all },
-                                  { value: "transactions", label: "Transações", count: walletTimelineCounts.transactions },
-                                  { value: "activities", label: "Atividades", count: walletTimelineCounts.activities },
+                                  { value: "all", label: "Todos" },
+                                  { value: "transactions", label: "Transações" },
+                                  { value: "activities", label: "Atividades" },
                                 ].map((filter) => (
                                   <Button
                                     key={filter.value}
@@ -3037,12 +2980,6 @@ export default function Movimentacoes({ walletOnly = false }) {
                                     onClick={() => setWalletTimelineFilter(filter.value)}
                                   >
                                     {filter.label}
-                                    <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[9px] ${
-                                      walletTimelineFilter === filter.value ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500"
-                                    }`}
-                                    >
-                                      {filter.count}
-                                    </span>
                                   </Button>
                                 ))}
                               </div>

@@ -122,54 +122,97 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#0f172a,_#111827_55%,_#020617)] flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg border-slate-700 bg-slate-950 text-white shadow-2xl shadow-slate-950/60">
-        <CardContent className="p-8">
-          <div className="flex flex-col items-center text-center">
-            {isResolved && logoUrl ? (
-              <img src={logoUrl} alt={companyName} className="w-20 h-20 object-contain" />
-            ) : (
-              <div className="h-20 w-20 rounded-3xl border border-slate-700 bg-white/5" />
-            )}
-            <p className="mt-6 text-xs font-semibold uppercase tracking-[0.25em] text-blue-300">Acesso</p>
-            <h1 className="mt-3 text-3xl font-brand text-white">{companyName}</h1>
-            <p className="mt-3 text-sm text-slate-300">
-              Entre com email e PIN ou use sua conta Google abaixo.
+    <div className="relative min-h-screen overflow-hidden bg-slate-50 text-slate-900">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_15%,rgba(37,99,235,0.10),transparent_28%),radial-gradient(circle_at_70%_90%,rgba(14,165,233,0.08),transparent_25%)]" />
+
+      <div className="relative mx-auto grid min-h-screen max-w-[1500px] lg:grid-cols-[minmax(360px,0.88fr)_minmax(520px,1.12fr)]">
+        <aside className="relative hidden overflow-hidden bg-gradient-to-br from-blue-600 via-blue-600 to-blue-700 px-12 py-14 text-white lg:flex lg:flex-col lg:justify-between">
+          <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full border border-white/15" />
+          <div className="pointer-events-none absolute -bottom-28 -left-20 h-96 w-96 rounded-full bg-white/5" />
+          <div className="pointer-events-none absolute bottom-24 right-12 h-24 w-24 rounded-full border border-white/10" />
+
+          <div className="relative">
+            <div className="flex h-24 w-24 items-center justify-center rounded-[28px] border border-white/70 bg-white p-2 shadow-xl shadow-blue-950/20">
+              <img
+                src={isResolved && logoUrl ? logoUrl : "/dog-city-brand.png"}
+                alt={companyName}
+                className="h-full w-full object-contain"
+              />
+            </div>
+            <p className="mt-10 text-xs font-semibold uppercase tracking-[0.28em] text-blue-100">Sistema de gestão</p>
+            <h1 className="mt-3 max-w-lg font-brand text-5xl leading-none tracking-wide text-white xl:text-6xl">
+              {companyName}
+            </h1>
+            <p className="mt-5 max-w-md text-base leading-relaxed text-blue-100">
+              Operação, atendimento e gestão reunidos em um ambiente seguro e organizado.
             </p>
           </div>
 
-          <form onSubmit={handlePinLogin} className="mt-8 space-y-5">
+          <div className="relative flex items-center gap-3 border-t border-white/15 pt-6 text-sm text-blue-100">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
+              <ShieldCheck className="h-4 w-4" />
+            </span>
+            Acesso protegido para a equipe Dog City Brasil.
+          </div>
+        </aside>
+
+        <main className="flex min-h-screen items-center justify-center px-3 py-5 sm:px-8 sm:py-8 lg:px-12">
+          <Card className="w-full max-w-[480px] rounded-[26px] border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)] sm:rounded-[30px]">
+            <CardContent className="p-5 sm:p-7">
+              <div className="mb-5 flex items-center gap-3 border-b border-slate-100 pb-4 lg:hidden">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+                  <img
+                    src={isResolved && logoUrl ? logoUrl : "/dog-city-brand.png"}
+                    alt={companyName}
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600">Sistema de gestão</p>
+                  <p className="truncate font-brand text-2xl tracking-wide text-slate-950">{companyName}</p>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600">Acesso seguro</p>
+                <h2 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Entre na sua conta</h2>
+                <p className="mt-1.5 text-sm text-slate-500">
+                  Use seu email e PIN ou continue com a conta Google.
+                </p>
+              </div>
+
+              <form onSubmit={handlePinLogin} className="mt-5 space-y-4">
             {wasRecovered && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-relaxed text-blue-700">
                 Encontramos um estado antigo de sessão neste navegador e limpamos o acesso local para recuperar o login. Entre novamente para continuar.
               </div>
             )}
 
             {isBlocked && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-700">
                 Este acesso foi cancelado ou desativado. Fale com a administração central para liberar uma nova vinculação.
               </div>
             )}
 
             <div>
-              <label className="text-sm font-medium text-slate-200">Login</label>
-              <div className="relative mt-2">
+              <label className="text-xs font-semibold text-slate-700">Email</label>
+              <div className="relative mt-1.5">
                 <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  className="border-slate-700 bg-slate-900 pl-9 text-white placeholder:text-slate-500"
+                  className="h-11 rounded-xl border-slate-200 bg-white pl-9 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus-visible:ring-blue-500"
                   placeholder="email@dogcitybrasil.com.br"
                   autoComplete="username"
                 />
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-              <div className="mb-4 flex items-center gap-2 text-slate-200">
-                <ShieldCheck className="h-4 w-4 text-blue-300" />
-                <span className="text-sm font-medium">Senha PIN numérica</span>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
+              <div className="mb-3 flex items-center gap-2 text-slate-700">
+                <ShieldCheck className="h-4 w-4 text-blue-600" />
+                <span className="text-xs font-semibold">Senha PIN numérica</span>
               </div>
               <PinPairPad
                 value={pin}
@@ -177,29 +220,30 @@ export default function Login() {
                 onBackspace={handleBackspace}
                 onClear={handleClear}
                 disabled={isSubmitting || isGoogleSubmitting}
+                variant="light"
               />
             </div>
 
             {errorMessage && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 mt-0.5" />
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>{errorMessage}</span>
                 </div>
               </div>
             )}
 
-            <Button type="submit" disabled={isSubmitting || isGoogleSubmitting} className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white">
-              {isSubmitting ? <LoaderCircle className="w-4 h-4 mr-2 animate-spin" /> : <LogIn className="w-4 h-4 mr-2" />}
+            <Button type="submit" disabled={isSubmitting || isGoogleSubmitting} className="h-11 w-full rounded-xl bg-blue-600 font-semibold text-white shadow-sm hover:bg-blue-700">
+              {isSubmitting ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
               {isSubmitting ? "Entrando..." : "Entrar com email e PIN"}
             </Button>
 
-            <div className="relative py-2">
+            <div className="relative py-1">
               <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-slate-800" />
+                <span className="w-full border-t border-slate-200" />
               </div>
-              <div className="relative flex justify-center text-xs uppercase tracking-[0.2em] text-slate-500">
-                <span className="bg-slate-950 px-3">ou</span>
+              <div className="relative flex justify-center text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                <span className="bg-white px-3">ou</span>
               </div>
             </div>
 
@@ -207,20 +251,23 @@ export default function Login() {
               type="button"
               onClick={handleGoogleLogin}
               disabled={isSubmitting || isGoogleSubmitting}
-              className="w-full h-12 bg-white text-slate-900 hover:bg-slate-100"
+              variant="outline"
+              className="h-11 w-full rounded-xl border-slate-200 bg-white font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
             >
-              {isGoogleSubmitting ? <LoaderCircle className="w-4 h-4 mr-2 animate-spin" /> : <GoogleIcon />}
+              {isGoogleSubmitting ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <GoogleIcon />}
               <span className="ml-2">{isGoogleSubmitting ? "Redirecionando..." : "Entrar com conta Google"}</span>
             </Button>
 
             {!User.isEnabled?.() && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-700">
                 Este ambiente está em modo local/mock. O login real só funciona com Supabase configurado.
               </div>
             )}
-          </form>
-        </CardContent>
-      </Card>
+              </form>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
     </div>
   );
 }

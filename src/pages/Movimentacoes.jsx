@@ -1908,7 +1908,10 @@ export default function Movimentacoes({ walletOnly = false }) {
       rowCount: rows.length,
       latestDate,
       effectiveBalance,
+      creditTotal: Number(walletStatementRows?.creditTotal || 0),
+      debitTotal: Number(walletStatementRows?.debitTotal || 0),
       openDebitTotal: Number(walletStatementRows?.openDebitTotal || 0),
+      settledDebitTotal: Number(walletStatementRows?.settledDebitTotal || 0),
       paidDebitCount: Number(walletStatementRows?.paidDebitCount || 0),
       pendingDebitCount: Number(walletStatementRows?.pendingDebitCount || 0),
     };
@@ -2047,6 +2050,11 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
     return walletTimelineRows;
   }, [walletTimelineFilter, walletTimelineRows]);
+  const walletTimelineCounts = useMemo(() => ({
+    all: walletTimelineRows.length,
+    transactions: walletTimelineRows.filter((row) => row.filterGroup === "transaction").length,
+    activities: walletTimelineRows.filter((row) => row.filterGroup === "activity").length,
+  }), [walletTimelineRows]);
   const walletReversalServiceOptions = useMemo(
     () => buildWalletReversalServiceOptions({
       walletAccountId: walletReversalForm.carteira_conta_id || selectedWalletRuntimeAccountId,
@@ -2839,44 +2847,44 @@ export default function Movimentacoes({ walletOnly = false }) {
                   )}
               </div>
             ) : (
-                <div className="space-y-5 sm:space-y-6">
-                  <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:pb-6 lg:flex-row lg:items-end lg:justify-between">
-                    <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => setSelectedWalletAccountId("")}
-                        className="h-10 shrink-0 rounded-full border-slate-300 px-3 text-xs shadow-sm sm:px-4 sm:text-sm"
+                        className="h-9 shrink-0 rounded-full border-slate-300 px-3 text-xs shadow-sm"
                       >
-                        <ChevronLeft className="mr-1 h-4 w-4 sm:mr-1.5" />
+                        <ChevronLeft className="mr-1 h-3.5 w-3.5" />
                         <span className="hidden sm:inline">Voltar para a lista</span>
                         <span className="sm:hidden">Voltar</span>
                       </Button>
                       <div className="min-w-0">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600 sm:text-xs">Carteira do responsável financeiro</p>
-                        <h1 className="mt-1 truncate font-brand text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-blue-600 sm:text-[10px]">Carteira do responsável financeiro</p>
+                        <h1 className="mt-0.5 truncate font-brand text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">
                           {selectedWalletAccount.carteira_nome}
                         </h1>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end lg:self-auto">
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
                       <Button
                         variant="outline"
                         onClick={() => loadWalletAdminData(currentUser, selectedWalletAccountId)}
                         disabled={walletLoading}
-                        className="h-10 w-10 rounded-full border-slate-300 bg-white p-0 shadow-sm"
+                        className="h-9 w-9 rounded-full border-slate-300 bg-white p-0 shadow-sm"
                         title="Atualizar"
                         aria-label="Atualizar"
                       >
-                        <RefreshCw className={`h-4 w-4 ${walletLoading ? "animate-spin" : ""}`} />
+                        <RefreshCw className={`h-3.5 w-3.5 ${walletLoading ? "animate-spin" : ""}`} />
                       </Button>
                       {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations ? (
                         <Button
                           variant="outline"
                           onClick={() => openWalletOperationModal("credito_manual")}
                           disabled={!selectedWalletRuntimeAccountId}
-                          className="h-10 rounded-full border-slate-300 bg-white px-4 text-xs font-semibold shadow-sm sm:text-sm"
+                          className="h-9 rounded-full border-slate-300 bg-white px-3 text-xs font-semibold shadow-sm"
                         >
                           Alteração manual
                         </Button>
@@ -2885,135 +2893,203 @@ export default function Movimentacoes({ walletOnly = false }) {
                   </div>
 
                   <div className="space-y-4">
-                      <section className="overflow-hidden rounded-[24px] border border-slate-300/80 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.06)] sm:rounded-[28px]">
-                        <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1.35fr)_minmax(190px,0.65fr)_minmax(220px,0.75fr)]">
-                          <div className="col-span-2 border-b border-slate-200 p-4 sm:p-5 lg:col-span-1 lg:border-b-0 lg:border-r lg:p-6">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:text-xs">Saldo disponível</p>
-                            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+                      <section className="overflow-hidden rounded-[20px] border border-slate-300/80 bg-slate-200 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:rounded-[22px]">
+                        <div className="grid grid-cols-2 gap-px sm:grid-cols-3 xl:grid-cols-6">
+                          <div className="bg-gradient-to-br from-blue-50 to-white px-3 py-3.5 sm:px-4">
+                            <div className="flex items-center gap-1.5 text-blue-700">
+                              <Wallet className="h-3.5 w-3.5" />
+                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Saldo disponível</p>
+                            </div>
+                            <p className="mt-1.5 text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">
                               {formatCurrency(walletStatementSummary.effectiveBalance)}
                             </p>
-                            <p className="mt-2 max-w-2xl text-xs leading-relaxed text-slate-500 sm:text-sm">
-                              {walletStatementSummary.rowCount > 0
-                                ? walletStatementSummary.openDebitTotal > 0
-                                  ? `Saldo após a quitação cronológica. Débitos em aberto: ${formatCurrency(walletStatementSummary.openDebitTotal)}.`
-                                  : `Saldo após quitar ${walletStatementSummary.paidDebitCount} lançamento(s) em ordem cronológica.`
-                                : "Sem lançamentos na carteira até o momento."}
+                          </div>
+
+                          <div className="bg-white px-3 py-3.5 sm:px-4">
+                            <div className="flex items-center gap-1.5 text-emerald-700">
+                              <ArrowUpCircle className="h-3.5 w-3.5" />
+                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Créditos recebidos</p>
+                            </div>
+                            <p className="mt-1.5 text-lg font-bold tracking-tight text-emerald-700 sm:text-xl">
+                              {formatCurrency(walletStatementSummary.creditTotal)}
                             </p>
                           </div>
 
-                          <div className="border-r border-slate-200 p-4 sm:p-5 lg:p-6">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:text-xs">Situação</p>
-                            <Badge
-                              variant="outline"
-                              className={`mt-3 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                                selectedWalletFinancialStatus?.tone === "irregular"
-                                  ? "border-red-200 bg-red-50 text-red-700"
-                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                              }`}
-                            >
-                              {selectedWalletFinancialStatus?.tone === "irregular" ? "IRREGULAR" : "REGULAR"}
-                            </Badge>
-                            <p className="mt-2 text-xs leading-relaxed text-slate-500 sm:text-sm">
+                          <div className="bg-white px-3 py-3.5 sm:px-4">
+                            <div className="flex items-center gap-1.5 text-slate-500">
+                              <ArrowDownCircle className="h-3.5 w-3.5" />
+                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Débitos lançados</p>
+                            </div>
+                            <p className="mt-1.5 text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+                              {formatCurrency(walletStatementSummary.debitTotal)}
+                            </p>
+                          </div>
+
+                          <div className="bg-white px-3 py-3.5 sm:px-4">
+                            <div className="flex items-center gap-1.5 text-red-600">
+                              <FileWarning className="h-3.5 w-3.5" />
+                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Débitos em aberto</p>
+                            </div>
+                            <p className="mt-1.5 text-lg font-bold tracking-tight text-red-600 sm:text-xl">
+                              {formatCurrency(walletStatementSummary.openDebitTotal)}
+                            </p>
+                          </div>
+
+                          <div className="bg-white px-3 py-3.5 sm:px-4">
+                            <div className="flex items-center gap-1.5 text-emerald-700">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Serviços quitados</p>
+                            </div>
+                            <p className="mt-1.5 text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+                              {walletStatementSummary.paidDebitCount}
+                            </p>
+                          </div>
+
+                          <div className="bg-white px-3 py-3.5 sm:px-4">
+                            <div className="flex items-center gap-1.5 text-amber-600">
+                              <Calendar className="h-3.5 w-3.5" />
+                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Serviços pendentes</p>
+                            </div>
+                            <p className="mt-1.5 text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+                              {walletStatementSummary.pendingDebitCount}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-px border-t border-slate-200 bg-slate-200 sm:grid-cols-[0.9fr_0.8fr_1.4fr]">
+                          <div className="bg-slate-50 px-3 py-2.5 sm:px-4">
+                            <div className="flex items-center gap-2">
+                              <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Situação</p>
+                              <Badge
+                                variant="outline"
+                                className={`whitespace-nowrap rounded-full px-2 py-0 text-[10px] font-bold ${
+                                  selectedWalletFinancialStatus?.tone === "irregular"
+                                    ? "border-red-200 bg-red-50 text-red-700"
+                                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                }`}
+                              >
+                                {selectedWalletFinancialStatus?.tone === "irregular" ? "IRREGULAR" : "REGULAR"}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-[11px] text-slate-500">
                               {walletStatementSummary.latestDate
-                                ? `Último lançamento em ${formatWalletStatementDate(walletStatementSummary.latestDate)}.`
-                                : "Aguardando primeiro lançamento."}
+                                ? `Último lançamento: ${formatWalletStatementDate(walletStatementSummary.latestDate)}`
+                                : "Aguardando primeiro lançamento"}
                             </p>
                           </div>
 
-                          <div className="p-4 sm:p-5 lg:p-6">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:text-xs">Vencimento padrão</p>
-                            <p className="mt-2 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
+                          <div className="bg-slate-50 px-3 py-2.5 sm:px-4">
+                            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Vencimento padrão</p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
                               {selectedWalletAccount.carteira_vencimento_padrao
                                 ? `Dia ${selectedWalletAccount.carteira_vencimento_padrao}`
                                 : "Não informado"}
                             </p>
-                            <p className="mt-1 truncate text-xs text-slate-500 sm:text-sm" title={selectedWalletAccount.linked_dog_labels?.join(", ") || "Nenhum cão vinculado"}>
+                          </div>
+
+                          <div className="col-span-2 min-w-0 bg-slate-50 px-3 py-2.5 sm:col-span-1 sm:px-4">
+                            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Cães vinculados</p>
+                            <p className="mt-1 truncate text-sm font-medium text-slate-700" title={selectedWalletAccount.linked_dog_labels?.join(", ") || "Nenhum cão vinculado"}>
                               {selectedWalletAccount.linked_dog_labels?.length
                                 ? selectedWalletAccount.linked_dog_labels.join(", ")
                                 : "Nenhum cão vinculado"}
                             </p>
                           </div>
                         </div>
+
                         {selectedWalletFinancialStatus?.tone === "irregular" ? (
-                          <div className="border-t border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 sm:px-6">
+                          <div className="border-t border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800 sm:px-4">
                             Regularize os débitos em aberto.
                           </div>
                         ) : null}
                       </section>
 
                       {!selectedWalletAccount.has_wallet_account ? (
-                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                          Este responsável financeiro ainda não possui uma conta operacional de carteira vinculada. A leitura do extrato V2 e as ações de carteira aparecem automaticamente assim que a conta estiver disponível no financeiro.
+                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
+                          Conta operacional ainda não vinculada. O extrato V2 e as ações serão disponibilizados automaticamente assim que a conta estiver ativa.
                         </div>
                       ) : null}
 
                       {walletFlags.movementsEnabled ? (
-                        <div className="space-y-4">
-                          <div className="rounded-2xl border border-slate-200 bg-white">
-                            <div className="border-b border-slate-100 px-4 py-3">
-                              <h3 className="font-semibold text-slate-900">Extrato do responsável financeiro</h3>
-                              <p className="mt-1 text-sm text-slate-500">
-                                Um feed cronológico com transações, atividades e estornos vinculados à carteira do responsável financeiro.
-                              </p>
-                            </div>
-                            <div className="space-y-4 p-4">
-                              <div className="flex flex-wrap gap-2">
+                        <div className="space-y-3">
+                          <div className="overflow-hidden rounded-[20px] border border-slate-300/80 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+                            <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+                              <div className="min-w-0">
+                                <h3 className="text-sm font-semibold text-slate-900 sm:text-base">Extrato do responsável financeiro</h3>
+                                <p className="mt-0.5 text-[11px] text-slate-500 sm:text-xs">
+                                  Transações, atividades e estornos em ordem cronológica.
+                                </p>
+                              </div>
+
+                              <div className="grid w-full grid-cols-3 gap-1.5 sm:flex sm:w-auto sm:shrink-0">
                                 {[
-                                  { value: "all", label: "Todos" },
-                                  { value: "transactions", label: "Transações" },
-                                  { value: "activities", label: "Atividades" },
+                                  { value: "all", label: "Todos", count: walletTimelineCounts.all },
+                                  { value: "transactions", label: "Transações", count: walletTimelineCounts.transactions },
+                                  { value: "activities", label: "Atividades", count: walletTimelineCounts.activities },
                                 ].map((filter) => (
                                   <Button
                                     key={filter.value}
                                     type="button"
                                     variant={walletTimelineFilter === filter.value ? "default" : "outline"}
-                                    className={`h-9 rounded-full px-4 text-xs sm:text-sm ${
+                                    className={`h-8 min-w-0 rounded-full px-2.5 text-[10px] sm:px-3 sm:text-xs ${
                                       walletTimelineFilter === filter.value ? "bg-slate-900 text-white hover:bg-slate-800" : ""
                                     }`}
                                     onClick={() => setWalletTimelineFilter(filter.value)}
                                   >
                                     {filter.label}
+                                    <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[9px] ${
+                                      walletTimelineFilter === filter.value ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500"
+                                    }`}
+                                    >
+                                      {filter.count}
+                                    </span>
                                   </Button>
                                 ))}
                               </div>
+                            </div>
+
+                            <div className="p-3 sm:p-4">
 
                               {filteredWalletTimelineRows.length === 0 ? (
-                                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
                                   Nenhum lançamento foi encontrado para o filtro selecionado.
                                 </div>
                               ) : (
-                                <div className="relative pl-6">
-                                  <div className="absolute bottom-0 left-2 top-0 w-px bg-slate-200" />
-                                  <div className="space-y-4">
+                                <div className="relative pl-4 sm:pl-5">
+                                  <div className="absolute bottom-0 left-1 top-0 w-px bg-slate-200 sm:left-1.5" />
+                                  <div className="space-y-2">
                                     {filteredWalletTimelineRows.map((row) => (
                                       <div key={row.id} className="relative">
-                                        <div className={`absolute -left-[1.45rem] top-5 h-3 w-3 rounded-full border-2 border-white ${getWalletTimelineDotClass(row)}`} />
-                                        <details className="group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-                                          <summary className="cursor-pointer list-none px-4 py-4 hover:bg-slate-50">
-                                            <div>
-                                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                                <div className="min-w-0 space-y-2">
-                                                  <div className="flex flex-wrap items-center gap-2">
-                                                    <p className="text-base font-semibold text-slate-900">{row.title}</p>
+                                        <div className={`absolute -left-[0.95rem] top-4 h-2.5 w-2.5 rounded-full border-2 border-white sm:-left-[1.15rem] ${getWalletTimelineDotClass(row)}`} />
+                                        <details className="group overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-slate-300 hover:shadow-sm">
+                                          <summary className="cursor-pointer list-none px-3 py-2.5 hover:bg-slate-50 sm:px-3.5">
+                                            <div className="flex items-start justify-between gap-3">
+                                              <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    <p className="truncate text-sm font-semibold text-slate-900">{row.title}</p>
                                                     {row.badges.map((badge) => (
                                                       <Badge
                                                         key={`${row.id}-${badge.label}`}
                                                         variant="outline"
-                                                        className={badge.tone === "red"
+                                                        className={`rounded-full px-1.5 py-0 text-[9px] font-bold ${badge.tone === "red"
                                                           ? "border-red-200 bg-red-50 text-red-700"
                                                           : badge.tone === "amber"
                                                             ? "border-amber-200 bg-amber-50 text-amber-700"
-                                                            : "border-emerald-200 bg-emerald-50 text-emerald-700"}
+                                                            : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}
                                                       >
                                                         {badge.label}
                                                       </Badge>
                                                     ))}
                                                   </div>
-                                                  <p className="text-sm text-slate-600">{row.subtitle}</p>
-                                                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{row.categoryLabel}</p>
-                                                </div>
-                                                <div className="text-left md:text-right">
-                                                  <p className={`text-base font-semibold ${
+                                                <p className="mt-1 truncate text-[11px] text-slate-500 sm:text-xs">
+                                                  <span className="font-medium text-slate-700">{row.subtitle}</span>
+                                                  <span className="mx-1.5 text-slate-300">•</span>
+                                                  {row.categoryLabel}
+                                                </p>
+                                              </div>
+                                              <div className="shrink-0 text-right">
+                                                <div className="flex items-center justify-end gap-1">
+                                                  <p className={`text-sm font-semibold ${
                                                     row.amountTone === "credit"
                                                       ? "text-emerald-700"
                                                       : row.amountTone === "debit"
@@ -3024,14 +3100,15 @@ export default function Movimentacoes({ walletOnly = false }) {
                                                     {row.amountTone === "credit" ? "+" : row.amountTone === "debit" ? "-" : ""}
                                                     {formatCurrency(row.amount)}
                                                   </p>
-                                                  <p className="mt-1 text-sm text-slate-500">{formatWalletStatementDate(row.primaryDate)}</p>
+                                                  <ChevronDown className="h-3.5 w-3.5 text-slate-400 transition group-open:rotate-180" />
                                                 </div>
+                                                <p className="mt-0.5 text-[10px] text-slate-400 sm:text-[11px]">{formatWalletStatementDate(row.primaryDate)}</p>
                                               </div>
                                             </div>
                                           </summary>
 
-                                          <div className="border-t border-slate-100 bg-slate-50 px-4 py-4">
-                                            <div className="grid grid-cols-1 gap-3 text-sm text-slate-600 md:grid-cols-2">
+                                          <div className="border-t border-slate-100 bg-slate-50 px-3 py-3 sm:px-3.5">
+                                            <div className="grid grid-cols-1 gap-2 text-xs text-slate-600 sm:grid-cols-2">
                                               <p><span className="font-medium text-slate-900">Data:</span> {row.details.data}</p>
                                               <p><span className="font-medium text-slate-900">Status:</span> {row.details.status || "—"}</p>
                                               {row.sourceKind === "transaction" ? (
@@ -3046,20 +3123,20 @@ export default function Movimentacoes({ walletOnly = false }) {
                                                 </>
                                               )}
                                               {row.details.motivo ? (
-                                                <p className="md:col-span-2"><span className="font-medium text-slate-900">Motivo:</span> {row.details.motivo}</p>
+                                                <p className="sm:col-span-2"><span className="font-medium text-slate-900">Motivo:</span> {row.details.motivo}</p>
                                               ) : null}
                                               {row.details.anexo ? (
-                                                <p className="md:col-span-2"><span className="font-medium text-slate-900">Anexo:</span> {row.details.anexo}</p>
+                                                <p className="sm:col-span-2"><span className="font-medium text-slate-900">Anexo:</span> {row.details.anexo}</p>
                                               ) : null}
                                             </div>
 
-                                            <div className="mt-4 flex flex-wrap gap-2">
+                                            <div className="mt-3 flex flex-wrap gap-1.5">
                                               {row.appointmentId ? (
                                                 <Button
                                                   type="button"
                                                   variant="outline"
                                                   size="sm"
-                                                  className="h-8 rounded-full px-3 text-[11px] sm:text-sm"
+                                                  className="h-7 rounded-full px-2.5 text-[10px]"
                                                   onClick={() => openWalletStatementAppointment(row.appointmentId)}
                                                 >
                                                   Abrir agendamento
@@ -3070,7 +3147,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                                   type="button"
                                                   variant="outline"
                                                   size="sm"
-                                                  className="h-8 rounded-full px-3 text-[11px] sm:text-sm"
+                                                  className="h-7 rounded-full px-2.5 text-[10px]"
                                                   onClick={() => openWalletStatementReference(row)}
                                                 >
                                                   Abrir {row.referenceLabel?.toLowerCase() || "referência"}
@@ -3081,7 +3158,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                                   type="button"
                                                   variant="outline"
                                                   size="sm"
-                                                  className="h-8 rounded-full px-3 text-[11px] sm:text-sm"
+                                                  className="h-7 rounded-full px-2.5 text-[10px]"
                                                   onClick={() => openWalletStatementTransaction(row.transactionRow)}
                                                 >
                                                   Abrir transação

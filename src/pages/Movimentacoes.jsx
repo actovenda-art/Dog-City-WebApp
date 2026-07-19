@@ -1122,7 +1122,7 @@ function StatCard({ label, value, className = "", valueClassName = "", icon = nu
         <p className={`mt-1 text-base font-bold leading-tight transition sm:mt-2 sm:text-2xl ${isBlurred ? "blur-[6px] opacity-50 select-none" : ""} ${valueClassName}`}>
           {value}
         </p>
-        {helper ? <p className="mt-1 line-clamp-2 text-[9px] leading-tight text-gray-500 sm:mt-2 sm:text-xs sm:leading-normal">{helper}</p> : null}
+        {helper ? <p className="mt-2 hidden text-xs text-gray-500 sm:block">{helper}</p> : null}
       </CardContent>
     </Card>
   );

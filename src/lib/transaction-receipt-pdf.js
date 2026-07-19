@@ -34,7 +34,7 @@ export function createTransactionReceiptPdf(receipt) {
     ["Contraparte", details.counterparty_name],
     ["Documento", details.counterparty_document],
     ["Referência bancária", details.provider_reference],
-    ["End-to-End Pix", details.end_to_end_id],
+    ["ID da transação Pix", details.end_to_end_id],
     ["TXID", details.txid],
     ["NSU", details.nsu],
     ["Autenticação", details.authentication],

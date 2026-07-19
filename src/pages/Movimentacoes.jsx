@@ -1114,15 +1114,15 @@ async function requestLiveBalance(empresaId) {
 function StatCard({ label, value, className = "", valueClassName = "", icon = null, helper = null, isBlurred = false }) {
   return (
     <Card className={className}>
-      <CardContent className="p-2.5 sm:p-4">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] text-gray-500 sm:text-sm">{label}</p>
+      <CardContent className="p-2 sm:p-4">
+        <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+          <p className="text-[10px] font-medium leading-tight text-gray-500 sm:text-sm">{label}</p>
           {icon}
         </div>
-        <p className={`mt-1.5 text-lg font-bold transition sm:mt-2 sm:text-2xl ${isBlurred ? "blur-[6px] opacity-50 select-none" : ""} ${valueClassName}`}>
+        <p className={`mt-1 text-base font-bold leading-tight transition sm:mt-2 sm:text-2xl ${isBlurred ? "blur-[6px] opacity-50 select-none" : ""} ${valueClassName}`}>
           {value}
         </p>
-        {helper ? <p className="mt-1.5 text-[11px] text-gray-500 sm:mt-2 sm:text-xs">{helper}</p> : null}
+        {helper ? <p className="mt-1 line-clamp-2 text-[9px] leading-tight text-gray-500 sm:mt-2 sm:text-xs sm:leading-normal">{helper}</p> : null}
       </CardContent>
     </Card>
   );
@@ -2584,12 +2584,12 @@ export default function Movimentacoes({ walletOnly = false }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
+    <div className="min-h-screen bg-gray-50 p-2.5 sm:p-6">
       <div className="mx-auto max-w-6xl">
         {!(walletOnly && selectedWalletAccount) ? (
-          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
+              <h1 className="text-xl font-bold leading-tight text-gray-900 sm:text-3xl">
                 {walletOnly ? "Carteiras dos responsáveis financeiros" : "Transações"}
               </h1>
               {walletOnly ? (
@@ -2600,13 +2600,13 @@ export default function Movimentacoes({ walletOnly = false }) {
             </div>
 
             {!walletOnly ? (
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing} className="h-9 rounded-full px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
-                  <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""} sm:mr-2 sm:h-4 sm:w-4`} />
+              <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-auto sm:flex-wrap sm:gap-2">
+                <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing} className="h-8 min-w-0 rounded-full px-2 text-[10px] sm:h-10 sm:px-4 sm:text-sm">
+                  <RefreshCw className={`mr-1 h-3 w-3 shrink-0 ${isRefreshing ? "animate-spin" : ""} sm:mr-2 sm:h-4 sm:w-4`} />
                   {isRefreshing ? "Atualizando..." : "Atualizar extrato"}
                 </Button>
-                <Button onClick={() => openModal()} className="h-9 rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:px-4 sm:text-sm">
-                  <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+                <Button onClick={() => openModal()} className="h-8 min-w-0 rounded-full bg-blue-600 px-2 text-[10px] text-white hover:bg-blue-700 sm:h-10 sm:px-4 sm:text-sm">
+                  <Plus className="mr-1 h-3 w-3 shrink-0 sm:mr-2 sm:h-4 sm:w-4" />
                   Nova movimentação manual
                 </Button>
               </div>
@@ -2615,13 +2615,13 @@ export default function Movimentacoes({ walletOnly = false }) {
         ) : null}
 
         {!walletOnly && refreshResult && (
-          <Card className={`mb-6 ${refreshResult.success ? "border-blue-200 bg-blue-50" : "border-red-200 bg-red-50"}`}>
-            <CardContent className="p-4">
-              <p className={`font-semibold ${refreshResult.success ? "text-blue-900" : "text-red-900"}`}>
+          <Card className={`mb-4 sm:mb-6 ${refreshResult.success ? "border-blue-200 bg-blue-50" : "border-red-200 bg-red-50"}`}>
+            <CardContent className="p-3 sm:p-4">
+              <p className={`text-xs font-semibold sm:text-base ${refreshResult.success ? "text-blue-900" : "text-red-900"}`}>
                 {refreshResult.message}
               </p>
               {refreshResult.success && (
-                <div className="mt-1 space-y-1 text-sm text-blue-800">
+                <div className="mt-1 space-y-0.5 text-[10px] leading-tight text-blue-800 sm:space-y-1 sm:text-sm sm:leading-normal">
                   <p>Histórico novo inserido: {refreshResult.imported}</p>
                   <p>Movimentações de hoje recarregadas: {refreshResult.refreshedToday}</p>
                   {typeof refreshResult.balance === "number" && (
@@ -2637,7 +2637,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         )}
 
         {!walletOnly ? (
-          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:mb-6 sm:gap-4 md:grid-cols-4">
           <StatCard
             label="Entradas"
             value={formatCurrency(entradasCardValue)}
@@ -2659,7 +2659,7 @@ export default function Movimentacoes({ walletOnly = false }) {
             value={saldoAtualDisplay}
             className={hasOfficialBalance ? (saldoAtual >= 0 ? "border-blue-200" : "border-red-200") : "border-slate-200"}
             valueClassName={hasOfficialBalance ? (saldoAtual >= 0 ? "text-blue-700" : "text-red-600") : "text-slate-500"}
-            icon={<Wallet className={`h-5 w-5 ${hasOfficialBalance ? (saldoAtual >= 0 ? "text-blue-500" : "text-red-500") : "text-slate-400"}`} />}
+            icon={<Wallet className={`h-3.5 w-3.5 sm:h-5 sm:w-5 ${hasOfficialBalance ? (saldoAtual >= 0 ? "text-blue-500" : "text-red-500") : "text-slate-400"}`} />}
             helper={
               currentBalanceAt
                 ? `API Banco Inter atualizada em ${new Date(currentBalanceAt).toLocaleString("pt-BR")}`
@@ -3033,8 +3033,8 @@ export default function Movimentacoes({ walletOnly = false }) {
 
         {!walletOnly ? (
           <>
-            <Card className="mb-6 border-gray-200 bg-white">
-              <CardContent className="p-3 sm:p-4">
+            <Card className="mb-3 border-gray-200 bg-white sm:mb-6">
+              <CardContent className="p-2 sm:p-4">
                 <SearchFiltersToolbar
                   searchTerm={searchTerm}
                   onSearchChange={setSearchTerm}
@@ -3086,15 +3086,20 @@ export default function Movimentacoes({ walletOnly = false }) {
                       ),
                     },
                   ]}
-                  searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
+                  className="!flex-row items-center gap-1.5 sm:gap-2"
+                  searchInputClassName="h-8 pl-8 pr-2 text-[11px] sm:h-11 sm:pl-11 sm:pr-4 sm:text-sm"
+                  searchIconClassName="left-2.5 h-3 w-3 sm:left-4 sm:h-4 sm:w-4"
+                  filtersClassName="shrink-0 flex-nowrap gap-1 sm:gap-2"
+                  filterButtonClassName="h-8 sm:h-11"
+                  filterIconClassName="h-3 w-3 sm:h-4 sm:w-4"
                 />
               </CardContent>
             </Card>
 
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {filtered.length === 0 ? (
                 <Card className="border-gray-200 bg-white">
-                  <CardContent className="p-12 text-center text-gray-500">
+                  <CardContent className="p-8 text-center text-xs text-gray-500 sm:p-12 sm:text-sm">
                     {isInitialLoading ? "Carregando movimentações..." : "Nenhuma movimentação encontrada."}
                   </CardContent>
                 </Card>
@@ -3102,64 +3107,69 @@ export default function Movimentacoes({ walletOnly = false }) {
                 <>
                   {visibleMovements.map((movement) => (
                   <Card key={movement.id} className="border-gray-200 bg-white">
-                <CardContent className="flex flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:flex-row lg:items-center">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-full sm:h-12 sm:w-12 ${movement.tipo === "entrada" ? "bg-green-100" : "bg-red-100"}`}>
-                    {movement.tipo === "entrada" ? (
-                      <ArrowUpCircle className="h-5 w-5 text-green-600 sm:h-6 sm:w-6" />
-                    ) : (
-                      <ArrowDownCircle className="h-5 w-5 text-red-600 sm:h-6 sm:w-6" />
-                    )}
-                  </div>
-
-                  <div className="flex-1 space-y-3">
-                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Titular da contraparte</p>
-                        <p className="mt-1 font-semibold text-gray-900">{movement.contraparte}</p>
-                        <p className="mt-1 text-xs text-gray-500">{movement.direcaoLabel}</p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Método</p>
-                        <p className="mt-1 font-medium text-gray-900">{movement.metodo}</p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Data da transação</p>
-                        <p className="mt-1 font-medium text-gray-900">{formatMovementDateTime(movement)}</p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Valor</p>
-                        <p className={`mt-1 text-lg font-bold ${movement.tipo === "entrada" ? "text-green-600" : "text-red-600"}`}>
-                          {movement.tipo === "entrada" ? "+" : "-"}
-                          {formatCurrency(Math.abs(movement.valor || 0))}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 text-sm">
-                      <Badge className={movement.tipo === "entrada" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
-                        {movement.tipoDetalhado || movement.direcaoLabel}
-                      </Badge>
-                      <Badge className="bg-blue-100 text-blue-700">{movement.metodo}</Badge>
-                      {movement.bancoContraparte && movement.bancoContraparte !== "-" && (
-                        <Badge className="bg-gray-100 text-gray-700">{movement.bancoContraparte}</Badge>
-                      )}
-                      {movement.apiLocked ? (
-                        <Badge variant="outline">Origem API</Badge>
+                <CardContent className="flex flex-col gap-2 p-2.5 sm:gap-4 sm:p-4 lg:flex-row lg:items-center">
+                  <div className="flex min-w-0 flex-1 items-start gap-2.5 sm:gap-4 lg:items-center">
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full sm:h-12 sm:w-12 ${movement.tipo === "entrada" ? "bg-green-100" : "bg-red-100"}`}>
+                      {movement.tipo === "entrada" ? (
+                        <ArrowUpCircle className="h-4 w-4 text-green-600 sm:h-6 sm:w-6" />
                       ) : (
-                        <Badge variant="outline">Manual</Badge>
+                        <ArrowDownCircle className="h-4 w-4 text-red-600 sm:h-6 sm:w-6" />
                       )}
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-2 sm:space-y-3">
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 lg:grid-cols-4 lg:gap-3">
+                        <div className="col-start-1 row-start-1 min-w-0 lg:col-start-auto lg:row-start-auto">
+                          <p className="text-[9px] uppercase tracking-wide text-gray-500 sm:text-xs">Titular da contraparte</p>
+                          <p className="mt-0.5 truncate text-xs font-semibold text-gray-900 sm:mt-1 sm:text-base">{movement.contraparte}</p>
+                          <p className="mt-0.5 text-[9px] text-gray-500 sm:mt-1 sm:text-xs">{movement.direcaoLabel}</p>
+                        </div>
+
+                        <div className="col-start-1 row-start-2 min-w-0 lg:col-start-auto lg:row-start-auto">
+                          <p className="text-[9px] uppercase tracking-wide text-gray-500 sm:text-xs">Método</p>
+                          <p className="mt-0.5 truncate text-[11px] font-medium text-gray-900 sm:mt-1 sm:text-base">{movement.metodo}</p>
+                        </div>
+
+                        <div className="col-start-2 row-start-2 min-w-0 text-right lg:col-start-auto lg:row-start-auto lg:text-left">
+                          <p className="text-[9px] uppercase tracking-wide text-gray-500 sm:text-xs">
+                            <span className="sm:hidden">Data</span>
+                            <span className="hidden sm:inline">Data da transação</span>
+                          </p>
+                          <p className="mt-0.5 whitespace-nowrap text-[11px] font-medium text-gray-900 sm:mt-1 sm:text-base">{formatMovementDateTime(movement)}</p>
+                        </div>
+
+                        <div className="col-start-2 row-start-1 min-w-0 text-right lg:col-start-auto lg:row-start-auto lg:text-left">
+                          <p className="text-[9px] uppercase tracking-wide text-gray-500 sm:text-xs">Valor</p>
+                          <p className={`mt-0.5 whitespace-nowrap text-sm font-bold sm:mt-1 sm:text-lg ${movement.tipo === "entrada" ? "text-green-600" : "text-red-600"}`}>
+                            {movement.tipo === "entrada" ? "+" : "-"}
+                            {formatCurrency(Math.abs(movement.valor || 0))}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1 sm:gap-2">
+                        <Badge className={`px-1.5 py-0 text-[9px] sm:px-2.5 sm:py-0.5 sm:text-xs ${movement.tipo === "entrada" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                          {movement.tipoDetalhado || movement.direcaoLabel}
+                        </Badge>
+                        <Badge className="hidden bg-blue-100 text-blue-700 sm:inline-flex">{movement.metodo}</Badge>
+                        {movement.bancoContraparte && movement.bancoContraparte !== "-" && (
+                          <Badge className="bg-gray-100 px-1.5 py-0 text-[9px] text-gray-700 sm:px-2.5 sm:py-0.5 sm:text-xs">{movement.bancoContraparte}</Badge>
+                        )}
+                        {movement.apiLocked ? (
+                          <Badge variant="outline" className="px-1.5 py-0 text-[9px] sm:px-2.5 sm:py-0.5 sm:text-xs">Origem API</Badge>
+                        ) : (
+                          <Badge variant="outline" className="px-1.5 py-0 text-[9px] sm:px-2.5 sm:py-0.5 sm:text-xs">Manual</Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="grid grid-cols-2 gap-1.5 sm:flex sm:items-center sm:gap-2">
                     {walletOnly && walletFlags.movementsEnabled && canManageWalletOperations && movement.tipo === "entrada" && (
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm"
+                        className="col-span-2 h-8 rounded-full px-2 text-[10px] sm:col-span-1 sm:h-9 sm:px-3 sm:text-sm"
                         onClick={() =>
                           openWalletOperationModal("entrada_direcionada", {
                             carteira_conta_id: selectedWalletRuntimeAccountId,
@@ -3175,22 +3185,24 @@ export default function Movimentacoes({ walletOnly = false }) {
                         Direcionar para carteira
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm"
-                      onClick={() => handleViewReceipt(movement)}
-                      disabled={!movement.apiLocked || receiptLoadingId === movement.id}
-                    >
-                      <FileText className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
-                      {receiptLoadingId === movement.id ? "Carregando..." : "Ver comprovante"}
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-sm" onClick={() => openModal(movement)}>
+                    {movement.apiLocked ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-full px-2 text-[10px] sm:h-9 sm:px-3 sm:text-sm"
+                        onClick={() => handleViewReceipt(movement)}
+                        disabled={receiptLoadingId === movement.id}
+                      >
+                        <FileText className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+                        {receiptLoadingId === movement.id ? "Carregando..." : "Ver comprovante"}
+                      </Button>
+                    ) : null}
+                    <Button variant="outline" size="sm" className="h-8 rounded-full px-2 text-[10px] sm:h-9 sm:px-3 sm:text-sm" onClick={() => openModal(movement)}>
                       <Pencil className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                       {movement.apiLocked ? "Complementar" : "Editar"}
                     </Button>
                     {!movement.apiLocked && (
-                      <Button variant="outline" size="sm" className="h-8 rounded-full px-3 text-[11px] text-red-600 sm:h-9 sm:text-sm" onClick={() => handleDelete(movement)}>
+                      <Button variant="outline" size="sm" className="h-8 rounded-full px-2 text-[10px] text-red-600 sm:h-9 sm:px-3 sm:text-sm" onClick={() => handleDelete(movement)}>
                         <Trash2 className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                         Excluir
                       </Button>
@@ -3202,12 +3214,14 @@ export default function Movimentacoes({ walletOnly = false }) {
 
                   {hasMoreMovements && (
                     <Card className="border-dashed border-gray-300 bg-white">
-                      <CardContent className="flex flex-col items-center gap-3 p-5 text-center">
-                        <p className="text-sm text-gray-500">
+                      <CardContent className="flex flex-col items-center gap-2 p-3 text-center sm:gap-3 sm:p-5">
+                        <p className="text-[10px] text-gray-500 sm:text-sm">
                           Exibindo {visibleMovements.length} de {filtered.length} movimentações encontradas.
                         </p>
                         <Button
                           variant="outline"
+                          size="sm"
+                          className="h-8 rounded-full px-3 text-[10px] sm:text-sm"
                           onClick={() => setVisibleCount((current) => current + MOVEMENTS_PAGE_SIZE)}
                         >
                           Carregar mais
@@ -3259,7 +3273,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                 ["Contraparte", transactionReceipt?.details?.counterparty_name],
                 ["Documento", transactionReceipt?.details?.counterparty_document],
                 ["Referência bancária", transactionReceipt?.details?.provider_reference],
-                ["End-to-End Pix", transactionReceipt?.details?.end_to_end_id],
+                ["ID da transação Pix", transactionReceipt?.details?.end_to_end_id],
                 ["TXID", transactionReceipt?.details?.txid],
                 ["NSU", transactionReceipt?.details?.nsu],
                 ["Autenticação", transactionReceipt?.details?.authentication],

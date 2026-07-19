@@ -1418,6 +1418,10 @@ export default function Movimentacoes({ walletOnly = false }) {
             await loadData(null);
           }
         }
+      } finally {
+        if (isMounted && walletOnly) {
+          setIsInitialLoading(false);
+        }
       }
     };
 
@@ -2590,21 +2594,32 @@ export default function Movimentacoes({ walletOnly = false }) {
 
   return (
     <div className="min-h-screen bg-gray-50 p-2.5 sm:p-6">
-      <div className="mx-auto max-w-6xl">
+      <div className={`mx-auto ${walletOnly ? "max-w-[1480px]" : "max-w-6xl"}`}>
         {!(walletOnly && selectedWalletAccount) ? (
-          <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h1 className="text-xl font-bold leading-tight text-gray-900 sm:text-3xl">
+          <div className={`mb-4 flex flex-col gap-3 sm:mb-6 sm:gap-4 lg:flex-row lg:items-start lg:justify-between ${walletOnly ? "border-b border-slate-200 pb-5 sm:pb-6" : ""}`}>
+            <div className="min-w-0">
+              {walletOnly ? (
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600 sm:text-xs">
+                  Financeiro / Carteiras
+                </p>
+              ) : null}
+              <h1 className={`${walletOnly ? "font-brand text-2xl tracking-tight sm:text-4xl" : "text-xl sm:text-3xl"} font-bold leading-tight text-gray-900`}>
                 {walletOnly ? "Carteiras dos responsáveis financeiros" : "Transações"}
               </h1>
               {walletOnly ? (
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500 sm:text-[15px]">
                   Consulte a carteira e o extrato de cada responsável financeiro em uma página dedicada do Financeiro, separada do extrato operacional da empresa.
                 </p>
               ) : null}
             </div>
 
-            {!walletOnly ? (
+            {walletOnly ? (
+              <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm lg:mt-1">
+                <Wallet className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-semibold text-slate-900">{walletAccounts.length}</span>
+                <span className="text-xs text-slate-500">carteira{walletAccounts.length === 1 ? "" : "s"}</span>
+              </div>
+            ) : (
               <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-auto sm:flex-wrap sm:gap-2">
                 <Button variant="outline" onClick={refreshMovements} disabled={isRefreshing} className="h-8 min-w-0 rounded-full px-2 text-[10px] sm:h-10 sm:px-4 sm:text-sm">
                   <RefreshCw className={`mr-1 h-3 w-3 shrink-0 ${isRefreshing ? "animate-spin" : ""} sm:mr-2 sm:h-4 sm:w-4`} />
@@ -2615,7 +2630,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                   Nova movimentação manual
                 </Button>
               </div>
-            ) : null}
+            )}
           </div>
         ) : null}
 
@@ -2700,165 +2715,231 @@ export default function Movimentacoes({ walletOnly = false }) {
             )}
 
             {!selectedWalletAccount ? (
-              <Card className="border-slate-200 bg-white">
-                <CardContent className="space-y-4 p-4 sm:p-5">
+              <div className="overflow-hidden rounded-[24px] border border-slate-300/80 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.07)] sm:rounded-[28px]">
+                <div className="border-b border-slate-200 bg-slate-50/70 p-3 sm:p-4">
                   <SearchFiltersToolbar
                     searchTerm={walletListSearchTerm}
                     onSearchChange={setWalletListSearchTerm}
-                    searchPlaceholder="Buscar por responsável financeiro, cães vinculados ou situação..."
+                    searchPlaceholder="Buscar por responsável, cão ou situação..."
                     hasActiveFilters={Boolean(walletListSearchTerm)}
                     onClear={() => setWalletListSearchTerm("")}
+                    searchInputClassName="border-slate-300 bg-white shadow-none focus-visible:ring-blue-500"
                   />
+                </div>
 
                   {filteredWalletAccounts.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-                      {walletAccounts.length === 0
-                        ? "Nenhum responsável financeiro foi encontrado para esta unidade."
-                        : "Nenhuma carteira corresponde ao filtro informado."}
+                    <div className="px-4 py-14 text-center sm:py-20">
+                      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50">
+                        <Wallet className="h-5 w-5 text-slate-400" />
+                      </div>
+                      <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-500">
+                        {walletAccounts.length === 0
+                          ? "Nenhum responsável financeiro foi encontrado para esta unidade."
+                          : "Nenhuma carteira corresponde ao filtro informado."}
+                      </p>
                     </div>
                   ) : (
-                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                      <div className="hidden border-b border-slate-200 bg-slate-50 px-4 py-3 lg:grid lg:grid-cols-[minmax(0,1.2fr)_140px_180px_minmax(0,1.4fr)_32px] lg:gap-4">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Nome do responsável</p>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Vencimento padrão</p>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Situação da carteira</p>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Cães vinculados à carteira</p>
-                        <span />
+                    <>
+                      <div className="hidden border-b border-slate-200 bg-slate-100/70 px-5 py-3.5 lg:grid lg:grid-cols-[minmax(220px,1.15fr)_140px_165px_minmax(240px,1.4fr)_42px] lg:gap-5">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Nome do responsável</p>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Vencimento padrão</p>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Situação da carteira</p>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Cães vinculados à carteira</p>
+                        <span aria-hidden="true" />
                       </div>
-                      <div className="divide-y divide-slate-100">
+
+                      <div className="hidden divide-y divide-slate-100 lg:block">
                         {filteredWalletAccounts.map((account) => (
                           <button
                             key={account.carteira_selection_id}
                             type="button"
                             onClick={() => setSelectedWalletAccountId(account.carteira_selection_id)}
-                            className="grid w-full gap-3 px-4 py-4 text-left transition hover:bg-slate-50 lg:grid-cols-[minmax(0,1.2fr)_140px_180px_minmax(0,1.4fr)_32px] lg:items-center lg:gap-4"
+                            className="group grid w-full grid-cols-[minmax(220px,1.15fr)_140px_165px_minmax(240px,1.4fr)_42px] items-center gap-5 border-l-[3px] border-l-transparent px-5 py-4 text-left transition hover:border-l-blue-500 hover:bg-blue-50/45 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                            aria-label={`Abrir carteira de ${account.carteira_nome}`}
                           >
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">Nome do responsável</p>
-                              <p className="truncate text-sm font-semibold text-slate-900">{account.carteira_nome}</p>
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 transition group-hover:border-blue-200 group-hover:bg-blue-100">
+                                <Wallet className="h-4 w-4" />
+                              </span>
+                              <p className="truncate text-[15px] font-semibold tracking-tight text-slate-950">{account.carteira_nome}</p>
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">Vencimento padrão</p>
-                              <p className="text-sm text-slate-700">
+                              <p className="text-sm font-medium text-slate-700">
                                 {account.carteira_vencimento_padrao ? `Dia ${account.carteira_vencimento_padrao}` : "Não informado"}
                               </p>
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">Situação da carteira</p>
                               <Badge
                                 variant="outline"
-                                className={account.financial_status_tone === "irregular"
+                                className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${account.financial_status_tone === "irregular"
                                   ? "border-red-200 bg-red-50 text-red-700"
-                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"}
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}
                               >
                                 {account.financial_status_tone === "irregular" ? "Irregular" : "Regular"}
                               </Badge>
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">Cães vinculados à carteira</p>
-                              <p className="text-sm text-slate-700">
+                              <p className="truncate text-sm text-slate-700" title={account.linked_dog_labels?.join(", ") || "Nenhum cão vinculado"}>
                                 {account.linked_dog_labels?.length
                                   ? account.linked_dog_labels.join(", ")
                                   : "Nenhum cão vinculado"}
                               </p>
                             </div>
-                            <div className="justify-self-end text-slate-400">
+                            <div className="flex h-9 w-9 items-center justify-center justify-self-end rounded-full text-slate-400 transition group-hover:bg-white group-hover:text-blue-600 group-hover:shadow-sm">
                               <MoreHorizontal className="h-4 w-4" />
                             </div>
                           </button>
                         ))}
                       </div>
-                    </div>
+
+                      <div className="grid gap-2 p-2.5 sm:grid-cols-2 sm:p-3 lg:hidden">
+                        {filteredWalletAccounts.map((account) => (
+                          <button
+                            key={account.carteira_selection_id}
+                            type="button"
+                            onClick={() => setSelectedWalletAccountId(account.carteira_selection_id)}
+                            className="group min-w-0 rounded-2xl border border-slate-200 bg-white p-3.5 text-left shadow-[0_3px_12px_rgba(15,23,42,0.04)] transition hover:border-blue-200 hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            aria-label={`Abrir carteira de ${account.carteira_nome}`}
+                          >
+                            <div className="flex min-w-0 items-start gap-3">
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600">
+                                <Wallet className="h-4 w-4" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 items-start justify-between gap-2">
+                                  <p className="truncate text-[15px] font-semibold tracking-tight text-slate-950">{account.carteira_nome}</p>
+                                  <Badge
+                                    variant="outline"
+                                    className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0 text-[10px] font-semibold ${account.financial_status_tone === "irregular"
+                                      ? "border-red-200 bg-red-50 text-red-700"
+                                      : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}
+                                  >
+                                    {account.financial_status_tone === "irregular" ? "Irregular" : "Regular"}
+                                  </Badge>
+                                </div>
+                                <p className="mt-1 text-xs font-medium text-slate-500">
+                                  {account.carteira_vencimento_padrao ? `Vencimento padrão: dia ${account.carteira_vencimento_padrao}` : "Vencimento padrão não informado"}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                              <p className="min-w-0 truncate text-xs text-slate-600">
+                                {account.linked_dog_labels?.length
+                                  ? account.linked_dog_labels.join(", ")
+                                  : "Nenhum cão vinculado"}
+                              </p>
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 group-hover:bg-white group-hover:text-blue-600">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </>
                   )}
-                </CardContent>
-              </Card>
+              </div>
             ) : (
-                <div className="space-y-4">
-                  <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setSelectedWalletAccountId("")}
-                      className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                    >
-                      <ChevronLeft className="mr-1.5 h-3.5 w-3.5" />
-                      Voltar para a lista
-                    </Button>
-                    <div className="min-w-0 flex-1 sm:text-right">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Carteira do responsável financeiro</p>
-                      <p className="truncate text-lg font-semibold text-slate-900">{selectedWalletAccount.carteira_nome}</p>
+                <div className="space-y-5 sm:space-y-6">
+                  <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:pb-6 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setSelectedWalletAccountId("")}
+                        className="h-10 shrink-0 rounded-full border-slate-300 px-3 text-xs shadow-sm sm:px-4 sm:text-sm"
+                      >
+                        <ChevronLeft className="mr-1 h-4 w-4 sm:mr-1.5" />
+                        <span className="hidden sm:inline">Voltar para a lista</span>
+                        <span className="sm:hidden">Voltar</span>
+                      </Button>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600 sm:text-xs">Carteira do responsável financeiro</p>
+                        <h1 className="mt-1 truncate font-brand text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+                          {selectedWalletAccount.carteira_nome}
+                        </h1>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end lg:self-auto">
+                      <Button
+                        variant="outline"
+                        onClick={() => loadWalletAdminData(currentUser, selectedWalletAccountId)}
+                        disabled={walletLoading}
+                        className="h-10 w-10 rounded-full border-slate-300 bg-white p-0 shadow-sm"
+                        title="Atualizar"
+                        aria-label="Atualizar"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${walletLoading ? "animate-spin" : ""}`} />
+                      </Button>
+                      {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => openWalletOperationModal("credito_manual")}
+                          disabled={!selectedWalletRuntimeAccountId}
+                          className="h-10 rounded-full border-slate-300 bg-white px-4 text-xs font-semibold shadow-sm sm:text-sm"
+                        >
+                          Alteração manual
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                      <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                          <div className="space-y-2">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Carteira financeira</p>
-                            <p className="text-2xl font-bold text-slate-900">{formatCurrency(walletStatementSummary.effectiveBalance)}</p>
-                            <p className="text-sm text-slate-500">
+                      <section className="overflow-hidden rounded-[24px] border border-slate-300/80 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.06)] sm:rounded-[28px]">
+                        <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1.35fr)_minmax(190px,0.65fr)_minmax(220px,0.75fr)]">
+                          <div className="col-span-2 border-b border-slate-200 p-4 sm:p-5 lg:col-span-1 lg:border-b-0 lg:border-r lg:p-6">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:text-xs">Saldo disponível</p>
+                            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+                              {formatCurrency(walletStatementSummary.effectiveBalance)}
+                            </p>
+                            <p className="mt-2 max-w-2xl text-xs leading-relaxed text-slate-500 sm:text-sm">
                               {walletStatementSummary.rowCount > 0
                                 ? walletStatementSummary.openDebitTotal > 0
-                                  ? `Saldo disponível na carteira após a quitação cronológica. Débitos ainda em aberto: ${formatCurrency(walletStatementSummary.openDebitTotal)}.`
-                                  : `Saldo disponível na carteira após quitar ${walletStatementSummary.paidDebitCount} lançamento(s) em ordem cronológica.`
+                                  ? `Saldo após a quitação cronológica. Débitos em aberto: ${formatCurrency(walletStatementSummary.openDebitTotal)}.`
+                                  : `Saldo após quitar ${walletStatementSummary.paidDebitCount} lançamento(s) em ordem cronológica.`
                                 : "Sem lançamentos na carteira até o momento."}
                             </p>
                           </div>
-                          <div className="min-w-[180px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Situação</p>
-                            <p
-                              className={`mt-2 text-sm font-semibold ${
-                                selectedWalletFinancialStatus?.tone === "irregular" ? "text-red-700" : "text-emerald-700"
+
+                          <div className="border-r border-slate-200 p-4 sm:p-5 lg:p-6">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:text-xs">Situação</p>
+                            <Badge
+                              variant="outline"
+                              className={`mt-3 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                selectedWalletFinancialStatus?.tone === "irregular"
+                                  ? "border-red-200 bg-red-50 text-red-700"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
                               }`}
                             >
                               {selectedWalletFinancialStatus?.tone === "irregular" ? "IRREGULAR" : "REGULAR"}
-                            </p>
-                            <p className="mt-1 text-sm text-slate-500">
+                            </Badge>
+                            <p className="mt-2 text-xs leading-relaxed text-slate-500 sm:text-sm">
                               {walletStatementSummary.latestDate
                                 ? `Último lançamento em ${formatWalletStatementDate(walletStatementSummary.latestDate)}.`
                                 : "Aguardando primeiro lançamento."}
                             </p>
                           </div>
+
+                          <div className="p-4 sm:p-5 lg:p-6">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:text-xs">Vencimento padrão</p>
+                            <p className="mt-2 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
+                              {selectedWalletAccount.carteira_vencimento_padrao
+                                ? `Dia ${selectedWalletAccount.carteira_vencimento_padrao}`
+                                : "Não informado"}
+                            </p>
+                            <p className="mt-1 truncate text-xs text-slate-500 sm:text-sm" title={selectedWalletAccount.linked_dog_labels?.join(", ") || "Nenhum cão vinculado"}>
+                              {selectedWalletAccount.linked_dog_labels?.length
+                                ? selectedWalletAccount.linked_dog_labels.join(", ")
+                                : "Nenhum cão vinculado"}
+                            </p>
+                          </div>
                         </div>
                         {selectedWalletFinancialStatus?.tone === "irregular" ? (
-                          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                          <div className="border-t border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 sm:px-6">
                             Regularize os débitos em aberto.
                           </div>
                         ) : null}
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <h3 className="font-semibold text-slate-900">Ações da carteira</h3>
-                            <p className="mt-1 text-sm text-slate-500">
-                              Atualize a leitura e registre alterações manuais sem sair da visualização individual.
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              variant="outline"
-                              onClick={() => loadWalletAdminData(currentUser, selectedWalletAccountId)}
-                              disabled={walletLoading}
-                              className="h-9 w-9 rounded-full p-0"
-                              title="Atualizar"
-                              aria-label="Atualizar"
-                            >
-                              <RefreshCw className={`h-4 w-4 ${walletLoading ? "animate-spin" : ""}`} />
-                            </Button>
-                            {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations ? (
-                              <Button
-                                variant="outline"
-                                onClick={() => openWalletOperationModal("credito_manual")}
-                                disabled={!selectedWalletRuntimeAccountId}
-                                className="h-9 rounded-full px-3 text-xs sm:text-sm"
-                              >
-                                Alteração manual
-                              </Button>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
+                      </section>
 
                       {!selectedWalletAccount.has_wallet_account ? (
                         <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">

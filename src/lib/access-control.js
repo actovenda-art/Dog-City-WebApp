@@ -172,6 +172,8 @@ export function isManagerialProfile(user) {
   return [
     "gerencia",
     "gerencial",
+    "gestor",
+    "gestora",
     "administracao",
     "administração",
     "administrativo",
@@ -185,6 +187,36 @@ export function isManagerialProfile(user) {
     "gestão",
     "gerente",
     "adm",
+  ].some((token) => haystack.includes(token));
+}
+
+export function canWriteFinancialOperations(user) {
+  if (!user) return false;
+  if (user.is_platform_admin || user.company_role === "platform_admin") return true;
+
+  const grantedPermissions = normalizePermissions(
+    user.access_profile_permissions || user.accessProfilePermissions || []
+  );
+  const haystack = buildAccessHaystack(user);
+
+  if (grantedPermissions.some((permission) =>
+    ["financeiro:*", "financeiro:update", "platform:*"].some((required) =>
+      permissionMatches(permission, required)
+    )
+  )) {
+    return true;
+  }
+
+  return [
+    "gestor",
+    "gestora",
+    "gerencia",
+    "gerencial",
+    "financeiro",
+    "administrativo",
+    "backoffice",
+    "diretoria",
+    "master",
   ].some((token) => haystack.includes(token));
 }
 

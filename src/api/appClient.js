@@ -93,6 +93,7 @@ const UNIT_SCOPED_ENTITIES = new Set([
   'AutorizacaoFinanceira',
   'CancelamentoFinanceiro',
   'OrcamentoPagamento',
+  'CarteiraCobranca',
   'ObrigacaoFinanceira',
   'CobrancaFinanceira',
   'CobrancaItem',
@@ -1830,6 +1831,82 @@ function applyMockBudgetPaymentToWallet(row = {}) {
   };
 }
 
+function buildMockWalletChargeResponse(row = {}) {
+  return {
+    id: row?.id || null,
+    carteira_id: row?.carteira_id || null,
+    carteira_conta_id: row?.carteira_conta_id || null,
+    metodo: row?.metodo || 'boleto_bancario',
+    status: row?.status || 'pendente_emissao',
+    status_inter: row?.status_inter || null,
+    valor: Number(row?.valor || 0),
+    descricao: row?.descricao || '',
+    data_vencimento: row?.data_vencimento || null,
+    emitido_em: row?.emitido_em || row?.created_date || null,
+    pago_em: row?.pago_em || null,
+    criado_em: row?.created_date || null,
+    pdf_disponivel: Boolean(row?.pdf_disponivel),
+    public_link_available: Boolean(row?.metadata?.mock_public_token),
+    public_link_expires_at: row?.public_token_expires_at || null,
+  };
+}
+
+function buildMockWalletChargePublicResponse(row = {}) {
+  const active = row?.status === 'emitido';
+  return {
+    id: row?.id || null,
+    provider: 'Banco Inter',
+    responsavel_nome: row?.metadata?.responsavel_nome || 'Responsavel financeiro',
+    descricao: row?.descricao || '',
+    valor: Number(row?.valor || 0),
+    data_vencimento: row?.data_vencimento || null,
+    emitido_em: row?.emitido_em || row?.created_date || null,
+    status: row?.status || 'pendente_emissao',
+    pago_em: row?.pago_em || null,
+    metodo: row?.metodo || 'boleto_bancario',
+    ativo: active,
+    boleto: active ? {
+      linha_digitavel: row?.linha_digitavel || null,
+      codigo_barras: row?.codigo_barras || null,
+      pdf_disponivel: Boolean(row?.pdf_disponivel),
+    } : null,
+    pix: active ? { copia_e_cola: row?.pix_copia_cola || null } : null,
+  };
+}
+
+function applyMockWalletChargePaymentToWallet(row = {}) {
+  if (row?.credited_wallet_movement_id || !row?.carteira_conta_id) return row;
+
+  const walletResult = applyMockWalletOperationCore({
+    carteira_conta_id: row.carteira_conta_id,
+    operacao_idempotencia: `carteira_cobranca|${row.id}|recebido`,
+    tipo: 'entrada_direcionada',
+    natureza: 'entrada',
+    origem: 'carteira_cobranca_banco_inter',
+    valor: Number(row?.valor_recebido || row?.valor || 0),
+    referencia_amigavel: `Pagamento de cobranca: ${row?.descricao || 'Carteira'}`.slice(0, 180),
+    descricao: row?.descricao || 'Cobranca da carteira',
+    usuario_id: row?.created_by_user_id || null,
+    metadata: {
+      carteira_cobranca_id: row.id,
+      provider: row.provider,
+      metodo: row.metodo,
+    },
+    permitir_saldo_negativo: true,
+  });
+
+  return {
+    ...row,
+    credited_wallet_movement_id: walletResult?.movimento_id || null,
+    creditado_em: new Date().toISOString(),
+  };
+}
+
+function buildMockWalletChargePublicUrl(payload = {}, token = '') {
+  const configuredBaseUrl = String(payload?.public_base_url || (typeof window !== 'undefined' ? window.location.origin : '')).trim();
+  return `${configuredBaseUrl.replace(/\/$/, '')}/cobranca/${encodeURIComponent(token)}`;
+}
+
 function expireMockBudgets(payload = {}) {
   const referenceDate = String(payload?.reference_date || new Date().toISOString().slice(0, 10));
   const empresaId = String(payload?.empresa_id || '').trim();
@@ -1970,6 +2047,168 @@ const mockFunctions = {
   financeExpireBudgets: async (payload = {}) => expireMockBudgets(payload),
   bancoInter: async (payload = {}) => {
     console.info('[mock] bancoInter called with', payload);
+    if (payload?.action === 'issueWalletCharge') {
+      const empresaId = String(payload?.empresa_id || '').trim() || getMockScopedUnitId();
+      const carteiraId = String(payload?.carteira_id || '').trim();
+      const carteiraContaId = String(payload?.carteira_conta_id || '').trim()
+        || resolveMockWalletAccountForCarteira(carteiraId, empresaId)?.id
+        || null;
+      const valor = Number(payload?.valor || 0);
+      const metodo = String(payload?.metodo || 'boleto_bancario').trim() || 'boleto_bancario';
+      const descricao = String(payload?.descricao || '').trim();
+      const dataVencimento = String(payload?.data_vencimento || '').slice(0, 10);
+
+      if (!carteiraId) throw new Error('carteira_id e obrigatorio para emitir a cobranca.');
+      if (metodo !== 'boleto_bancario') throw new Error('Nesta fase, somente boleto bancario com Pix integrado esta habilitado.');
+      if (!Number.isFinite(valor) || valor <= 0) throw new Error('Informe um valor maior que zero para a cobranca.');
+      if (!dataVencimento || dataVencimento < new Date().toISOString().slice(0, 10)) throw new Error('Informe um vencimento valido, a partir de hoje.');
+      if (!descricao || descricao.length > 180) throw new Error('A descricao da cobranca e obrigatoria e deve ter no maximo 180 caracteres.');
+
+      const carteira = readStorage('Carteira').find((item) => item?.id === carteiraId && item?.empresa_id === empresaId);
+      if (!carteira) throw new Error('Carteira do responsavel financeiro nao localizada para esta unidade.');
+
+      const contato = carteira?.contato_orcamentos && typeof carteira.contato_orcamentos === 'object'
+        ? carteira.contato_orcamentos
+        : {};
+      const now = new Date().toISOString();
+      const id = makeId();
+      const publicToken = `${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
+      const codigoSolicitacao = crypto.randomUUID();
+      const codigoBarras = generateMockChargeCode(44);
+      const tokenExpiresAt = new Date(`${dataVencimento}T23:59:59.999-03:00`);
+      tokenExpiresAt.setDate(tokenExpiresAt.getDate() + 30);
+      const row = {
+        id,
+        empresa_id: empresaId,
+        carteira_id: carteiraId,
+        carteira_conta_id: carteiraContaId,
+        responsavel_id: payload?.responsavel_id || null,
+        provider: 'banco_inter',
+        metodo,
+        status: 'emitido',
+        status_inter: 'A_RECEBER',
+        valor: Number(valor.toFixed(2)),
+        descricao,
+        data_vencimento: dataVencimento,
+        seu_numero: `car${String(id).replace(/[^a-zA-Z0-9]/g, '').slice(-11)}`,
+        codigo_solicitacao: codigoSolicitacao,
+        nosso_numero: generateMockChargeCode(12),
+        txid: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+        linha_digitavel: formatMockChargeLine(codigoBarras),
+        codigo_barras: codigoBarras,
+        pix_copia_cola: buildMockBudgetChargePix(codigoSolicitacao),
+        pdf_disponivel: true,
+        emitido_em: now,
+        pago_em: null,
+        valor_recebido: 0,
+        credited_wallet_movement_id: null,
+        creditado_em: null,
+        public_token_hash: `mock_${publicToken.slice(0, 24)}`,
+        public_token_expires_at: tokenExpiresAt.toISOString(),
+        created_by_user_id: payload?.usuario_id || null,
+        metadata: {
+          responsavel_nome: contato?.nome || carteira?.nome_razao_social || carteira?.nome_fantasia || '',
+          responsavel_cpf_cnpj: carteira?.cpf_cnpj || '',
+          responsavel_email: contato?.email || carteira?.email || '',
+          responsavel_telefone: contato?.celular || carteira?.celular || '',
+          mock_public_token: publicToken,
+          mock_pdf_base64: MOCK_INTER_CHARGE_PDF_BASE64,
+        },
+        created_date: now,
+        updated_date: now,
+      };
+      const rows = readStorage('CarteiraCobranca');
+      rows.push(row);
+      writeStorage('CarteiraCobranca', rows);
+      return {
+        ok: true,
+        charge: buildMockWalletChargeResponse(row),
+        public_url: buildMockWalletChargePublicUrl(payload, publicToken),
+        boleto: {
+          nossoNumero: row.nosso_numero,
+          codigoBarras: row.codigo_barras,
+          linhaDigitavel: row.linha_digitavel,
+        },
+        pix: { txid: row.txid, pixCopiaECola: row.pix_copia_cola },
+      };
+    }
+
+    if (payload?.action === 'listWalletOpenCharges') {
+      const empresaId = String(payload?.empresa_id || '').trim() || getMockScopedUnitId();
+      const carteiraId = String(payload?.carteira_id || '').trim();
+      const sortBy = payload?.sort_by === 'issued_at' ? 'issued_at' : 'due_date';
+      const charges = readStorage('CarteiraCobranca')
+        .filter((row) => row?.empresa_id === empresaId && row?.carteira_id === carteiraId && ['pendente_emissao', 'emitido'].includes(String(row?.status || '')))
+        .sort((left, right) => {
+          if (sortBy === 'issued_at') return new Date(right?.emitido_em || right?.created_date || 0).getTime() - new Date(left?.emitido_em || left?.created_date || 0).getTime();
+          return String(left?.data_vencimento || '').localeCompare(String(right?.data_vencimento || ''));
+        })
+        .map(buildMockWalletChargeResponse);
+      return { ok: true, charges };
+    }
+
+    if (payload?.action === 'renewWalletChargePublicLink') {
+      const chargeId = String(payload?.carteira_cobranca_id || '').trim();
+      const rows = readStorage('CarteiraCobranca');
+      const index = rows.findIndex((row) => row?.id === chargeId);
+      if (index < 0) throw new Error('Cobranca da carteira nao localizada.');
+      if (rows[index]?.status !== 'emitido') throw new Error('Somente cobrancas em aberto podem receber um novo link.');
+      const publicToken = `${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
+      rows[index] = {
+        ...rows[index],
+        public_token_hash: `mock_${publicToken.slice(0, 24)}`,
+        metadata: { ...(rows[index]?.metadata || {}), mock_public_token: publicToken },
+        updated_date: new Date().toISOString(),
+      };
+      writeStorage('CarteiraCobranca', rows);
+      return {
+        ok: true,
+        charge: buildMockWalletChargeResponse(rows[index]),
+        public_url: buildMockWalletChargePublicUrl(payload, publicToken),
+      };
+    }
+
+    if (payload?.action === 'refreshWalletChargeStatus') {
+      const chargeId = String(payload?.carteira_cobranca_id || '').trim();
+      const rows = readStorage('CarteiraCobranca');
+      const index = rows.findIndex((row) => row?.id === chargeId);
+      if (index < 0) throw new Error('Cobranca da carteira nao localizada.');
+      let row = rows[index];
+      if (payload?.simulate_payment && row?.status === 'emitido') {
+        row = applyMockWalletChargePaymentToWallet({
+          ...row,
+          status: 'recebido',
+          status_inter: 'RECEBIDO',
+          pago_em: new Date().toISOString(),
+          valor_recebido: Number(row?.valor || 0),
+          linha_digitavel: null,
+          codigo_barras: null,
+          pix_copia_cola: null,
+          pdf_disponivel: false,
+          updated_date: new Date().toISOString(),
+        });
+        rows[index] = row;
+        writeStorage('CarteiraCobranca', rows);
+      }
+      return { ok: true, charge: buildMockWalletChargeResponse(rows[index]) };
+    }
+
+    if (payload?.action === 'getWalletChargePublic' || payload?.action === 'downloadWalletChargePdfPublic') {
+      const token = String(payload?.token || '').trim();
+      const row = readStorage('CarteiraCobranca').find((item) => item?.metadata?.mock_public_token === token);
+      if (!row) throw new Error('Link de cobranca invalido ou indisponivel.');
+      if (new Date(row?.public_token_expires_at || 0).getTime() < Date.now()) throw new Error('Este link de cobranca expirou. Solicite um novo link a Dog City Brasil.');
+      if (payload?.action === 'downloadWalletChargePdfPublic') {
+        if (row?.status !== 'emitido') throw new Error('Esta cobranca nao esta mais disponivel para pagamento.');
+        return {
+          ok: true,
+          file_name: `boleto-carteira-${row?.id || 'dog-city'}.pdf`,
+          pdf: row?.metadata?.mock_pdf_base64 || MOCK_INTER_CHARGE_PDF_BASE64,
+        };
+      }
+      return { ok: true, charge: buildMockWalletChargePublicResponse(row) };
+    }
+
     if (payload?.action === 'issueBudgetCharge') {
       const orcamentoId = String(payload?.orcamento_id || '').trim();
       const carteiraId = String(payload?.carteira_id || '').trim();
@@ -5425,6 +5664,7 @@ if (SUPABASE_URL && SUPABASE_ANON) {
     AutorizacaoFinanceira: 'autorizacao_financeira',
     CancelamentoFinanceiro: 'cancelamento_financeiro',
     OrcamentoPagamento: 'orcamento_pagamento',
+    CarteiraCobranca: 'carteira_cobranca',
     ObrigacaoFinanceira: 'obrigacao_financeira',
     CobrancaFinanceira: 'cobranca_financeira',
     CobrancaItem: 'cobranca_item',

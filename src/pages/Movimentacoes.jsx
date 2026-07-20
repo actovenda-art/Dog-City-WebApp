@@ -50,9 +50,11 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Calendar,
+  CircleDollarSign,
   ChevronLeft,
   ChevronDown,
   CheckCircle2,
+  ClipboardCopy,
   Download,
   FileText,
   FileWarning,
@@ -78,7 +80,7 @@ import {
 } from "@/utils/finance";
 import { createPageUrl } from "@/utils";
 import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
-import { isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
+import { canWriteFinancialOperations, isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
 import FinancialOperationalAlert from "@/components/finance/FinancialOperationalAlert";
 import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
@@ -130,6 +132,13 @@ const WALLET_OPERATION_LABELS = {
   estorno_manual: "Estorno manual",
   entrada_direcionada: "Entrada direcionada",
 };
+
+const EMPTY_WALLET_CHARGE_FORM = {
+  valor: "",
+  data_vencimento: "",
+  descricao: "",
+  metodo: "boleto_bancario",
+};
 const WALLET_OPERATION_MODAL_LABEL = "Alteração manual";
 
 const MOVEMENTS_PAGE_SIZE = 50;
@@ -170,6 +179,14 @@ function parseCurrencyInput(value) {
     .replace(/\./g, "")
     .replace(",", ".");
   const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseWalletChargeAmount(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return 0;
+  if (normalized.includes(",")) return parseCurrencyInput(normalized);
+  const parsed = Number.parseFloat(normalized.replace(/\s+/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -308,13 +325,60 @@ function resolveEventDogName({ appointment, service, dogsById }) {
   return "Cão não informado";
 }
 
+function getDefaultWalletChargeDueDate() {
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + 7);
+  return dueDate.toISOString().slice(0, 10);
+}
+
+async function copyTextToClipboard(value) {
+  const text = String(value || "").trim();
+  if (!text || typeof window === "undefined") return false;
+
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return copied;
+  }
+}
+
+function formatWalletServiceLabel(value, fallback = "Serviço") {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return fallback;
+
+  const normalizedValue = rawValue.toLowerCase().replace(/[\s_-]+/g, "_");
+  const labels = {
+    day_care: "Day Care",
+    banho: "Banho",
+    banho_tosa: "Banho & Tosa",
+    hospedagem: "Hospedagem",
+    tosa: "Tosa",
+    transporte: "Transporte",
+  };
+
+  return labels[normalizedValue] || rawValue;
+}
+
 function resolveEventServiceLabel({ appointment, service, obrigacao, cobranca, fallback = "Serviço" }) {
-  return appointment?.service_type
+  return formatWalletServiceLabel(
+    appointment?.service_type
     || service?.service_type
     || service?.servico
     || obrigacao?.descricao
     || cobranca?.descricao
-    || fallback;
+    || fallback,
+    fallback,
+  );
 }
 
 function buildOperationalHistoryRows({
@@ -1045,12 +1109,7 @@ function buildWalletStatementRows({
     creditRows,
     debitTotal,
     creditTotal,
-    netBalance: creditTotal - debitTotal,
-    availableBalance: settlementSummary.availableBalance,
-    openDebitTotal: settlementSummary.openDebitTotal,
-    settledDebitTotal: settlementSummary.settledDebitTotal,
-    paidDebitCount: settlementSummary.paidDebitCount,
-    pendingDebitCount: settlementSummary.pendingDebitCount,
+    netBalance: roundWalletStatementAmount(creditTotal - debitTotal),
   };
 }
 
@@ -1281,6 +1340,16 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletActionMessage, setWalletActionMessage] = useState(null);
   const [showWalletOperationModal, setShowWalletOperationModal] = useState(false);
   const [walletOperationForm, setWalletOperationForm] = useState({ ...EMPTY_WALLET_OPERATION_FORM });
+  const [showWalletChargeModal, setShowWalletChargeModal] = useState(false);
+  const [walletChargeStep, setWalletChargeStep] = useState(1);
+  const [walletChargeForm, setWalletChargeForm] = useState({ ...EMPTY_WALLET_CHARGE_FORM });
+  const [walletChargeSaving, setWalletChargeSaving] = useState(false);
+  const [walletChargeResult, setWalletChargeResult] = useState(null);
+  const [showWalletOpenChargesModal, setShowWalletOpenChargesModal] = useState(false);
+  const [walletOpenCharges, setWalletOpenCharges] = useState([]);
+  const [walletOpenChargesSort, setWalletOpenChargesSort] = useState("due_date");
+  const [walletOpenChargesLoading, setWalletOpenChargesLoading] = useState(false);
+  const [walletOpenChargesError, setWalletOpenChargesError] = useState("");
   const [showWalletReversalModal, setShowWalletReversalModal] = useState(false);
   const [walletReversalForm, setWalletReversalForm] = useState({ ...EMPTY_WALLET_REVERSAL_FORM });
   const [walletReversalUploading, setWalletReversalUploading] = useState(false);
@@ -1861,6 +1930,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     () => getFinancialOperationalStatus(walletFinancialStatusMap, selectedWalletAccount?.carteira_id || null),
     [selectedWalletAccount?.carteira_id, walletFinancialStatusMap],
   );
+  const canIssueWalletCharges = canWriteFinancialOperations(currentUser);
   const walletStatementRows = useMemo(
     () => buildWalletStatementRows({
       walletId: selectedWalletAccount?.carteira_id || null,
@@ -1900,17 +1970,13 @@ export default function Movimentacoes({ walletOnly = false }) {
   const walletStatementSummary = useMemo(() => {
     const rows = Array.isArray(walletStatementRows?.rows) ? walletStatementRows.rows : [];
     const latestDate = rows[0]?.primaryDate || null;
-    const effectiveBalance = Number.isFinite(Number(walletStatementRows?.availableBalance))
-      ? Number(walletStatementRows.availableBalance)
+    const balance = Number.isFinite(Number(walletStatementRows?.netBalance))
+      ? Number(walletStatementRows.netBalance)
       : Number(selectedWalletAccount?.saldo_atual || 0);
 
     return {
-      rowCount: rows.length,
       latestDate,
-      effectiveBalance,
-      openDebitTotal: Number(walletStatementRows?.openDebitTotal || 0),
-      paidDebitCount: Number(walletStatementRows?.paidDebitCount || 0),
-      pendingDebitCount: Number(walletStatementRows?.pendingDebitCount || 0),
+      balance,
     };
   }, [selectedWalletAccount?.saldo_atual, walletStatementRows]);
   const walletTimelineRows = useMemo(() => {
@@ -1940,7 +2006,9 @@ export default function Movimentacoes({ walletOnly = false }) {
           primaryDate: row.primaryDate || row.dueDate || null,
           title: row.serviceLabel,
           subtitle: row.dogName,
-          categoryLabel: row.referenceType === "pacote" ? "Pacote recorrente" : "Avulso",
+          categoryLabel: row.referenceType === "pacote"
+            ? `Plano de ${formatWalletServiceLabel(row.serviceLabel)}`
+            : "Avulso",
           amount: reversalEvent ? 0 : row.amount,
           amountTone: reversalEvent ? "neutral" : "debit",
           paymentStatus: reversalEvent ? "paid" : row.paymentStatus,
@@ -1951,7 +2019,7 @@ export default function Movimentacoes({ walletOnly = false }) {
               ]
             : row.paymentStatus === "paid"
               ? [{ label: "PAGO", tone: "green" }]
-              : [{ label: "PENDENTE", tone: "amber" }],
+              : [{ label: "Pendente", tone: "amber" }],
           appointmentId: row.appointmentId || null,
           referenceId: row.referenceId || null,
           referenceType: row.referenceType || null,
@@ -2130,6 +2198,162 @@ export default function Movimentacoes({ walletOnly = false }) {
       transacao_id: options.transacao_id || "",
     });
     setShowWalletOperationModal(true);
+  };
+
+  const openWalletChargeModal = () => {
+    if (!selectedWalletAccount?.carteira_id || !selectedWalletRuntimeAccountId) {
+      setWalletActionMessage({
+        type: "error",
+        message: "A conta operacional desta carteira ainda nao esta disponivel para emitir cobrancas.",
+      });
+      return;
+    }
+
+    setWalletActionMessage(null);
+    setWalletChargeForm({
+      ...EMPTY_WALLET_CHARGE_FORM,
+      data_vencimento: getDefaultWalletChargeDueDate(),
+    });
+    setWalletChargeResult(null);
+    setWalletChargeStep(1);
+    setShowWalletChargeModal(true);
+  };
+
+  const loadWalletOpenCharges = async (sortBy = walletOpenChargesSort) => {
+    if (!selectedWalletAccount?.carteira_id || !currentUser?.empresa_id) return;
+
+    setWalletOpenChargesLoading(true);
+    setWalletOpenChargesError("");
+    try {
+      const result = await bancoInter({
+        action: "listWalletOpenCharges",
+        empresa_id: currentUser.empresa_id,
+        carteira_id: selectedWalletAccount.carteira_id,
+        sort_by: sortBy,
+      });
+      setWalletOpenCharges(Array.isArray(result?.charges) ? result.charges : []);
+    } catch (error) {
+      setWalletOpenCharges([]);
+      setWalletOpenChargesError(error?.message || "Nao foi possivel carregar as cobrancas em aberto.");
+    } finally {
+      setWalletOpenChargesLoading(false);
+    }
+  };
+
+  const openWalletOpenChargesModal = async () => {
+    setShowWalletOpenChargesModal(true);
+    await loadWalletOpenCharges(walletOpenChargesSort);
+  };
+
+  const handleWalletChargeStepNext = () => {
+    if (walletChargeStep === 1) {
+      if (parseWalletChargeAmount(walletChargeForm.valor) <= 0) {
+        alert("Informe um valor maior que zero.");
+        return;
+      }
+    }
+
+    if (walletChargeStep === 2) {
+      const dueDate = String(walletChargeForm.data_vencimento || "").slice(0, 10);
+      if (!dueDate || dueDate < new Date().toISOString().slice(0, 10)) {
+        alert("Informe um vencimento valido, a partir de hoje.");
+        return;
+      }
+    }
+
+    if (walletChargeStep === 3 && !walletChargeForm.descricao.trim()) {
+      alert("Informe uma descricao para a cobranca.");
+      return;
+    }
+
+    setWalletChargeStep((current) => Math.min(current + 1, 4));
+  };
+
+  const handleWalletChargeIssue = async () => {
+    const amount = parseWalletChargeAmount(walletChargeForm.valor);
+    const dueDate = String(walletChargeForm.data_vencimento || "").slice(0, 10);
+    const description = walletChargeForm.descricao.trim();
+    if (!selectedWalletAccount?.carteira_id || !selectedWalletRuntimeAccountId || !currentUser?.empresa_id) {
+      alert("A carteira selecionada nao esta pronta para emitir cobrancas.");
+      return;
+    }
+    if (amount <= 0 || !dueDate || !description) {
+      alert("Revise valor, vencimento e descricao antes de confirmar.");
+      return;
+    }
+    if (walletChargeForm.metodo !== "boleto_bancario") {
+      alert("Nesta fase, somente boleto bancario com Pix integrado esta habilitado.");
+      return;
+    }
+
+    setWalletChargeSaving(true);
+    try {
+      const result = await bancoInter({
+        action: "issueWalletCharge",
+        empresa_id: currentUser.empresa_id,
+        carteira_id: selectedWalletAccount.carteira_id,
+        carteira_conta_id: selectedWalletRuntimeAccountId,
+        responsavel_id: selectedWalletAccount.responsavel_id || null,
+        valor: amount,
+        data_vencimento: dueDate,
+        descricao: description,
+        metodo: walletChargeForm.metodo,
+        usuario_id: currentUser?.id || null,
+        public_base_url: typeof window !== "undefined" ? window.location.origin : "",
+      });
+      setWalletChargeResult({
+        publicUrl: result?.public_url || "",
+        charge: result?.charge || null,
+      });
+      setWalletChargeStep(5);
+      setWalletActionMessage({
+        type: "success",
+        message: "Cobranca emitida. O link seguro esta pronto para compartilhar.",
+      });
+      await loadWalletOpenCharges(walletOpenChargesSort);
+    } catch (error) {
+      setWalletActionMessage({
+        type: "error",
+        message: error?.message || "Nao foi possivel emitir a cobranca.",
+      });
+    } finally {
+      setWalletChargeSaving(false);
+    }
+  };
+
+  const handleCopyWalletChargeLink = async (url) => {
+    const copied = await copyTextToClipboard(url);
+    setWalletActionMessage({
+      type: copied ? "success" : "error",
+      message: copied ? "Link de cobranca copiado." : "Nao foi possivel copiar o link de cobranca.",
+    });
+  };
+
+  const handleRenewWalletChargeLink = async (chargeId) => {
+    if (!chargeId || !currentUser?.empresa_id) return;
+
+    setWalletOpenChargesLoading(true);
+    setWalletOpenChargesError("");
+    try {
+      const result = await bancoInter({
+        action: "renewWalletChargePublicLink",
+        empresa_id: currentUser.empresa_id,
+        carteira_cobranca_id: chargeId,
+        public_base_url: typeof window !== "undefined" ? window.location.origin : "",
+      });
+      const copied = await copyTextToClipboard(result?.public_url || "");
+      await loadWalletOpenCharges(walletOpenChargesSort);
+      setWalletActionMessage({
+        type: copied ? "success" : "warning",
+        message: copied
+          ? "Novo link seguro gerado e copiado. O link anterior foi invalidado."
+          : "Novo link seguro gerado. Copie-o na tela de cobranca emitida.",
+      });
+    } catch (error) {
+      setWalletOpenChargesError(error?.message || "Nao foi possivel gerar um novo link.");
+    } finally {
+      setWalletOpenChargesLoading(false);
+    }
   };
 
   const openWalletReversalModal = (options = {}) => {
@@ -2871,6 +3095,30 @@ export default function Movimentacoes({ walletOnly = false }) {
                       >
                         <RefreshCw className={`h-3.5 w-3.5 ${walletLoading ? "animate-spin" : ""}`} />
                       </Button>
+                      {canIssueWalletCharges ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={openWalletOpenChargesModal}
+                          disabled={!selectedWalletAccount?.carteira_id}
+                          className="h-9 rounded-full border-slate-300 bg-white px-3 text-xs font-semibold shadow-sm"
+                        >
+                          Cobranças em aberto
+                        </Button>
+                      ) : null}
+                      {canIssueWalletCharges ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={openWalletChargeModal}
+                          disabled={!selectedWalletRuntimeAccountId}
+                          className="h-9 w-9 rounded-full border-slate-300 bg-white p-0 shadow-sm"
+                          title="Gerar cobrança"
+                          aria-label="Gerar cobrança"
+                        >
+                          <CircleDollarSign className="h-4 w-4 text-emerald-700" />
+                        </Button>
+                      ) : null}
                       {walletFlags.manualAdjustmentsEnabled && canManageWalletOperations ? (
                         <Button
                           variant="outline"
@@ -2890,17 +3138,12 @@ export default function Movimentacoes({ walletOnly = false }) {
                           <div className="bg-gradient-to-br from-blue-50 to-white px-3 py-3.5 sm:px-4">
                             <div className="flex items-center gap-1.5 text-blue-700">
                               <Wallet className="h-3.5 w-3.5" />
-                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Saldo disponível</p>
+                              <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Saldo da carteira</p>
                             </div>
-                            <p className="mt-1.5 text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">
-                              {formatCurrency(walletStatementSummary.effectiveBalance)}
-                            </p>
-                            <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-slate-500 sm:text-[11px]">
-                              {walletStatementSummary.rowCount > 0
-                                ? walletStatementSummary.openDebitTotal > 0
-                                  ? `Saldo após a quitação cronológica. Débitos em aberto: ${formatCurrency(walletStatementSummary.openDebitTotal)}.`
-                                  : `Saldo após quitar ${walletStatementSummary.paidDebitCount} lançamento(s) em ordem cronológica.`
-                                : "Sem lançamentos na carteira até o momento."}
+                            <p className={`mt-1.5 text-xl font-bold tracking-tight sm:text-2xl ${
+                              walletStatementSummary.balance < 0 ? "text-red-600" : "text-slate-950"
+                            }`}>
+                              {formatCurrency(walletStatementSummary.balance)}
                             </p>
                           </div>
 
@@ -3519,6 +3762,235 @@ export default function Movimentacoes({ walletOnly = false }) {
             <Button onClick={handleSave} disabled={isSaving}>
               {isSaving ? "Salvando..." : editingItem?.apiLocked ? "Salvar complemento" : "Salvar"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showWalletChargeModal} onOpenChange={setShowWalletChargeModal}>
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[560px] overflow-hidden rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>{walletChargeStep === 5 ? "Link de cobrança pronto" : "Gerar cobrança"}</DialogTitle>
+            <DialogDescription>
+              {walletChargeStep === 5
+                ? "Compartilhe este link seguro com o responsável financeiro."
+                : `Etapa ${Math.min(walletChargeStep, 4)} de 4. A cobrança será vinculada à carteira de ${selectedWalletAccount?.carteira_nome || "responsável financeiro"}.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[calc(90vh-180px)] overflow-y-auto py-1 pr-1">
+            {walletChargeStep === 1 ? (
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3 text-sm text-emerald-900">
+                  Informe o valor total que o responsável poderá pagar por esta cobrança.
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="wallet-charge-value">Valor da cobrança *</Label>
+                  <Input
+                    id="wallet-charge-value"
+                    inputMode="decimal"
+                    value={walletChargeForm.valor}
+                    onChange={(event) => setWalletChargeForm((current) => ({ ...current, valor: event.target.value }))}
+                    placeholder="0,00"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {walletChargeStep === 2 ? (
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-3 text-sm text-blue-900">
+                  Escolha o vencimento que será enviado ao Banco Inter.
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="wallet-charge-due-date">Vencimento *</Label>
+                  <Input
+                    id="wallet-charge-due-date"
+                    type="date"
+                    min={new Date().toISOString().slice(0, 10)}
+                    value={walletChargeForm.data_vencimento}
+                    onChange={(event) => setWalletChargeForm((current) => ({ ...current, data_vencimento: event.target.value }))}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {walletChargeStep === 3 ? (
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                  A descrição ajuda a operação e o responsável a reconhecerem esta cobrança.
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="wallet-charge-description">Descrição *</Label>
+                  <Textarea
+                    id="wallet-charge-description"
+                    rows={4}
+                    maxLength={180}
+                    value={walletChargeForm.descricao}
+                    onChange={(event) => setWalletChargeForm((current) => ({ ...current, descricao: event.target.value }))}
+                    placeholder="Ex.: Recarga de carteira - serviços de julho"
+                  />
+                  <p className="text-right text-[11px] text-slate-400">{walletChargeForm.descricao.length}/180</p>
+                </div>
+              </div>
+            ) : null}
+
+            {walletChargeStep === 4 ? (
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-slate-700">Forma de pagamento</p>
+                <button
+                  type="button"
+                  onClick={() => setWalletChargeForm((current) => ({ ...current, metodo: "boleto_bancario" }))}
+                  className={`flex w-full items-center justify-between rounded-2xl border p-3.5 text-left transition ${
+                    walletChargeForm.metodo === "boleto_bancario"
+                      ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
+                      : "border-slate-200 bg-white hover:border-slate-300"
+                  }`}
+                >
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-900">Boleto bancário</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">Inclui Pix copia e cola gerado pelo Banco Inter.</span>
+                  </span>
+                  <CheckCircle2 className={`h-5 w-5 ${walletChargeForm.metodo === "boleto_bancario" ? "text-blue-600" : "text-slate-300"}`} />
+                </button>
+                <div className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3.5 opacity-65">
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-700">Pix com vencimento</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">Temporariamente indisponível até existir suporte específico na integração.</span>
+                  </span>
+                  <Badge variant="outline" className="border-slate-300 bg-white text-[10px] text-slate-500">Indisponível</Badge>
+                </div>
+                <div className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3.5 opacity-65">
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-700">Cartão</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">Temporariamente indisponível até a implementação do gateway online.</span>
+                  </span>
+                  <Badge variant="outline" className="border-slate-300 bg-white text-[10px] text-slate-500">Indisponível</Badge>
+                </div>
+              </div>
+            ) : null}
+
+            {walletChargeStep === 5 ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                  <p className="font-semibold">Cobrança emitida</p>
+                  <p className="mt-1">{formatCurrency(walletChargeResult?.charge?.valor || parseWalletChargeAmount(walletChargeForm.valor))} com vencimento em {formatWalletStatementDate(walletChargeResult?.charge?.data_vencimento || walletChargeForm.data_vencimento)}.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="wallet-charge-public-link">Link de cobrança</Label>
+                  <div className="flex gap-2">
+                    <Input id="wallet-charge-public-link" value={walletChargeResult?.publicUrl || ""} readOnly className="min-w-0 text-xs" />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleCopyWalletChargeLink(walletChargeResult?.publicUrl)}
+                      disabled={!walletChargeResult?.publicUrl}
+                      className="shrink-0"
+                    >
+                      <ClipboardCopy className="mr-1.5 h-4 w-4" />
+                      Copiar
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs leading-5 text-slate-500">
+                  O link não exige login. Ele mostra somente os dados necessários para pagar o boleto ou usar o Pix integrado e expira automaticamente.
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter className="gap-2 border-t border-slate-200 pt-4">
+            {walletChargeStep === 5 ? (
+              <Button onClick={() => setShowWalletChargeModal(false)}>Concluir</Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setShowWalletChargeModal(false)}>Cancelar</Button>
+                {walletChargeStep > 1 ? (
+                  <Button variant="outline" onClick={() => setWalletChargeStep((current) => current - 1)}>Voltar</Button>
+                ) : null}
+                {walletChargeStep < 4 ? (
+                  <Button onClick={handleWalletChargeStepNext}>Seguir</Button>
+                ) : (
+                  <Button onClick={handleWalletChargeIssue} disabled={walletChargeSaving} className="bg-blue-600 text-white hover:bg-blue-700">
+                    {walletChargeSaving ? "Emitindo..." : "Confirmar cobrança"}
+                  </Button>
+                )}
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showWalletOpenChargesModal} onOpenChange={setShowWalletOpenChargesModal}>
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[720px] overflow-hidden rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Cobranças em aberto</DialogTitle>
+            <DialogDescription>
+              Boletos e links de pagamento emitidos para esta carteira. O boleto inclui Pix copia e cola quando o Banco Inter disponibiliza o código.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[calc(90vh-175px)] overflow-y-auto pr-1">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs font-medium text-slate-500">{walletOpenCharges.length} cobrança(ças) em aberto</p>
+              <Select
+                value={walletOpenChargesSort}
+                onValueChange={(value) => {
+                  setWalletOpenChargesSort(value);
+                  loadWalletOpenCharges(value);
+                }}
+              >
+                <SelectTrigger className="h-9 w-full text-xs sm:w-[190px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="due_date">Ordenar por vencimento</SelectItem>
+                  <SelectItem value="issued_at">Ordenar por emissão</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {walletOpenChargesLoading ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">Carregando cobranças...</div>
+            ) : walletOpenChargesError ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{walletOpenChargesError}</div>
+            ) : walletOpenCharges.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma cobrança em aberto foi emitida para esta carteira.</div>
+            ) : (
+              <div className="space-y-2.5">
+                {walletOpenCharges.map((charge) => (
+                  <div key={charge.id} className="rounded-2xl border border-slate-200 bg-white p-3.5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold text-slate-900">{charge.descricao}</p>
+                          <Badge variant="outline" className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">Boleto + Pix</Badge>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-x-5 gap-y-1 text-xs text-slate-500 sm:grid-cols-3">
+                          <p><span className="font-medium text-slate-700">Valor:</span> {formatCurrency(charge.valor)}</p>
+                          <p><span className="font-medium text-slate-700">Vencimento:</span> {formatWalletStatementDate(charge.data_vencimento)}</p>
+                          <p><span className="font-medium text-slate-700">Emissão:</span> {formatWalletStatementDate(charge.emitido_em || charge.criado_em)}</p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shrink-0 rounded-full px-3 text-[11px]"
+                        onClick={() => handleRenewWalletChargeLink(charge.id)}
+                      >
+                        <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />
+                        Novo link
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="border-t border-slate-200 pt-4">
+            <Button variant="outline" onClick={() => setShowWalletOpenChargesModal(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

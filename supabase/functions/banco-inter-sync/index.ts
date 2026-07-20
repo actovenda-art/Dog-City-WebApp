@@ -62,6 +62,16 @@ class BudgetUnavailableError extends Error {
   }
 }
 
+class WalletChargeAuthorizationError extends Error {
+  status: number;
+
+  constructor(message: string, status = 403) {
+    super(message);
+    this.name = "WalletChargeAuthorizationError";
+    this.status = status;
+  }
+}
+
 const interTokenCache = new Map<string, CachedInterToken>();
 const interTokenRequests = new Map<string, Promise<InterTokenResult>>();
 const interTokenCooldowns = new Map<string, number>();
@@ -1809,11 +1819,210 @@ function buildBudgetChargeSeuNumero(orcamentoId: string, uniqueSuffix = "") {
   return `orc${cleanBudgetId.slice(-7)}${suffix.slice(-4)}`;
 }
 
+function buildWalletChargeSeuNumero(walletChargeId: string) {
+  const cleanId = sanitizeText(walletChargeId).replace(/[^a-zA-Z0-9]/g, "");
+  return `car${cleanId.slice(-11)}`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function normalizePermission(value: unknown) {
+  return sanitizeText(value).toLowerCase();
+}
+
+function normalizePermissionList(value: unknown) {
+  return Array.isArray(value)
+    ? [...new Set(value.map(normalizePermission).filter(Boolean))]
+    : [];
+}
+
+function permissionMatches(granted: string, required: string) {
+  const normalizedGranted = normalizePermission(granted);
+  const normalizedRequired = normalizePermission(required);
+  if (!normalizedGranted || !normalizedRequired) return false;
+  if (normalizedGranted === "*" || normalizedGranted === "platform:*") return true;
+  if (normalizedGranted === normalizedRequired) return true;
+
+  const [grantedResource, grantedAction] = normalizedGranted.split(":");
+  const [requiredResource] = normalizedRequired.split(":");
+  return Boolean(grantedResource && grantedResource === requiredResource && grantedAction === "*");
+}
+
+async function getAuthenticatedRequestUser(request: Request) {
+  const authorization = request.headers.get("Authorization") || "";
+  const accessToken = authorization.replace(/^Bearer\s+/i, "").trim();
+  if (!accessToken) return null;
+
+  const { data, error } = await supabase.auth.getUser(accessToken);
+  if (error || !data?.user?.id) return null;
+  return data.user;
+}
+
+function hasWalletChargePermission(
+  profile: Record<string, unknown>,
+  accessProfile: Record<string, unknown> | null,
+  unitRole: string,
+) {
+  if (profile.is_platform_admin === true || sanitizeText(profile.company_role) === "platform_admin") {
+    return true;
+  }
+
+  const permissions = normalizePermissionList(accessProfile?.permissoes);
+  if (permissions.some((permission) => ["financeiro:update", "financeiro:*", "platform:*"]
+    .some((required) => permissionMatches(permission, required)))) {
+    return true;
+  }
+
+  const haystack = [
+    profile.profile,
+    profile.company_role,
+    unitRole,
+    accessProfile?.codigo,
+    accessProfile?.nome,
+  ]
+    .map(normalizePermission)
+    .filter(Boolean)
+    .join(" ");
+
+  return ["gestor", "gerencia", "gerencial", "financeiro", "administrativo", "master", "diretoria", "backoffice"]
+    .some((role) => haystack.includes(role));
+}
+
+async function requireWalletChargeStaff(request: Request, empresaId: string) {
+  const authUser = await getAuthenticatedRequestUser(request);
+  if (!authUser?.id) {
+    throw new WalletChargeAuthorizationError("Sessao invalida para operar cobrancas da carteira.", 401);
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("users")
+    .select("id, empresa_id, profile, company_role, access_profile_id, is_platform_admin, active")
+    .eq("id", authUser.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    throw new WalletChargeAuthorizationError("Nao foi possivel validar o usuario atual.", 401);
+  }
+  if (profile.active === false) {
+    throw new WalletChargeAuthorizationError("Este acesso esta desativado.", 403);
+  }
+
+  const normalizedEmpresaId = sanitizeText(empresaId);
+  if (!normalizedEmpresaId) {
+    throw new WalletChargeAuthorizationError("Selecione a unidade para operar a cobranca.", 400);
+  }
+
+  let unitRole = "";
+  let hasUnitAccess = profile.is_platform_admin === true
+    || sanitizeText(profile.company_role) === "platform_admin"
+    || sanitizeText(profile.empresa_id) === normalizedEmpresaId;
+  if (!hasUnitAccess) {
+    const { data: unitAccess, error: unitAccessError } = await supabase
+      .from("user_unit_access")
+      .select("empresa_id, papel, ativo")
+      .eq("user_id", profile.id)
+      .eq("empresa_id", normalizedEmpresaId)
+      .eq("ativo", true)
+      .maybeSingle();
+
+    if (unitAccessError) throw unitAccessError;
+    hasUnitAccess = Boolean(unitAccess);
+    unitRole = sanitizeText(unitAccess?.papel);
+  }
+
+  if (!hasUnitAccess) {
+    throw new WalletChargeAuthorizationError("Voce nao tem acesso a esta unidade.", 403);
+  }
+
+  let accessProfile: Record<string, unknown> | null = null;
+  const accessProfileId = sanitizeText(profile.access_profile_id);
+  if (accessProfileId) {
+    const { data, error } = await supabase
+      .from("perfil_acesso")
+      .select("id, codigo, nome, permissoes, ativo")
+      .eq("id", accessProfileId)
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.ativo === false) {
+      throw new WalletChargeAuthorizationError("O perfil de acesso deste usuario esta inativo.", 403);
+    }
+    accessProfile = data || null;
+  }
+
+  if (!hasWalletChargePermission(profile, accessProfile, unitRole)) {
+    throw new WalletChargeAuthorizationError("Seu perfil nao possui permissao para emitir cobrancas da carteira.", 403);
+  }
+
+  return { profile, authUser, empresaId: normalizedEmpresaId };
+}
+
+function buildWalletChargePublicToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+async function hashWalletChargePublicToken(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function buildWalletChargeTokenExpiry(dueDate: string) {
+  const dueAt = new Date(`${dueDate}T23:59:59.999-03:00`);
+  const baseDate = Number.isNaN(dueAt.getTime()) ? new Date() : dueAt;
+  baseDate.setDate(baseDate.getDate() + 30);
+  return baseDate.toISOString();
+}
+
+function getWalletChargeMetadata(row: Record<string, unknown>) {
+  return asRecord(row.metadata);
+}
+
+function isWalletChargeActive(row: Record<string, unknown>) {
+  return sanitizeText(row.status).toLowerCase() === "emitido";
+}
+
+function buildWalletChargePublicResponse(row: Record<string, unknown>) {
+  const metadata = getWalletChargeMetadata(row);
+  const active = isWalletChargeActive(row);
+  const status = sanitizeText(row.status, "pendente_emissao").toLowerCase();
+
+  return {
+    id: sanitizeText(row.id),
+    provider: "Banco Inter",
+    responsavel_nome: sanitizeText(metadata.responsavel_nome, "Responsavel financeiro"),
+    descricao: sanitizeText(row.descricao),
+    valor: toNumber(row.valor),
+    data_vencimento: sanitizeText(row.data_vencimento),
+    emitido_em: row.emitido_em || row.created_date || null,
+    status,
+    pago_em: row.pago_em || null,
+    metodo: sanitizeText(row.metodo, "boleto_bancario"),
+    ativo: active,
+    boleto: active ? {
+      linha_digitavel: sanitizeText(row.linha_digitavel) || null,
+      codigo_barras: sanitizeText(row.codigo_barras) || null,
+      pdf_disponivel: row.pdf_disponivel === true,
+    } : null,
+    pix: active ? {
+      copia_e_cola: sanitizeText(row.pix_copia_cola) || null,
+    } : null,
+  };
+}
+
 function mapInterChargeStatus(situacao: string) {
   const normalized = sanitizeText(situacao).toUpperCase();
   if (normalized === "RECEBIDO") return "recebido";
   if (["BAIXADO", "CANCELADO", "CANCELADA"].includes(normalized)) return "baixado";
-  if (normalized === "EXPIRADO") return "expirado";
+  if (["EXPIRADO", "VENCIDO", "VENCIDA"].includes(normalized)) return "expirado";
   return "emitido";
 }
 
@@ -2037,6 +2246,130 @@ async function saveBudgetPaymentRow(row: Record<string, unknown>) {
   return data || row;
 }
 
+async function loadWalletChargeRow(id: string) {
+  const { data, error } = await supabase
+    .from("carteira_cobranca")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function loadWalletChargeByPublicTokenHash(tokenHash: string) {
+  const { data, error } = await supabase
+    .from("carteira_cobranca")
+    .select("*")
+    .eq("public_token_hash", tokenHash)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function saveWalletChargeRow(row: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from("carteira_cobranca")
+    .upsert([row], { onConflict: "id" })
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || row;
+}
+
+function buildWalletChargeStaffResponse(row: Record<string, unknown>) {
+  return {
+    id: sanitizeText(row.id),
+    carteira_id: sanitizeText(row.carteira_id),
+    carteira_conta_id: sanitizeText(row.carteira_conta_id) || null,
+    metodo: sanitizeText(row.metodo, "boleto_bancario"),
+    status: sanitizeText(row.status, "pendente_emissao"),
+    status_inter: sanitizeText(row.status_inter) || null,
+    valor: toNumber(row.valor),
+    descricao: sanitizeText(row.descricao),
+    data_vencimento: sanitizeText(row.data_vencimento),
+    emitido_em: row.emitido_em || row.created_date || null,
+    pago_em: row.pago_em || null,
+    criado_em: row.created_date || null,
+    pdf_disponivel: row.pdf_disponivel === true,
+    public_link_available: Boolean(row.public_token_hash && row.public_token_expires_at),
+    public_link_expires_at: row.public_token_expires_at || null,
+  };
+}
+
+function parseCarteiraContact(value: unknown) {
+  if (typeof value === "string") {
+    try {
+      return asRecord(JSON.parse(value));
+    } catch {
+      return {};
+    }
+  }
+  return asRecord(value);
+}
+
+async function loadWalletChargePayer(empresaId: string, carteiraId: string) {
+  const { data: carteira, error } = await supabase
+    .from("carteira")
+    .select("id, empresa_id, nome_razao_social, nome_fantasia, cpf_cnpj, email, celular, street, numero_residencia, neighborhood, city, state, cep, contato_orcamentos")
+    .eq("id", carteiraId)
+    .eq("empresa_id", empresaId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!carteira) {
+    throw new Error("Carteira do responsavel financeiro nao localizada para esta unidade.");
+  }
+
+  const contact = parseCarteiraContact(carteira.contato_orcamentos);
+  return {
+    carteira,
+    payer: {
+      // The registered wallet owner is the legal payer. The budget contact may
+      // be another person and must never replace the payer's name on the bill.
+      responsavel_nome: sanitizeText(carteira.nome_razao_social, sanitizeText(carteira.nome_fantasia)),
+      responsavel_cpf_cnpj: normalizeCpfCnpj(carteira.cpf_cnpj),
+      responsavel_email: sanitizeText(contact.email, sanitizeText(carteira.email)),
+      responsavel_telefone: sanitizeText(contact.celular, sanitizeText(carteira.celular)),
+      responsavel_cep: normalizeChargeCep(carteira.cep),
+      responsavel_endereco: sanitizeText(carteira.street),
+      responsavel_numero: sanitizeText(carteira.numero_residencia),
+      responsavel_bairro: sanitizeText(carteira.neighborhood),
+      responsavel_cidade: sanitizeText(carteira.city),
+      responsavel_uf: sanitizeText(carteira.state).toUpperCase(),
+    },
+  };
+}
+
+function resolveWalletChargePublicUrl(
+  config: IntegrationConfig,
+  payload: Record<string, unknown>,
+  publicToken: string,
+) {
+  const configuredBaseUrl = sanitizeText(
+    Deno.env.get("PUBLIC_APP_URL")
+      || getConfigValue<string>(config, "public_app_url")
+      || payload.public_base_url,
+  );
+  if (!configuredBaseUrl) {
+    throw new Error("Defina PUBLIC_APP_URL na Edge Function ou informe a URL publica do app para gerar o link de cobranca.");
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(configuredBaseUrl);
+  } catch {
+    throw new Error("A URL publica configurada para o link de cobranca e invalida.");
+  }
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    throw new Error("A URL publica do link de cobranca deve usar HTTP ou HTTPS.");
+  }
+
+  return `${parsedUrl.origin}/cobranca/${encodeURIComponent(publicToken)}`;
+}
+
 async function ensureWalletAccountForBudget(empresaId: string, carteiraId: string) {
   const normalizedEmpresaId = sanitizeText(empresaId);
   const normalizedCarteiraId = sanitizeText(carteiraId);
@@ -2173,6 +2506,52 @@ async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
   });
 }
 
+async function applyWalletChargePaymentToWallet(row: Record<string, unknown>) {
+  if (row.credited_wallet_movement_id) return row;
+
+  const ensuredWalletAccountId = sanitizeText(row.carteira_conta_id) || await ensureWalletAccountForBudget(
+    sanitizeText(row.empresa_id),
+    sanitizeText(row.carteira_id),
+  );
+  if (!ensuredWalletAccountId) return row;
+
+  const amount = toNumber(firstDefined(row.valor_recebido, row.valor));
+  if (amount <= 0) return row;
+
+  const linkedTransactionId = await resolveBudgetPaymentExtratoId(row);
+  const { data, error } = await supabase.rpc("finance_wallet_admin_apply_operation", {
+    p_carteira_conta_id: ensuredWalletAccountId,
+    p_operacao_idempotencia: `carteira_cobranca|${sanitizeText(row.id)}|recebido`,
+    p_tipo: "entrada_direcionada",
+    p_natureza: "entrada",
+    p_valor: amount,
+    p_referencia_amigavel: `Pagamento de cobranca: ${sanitizeText(row.descricao, "Carteira")}`.slice(0, 180),
+    p_motivo: "Recarga de carteira por cobranca recebida",
+    p_observacao: `Cobranca recebida via Banco Inter (${sanitizeText(row.codigo_solicitacao)})`,
+    p_origem: "carteira_cobranca_banco_inter",
+    p_transacao_id: linkedTransactionId,
+    p_usuario_id: sanitizeText(row.created_by_user_id) || null,
+    p_metadata: {
+      carteira_cobranca_id: row.id,
+      provider: row.provider,
+      metodo: row.metodo,
+      descricao: row.descricao,
+    },
+  });
+
+  if (error) throw error;
+  const resultRow = Array.isArray(data) ? (data[0] || null) : data;
+  if (!resultRow?.movimento_id) return row;
+
+  return saveWalletChargeRow({
+    ...row,
+    carteira_conta_id: ensuredWalletAccountId,
+    credited_wallet_movement_id: resultRow.movimento_id,
+    creditado_em: new Date().toISOString(),
+    updated_date: new Date().toISOString(),
+  });
+}
+
 async function ensureChargeWebhookConfigured(config: IntegrationConfig) {
   const { accessToken, httpClient } = await getAccessToken(config, {
     scopeConfigKey: "charge_write_scope",
@@ -2245,6 +2624,131 @@ async function processBudgetChargeWebhookEvent(event: Record<string, unknown>) {
   return situacao === "RECEBIDO"
     ? applyBudgetPaymentToWallet(updatedRow)
     : updatedRow;
+}
+
+async function processWalletChargeWebhookEvent(event: Record<string, unknown>) {
+  const codigoSolicitacao = sanitizeText(event.codigoSolicitacao);
+  if (!codigoSolicitacao) return null;
+
+  const { data, error } = await supabase
+    .from("carteira_cobranca")
+    .select("*")
+    .eq("codigo_solicitacao", codigoSolicitacao)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const now = new Date().toISOString();
+  const situacao = sanitizeText(event.situacao, sanitizeText(data.status_inter || data.status));
+  const mappedStatus = mapInterChargeStatus(situacao);
+  const active = mappedStatus === "emitido";
+  const received = sanitizeText(situacao).toUpperCase() === "RECEBIDO";
+  const updatedRow = await saveWalletChargeRow({
+    ...data,
+    status: mappedStatus,
+    status_inter: situacao || data.status_inter || null,
+    nosso_numero: sanitizeText(event.nossoNumero, sanitizeText(data.nosso_numero)) || null,
+    codigo_barras: active ? (sanitizeText(event.codigoBarras, sanitizeText(data.codigo_barras)) || null) : null,
+    linha_digitavel: active ? (sanitizeText(event.linhaDigitavel, sanitizeText(data.linha_digitavel)) || null) : null,
+    txid: active ? (sanitizeText(event.txid, sanitizeText(data.txid)) || null) : null,
+    pix_copia_cola: active ? (sanitizeText(event.pixCopiaECola, sanitizeText(data.pix_copia_cola)) || null) : null,
+    pdf_disponivel: active ? Boolean(data.codigo_solicitacao) : false,
+    valor_recebido: received
+      ? toNumber(firstDefined(event.valorTotalRecebido, data.valor_recebido, data.valor))
+      : Number(data.valor_recebido || 0),
+    pago_em: received ? (sanitizeText(event.dataHoraSituacao) || data.pago_em || now) : data.pago_em || null,
+    metadata: {
+      ...getWalletChargeMetadata(data),
+      webhook_last_event: event,
+    },
+    updated_date: now,
+  });
+
+  return received ? applyWalletChargePaymentToWallet(updatedRow) : updatedRow;
+}
+
+async function refreshWalletChargeFromInter(config: IntegrationConfig, row: Record<string, unknown>) {
+  if (!sanitizeText(row.codigo_solicitacao) || !isWalletChargeActive(row)) return row;
+
+  const charge = await fetchChargeForBudget(config, sanitizeText(row.codigo_solicitacao));
+  const now = new Date().toISOString();
+  const mappedStatus = mapInterChargeStatus(charge.situacao);
+  const received = sanitizeText(charge.situacao).toUpperCase() === "RECEBIDO";
+  const active = mappedStatus === "emitido";
+  const refreshedRow = await saveWalletChargeRow({
+    ...row,
+    status: mappedStatus,
+    status_inter: sanitizeText(charge.situacao) || row.status_inter || null,
+    valor: Number(charge.valorNominal || row.valor || 0),
+    seu_numero: charge.seuNumero || row.seu_numero || null,
+    nosso_numero: charge.nossoNumero || row.nosso_numero || null,
+    txid: active ? (charge.txid || row.txid || null) : null,
+    linha_digitavel: active ? (charge.linhaDigitavel || row.linha_digitavel || null) : null,
+    codigo_barras: active ? (charge.codigoBarras || row.codigo_barras || null) : null,
+    pix_copia_cola: active ? (charge.pixCopiaECola || row.pix_copia_cola || null) : null,
+    pdf_disponivel: active ? Boolean(charge.codigoSolicitacao || row.codigo_solicitacao) : false,
+    valor_recebido: received ? Number(charge.valorNominal || row.valor || 0) : Number(row.valor_recebido || 0),
+    pago_em: received ? (row.pago_em || now) : row.pago_em || null,
+    metadata: {
+      ...getWalletChargeMetadata(row),
+      charge_snapshot: charge,
+    },
+    updated_date: now,
+  });
+
+  return received ? applyWalletChargePaymentToWallet(refreshedRow) : refreshedRow;
+}
+
+async function loadWalletChargeFromPublicToken(token: string) {
+  const normalizedToken = sanitizeText(token);
+  if (normalizedToken.length < 32) {
+    throw new WalletChargeAuthorizationError("Link de cobranca invalido.", 404);
+  }
+
+  const tokenHash = await hashWalletChargePublicToken(normalizedToken);
+  const row = await loadWalletChargeByPublicTokenHash(tokenHash);
+  if (!row) {
+    throw new WalletChargeAuthorizationError("Link de cobranca invalido ou indisponivel.", 404);
+  }
+
+  const expiresAt = new Date(String(row.public_token_expires_at || ""));
+  if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
+    throw new WalletChargeAuthorizationError("Este link de cobranca expirou. Solicite um novo link a Dog City Brasil.", 410);
+  }
+
+  return row;
+}
+
+async function rotateWalletChargePublicLink(row: Record<string, unknown>) {
+  const publicToken = buildWalletChargePublicToken();
+  const publicTokenHash = await hashWalletChargePublicToken(publicToken);
+  const updatedRow = await saveWalletChargeRow({
+    ...row,
+    public_token_hash: publicTokenHash,
+    public_token_expires_at: buildWalletChargeTokenExpiry(sanitizeText(row.data_vencimento)),
+    metadata: {
+      ...getWalletChargeMetadata(row),
+      public_link_rotated_at: new Date().toISOString(),
+    },
+    updated_date: new Date().toISOString(),
+  });
+  return { row: updatedRow, publicToken };
+}
+
+async function listOpenWalletCharges(empresaId: string, carteiraId: string, sortBy: string) {
+  const safeSortBy = sortBy === "issued_at" ? "emitido_em" : "data_vencimento";
+  const { data, error } = await supabase
+    .from("carteira_cobranca")
+    .select("*")
+    .eq("empresa_id", empresaId)
+    .eq("carteira_id", carteiraId)
+    .in("status", ["pendente_emissao", "emitido"])
+    .order(safeSortBy, { ascending: safeSortBy === "data_vencimento" })
+    .order("created_date", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map((row) => buildWalletChargeStaffResponse(row));
 }
 
 async function normalizeTransactions(
@@ -4437,7 +4941,14 @@ Deno.serve(async (request) => {
   try {
     const payload = await request.json().catch(() => ({}));
     if (Array.isArray(payload) && payload.every((item) => item && typeof item === "object" && "codigoSolicitacao" in item)) {
-      const results = await Promise.all(payload.map((item) => processBudgetChargeWebhookEvent(item as Record<string, unknown>)));
+      const results = await Promise.all(payload.map(async (item) => {
+        const event = item as Record<string, unknown>;
+        const [budgetResult, walletChargeResult] = await Promise.all([
+          processBudgetChargeWebhookEvent(event),
+          processWalletChargeWebhookEvent(event),
+        ]);
+        return budgetResult || walletChargeResult;
+      }));
       return jsonResponse({ ok: true, processed: results.filter(Boolean).length });
     }
     const action = sanitizeText(payload.action, "syncDue");
@@ -4447,7 +4958,71 @@ Deno.serve(async (request) => {
       return jsonResponse(data);
     }
 
-    const config = await findConfig(payload);
+    if (action === "getWalletChargePublic") {
+      let row = await loadWalletChargeFromPublicToken(sanitizeText(payload.token));
+      if (isWalletChargeActive(row)) {
+        const walletConfig = await findConfig({ empresa_id: sanitizeText(row.empresa_id) });
+        if (walletConfig) {
+          try {
+            row = await refreshWalletChargeFromInter(walletConfig, row);
+          } catch (refreshError) {
+            // The stored payment data remains usable when the provider is
+            // temporarily unavailable or rate-limited.
+            console.warn("wallet charge public refresh warning", serializeError(refreshError));
+          }
+        }
+      }
+      return jsonResponse({ ok: true, charge: buildWalletChargePublicResponse(row) });
+    }
+
+    if (action === "downloadWalletChargePdfPublic") {
+      const row = await loadWalletChargeFromPublicToken(sanitizeText(payload.token));
+      if (!isWalletChargeActive(row) || !sanitizeText(row.codigo_solicitacao)) {
+        return jsonResponse({ error: "Esta cobranca nao esta mais disponivel para pagamento." }, 409);
+      }
+
+      const walletConfig = await findConfig({ empresa_id: sanitizeText(row.empresa_id) });
+      if (!walletConfig) {
+        return jsonResponse({ error: "Integracao Banco Inter nao encontrada para esta cobranca." }, 404);
+      }
+
+      const pdf = await fetchChargePdfForBudget(walletConfig, sanitizeText(row.codigo_solicitacao));
+      await saveWalletChargeRow({
+        ...row,
+        pdf_disponivel: true,
+        updated_date: new Date().toISOString(),
+      });
+      return jsonResponse({
+        ok: true,
+        file_name: `boleto-carteira-${sanitizeText(row.id) || "dog-city"}.pdf`,
+        pdf,
+      });
+    }
+
+    if (action === "listWalletOpenCharges") {
+      const empresaId = sanitizeText(payload.empresa_id);
+      const carteiraId = sanitizeText(payload.carteira_id);
+      if (!empresaId || !carteiraId) {
+        return jsonResponse({ error: "empresa_id e carteira_id sao obrigatorios para listar cobrancas." }, 400);
+      }
+      await requireWalletChargeStaff(request, empresaId);
+      const charges = await listOpenWalletCharges(empresaId, carteiraId, sanitizeText(payload.sort_by));
+      return jsonResponse({ ok: true, charges });
+    }
+
+    const walletChargeRestrictedActions = new Set([
+      "issueWalletCharge",
+      "refreshWalletChargeStatus",
+      "renewWalletChargePublicLink",
+    ]);
+    let walletChargeStaff: { profile: Record<string, unknown>; empresaId: string } | null = null;
+    if (walletChargeRestrictedActions.has(action)) {
+      walletChargeStaff = await requireWalletChargeStaff(request, sanitizeText(payload.empresa_id));
+    }
+
+    const config = await findConfig(walletChargeStaff
+      ? { ...payload, empresa_id: walletChargeStaff.empresaId }
+      : payload);
     if (!config) {
       return jsonResponse({ error: "Integracao Banco Inter nao encontrada." }, 404);
     }
@@ -4707,6 +5282,145 @@ Deno.serve(async (request) => {
       });
     }
 
+    if (action === "issueWalletCharge") {
+      const empresaId = walletChargeStaff?.empresaId || sanitizeText(payload.empresa_id);
+      const carteiraId = sanitizeText(payload.carteira_id);
+      const method = sanitizeText(payload.metodo, "boleto_bancario");
+      const amount = toNumber(payload.valor);
+      const dueDate = normalizeInterDate(payload.data_vencimento);
+      const description = sanitizeText(payload.descricao);
+
+      if (!carteiraId) {
+        return jsonResponse({ error: "carteira_id e obrigatorio para emitir a cobranca." }, 400);
+      }
+      if (method !== "boleto_bancario") {
+        return jsonResponse({ error: "Nesta fase, somente boleto bancario com Pix integrado esta habilitado." }, 400);
+      }
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return jsonResponse({ error: "Informe um valor maior que zero para a cobranca." }, 400);
+      }
+      if (!dueDate || dueDate < getBusinessDateKey()) {
+        return jsonResponse({ error: "Informe um vencimento valido, a partir de hoje." }, 400);
+      }
+      if (!description || description.length > 180) {
+        return jsonResponse({ error: "A descricao da cobranca e obrigatoria e deve ter no maximo 180 caracteres." }, 400);
+      }
+
+      const { payer } = await loadWalletChargePayer(empresaId, carteiraId);
+      const walletChargeId = crypto.randomUUID();
+      const walletAccountId = await ensureWalletAccountForBudget(empresaId, carteiraId);
+      if (!walletAccountId) {
+        return jsonResponse({ error: "Nao foi possivel preparar a conta operacional desta carteira." }, 409);
+      }
+      const publicToken = buildWalletChargePublicToken();
+      const publicUrl = resolveWalletChargePublicUrl(config, payload, publicToken);
+      const publicTokenHash = await hashWalletChargePublicToken(publicToken);
+
+      try {
+        await ensureChargeWebhookConfigured(config);
+      } catch (webhookError) {
+        console.warn("wallet charge webhook configuration warning", serializeError(webhookError));
+      }
+
+      const charge = await createChargeForBudget(config, {
+        ...payer,
+        empresa_id: empresaId,
+        carteira_id: carteiraId,
+        carteira_conta_id: walletAccountId,
+        valor: Number(amount.toFixed(2)),
+        data_vencimento: dueDate,
+        seu_numero: buildWalletChargeSeuNumero(walletChargeId),
+        mensagem_linha_1: description,
+        mensagem_linha_2: "Dog City Brasil",
+      });
+      const now = new Date().toISOString();
+      const chargeStatus = mapInterChargeStatus(charge.situacao);
+      const isReceived = sanitizeText(charge.situacao).toUpperCase() === "RECEBIDO";
+      const row = await saveWalletChargeRow({
+        id: walletChargeId,
+        empresa_id: empresaId,
+        carteira_id: carteiraId,
+        carteira_conta_id: walletAccountId,
+        responsavel_id: sanitizeText(payload.responsavel_id) || null,
+        provider: "banco_inter",
+        metodo: method,
+        status: chargeStatus,
+        status_inter: sanitizeText(charge.situacao) || null,
+        valor: Number(charge.valorNominal || amount),
+        descricao: description,
+        data_vencimento: dueDate,
+        seu_numero: charge.seuNumero || buildWalletChargeSeuNumero(walletChargeId),
+        codigo_solicitacao: charge.codigoSolicitacao || null,
+        nosso_numero: charge.nossoNumero || null,
+        txid: charge.txid || null,
+        linha_digitavel: charge.linhaDigitavel || null,
+        codigo_barras: charge.codigoBarras || null,
+        pix_copia_cola: charge.pixCopiaECola || null,
+        pdf_disponivel: Boolean(charge.codigoSolicitacao),
+        emitido_em: now,
+        pago_em: isReceived ? now : null,
+        valor_recebido: isReceived ? Number(charge.valorNominal || amount) : 0,
+        public_token_hash: publicTokenHash,
+        public_token_expires_at: buildWalletChargeTokenExpiry(dueDate),
+        created_by_user_id: sanitizeText(walletChargeStaff?.profile?.id) || null,
+        metadata: {
+          ...payer,
+          charge_snapshot: charge,
+          issued_from: "carteira_financeira",
+        },
+        created_date: now,
+        updated_date: now,
+      });
+
+      const finalizedRow = isReceived ? await applyWalletChargePaymentToWallet(row) : row;
+      return jsonResponse({
+        ok: true,
+        charge: buildWalletChargeStaffResponse(finalizedRow),
+        public_url: publicUrl,
+        boleto: charge.boleto,
+        pix: charge.pix,
+      });
+    }
+
+    if (action === "refreshWalletChargeStatus") {
+      const chargeId = sanitizeText(payload.carteira_cobranca_id);
+      if (!chargeId) {
+        return jsonResponse({ error: "carteira_cobranca_id e obrigatorio para atualizar a cobranca." }, 400);
+      }
+
+      const existingRow = await loadWalletChargeRow(chargeId);
+      if (!existingRow || sanitizeText(existingRow.empresa_id) !== walletChargeStaff?.empresaId) {
+        return jsonResponse({ error: "Cobranca da carteira nao localizada." }, 404);
+      }
+
+      const refreshedRow = await refreshWalletChargeFromInter(config, existingRow);
+      return jsonResponse({ ok: true, charge: buildWalletChargeStaffResponse(refreshedRow) });
+    }
+
+    if (action === "renewWalletChargePublicLink") {
+      const chargeId = sanitizeText(payload.carteira_cobranca_id);
+      if (!chargeId) {
+        return jsonResponse({ error: "carteira_cobranca_id e obrigatorio para gerar um novo link." }, 400);
+      }
+
+      const existingRow = await loadWalletChargeRow(chargeId);
+      if (!existingRow || sanitizeText(existingRow.empresa_id) !== walletChargeStaff?.empresaId) {
+        return jsonResponse({ error: "Cobranca da carteira nao localizada." }, 404);
+      }
+      if (!isWalletChargeActive(existingRow)) {
+        return jsonResponse({ error: "Somente cobrancas em aberto podem receber um novo link." }, 409);
+      }
+
+      // Validate the configured public origin before invalidating the current link.
+      resolveWalletChargePublicUrl(config, payload, "preview");
+      const { row, publicToken } = await rotateWalletChargePublicLink(existingRow);
+      return jsonResponse({
+        ok: true,
+        charge: buildWalletChargeStaffResponse(row),
+        public_url: resolveWalletChargePublicUrl(config, payload, publicToken),
+      });
+    }
+
     if (action === "buscarExtrato" || action === "syncNow") {
       const data = await runSyncForConfig(config, {
         action,
@@ -4739,7 +5453,11 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: `Acao nao suportada: ${action}` }, 400);
   } catch (error) {
     const message = serializeError(error);
-    const status = error instanceof BancoInterAuthError || error instanceof BudgetUnavailableError ? error.status : 500;
+    const status = error instanceof BancoInterAuthError
+      || error instanceof BudgetUnavailableError
+      || error instanceof WalletChargeAuthorizationError
+      ? error.status
+      : 500;
     const retryHeaders: Record<string, string> = error instanceof BancoInterAuthError && error.retryAfterSeconds
       ? { "Retry-After": String(error.retryAfterSeconds) }
       : {};

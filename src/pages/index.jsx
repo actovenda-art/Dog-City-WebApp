@@ -23,6 +23,7 @@ import CompletarCadastro from "./CompletarCadastro.jsx";
 import CadastroClientePublico from "./CadastroClientePublico.jsx";
 import CadastroMonitorPublico from "./CadastroMonitorPublico.jsx";
 import AprovacaoResponsavelPublica from "./AprovacaoResponsavelPublica.jsx";
+import CobrancaPublica from "./CobrancaPublica.jsx";
 import DefinirPin from "./DefinirPin.jsx";
 import ValidarPin from "./ValidarPin.jsx";
 import Dev_Dashboard from "./Dev_Dashboard";
@@ -60,6 +61,7 @@ const PAGES = {
   CadastroClientePublico,
   CadastroMonitorPublico,
   AprovacaoResponsavelPublica,
+  CobrancaPublica,
   DefinirPin,
   ValidarPin,
   Dev_Dashboard,
@@ -90,8 +92,8 @@ const PAGES = {
   VisualizadorImagem,
 };
 
-const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "AprovacaoResponsavelPublica", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
-const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "AprovacaoResponsavelPublica", "VisualizadorImagem"]);
+const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "AprovacaoResponsavelPublica", "CobrancaPublica", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
+const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "AprovacaoResponsavelPublica", "CobrancaPublica", "VisualizadorImagem"]);
 
 function FullScreenAuthLoader() {
   return <LoadingScreen />;
@@ -352,6 +354,10 @@ function PagesContent() {
 
       {PUBLIC_PAGES.has("AprovacaoResponsavelPublica") ? (
         <Route path={createPageUrl("AprovacaoResponsavelPublica")} element={<StandalonePage pageName="AprovacaoResponsavelPublica" />} />
+      ) : null}
+
+      {PUBLIC_PAGES.has("CobrancaPublica") ? (
+        <Route path={`${createPageUrl("CobrancaPublica")}/:token`} element={<StandalonePage pageName="CobrancaPublica" />} />
       ) : null}
 
       {PUBLIC_PAGES.has("VisualizadorImagem") ? (

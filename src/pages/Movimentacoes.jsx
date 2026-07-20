@@ -4,6 +4,8 @@ import {
   financePaymentV2ExecutionAudit,
   financePaymentV2Reverse,
   financePaymentV2ReversalAudit,
+  financeLinkBankEntryToWallet,
+  financeLinkBankOutputToPayable,
   financeWalletAdminApplyOperation,
   financeWalletAdminAuditAccounts,
   financeWalletAdminReadAccounts,
@@ -19,6 +21,7 @@ import {
   CobrancaFinanceira,
   Dog,
   ExtratoBancario,
+  Lancamento,
   ObrigacaoFinanceira,
   Orcamento,
   OrcamentoPagamento,
@@ -61,6 +64,7 @@ import {
   FileWarning,
   ListFilter,
   Landmark,
+  Link2,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -98,6 +102,7 @@ const EMPTY_FORM = {
   tipo_transacao_detalhado: "",
   referencia: "",
   observacoes: "",
+  link_target_id: "",
 };
 
 const EMPTY_WALLET_OPERATION_FORM = {
@@ -613,21 +618,9 @@ function resolveWalletCreditTransaction({ movement, transactions = [] }) {
   const targetReference = String(movement?.transacao_id || "").trim();
   if (!targetReference) return null;
 
-  const directMatch = (transactions || []).find((transaction) =>
+  return (transactions || []).find((transaction) =>
     buildWalletCreditTransactionCandidates(transaction).includes(targetReference),
-  );
-  if (directMatch) return directMatch;
-
-  const nearestByAmount = (transactions || [])
-    .filter((transaction) => String(transaction?.tipo || "").toLowerCase() === "entrada")
-    .filter((transaction) => Math.abs(Number(transaction?.valor || 0) - Number(movement?.valor || 0)) < 0.009)
-    .sort((left, right) => {
-      const leftDate = Math.abs(new Date(left?.data_hora_transacao || left?.data_movimento || left?.data || 0).getTime() - new Date(movement?.created_date || 0).getTime());
-      const rightDate = Math.abs(new Date(right?.data_hora_transacao || right?.data_movimento || right?.data || 0).getTime() - new Date(movement?.created_date || 0).getTime());
-      return leftDate - rightDate;
-    });
-
-  return nearestByAmount[0] || null;
+  ) || null;
 }
 
 function resolveWalletCreditPaymentMethod({ movement, transaction }) {
@@ -1050,16 +1043,25 @@ function buildWalletStatementRows({
       };
     });
 
-  const existingCreditKeys = new Set(
-    creditRowsFromWallet.flatMap((row) => [row?.transactionId, row?.transactionLookup, row?.movementId]).filter(Boolean),
+  const existingCreditTransactionKeys = new Set(
+    creditRowsFromWallet.flatMap((row) => [row?.transactionId, row?.transactionLookup]).filter(Boolean),
+  );
+  const existingCreditMovementIds = new Set(
+    creditRowsFromWallet.map((row) => row?.movementId).filter(Boolean),
   );
 
   const creditRowsFromBudgetPayments = (budgetPayments || [])
     .filter((row) => row?.carteira_id === walletId)
     .filter((row) => ["recebido", "pago"].includes(String(row?.status || "").toLowerCase()))
     .filter((row) => {
-      const matchKey = row?.codigo_solicitacao || row?.txid || row?.id;
-      return !existingCreditKeys.has(matchKey);
+      if (row?.credited_wallet_movement_id && existingCreditMovementIds.has(row.credited_wallet_movement_id)) {
+        return false;
+      }
+
+      const transactionKeys = [row?.codigo_solicitacao, row?.txid, row?.id]
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
+      return !transactionKeys.some((key) => existingCreditTransactionKeys.has(key));
     })
     .map((row) => ({
       id: `credit-budget-${row?.id}`,
@@ -1287,6 +1289,42 @@ function buildWalletAdminAccounts(accounts = [], carteiras = [], dogs = [], rece
     );
 }
 
+function getPayableRemainingAmount(payable) {
+  const total = Number(payable?.valor || 0) + Number(payable?.juros_multa || 0);
+  return Math.max(Math.round((total - Number(payable?.valor_quitado || 0)) * 100) / 100, 0);
+}
+
+function getPayableTransactionLinks(payable) {
+  return Array.isArray(payable?.vinculacoes) ? payable.vinculacoes : [];
+}
+
+function resolveLinkedPayableId(movement, payables = []) {
+  const metadata = movement?.metadata_financeira && typeof movement.metadata_financeira === "object"
+    ? movement.metadata_financeira
+    : {};
+  const directId = String(metadata?.lancamento_id || "").trim();
+  if (directId) return directId;
+
+  const financialLink = String(movement?.vinculo_financeiro || "").trim();
+  const linkedPayable = payables.find((payable) => (
+    payable?.id === financialLink
+    || payable?.codigo_vinculo_financeiro === financialLink
+    || getPayableTransactionLinks(payable).some((link) => link?.transaction_id === movement?.id)
+  ));
+  return linkedPayable?.id || "";
+}
+
+function resolveLinkedWalletId(movement, wallets = []) {
+  const metadata = movement?.metadata_financeira && typeof movement.metadata_financeira === "object"
+    ? movement.metadata_financeira
+    : {};
+  const directId = String(metadata?.carteira_id || "").trim();
+  if (directId) return directId;
+
+  const financialLink = String(movement?.vinculo_financeiro || "").trim();
+  return wallets.find((wallet) => wallet?.carteira_id === financialLink)?.carteira_id || "";
+}
+
 export default function Movimentacoes({ walletOnly = false }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -1306,6 +1344,9 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({ ...EMPTY_FORM });
   const [isSaving, setIsSaving] = useState(false);
+  const [payables, setPayables] = useState([]);
+  const [complementOptionsLoading, setComplementOptionsLoading] = useState(false);
+  const [complementOptionsError, setComplementOptionsError] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState(null);
   const [receiptLoadingId, setReceiptLoadingId] = useState(null);
@@ -1941,6 +1982,27 @@ export default function Movimentacoes({ walletOnly = false }) {
     [selectedWalletAccount?.carteira_id, walletFinancialStatusMap],
   );
   const canIssueWalletCharges = canWriteFinancialOperations(currentUser);
+  const complementExistingLinkTargetId = editingItem?.tipo === "entrada"
+    ? resolveLinkedWalletId(editingItem, walletAccounts)
+    : resolveLinkedPayableId(editingItem, payables);
+  const availableComplementPayables = useMemo(
+    () => payables
+      .filter((payable) => {
+        if (payable?.id === complementExistingLinkTargetId) return true;
+        const status = String(payable?.status || "").trim().toLowerCase();
+        return !["cancelado", "cancelada", "quitado", "quitada", "pago", "realizado_hoje"].includes(status)
+          && getPayableRemainingAmount(payable) > 0.005;
+      })
+      .sort((left, right) => {
+        const leftDueDate = String(left?.vencimento || "9999-12-31");
+        const rightDueDate = String(right?.vencimento || "9999-12-31");
+        return leftDueDate.localeCompare(rightDueDate);
+      }),
+    [payables, complementExistingLinkTargetId],
+  );
+  const selectedComplementWallet = walletAccounts.find((wallet) => wallet?.carteira_id === formData.link_target_id) || null;
+  const selectedComplementPayable = payables.find((payable) => payable?.id === formData.link_target_id) || null;
+  const canLinkComplement = canWriteFinancialOperations(currentUser);
   const walletStatementRows = useMemo(
     () => buildWalletStatementRows({
       walletId: selectedWalletAccount?.carteira_id || null,
@@ -2602,10 +2664,35 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
   };
 
-  const openModal = (item = null) => {
+  const loadPayablesForComplement = async () => {
+    setComplementOptionsLoading(true);
+    setComplementOptionsError("");
+    try {
+      const rows = await readEntityCollection(Lancamento, {
+        sort: "-vencimento",
+        pageSize: 500,
+        maxRows: 2000,
+      });
+      const normalizedRows = Array.isArray(rows) ? rows : [];
+      setPayables(normalizedRows);
+      return normalizedRows;
+    } catch (error) {
+      console.warn("Não foi possível carregar as contas a pagar para vinculação:", error);
+      setPayables([]);
+      setComplementOptionsError(error?.message || "Não foi possível carregar as contas a pagar desta unidade.");
+      return [];
+    } finally {
+      setComplementOptionsLoading(false);
+    }
+  };
+
+  const openModal = async (item = null) => {
     if (item) {
       const normalized = normalizeMovement(item);
       setEditingItem(normalized);
+      const initialLinkTargetId = normalized.tipo === "entrada"
+        ? resolveLinkedWalletId(normalized, walletAccounts)
+        : String(normalized?.metadata_financeira?.lancamento_id || "").trim();
       setFormData({
         data_hora_transacao: toDateInputValue(normalized.dataHora || normalized.data_movimento || normalized.data),
         tipo: normalized.tipo || "entrada",
@@ -2615,13 +2702,25 @@ export default function Movimentacoes({ walletOnly = false }) {
         tipo_transacao_detalhado: normalized.tipoDetalhado === "-" ? "" : normalized.tipoDetalhado || "",
         referencia: normalized.referenciaFinanceira === "-" ? "" : normalized.referenciaFinanceira || "",
         observacoes: normalized.observacoesFinanceiras || "",
+        link_target_id: initialLinkTargetId,
       });
+      setShowModal(true);
+
+      if (normalized.apiLocked && normalized.tipo === "saida") {
+        const nextPayables = await loadPayablesForComplement();
+        const linkedPayableId = resolveLinkedPayableId(normalized, nextPayables);
+        if (linkedPayableId) {
+          setFormData((previous) => ({ ...previous, link_target_id: linkedPayableId }));
+        }
+      } else {
+        setComplementOptionsError("");
+      }
     } else {
       setEditingItem(null);
       setFormData({ ...EMPTY_FORM });
+      setComplementOptionsError("");
+      setShowModal(true);
     }
-
-    setShowModal(true);
   };
 
   const handleSave = async () => {
@@ -2636,9 +2735,44 @@ export default function Movimentacoes({ walletOnly = false }) {
     try {
       if (editingItem) {
         if (isApiLocked) {
-          await ExtratoBancario.update(editingItem.id, {
-            observacoes: formData.observacoes.trim() || null,
-          });
+          const selectedTargetId = String(formData.link_target_id || "").trim();
+          const existingTargetId = editingItem.tipo === "entrada"
+            ? resolveLinkedWalletId(editingItem, walletAccounts)
+            : resolveLinkedPayableId(editingItem, payables);
+
+          if (existingTargetId && selectedTargetId && selectedTargetId !== existingTargetId) {
+            throw new Error("Esta transação já possui vínculo financeiro e não pode ser redirecionada.");
+          }
+
+          if (selectedTargetId && !existingTargetId) {
+            if (!canWriteFinancialOperations(currentUser)) {
+              throw new Error("Seu perfil não possui permissão para vincular transações financeiras.");
+            }
+
+            if (editingItem.tipo === "entrada") {
+              await financeLinkBankEntryToWallet({
+                empresa_id: currentUser?.empresa_id || null,
+                transacao_id: editingItem.id,
+                carteira_id: selectedTargetId,
+                usuario_id: currentUser?.id || null,
+                observacao: formData.observacoes.trim() || null,
+              });
+              await loadWalletAdminData(currentUser, selectedWalletAccountId);
+            } else {
+              await financeLinkBankOutputToPayable({
+                empresa_id: currentUser?.empresa_id || null,
+                transacao_id: editingItem.id,
+                lancamento_id: selectedTargetId,
+                usuario_id: currentUser?.id || null,
+                observacao: formData.observacoes.trim() || null,
+              });
+              await loadPayablesForComplement();
+            }
+          } else {
+            await ExtratoBancario.update(editingItem.id, {
+              observacoes: formData.observacoes.trim() || null,
+            });
+          }
         } else {
           const dateOnly = fromDateInputValue(formData.data_hora_transacao);
           await ExtratoBancario.update(editingItem.id, {
@@ -3512,6 +3646,17 @@ export default function Movimentacoes({ walletOnly = false }) {
                         ) : (
                           <Badge variant="outline" className="px-1.5 py-0 text-[9px] sm:px-2.5 sm:py-0.5 sm:text-xs">Manual</Badge>
                         )}
+                        {movement.apiLocked ? (
+                          movement.vinculo_financeiro ? (
+                            <Badge className="border border-emerald-200 bg-emerald-50 px-1.5 py-0 text-[9px] text-emerald-700 sm:px-2.5 sm:py-0.5 sm:text-xs">
+                              Vinculada
+                            </Badge>
+                          ) : (
+                            <Badge className="border border-amber-200 bg-amber-50 px-1.5 py-0 text-[9px] text-amber-700 sm:px-2.5 sm:py-0.5 sm:text-xs">
+                              Sem vínculo
+                            </Badge>
+                          )
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -3663,113 +3808,211 @@ export default function Movimentacoes({ walletOnly = false }) {
       </Dialog>
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[720px] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingItem ? "Editar movimentação" : "Nova movimentação manual"}</DialogTitle>
-            <DialogDescription>
-              {editingItem?.apiLocked
-                ? "Lançamentos vindos da API oficial ficam bloqueados. Aqui você adiciona apenas observações complementares."
-                : "Ajuste manualmente os dados financeiros exibidos na sessão de transações."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
-            <div>
-              <Label>Data *</Label>
-              <DatePickerInput
-                className="mt-2"
-                value={formData.data_hora_transacao}
-                onChange={(value) => setFormData((prev) => ({ ...prev, data_hora_transacao: value }))}
-                disabled={editingItem?.apiLocked}
-              />
-            </div>
-
-            <div>
-              <Label>Tipo *</Label>
-              <Select
-                value={formData.tipo}
-                onValueChange={(value) => setFormData((prev) => ({ ...prev, tipo: value }))}
-                disabled={editingItem?.apiLocked}
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="entrada">Entrada</SelectItem>
-                  <SelectItem value="saida">Saída</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Remetente / Recebedor *</Label>
-              <Input
-                className="mt-2"
-                value={formData.nome_contraparte}
-                onChange={(event) => setFormData((prev) => ({ ...prev, nome_contraparte: event.target.value }))}
-                disabled={editingItem?.apiLocked}
-              />
-            </div>
-
-            <div>
-              <Label>Valor *</Label>
-              <Input
-                className="mt-2"
-                value={formData.valor}
-                onChange={(event) => setFormData((prev) => ({ ...prev, valor: event.target.value }))}
-                placeholder="0,00"
-                disabled={editingItem?.apiLocked}
-              />
-            </div>
-
-            <div>
-              <Label>Banco da contraparte</Label>
-              <Input
-                className="mt-2"
-                value={formData.banco_contraparte}
-                onChange={(event) => setFormData((prev) => ({ ...prev, banco_contraparte: event.target.value }))}
-                disabled={editingItem?.apiLocked}
-              />
-            </div>
-
-            <div>
-              <Label>Tipo da transação</Label>
-              <Input
-                className="mt-2"
-                value={formData.tipo_transacao_detalhado}
-                onChange={(event) => setFormData((prev) => ({ ...prev, tipo_transacao_detalhado: event.target.value }))}
-                placeholder="PIX, TED, boleto..."
-                disabled={editingItem?.apiLocked}
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <Label>Transao ID</Label>
-              <Input
-                className="mt-2"
-                value={formData.referencia}
-                onChange={(event) => setFormData((prev) => ({ ...prev, referencia: event.target.value }))}
-                disabled={editingItem?.apiLocked}
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <Label>Observações</Label>
-              <Textarea
-                className="mt-2"
-                rows={4}
-                value={formData.observacoes}
-                onChange={(event) => setFormData((prev) => ({ ...prev, observacoes: event.target.value }))}
-              />
-            </div>
+        <DialogContent className="max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[680px] gap-0 overflow-hidden !rounded-[26px] border-slate-200 bg-white p-0 shadow-[0_28px_80px_rgba(15,23,42,0.2)] sm:max-h-[90vh]">
+          <div className="border-b border-slate-200 bg-gradient-to-br from-slate-50 via-white to-blue-50 px-5 pb-4 pt-5 sm:px-7 sm:pb-5 sm:pt-6">
+            <DialogHeader className="pr-8 text-left">
+              <div className="flex items-center gap-3">
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${editingItem?.tipo === "saida" ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}`}>
+                  {editingItem?.tipo === "saida" ? <ArrowDownCircle className="h-5 w-5" /> : <ArrowUpCircle className="h-5 w-5" />}
+                </div>
+                <div className="min-w-0">
+                  <DialogTitle className="text-lg font-bold tracking-tight text-slate-950 sm:text-xl">
+                    {editingItem?.apiLocked ? "Complementar transação" : editingItem ? "Editar movimentação" : "Nova movimentação manual"}
+                  </DialogTitle>
+                  <DialogDescription className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
+                    {editingItem?.apiLocked
+                      ? "Vincule a movimentação ao destino financeiro correto sem alterar os dados oficiais do banco."
+                      : "Ajuste manualmente os dados financeiros exibidos na sessão de transações."}
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
           </div>
 
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowModal(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? "Salvando..." : editingItem?.apiLocked ? "Salvar complemento" : "Salvar"}
+          <div className="max-h-[calc(90vh-180px)] overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
+            {editingItem?.apiLocked ? (
+              <div className="space-y-4">
+                <section className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Transação oficial</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-slate-950 sm:text-base">{editingItem.contraparte}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formatMovementDateTime(editingItem)} · {editingItem.metodo}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className={`text-lg font-bold ${editingItem.tipo === "entrada" ? "text-emerald-600" : "text-rose-600"}`}>
+                        {editingItem.tipo === "entrada" ? "+" : "-"}{formatCurrency(Math.abs(editingItem.valor || 0))}
+                      </p>
+                      <Badge variant="outline" className="mt-1 border-slate-200 bg-white text-[10px] text-slate-600">
+                        {editingItem.tipo === "entrada" ? "Entrada" : "Saída"}
+                      </Badge>
+                    </div>
+                  </div>
+                </section>
+
+                <div className="flex items-start gap-2.5 rounded-2xl border border-blue-100 bg-blue-50/70 px-3.5 py-3 text-xs leading-5 text-blue-800">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                  Data, valor, contraparte e identificadores bancários permanecem protegidos. O complemento registra apenas o destino e a observação operacional.
+                </div>
+
+                <section className="rounded-2xl border border-slate-200 p-4 sm:p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 text-slate-950">
+                        {editingItem.tipo === "entrada" ? <Wallet className="h-4 w-4 text-emerald-600" /> : <FileText className="h-4 w-4 text-rose-600" />}
+                        <h3 className="text-sm font-bold">Vínculo financeiro</h3>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {editingItem.tipo === "entrada"
+                          ? "Direcione o recebimento integral para a carteira do responsável financeiro."
+                          : "Associe a saída à despesa correspondente em Contas a Pagar."}
+                      </p>
+                    </div>
+                    {complementExistingLinkTargetId ? (
+                      <Badge className="shrink-0 border border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
+                        <CheckCircle2 className="mr-1 h-3 w-3" /> Vinculada
+                      </Badge>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4">
+                    <Label className="text-xs font-semibold text-slate-700">
+                      {editingItem.tipo === "entrada" ? "Carteira do responsável financeiro" : "Conta a pagar"}
+                    </Label>
+                    <Select
+                      value={formData.link_target_id || ""}
+                      onValueChange={(value) => setFormData((previous) => ({ ...previous, link_target_id: value }))}
+                      disabled={Boolean(complementExistingLinkTargetId) || !canLinkComplement || complementOptionsLoading || walletLoading}
+                    >
+                      <SelectTrigger className="mt-2 h-11 rounded-xl border-slate-200 bg-white">
+                        <SelectValue placeholder={complementOptionsLoading ? "Carregando opções..." : editingItem.tipo === "entrada" ? "Selecione uma carteira" : "Selecione uma conta a pagar"} />
+                      </SelectTrigger>
+                      <SelectContent className="max-w-[calc(100vw-2rem)] sm:max-w-[600px]">
+                        {editingItem.tipo === "entrada"
+                          ? walletAccounts.map((wallet) => (
+                            <SelectItem key={wallet.carteira_id} value={wallet.carteira_id}>
+                              {wallet.carteira_nome}
+                            </SelectItem>
+                          ))
+                          : availableComplementPayables.map((payable) => (
+                            <SelectItem key={payable.id} value={payable.id}>
+                              {payable.descricao || payable.recebedor || payable.categoria || "Conta a pagar"} · vence {formatWalletStatementDate(payable.vencimento)} · {formatCurrency(getPayableRemainingAmount(payable))} em aberto
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+
+                    {editingItem.tipo === "entrada" && selectedComplementWallet ? (
+                      <p className="mt-2 text-xs text-emerald-700">
+                        O crédito será registrado uma única vez na carteira de {selectedComplementWallet.carteira_nome}.
+                      </p>
+                    ) : null}
+                    {editingItem.tipo === "saida" && selectedComplementPayable ? (
+                      <p className="mt-2 text-xs text-rose-700">
+                        Saldo atual da conta: {formatCurrency(getPayableRemainingAmount(selectedComplementPayable))}.
+                      </p>
+                    ) : null}
+                    {!canLinkComplement && !complementExistingLinkTargetId ? (
+                      <p className="mt-2 text-xs text-amber-700">Seu perfil pode consultar a transação, mas não possui permissão para criar vínculos financeiros.</p>
+                    ) : null}
+                    {complementOptionsError ? (
+                      <p className="mt-2 text-xs text-rose-700">{complementOptionsError}</p>
+                    ) : null}
+                    {!complementOptionsLoading && canLinkComplement && !complementExistingLinkTargetId && (
+                      (editingItem.tipo === "entrada" && walletAccounts.length === 0)
+                      || (editingItem.tipo === "saida" && availableComplementPayables.length === 0)
+                    ) ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        {editingItem.tipo === "entrada"
+                          ? "Nenhuma carteira ativa foi encontrada nesta unidade."
+                          : "Nenhuma conta a pagar em aberto foi encontrada nesta unidade."}
+                      </p>
+                    ) : null}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 p-4 sm:p-5">
+                  <div className="flex items-center gap-2">
+                    <Link2 className="h-4 w-4 text-slate-500" />
+                    <Label htmlFor="transaction-complement-notes" className="text-sm font-bold text-slate-950">Observação complementar</Label>
+                  </div>
+                  <Textarea
+                    id="transaction-complement-notes"
+                    className="mt-3 min-h-[96px] resize-y rounded-xl border-slate-200"
+                    rows={4}
+                    value={formData.observacoes}
+                    onChange={(event) => setFormData((previous) => ({ ...previous, observacoes: event.target.value }))}
+                    placeholder="Inclua uma referência interna ou contexto para a equipe financeira."
+                  />
+                </section>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label>Data *</Label>
+                  <DatePickerInput
+                    className="mt-2"
+                    value={formData.data_hora_transacao}
+                    onChange={(value) => setFormData((prev) => ({ ...prev, data_hora_transacao: value }))}
+                  />
+                </div>
+
+                <div>
+                  <Label>Tipo *</Label>
+                  <Select value={formData.tipo} onValueChange={(value) => setFormData((prev) => ({ ...prev, tipo: value }))}>
+                    <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="entrada">Entrada</SelectItem>
+                      <SelectItem value="saida">Saída</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Remetente / Recebedor *</Label>
+                  <Input className="mt-2" value={formData.nome_contraparte} onChange={(event) => setFormData((prev) => ({ ...prev, nome_contraparte: event.target.value }))} />
+                </div>
+
+                <div>
+                  <Label>Valor *</Label>
+                  <Input className="mt-2" value={formData.valor} onChange={(event) => setFormData((prev) => ({ ...prev, valor: event.target.value }))} placeholder="0,00" />
+                </div>
+
+                <div>
+                  <Label>Banco da contraparte</Label>
+                  <Input className="mt-2" value={formData.banco_contraparte} onChange={(event) => setFormData((prev) => ({ ...prev, banco_contraparte: event.target.value }))} />
+                </div>
+
+                <div>
+                  <Label>Tipo da transação</Label>
+                  <Input className="mt-2" value={formData.tipo_transacao_detalhado} onChange={(event) => setFormData((prev) => ({ ...prev, tipo_transacao_detalhado: event.target.value }))} placeholder="PIX, TED, boleto..." />
+                </div>
+
+                <div className="md:col-span-2">
+                  <Label>ID da transação</Label>
+                  <Input className="mt-2" value={formData.referencia} onChange={(event) => setFormData((prev) => ({ ...prev, referencia: event.target.value }))} />
+                </div>
+
+                <div className="md:col-span-2">
+                  <Label>Observações</Label>
+                  <Textarea className="mt-2" rows={4} value={formData.observacoes} onChange={(event) => setFormData((prev) => ({ ...prev, observacoes: event.target.value }))} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 border-t border-slate-200 bg-slate-50/70 px-5 py-4 sm:px-7">
+            <Button variant="outline" className="rounded-xl" onClick={() => setShowModal(false)}>Cancelar</Button>
+            <Button className="rounded-xl" onClick={handleSave} disabled={isSaving}>
+              {isSaving
+                ? "Salvando..."
+                : editingItem?.apiLocked && formData.link_target_id && !complementExistingLinkTargetId
+                  ? "Vincular e salvar"
+                  : editingItem?.apiLocked
+                    ? "Salvar complemento"
+                    : "Salvar"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -110,6 +110,22 @@ export const financeWalletAdminApplyOperation = async (...args) => {
 	return f.financeWalletAdminApplyOperation(...args);
 };
 
+export const financeLinkBankEntryToWallet = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeLinkBankEntryToWallet !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeLinkBankEntryToWallet is not available'));
+	}
+	return f.financeLinkBankEntryToWallet(...args);
+};
+
+export const financeLinkBankOutputToPayable = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.financeLinkBankOutputToPayable !== 'function') {
+		return Promise.reject(new Error('appClient.functions.financeLinkBankOutputToPayable is not available'));
+	}
+	return f.financeLinkBankOutputToPayable(...args);
+};
+
 export const financeWalletReconcileAccount = async (...args) => {
 	const f = getFunctions();
 	if (!f || typeof f.financeWalletReconcileAccount !== 'function') {

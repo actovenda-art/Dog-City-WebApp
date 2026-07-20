@@ -60,6 +60,8 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const APP_SITE_URL = import.meta.env.VITE_SITE_URL;
 const MOCK_QA_ROLE_ENV = String(import.meta.env.VITE_MOCK_QA_ROLE || '').trim().toLowerCase();
+const FORCE_LOCAL_MOCK = String(import.meta.env.VITE_FORCE_LOCAL_MOCK || '').trim().toLowerCase() === 'true';
+const USE_SUPABASE_BACKEND = Boolean(SUPABASE_URL && SUPABASE_ANON && !FORCE_LOCAL_MOCK);
 const SUPABASE_PUBLIC_BUCKET = import.meta.env.VITE_SUPABASE_PUBLIC_BUCKET || 'public-assets';
 const SUPABASE_PRIVATE_BUCKET = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'private-files';
 const DEFAULT_EMAIL_WEBHOOK_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/send-email` : '';
@@ -670,7 +672,7 @@ function buildMockIso(dateKey, timeValue = '09:00') {
 }
 
 function ensureMockAgendamentosDesktopSeed() {
-  if (typeof window === 'undefined' || (SUPABASE_URL && SUPABASE_ANON)) return;
+  if (typeof window === 'undefined' || USE_SUPABASE_BACKEND) return;
 
   const today = new Date();
   const todayKey = formatMockDateKey(today);
@@ -987,6 +989,94 @@ function ensureMockAgendamentosDesktopSeed() {
     },
   ];
 
+  const financialConfigs = [
+    {
+      id: 'mock_flag_wallet_balance_read',
+      key: 'finance.wallet_balance_read_enabled',
+      empresa_id: 'empresa_demo',
+      value: { enabled: true },
+      ativo: true,
+      created_date: seedCreatedAt,
+      updated_date: seedCreatedAt,
+    },
+    {
+      id: 'mock_flag_wallet_movements',
+      key: 'finance.wallet_movements_enabled',
+      empresa_id: 'empresa_demo',
+      value: { enabled: true },
+      ativo: true,
+      created_date: seedCreatedAt,
+      updated_date: seedCreatedAt,
+    },
+  ];
+
+  const bankTransactions = [
+    {
+      id: 'mock_bank_entry_complement',
+      empresa_id: 'empresa_demo',
+      descricao: 'Pix recebido - Felipe Andrade',
+      tipo: 'entrada',
+      valor: 185,
+      data: todayKey,
+      data_movimento: todayKey,
+      data_hora_transacao: buildMockIso(todayKey, '09:15'),
+      nome_contraparte: 'Felipe Andrade',
+      banco_contraparte: 'Banco Inter',
+      forma_pagamento: 'Pix',
+      tipo_transacao_detalhado: 'Pix recebido',
+      referencia: 'MOCK-E2E-ENTRY-COMPLEMENT',
+      source_provider: 'banco_inter',
+      raw_data: {
+        descricao: 'PIX RECEBIDO - FELIPE ANDRADE',
+        tipoTransacao: 'PIX',
+      },
+      created_date: buildMockIso(todayKey, '09:16'),
+      updated_date: buildMockIso(todayKey, '09:16'),
+    },
+    {
+      id: 'mock_bank_output_complement',
+      empresa_id: 'empresa_demo',
+      descricao: 'Pix enviado - Clinica Veterinaria Modelo',
+      tipo: 'saida',
+      valor: 90,
+      data: todayKey,
+      data_movimento: todayKey,
+      data_hora_transacao: buildMockIso(todayKey, '10:40'),
+      nome_contraparte: 'Clinica Veterinaria Modelo',
+      banco_contraparte: 'Banco Inter',
+      forma_pagamento: 'Pix',
+      tipo_transacao_detalhado: 'Pix enviado',
+      referencia: 'MOCK-E2E-OUTPUT-COMPLEMENT',
+      source_provider: 'banco_inter',
+      raw_data: {
+        descricao: 'PIX ENVIADO - CLINICA VETERINARIA MODELO',
+        tipoTransacao: 'PIX',
+      },
+      created_date: buildMockIso(todayKey, '10:41'),
+      updated_date: buildMockIso(todayKey, '10:41'),
+    },
+  ];
+
+  const payables = [
+    {
+      id: 'mock_payable_complement',
+      empresa_id: 'empresa_demo',
+      descricao: 'Atendimento veterinario',
+      valor: 90,
+      data_lancamento: todayKey,
+      vencimento: todayKey,
+      tipo: 'saida',
+      categoria: 'Veterinario',
+      recebedor: 'Clinica Veterinaria Modelo',
+      status: 'pendente',
+      valor_quitado: 0,
+      juros_multa: 0,
+      vinculacoes: [],
+      created_date: seedCreatedAt,
+      updated_date: seedCreatedAt,
+    },
+  ];
+
   if (!getStoredActiveUnitId()) {
     setStoredUnitSelection({
       primaryUnitId: 'empresa_demo',
@@ -1000,6 +1090,9 @@ function ensureMockAgendamentosDesktopSeed() {
   ensureMockRows('Orcamento', orcamentos);
   ensureMockRows('Appointment', appointments);
   ensureMockRows('Checkin', checkins);
+  ensureMockRows('AppConfig', financialConfigs);
+  ensureMockRows('ExtratoBancario', bankTransactions);
+  ensureMockRows('Lancamento', payables);
 }
 
 ensureMockAgendamentosDesktopSeed();
@@ -2063,6 +2156,39 @@ const mockFunctions = {
   financeExpireBudgets: async (payload = {}) => expireMockBudgets(payload),
   bancoInter: async (payload = {}) => {
     console.info('[mock] bancoInter called with', payload);
+    if (payload?.action === 'overview' || payload?.action === 'fullDataset') {
+      const empresaId = String(payload?.empresa_id || '').trim() || getMockScopedUnitId();
+      const rows = readStorage('ExtratoBancario')
+        .filter((item) => !empresaId || item?.empresa_id === empresaId)
+        .sort((left, right) => new Date(right?.data_hora_transacao || right?.data_movimento || right?.data || 0).getTime()
+          - new Date(left?.data_hora_transacao || left?.data_movimento || left?.data || 0).getTime());
+      const totalEntries = rows
+        .filter((item) => String(item?.tipo || '').toLowerCase() === 'entrada')
+        .reduce((sum, item) => sum + Math.abs(Number(item?.valor || 0)), 0);
+      const totalOutputs = rows
+        .filter((item) => String(item?.tipo || '').toLowerCase() === 'saida')
+        .reduce((sum, item) => sum + Math.abs(Number(item?.valor || 0)), 0);
+      const summary = {
+        total_entradas: totalEntries,
+        total_saidas: totalOutputs,
+        saldo: totalEntries - totalOutputs,
+        movement_count: rows.length,
+        period_start: rows.at(-1)?.data_movimento || rows.at(-1)?.data || null,
+        period_end: rows[0]?.data_movimento || rows[0]?.data || null,
+      };
+
+      if (payload.action === 'fullDataset') {
+        return { ok: true, empresa_id: empresaId, movements: rows, summary };
+      }
+
+      return {
+        ok: true,
+        empresa_id: empresaId,
+        movements: rows.slice(0, Math.max(Number(payload?.limit || 250), 1)),
+        summary,
+      };
+    }
+
     if (payload?.action === 'issueWalletCharge') {
       const empresaId = String(payload?.empresa_id || '').trim() || getMockScopedUnitId();
       const carteiraId = String(payload?.carteira_id || '').trim();
@@ -3112,6 +3238,205 @@ mockFunctions.financeWalletAdminApplyOperation = async (payload = {}) => {
     },
     permitir_saldo_negativo: true,
   });
+};
+
+mockFunctions.financeLinkBankEntryToWallet = async (payload = {}) => {
+  const transactions = readStorage('ExtratoBancario');
+  const transactionIndex = transactions.findIndex((item) => item?.id === payload?.transacao_id && item?.empresa_id === payload?.empresa_id);
+  if (transactionIndex < 0) throw new Error('Transacao bancaria nao localizada nesta unidade.');
+  if (String(transactions[transactionIndex]?.tipo || '').toLowerCase() !== 'entrada') {
+    throw new Error('Somente transacoes de entrada podem ser vinculadas a uma carteira.');
+  }
+
+  const wallets = readStorage('Carteira');
+  const wallet = wallets.find((item) => item?.id === payload?.carteira_id && item?.empresa_id === payload?.empresa_id && item?.ativo !== false);
+  if (!wallet) throw new Error('Carteira nao localizada ou inativa nesta unidade.');
+
+  const accounts = readStorage('CarteiraConta');
+  let account = accounts.find((item) => item?.carteira_id === wallet.id) || null;
+  if (!account) {
+    account = {
+      id: makeId(),
+      empresa_id: payload.empresa_id,
+      carteira_id: wallet.id,
+      saldo_atual: 0,
+      ativo: true,
+      created_date: new Date().toISOString(),
+      updated_date: new Date().toISOString(),
+    };
+    accounts.push(account);
+    writeStorage('CarteiraConta', accounts);
+  }
+
+  const existingMovement = readStorage('CarteiraMovimento').find((item) =>
+    item?.empresa_id === payload?.empresa_id
+    && item?.transacao_id === payload?.transacao_id
+    && item?.tipo === 'entrada_direcionada'
+  );
+  if (existingMovement && existingMovement.carteira_conta_id !== account.id) {
+    throw new Error('Esta entrada ja esta vinculada a outra carteira e nao pode ser creditada novamente.');
+  }
+
+  const result = existingMovement ? {
+    movimento_id: existingMovement.id,
+    carteira_conta_id: account.id,
+    reused: true,
+  } : applyMockWalletOperationCore({
+    carteira_conta_id: account.id,
+    operacao_idempotencia: `extrato_bancario|${payload.transacao_id}|entrada_direcionada`,
+    tipo: 'entrada_direcionada',
+    natureza: 'entrada',
+    origem: 'transacao_bancaria_direcionada',
+    valor: Math.abs(Number(transactions[transactionIndex]?.valor || 0)),
+    referencia_amigavel: `Entrada bancaria - ${transactions[transactionIndex]?.nome_contraparte || payload.transacao_id}`,
+    descricao: payload?.observacao || 'Vinculo realizado pela tela de Transacoes.',
+    transacao_id: payload.transacao_id,
+    usuario_id: payload?.usuario_id || null,
+    metadata: { source: 'movimentacoes_complementar', carteira_id: wallet.id },
+    permitir_saldo_negativo: true,
+  });
+
+  transactions[transactionIndex] = {
+    ...transactions[transactionIndex],
+    vinculo_financeiro: wallet.id,
+    carteira_nome: wallet.nome_razao_social || wallet.nome_fantasia || wallet.id,
+    observacoes: payload?.observacao || transactions[transactionIndex]?.observacoes || null,
+    metadata_financeira: {
+      ...(transactions[transactionIndex]?.metadata_financeira || {}),
+      link_type: 'carteira',
+      carteira_id: wallet.id,
+      wallet_movement_id: result.movimento_id,
+    },
+    updated_date: new Date().toISOString(),
+  };
+  writeStorage('ExtratoBancario', transactions);
+
+  return {
+    wallet_movement_id: result.movimento_id,
+    carteira_conta_id: account.id,
+    carteira_id: wallet.id,
+    transacao_id: payload.transacao_id,
+    linked_amount: Math.abs(Number(transactions[transactionIndex]?.valor || 0)),
+    reused: Boolean(result.reused),
+  };
+};
+
+mockFunctions.financeLinkBankOutputToPayable = async (payload = {}) => {
+  const transactions = readStorage('ExtratoBancario');
+  const transactionIndex = transactions.findIndex((item) => item?.id === payload?.transacao_id && item?.empresa_id === payload?.empresa_id);
+  if (transactionIndex < 0) throw new Error('Transacao bancaria nao localizada nesta unidade.');
+  if (String(transactions[transactionIndex]?.tipo || '').toLowerCase() !== 'saida') {
+    throw new Error('Somente transacoes de saida podem ser vinculadas a contas a pagar.');
+  }
+
+  const payables = readStorage('Lancamento');
+  const payableIndex = payables.findIndex((item) => item?.id === payload?.lancamento_id && item?.empresa_id === payload?.empresa_id);
+  if (payableIndex < 0) throw new Error('Conta a pagar nao localizada nesta unidade.');
+
+  const existingPayable = payables.find((item) => (item?.vinculacoes || []).some((link) => link?.transaction_id === payload?.transacao_id));
+  if (existingPayable && existingPayable.id !== payables[payableIndex].id) {
+    throw new Error('Esta saida ja esta vinculada a outra conta a pagar.');
+  }
+  if (existingPayable) {
+    const existingLink = (existingPayable.vinculacoes || []).find((link) => link?.transaction_id === payload?.transacao_id);
+    return {
+      payable_id: existingPayable.id,
+      expense_id: existingPayable.codigo_vinculo_financeiro || null,
+      transacao_id: payload.transacao_id,
+      linked_amount: Number(existingLink?.valor_vinculado || 0),
+      remaining_amount: Math.max(Number(existingPayable.valor || 0) + Number(existingPayable.juros_multa || 0) - Number(existingPayable.valor_quitado || 0), 0),
+      payable_status: existingPayable.status,
+      reused: true,
+    };
+  }
+  if (transactions[transactionIndex]?.vinculo_financeiro) {
+    throw new Error('Esta saida ja possui um vinculo financeiro e nao pode ser utilizada novamente.');
+  }
+
+  const payable = payables[payableIndex];
+  const total = Number(payable?.valor || 0) + Number(payable?.juros_multa || 0);
+  const paidBefore = Number(payable?.valor_quitado || 0);
+  const linkedAmount = Math.abs(Number(transactions[transactionIndex]?.valor || 0));
+  if (linkedAmount > total - paidBefore + 0.005) {
+    throw new Error('O valor da saida excede o saldo desta conta a pagar. Use o rateio em Contas a Pagar.');
+  }
+
+  const paymentDate = transactions[transactionIndex]?.data_movimento || transactions[transactionIndex]?.data || new Date().toISOString().slice(0, 10);
+  const paidAfter = Math.round((paidBefore + linkedAmount) * 100) / 100;
+  const settled = paidAfter >= total;
+  const links = [...(payable?.vinculacoes || []), {
+    transaction_id: payload.transacao_id,
+    valor_vinculado: linkedAmount,
+    data_vinculacao: paymentDate,
+    linked_by_user_id: payload?.usuario_id || null,
+    source: 'movimentacoes_complementar',
+  }];
+
+  let expenseId = null;
+  if (settled) {
+    const expenses = readStorage('Despesa');
+    let expense = expenses.find((item) => item?.transacao_id === payload.transacao_id) || null;
+    if (!expense) {
+      expense = {
+        id: makeId(),
+        empresa_id: payload.empresa_id,
+        descricao: payable.descricao || `${payable.categoria || ''} - ${payable.recebedor || ''}`.trim(),
+        valor: total,
+        data: paymentDate,
+        data_despesa: paymentDate,
+        categoria: payable.categoria || null,
+        fornecedor: payable.recebedor || null,
+        lancamento_id: payable.id,
+        extrato_id: payload.transacao_id,
+        transacao_id: payload.transacao_id,
+        vinculo_transacao_id: payload.transacao_id,
+        status: 'pago',
+        created_date: new Date().toISOString(),
+        updated_date: new Date().toISOString(),
+      };
+      expenses.push(expense);
+      writeStorage('Despesa', expenses);
+    }
+    expenseId = expense.id;
+  }
+
+  payables[payableIndex] = {
+    ...payable,
+    vinculacoes: links,
+    valor_quitado: paidAfter,
+    status: settled ? 'realizado_hoje' : (payable.status || 'pendente'),
+    data_quitacao: settled ? paymentDate : payable.data_quitacao || null,
+    transacao_id: payable.transacao_id || payload.transacao_id,
+    movido_para_despesas: settled,
+    codigo_vinculo_financeiro: expenseId || payable.codigo_vinculo_financeiro || null,
+    updated_date: new Date().toISOString(),
+  };
+  writeStorage('Lancamento', payables);
+
+  transactions[transactionIndex] = {
+    ...transactions[transactionIndex],
+    vinculo_financeiro: expenseId || payable.id,
+    observacoes: payload?.observacao || transactions[transactionIndex]?.observacoes || null,
+    metadata_financeira: {
+      ...(transactions[transactionIndex]?.metadata_financeira || {}),
+      link_type: 'conta_pagar',
+      lancamento_id: payable.id,
+      despesa_id: expenseId,
+      linked_amount: linkedAmount,
+    },
+    updated_date: new Date().toISOString(),
+  };
+  writeStorage('ExtratoBancario', transactions);
+
+  return {
+    payable_id: payable.id,
+    expense_id: expenseId,
+    transacao_id: payload.transacao_id,
+    linked_amount: linkedAmount,
+    remaining_amount: Math.max(total - paidAfter, 0),
+    payable_status: payables[payableIndex].status,
+    reused: false,
+  };
 };
 
 mockFunctions.financeApplyCompensatoryCredit = async (payload = {}) => {
@@ -5249,7 +5574,7 @@ let appClient = {
   auth: createMockAuth(),
 };
 
-if (SUPABASE_URL && SUPABASE_ANON) {
+if (USE_SUPABASE_BACKEND) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
     auth: {
       persistSession: true,
@@ -6011,6 +6336,32 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       });
       if (error) {
         throw toAppError(error, 'Erro ao aplicar operação administrativa da carteira.');
+      }
+      return Array.isArray(data) ? (data[0] || null) : data;
+    },
+    financeLinkBankEntryToWallet: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_link_bank_entry_to_wallet', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_transacao_id: payload?.transacao_id || null,
+        p_carteira_id: payload?.carteira_id || null,
+        p_usuario_id: payload?.usuario_id || null,
+        p_observacao: payload?.observacao || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao vincular a entrada bancaria a carteira.');
+      }
+      return Array.isArray(data) ? (data[0] || null) : data;
+    },
+    financeLinkBankOutputToPayable: async (payload = {}) => {
+      const { data, error } = await supabase.rpc('finance_link_bank_output_to_payable', {
+        p_empresa_id: payload?.empresa_id || null,
+        p_transacao_id: payload?.transacao_id || null,
+        p_lancamento_id: payload?.lancamento_id || null,
+        p_usuario_id: payload?.usuario_id || null,
+        p_observacao: payload?.observacao || null,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao vincular a saida a conta a pagar.');
       }
       return Array.isArray(data) ? (data[0] || null) : data;
     },

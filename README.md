@@ -89,6 +89,7 @@ Variaveis usadas hoje:
 | `VITE_EMAIL_WEBHOOK_URL` | nao | endpoint para disparo de email; se vazio usa `${VITE_SUPABASE_URL}/functions/v1/send-email` |
 | `VITE_SITE_URL` | nao | URL absoluta usada em callbacks de autenticacao |
 | `VITE_MOCK_QA_ROLE` | nao | override de perfil para QA no mock local |
+| `VITE_FORCE_LOCAL_MOCK` | nao | usa o backend mock somente quando definido explicitamente como `true` |
 
 Observacoes:
 
@@ -107,6 +108,8 @@ Override de QA disponivel no mock:
 
 - via env: `VITE_MOCK_QA_ROLE`
 - via `localStorage`: chave `local_app_client_mock_qa_role`
+
+Quando o `.env.local` possui credenciais reais do Supabase, o backend mock pode ser habilitado explicitamente apenas para uma sessão de QA com `VITE_FORCE_LOCAL_MOCK=true`. O valor padrão é `false` e não altera produção.
 
 Valores aceitos:
 

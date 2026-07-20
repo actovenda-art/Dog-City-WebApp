@@ -272,6 +272,25 @@ function formatDateOnly(value: string | Date) {
   return normalizeDateInput(value).toISOString().slice(0, 10);
 }
 
+function formatBusinessDateOnly(value: unknown) {
+  const normalizedValue = sanitizeText(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedValue)) return normalizedValue;
+
+  const date = normalizeDateInput(normalizedValue || new Date());
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Fortaleza",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function shiftDateOnly(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function formatDateTime(value: string | Date) {
   return normalizeDateInput(value).toISOString();
 }
@@ -2085,6 +2104,9 @@ function normalizeChargeApiResponse(raw: Record<string, unknown> = {}) {
     pix,
     codigoSolicitacao: sanitizeText(firstDefined(cobranca.codigoSolicitacao, raw.codigoSolicitacao)),
     situacao: sanitizeText(firstDefined(cobranca.situacao, raw.situacao, raw.status), "EM_PROCESSAMENTO"),
+    dataHoraSituacao: sanitizeText(firstDefined(cobranca.dataHoraSituacao, raw.dataHoraSituacao, raw.dataPagamento)),
+    valorTotalRecebido: toNumber(firstDefined(cobranca.valorTotalRecebido, raw.valorTotalRecebido, cobranca.valorNominal, raw.valorNominal)),
+    origemRecebimento: sanitizeText(firstDefined(cobranca.origemRecebimento, raw.origemRecebimento)),
     seuNumero: sanitizeText(firstDefined(cobranca.seuNumero, raw.seuNumero)),
     valorNominal: toNumber(firstDefined(cobranca.valorNominal, raw.valorNominal)),
     nossoNumero: sanitizeText(firstDefined(boleto.nossoNumero, raw.nossoNumero)),
@@ -2414,49 +2436,216 @@ function normalizeSearchText(value: unknown) {
     .toLowerCase();
 }
 
-async function resolveBudgetPaymentExtratoId(row: Record<string, unknown>) {
-  const empresaId = sanitizeText(row.empresa_id);
-  const amount = toNumber(firstDefined(row.valor_recebido, row.valor));
-  if (!empresaId || amount <= 0) return null;
+type WalletPaymentSource = "orcamento_pagamento" | "carteira_cobranca";
 
-  const { data, error } = await supabase
-    .from("extratobancario")
-    .select("id, nome_contraparte, valor, data_hora_transacao, created_date")
-    .eq("empresa_id", empresaId)
-    .eq("valor", amount)
-    .order("created_date", { ascending: false })
-    .limit(50);
-
-  if (error) throw error;
-  if (!Array.isArray(data) || data.length === 0) return null;
-
-  const expectedName = normalizeSearchText(
-    firstDefined(
-      row?.metadata && typeof row.metadata === "object"
-        ? (row.metadata as Record<string, unknown>).responsavel_nome
-        : null,
-      row.responsavel_nome,
-      row.nome_contraparte,
-    ),
+function getPaymentTransactionContext(row: Record<string, unknown>, paymentSource: WalletPaymentSource) {
+  const metadata = asRecord(row.metadata);
+  const webhookEvent = asRecord(metadata.webhook_last_event);
+  const chargeSnapshot = asRecord(metadata.charge_snapshot);
+  const charge = asRecord(chargeSnapshot.cobranca);
+  const pix = asRecord(chargeSnapshot.pix);
+  const paymentId = sanitizeText(row.id);
+  const paidAtInput = firstDefined(
+    row.pago_em,
+    webhookEvent.dataHoraSituacao,
+    chargeSnapshot.dataHoraSituacao,
+    charge.dataHoraSituacao,
+    row.updated_date,
+    row.created_date,
   );
-  const expectedDate = sanitizeText(firstDefined(row.pago_em, row.updated_date, row.created_date)).slice(0, 10);
+  const paidAtDate = normalizeDateInput(sanitizeText(paidAtInput) || new Date());
+  const paidAt = paidAtDate.toISOString();
+  const paidDate = formatBusinessDateOnly(paidAtDate);
+  const amount = toNumber(firstDefined(row.valor_recebido, webhookEvent.valorTotalRecebido, chargeSnapshot.valorTotalRecebido, row.valor));
+  const payerName = sanitizeText(firstDefined(metadata.responsavel_nome, row.responsavel_nome, row.nome_contraparte));
+  const payerDocument = normalizeCpfCnpj(firstDefined(metadata.responsavel_cpf_cnpj, webhookEvent.cpfCnpjPagador, charge.cpfCnpjPagador));
+  const codigoSolicitacao = sanitizeText(firstDefined(row.codigo_solicitacao, webhookEvent.codigoSolicitacao, chargeSnapshot.codigoSolicitacao, charge.codigoSolicitacao));
+  const txid = sanitizeText(firstDefined(row.txid, webhookEvent.txid, chargeSnapshot.txid, pix.txid));
+  const receiptOrigin = sanitizeText(firstDefined(
+    webhookEvent.origemRecebimento,
+    chargeSnapshot.origemRecebimento,
+    charge.origemRecebimento,
+  )).toUpperCase();
+  const transactionType = receiptOrigin === "PIX" || sanitizeText(row.metodo).toLowerCase().includes("pix")
+    ? "PIX"
+    : "BOLETO_COBRANCA";
 
-  const scoredRows = data
+  return {
+    paymentSource,
+    paymentId,
+    paidAt,
+    paidDate,
+    amount,
+    payerName,
+    payerDocument,
+    codigoSolicitacao,
+    txid,
+    transactionType,
+    canonicalId: `inter_payment_${paymentSource}_${paymentId}`,
+  };
+}
+
+function buildPaymentIdentifierSet(source: Record<string, unknown>) {
+  const rawData = asRecord(source.raw_data);
+  const rawDetails = asRecord(rawData.detalhes);
+  const metadata = asRecord(source.metadata_financeira);
+  return new Set([
+    source.referencia,
+    rawData.codigoSolicitacao,
+    rawDetails.codigoSolicitacao,
+    rawData.txid,
+    rawDetails.txid,
+    metadata.codigo_solicitacao,
+    metadata.txid,
+  ].map((value) => sanitizeText(value)).filter(Boolean));
+}
+
+function selectPaymentTransactionCandidate(
+  candidates: Record<string, unknown>[],
+  context: ReturnType<typeof getPaymentTransactionContext>,
+) {
+  const expectedIdentifiers = new Set([context.codigoSolicitacao, context.txid].filter(Boolean));
+  const scoredCandidates = candidates
     .map((candidate) => {
-      const candidateName = normalizeSearchText(candidate?.nome_contraparte);
-      const candidateDate = sanitizeText(firstDefined(candidate?.data_hora_transacao, candidate?.created_date)).slice(0, 10);
+      const metadata = asRecord(candidate.metadata_financeira);
+      const existingPaymentSource = sanitizeText(metadata.payment_source);
+      const existingPaymentId = sanitizeText(metadata.payment_id);
+      if (existingPaymentId && (existingPaymentSource !== context.paymentSource || existingPaymentId !== context.paymentId)) {
+        return null;
+      }
+
+      const identifiers = buildPaymentIdentifierSet(candidate);
+      const identifierMatch = [...expectedIdentifiers].some((identifier) => identifiers.has(identifier));
+      const samePayment = existingPaymentSource === context.paymentSource && existingPaymentId === context.paymentId;
+      if (!samePayment && !identifierMatch) return null;
+
+      const candidateDate = sanitizeText(firstDefined(candidate.data_movimento, candidate.data, candidate.created_date)).slice(0, 10);
+      const dateDistance = Math.abs(diffDays(candidateDate, context.paidDate));
+
       let score = 0;
-
-      if (expectedName && candidateName.includes(expectedName)) score += 3;
-      if (expectedName && expectedName.split(" ").every((token) => token && candidateName.includes(token))) score += 2;
-      if (expectedDate && candidateDate === expectedDate) score += 2;
-
+      if (samePayment) score += 200;
+      if (identifierMatch) score += 100;
+      if (candidateDate === context.paidDate) score += 8;
+      else if (dateDistance === 1) score += 2;
+      if (sanitizeText(candidate.tipo).toLowerCase() === "entrada") score += 2;
       return { candidate, score };
     })
+    .filter((entry): entry is { candidate: Record<string, unknown>; score: number } => Boolean(entry))
     .sort((left, right) => right.score - left.score);
 
-  const bestMatch = scoredRows[0];
-  return bestMatch && bestMatch.score >= 2 ? sanitizeText(bestMatch.candidate?.id) || null : null;
+  if (!scoredCandidates.length) return null;
+  const [bestMatch, secondMatch] = scoredCandidates;
+  if (secondMatch?.score === bestMatch.score) return null;
+  return bestMatch.candidate;
+}
+
+async function ensurePaymentExtratoTransaction(row: Record<string, unknown>, paymentSource: WalletPaymentSource) {
+  const context = getPaymentTransactionContext(row, paymentSource);
+  const empresaId = sanitizeText(row.empresa_id);
+  if (!empresaId || !context.paymentId || context.amount <= 0) return null;
+
+  const { data: paymentRows, error: paymentRowsError } = await supabase
+    .from("extratobancario")
+    .select("*")
+    .eq("empresa_id", empresaId)
+    .contains("metadata_financeira", {
+      payment_source: context.paymentSource,
+      payment_id: context.paymentId,
+    })
+    .limit(2);
+  if (paymentRowsError) throw paymentRowsError;
+
+  let targetRow = Array.isArray(paymentRows) && paymentRows.length === 1 ? paymentRows[0] : null;
+  if (!targetRow) {
+    const { data: candidates, error: candidateError } = await supabase
+      .from("extratobancario")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .eq("tipo", "entrada")
+      .eq("valor", context.amount)
+      .gte("data_movimento", shiftDateOnly(context.paidDate, -1))
+      .lte("data_movimento", shiftDateOnly(context.paidDate, 1))
+      .order("data_movimento", { ascending: true })
+      .limit(100);
+    if (candidateError) throw candidateError;
+    targetRow = selectPaymentTransactionCandidate(candidates || [], context);
+  }
+
+  const existingRawData = asRecord(targetRow?.raw_data);
+  const existingRawDetails = asRecord(existingRawData.detalhes);
+  const existingMetadata = asRecord(targetRow?.metadata_financeira);
+  const reference = context.txid || context.codigoSolicitacao || sanitizeText(targetRow?.referencia) || context.canonicalId;
+  const now = new Date().toISOString();
+  const { data: savedTransaction, error: saveError } = await supabase
+    .from("extratobancario")
+    .upsert([{
+      id: sanitizeText(targetRow?.id) || context.canonicalId,
+      empresa_id: empresaId,
+      descricao: sanitizeText(targetRow?.descricao) || `Pagamento recebido de ${context.payerName || "responsavel financeiro"}`,
+      tipo: "entrada",
+      valor: context.amount,
+      data: context.paidDate,
+      data_movimento: context.paidDate,
+      data_hora_transacao: context.paidAt,
+      banco: sanitizeText(targetRow?.banco) || "Banco Inter",
+      nome_contraparte: context.payerName || sanitizeText(targetRow?.nome_contraparte) || null,
+      banco_contraparte: targetRow?.banco_contraparte || null,
+      forma_pagamento: context.transactionType === "PIX" ? "Pix" : "Boleto bancario",
+      categoria: targetRow?.categoria || null,
+      tipo_transacao_detalhado: context.transactionType === "PIX" ? "Pix recebido" : "Boleto recebido",
+      referencia: reference,
+      carteira_nome: sanitizeText(targetRow?.carteira_nome) || context.payerName || null,
+      observacoes: targetRow?.observacoes || null,
+      rateio: asRecord(targetRow?.rateio),
+      metadata_financeira: {
+        ...existingMetadata,
+        provider: "banco_inter",
+        payment_source: context.paymentSource,
+        payment_id: context.paymentId,
+        codigo_solicitacao: context.codigoSolicitacao || null,
+        txid: context.txid || null,
+        original_data_movimento: existingMetadata.original_data_movimento || targetRow?.data_movimento || null,
+        payment_reconciled_at: now,
+        transaction_id_source: sanitizeText(targetRow?.id)
+          ? "payment_reconciled_existing_transaction"
+          : "payment_charge_identity",
+      },
+      conciliado: targetRow?.conciliado === true,
+      status: sanitizeText(targetRow?.status) || "importado",
+      source_provider: sanitizeText(targetRow?.source_provider) || "banco_inter_charge",
+      conta_origem: targetRow?.conta_origem || null,
+      conta_destino: targetRow?.conta_destino || null,
+      saldo: targetRow?.saldo ?? null,
+      raw_data: {
+        ...existingRawData,
+        codigoSolicitacao: context.codigoSolicitacao || existingRawData.codigoSolicitacao || null,
+        txid: context.txid || existingRawData.txid || null,
+        dataPagamento: context.paidAt,
+        dataHoraSituacao: context.paidAt,
+        dataEntrada: context.paidDate,
+        valor: context.amount,
+        valorTotalRecebido: context.amount,
+        nomePagador: context.payerName || existingRawData.nomePagador || null,
+        cpfCnpjPagador: context.payerDocument || existingRawData.cpfCnpjPagador || null,
+        tipoTransacao: context.transactionType,
+        detalhes: {
+          ...existingRawDetails,
+          codigoSolicitacao: context.codigoSolicitacao || existingRawDetails.codigoSolicitacao || null,
+          txid: context.txid || existingRawDetails.txid || null,
+          nomePagador: context.payerName || existingRawDetails.nomePagador || null,
+          cpfCnpjPagador: context.payerDocument || existingRawDetails.cpfCnpjPagador || null,
+        },
+      },
+      imported_at: targetRow?.imported_at || now,
+      sync_run_id: sanitizeText(targetRow?.sync_run_id) || `payment_${context.paymentSource}`,
+      vinculo_financeiro: sanitizeText(targetRow?.vinculo_financeiro) || sanitizeText(row.carteira_id) || null,
+      updated_date: now,
+    }], { onConflict: "id" })
+    .select("id")
+    .maybeSingle();
+
+  if (saveError) throw saveError;
+  return sanitizeText(savedTransaction?.id) || null;
 }
 
 async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
@@ -2471,7 +2660,7 @@ async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
   const operacaoIdempotencia = `orcamento_pagamento|${sanitizeText(row.id)}|recebido`;
   const amount = toNumber(firstDefined(row.valor_recebido, row.valor));
   if (amount <= 0) return row;
-  const linkedTransactionId = await resolveBudgetPaymentExtratoId(row);
+  const linkedTransactionId = await ensurePaymentExtratoTransaction(row, "orcamento_pagamento");
 
   const { data, error } = await supabase.rpc("finance_wallet_admin_apply_operation", {
     p_carteira_conta_id: ensuredWalletAccountId,
@@ -2518,7 +2707,7 @@ async function applyWalletChargePaymentToWallet(row: Record<string, unknown>) {
   const amount = toNumber(firstDefined(row.valor_recebido, row.valor));
   if (amount <= 0) return row;
 
-  const linkedTransactionId = await resolveBudgetPaymentExtratoId(row);
+  const linkedTransactionId = await ensurePaymentExtratoTransaction(row, "carteira_cobranca");
   const { data, error } = await supabase.rpc("finance_wallet_admin_apply_operation", {
     p_carteira_conta_id: ensuredWalletAccountId,
     p_operacao_idempotencia: `carteira_cobranca|${sanitizeText(row.id)}|recebido`,
@@ -2651,7 +2840,7 @@ async function processWalletChargeWebhookEvent(event: Record<string, unknown>) {
     nosso_numero: sanitizeText(event.nossoNumero, sanitizeText(data.nosso_numero)) || null,
     codigo_barras: active ? (sanitizeText(event.codigoBarras, sanitizeText(data.codigo_barras)) || null) : null,
     linha_digitavel: active ? (sanitizeText(event.linhaDigitavel, sanitizeText(data.linha_digitavel)) || null) : null,
-    txid: active ? (sanitizeText(event.txid, sanitizeText(data.txid)) || null) : null,
+    txid: sanitizeText(event.txid, sanitizeText(data.txid)) || null,
     pix_copia_cola: active ? (sanitizeText(event.pixCopiaECola, sanitizeText(data.pix_copia_cola)) || null) : null,
     pdf_disponivel: active ? Boolean(data.codigo_solicitacao) : false,
     valor_recebido: received
@@ -2683,13 +2872,13 @@ async function refreshWalletChargeFromInter(config: IntegrationConfig, row: Reco
     valor: Number(charge.valorNominal || row.valor || 0),
     seu_numero: charge.seuNumero || row.seu_numero || null,
     nosso_numero: charge.nossoNumero || row.nosso_numero || null,
-    txid: active ? (charge.txid || row.txid || null) : null,
+    txid: charge.txid || row.txid || null,
     linha_digitavel: active ? (charge.linhaDigitavel || row.linha_digitavel || null) : null,
     codigo_barras: active ? (charge.codigoBarras || row.codigo_barras || null) : null,
     pix_copia_cola: active ? (charge.pixCopiaECola || row.pix_copia_cola || null) : null,
     pdf_disponivel: active ? Boolean(charge.codigoSolicitacao || row.codigo_solicitacao) : false,
-    valor_recebido: received ? Number(charge.valorNominal || row.valor || 0) : Number(row.valor_recebido || 0),
-    pago_em: received ? (row.pago_em || now) : row.pago_em || null,
+    valor_recebido: received ? Number(charge.valorTotalRecebido || charge.valorNominal || row.valor || 0) : Number(row.valor_recebido || 0),
+    pago_em: received ? (charge.dataHoraSituacao || row.pago_em || now) : row.pago_em || null,
     metadata: {
       ...getWalletChargeMetadata(row),
       charge_snapshot: charge,
@@ -3018,6 +3207,9 @@ function mergeManualComplements(
 ): NormalizedTransaction {
   if (!existingRow) return incomingRow;
 
+  const existingRawData = asRecord(existingRow.raw_data);
+  const incomingRawData = asRecord(incomingRow.raw_data);
+
   return {
     ...incomingRow,
     carteira_nome: sanitizeText(existingRow.carteira_nome) || incomingRow.carteira_nome,
@@ -3032,38 +3224,77 @@ function mergeManualComplements(
       ...incomingRow.metadata_financeira,
       preserved_manual_data: true,
     },
+    raw_data: {
+      ...existingRawData,
+      ...incomingRawData,
+      detalhes: {
+        ...asRecord(existingRawData.detalhes),
+        ...asRecord(incomingRawData.detalhes),
+      },
+    },
   };
 }
 
 function reconcileRowsWithSyntheticMovements(
   incomingRows: NormalizedTransaction[],
-  existingSyntheticRows: Record<string, unknown>[],
+  existingReconciliationRows: Record<string, unknown>[],
 ) {
-  const usedSyntheticIds = new Set<string>();
-  const matchedSyntheticIds = new Set<string>();
+  const usedExistingIds = new Set<string>();
+  const matchedExistingIds = new Set<string>();
   const rows = incomingRows.map((incomingRow) => {
-    const comparableCandidates = existingSyntheticRows.filter((existingRow) => {
+    const incomingIdentifiers = buildPaymentIdentifierSet(incomingRow);
+    const comparableCandidates = existingReconciliationRows.filter((existingRow) => {
       const existingId = sanitizeText(existingRow.id);
+      const existingMetadata = asRecord(existingRow.metadata_financeira);
+      const paymentBacked = Boolean(sanitizeText(existingMetadata.payment_source) && sanitizeText(existingMetadata.payment_id));
+      const existingDate = sanitizeText(existingRow.data_movimento);
+      const dateMatches = existingDate === incomingRow.data_movimento
+        || (paymentBacked && Math.abs(diffDays(existingDate, incomingRow.data_movimento)) <= 1);
       return existingId
-        && !usedSyntheticIds.has(existingId)
-        && sanitizeText(existingRow.data_movimento) === incomingRow.data_movimento
+        && !usedExistingIds.has(existingId)
+        && dateMatches
         && sanitizeText(existingRow.tipo) === incomingRow.tipo
         && Math.abs(toNumber(existingRow.valor) - incomingRow.valor) < 0.005;
+    });
+    const identifierCandidates = comparableCandidates.filter((existingRow) => {
+      const existingIdentifiers = buildPaymentIdentifierSet(existingRow);
+      return [...incomingIdentifiers].some((identifier) => existingIdentifiers.has(identifier));
     });
     const exactDescriptionCandidates = comparableCandidates.filter((existingRow) => (
       normalizeReceiptMatchText(existingRow.descricao) === normalizeReceiptMatchText(incomingRow.descricao)
     ));
-    const candidates = exactDescriptionCandidates.length ? exactDescriptionCandidates : comparableCandidates;
+    const exactCounterpartyCandidates = comparableCandidates.filter((existingRow) => (
+      normalizeReceiptMatchText(existingRow.nome_contraparte) === normalizeReceiptMatchText(incomingRow.nome_contraparte)
+    ));
+    const candidates = identifierCandidates.length
+      ? identifierCandidates
+      : exactDescriptionCandidates.length
+      ? exactDescriptionCandidates
+      : exactCounterpartyCandidates.length
+      ? exactCounterpartyCandidates
+      : comparableCandidates.filter((existingRow) => !sanitizeText(asRecord(existingRow.metadata_financeira).payment_id));
     if (candidates.length !== 1) return incomingRow;
 
     const existingRow = candidates[0];
     const existingId = sanitizeText(existingRow.id);
-    usedSyntheticIds.add(existingId);
-    matchedSyntheticIds.add(existingId);
+    usedExistingIds.add(existingId);
+    matchedExistingIds.add(existingId);
     const providerTransactionId = incomingRow.id;
+    const existingMetadata = asRecord(existingRow.metadata_financeira);
+    const paymentBacked = Boolean(sanitizeText(existingMetadata.payment_source) && sanitizeText(existingMetadata.payment_id));
     return mergeManualComplements({
       ...incomingRow,
       id: existingId,
+      data: paymentBacked ? sanitizeText(existingRow.data, incomingRow.data) : incomingRow.data,
+      data_movimento: paymentBacked
+        ? sanitizeText(existingRow.data_movimento, incomingRow.data_movimento)
+        : incomingRow.data_movimento,
+      data_hora_transacao: paymentBacked
+        ? sanitizeText(existingRow.data_hora_transacao) || incomingRow.data_hora_transacao
+        : incomingRow.data_hora_transacao,
+      referencia: paymentBacked
+        ? sanitizeText(existingRow.referencia) || incomingRow.referencia
+        : incomingRow.referencia,
       metadata_financeira: {
         ...incomingRow.metadata_financeira,
         provider_transaction_id: providerTransactionId,
@@ -3072,7 +3303,7 @@ function reconcileRowsWithSyntheticMovements(
     }, existingRow);
   });
 
-  return { rows, matchedSyntheticIds };
+  return { rows, matchedExistingIds };
 }
 
 async function persistTransactions(
@@ -3098,21 +3329,26 @@ async function persistTransactions(
   }
 
   const uniqueRows = Array.from(uniqueRowsByTransactionId.values());
-  const existingSyntheticRows: Record<string, unknown>[] = [];
+  const existingReconciliationRows: Record<string, unknown>[] = [];
   const movementDates = Array.from(new Set(uniqueRows.map((row) => row.data_movimento).filter(Boolean)));
-  for (const dateChunk of chunkArray(movementDates, 100)) {
+  const reconciliationDates = Array.from(new Set(
+    movementDates.flatMap((date) => [shiftDateOnly(date, -1), date, shiftDateOnly(date, 1)]),
+  ));
+  for (const dateChunk of chunkArray(reconciliationDates, 100)) {
     const { data, error } = await supabase
       .from("extratobancario")
-      .select("id, data_movimento, tipo, valor, descricao, carteira_nome, observacoes, rateio, metadata_financeira, conciliado, status")
+      .select("id, data, data_movimento, data_hora_transacao, tipo, valor, descricao, nome_contraparte, referencia, carteira_nome, observacoes, rateio, raw_data, metadata_financeira, conciliado, status")
       .eq("empresa_id", empresaId)
-      .eq("source_provider", "banco_inter")
-      .like("id", "api_synthetic_%")
+      .in("source_provider", ["banco_inter", "banco_inter_charge"])
       .in("data_movimento", dateChunk);
 
     if (error) throw error;
-    existingSyntheticRows.push(...(data || []));
+    existingReconciliationRows.push(...(data || []).filter((row) => (
+      sanitizeText(row?.id).startsWith("api_synthetic_")
+      || Boolean(sanitizeText(asRecord(row?.metadata_financeira).payment_id))
+    )));
   }
-  const reconciliation = reconcileRowsWithSyntheticMovements(uniqueRows, existingSyntheticRows);
+  const reconciliation = reconcileRowsWithSyntheticMovements(uniqueRows, existingReconciliationRows);
   const reconciledRows = reconciliation.rows;
   const todayRows = refreshToday
     ? reconciledRows.filter((row) => row.data_movimento === today)
@@ -3126,7 +3362,7 @@ async function persistTransactions(
         .from("extratobancario")
         .select("id")
         .eq("empresa_id", empresaId)
-        .eq("source_provider", "banco_inter")
+        .in("source_provider", ["banco_inter", "banco_inter_charge"])
         .in("id", transactionIdChunk);
 
       if (error) throw error;
@@ -3138,7 +3374,7 @@ async function persistTransactions(
   }
 
   const historicalRowsToInsert = historicalRows.filter((row) => !historicalExistingIds.has(row.id));
-  const historicalRowsToUpdate = historicalRows.filter((row) => reconciliation.matchedSyntheticIds.has(row.id));
+  const historicalRowsToUpdate = historicalRows.filter((row) => reconciliation.matchedExistingIds.has(row.id));
 
   for (const row of historicalRowsToUpdate) {
     const { error } = await supabase
@@ -3155,7 +3391,7 @@ async function persistTransactions(
       .from("extratobancario")
       .select("id, carteira_nome, observacoes, rateio, metadata_financeira, conciliado, status")
       .eq("empresa_id", empresaId)
-      .eq("source_provider", "banco_inter")
+      .in("source_provider", ["banco_inter", "banco_inter_charge"])
       .eq("data_movimento", today);
 
     if (existingTodayError) throw existingTodayError;
@@ -3167,20 +3403,11 @@ async function persistTransactions(
 
     const mergedTodayRows = todayRows.map((row) => mergeManualComplements(row, existingTodayMap.get(row.id) || null));
 
-    const { error: deleteTodayError } = await supabase
-      .from("extratobancario")
-      .delete()
-      .eq("empresa_id", empresaId)
-      .eq("source_provider", "banco_inter")
-      .eq("data_movimento", today);
-
-    if (deleteTodayError) throw deleteTodayError;
-
     for (const chunk of chunkArray(mergedTodayRows, 100)) {
       if (!chunk.length) continue;
       const { error } = await supabase
         .from("extratobancario")
-        .insert(chunk);
+        .upsert(chunk, { onConflict: "id" });
 
       if (error) throw error;
     }
@@ -5165,8 +5392,8 @@ Deno.serve(async (request) => {
         codigo_barras: charge.codigoBarras || null,
         pix_copia_cola: charge.pixCopiaECola || null,
         pdf_disponivel: Boolean(charge.codigoSolicitacao),
-        valor_recebido: sanitizeText(charge.situacao).toUpperCase() === "RECEBIDO" ? Number(charge.valorNominal || payload.valor || 0) : 0,
-        pago_em: sanitizeText(charge.situacao).toUpperCase() === "RECEBIDO" ? now : null,
+        valor_recebido: sanitizeText(charge.situacao).toUpperCase() === "RECEBIDO" ? Number(charge.valorTotalRecebido || charge.valorNominal || payload.valor || 0) : 0,
+        pago_em: sanitizeText(charge.situacao).toUpperCase() === "RECEBIDO" ? (charge.dataHoraSituacao || now) : null,
         created_by_user_id: sanitizeText(payload.usuario_id) || null,
         metadata: {
           responsavel_nome: sanitizeText(payload.responsavel_nome),
@@ -5232,9 +5459,9 @@ Deno.serve(async (request) => {
         pix_copia_cola: isChargeActive ? (charge.pixCopiaECola || existingRow.pix_copia_cola || null) : null,
         pdf_disponivel: isChargeActive ? Boolean(charge.codigoSolicitacao || existingRow.codigo_solicitacao) : false,
         valor_recebido: isReceived
-          ? Number(charge.valorNominal || existingRow.valor || 0)
+          ? Number(charge.valorTotalRecebido || charge.valorNominal || existingRow.valor || 0)
           : Number(existingRow.valor_recebido || 0),
-        pago_em: isReceived ? (existingRow.pago_em || now) : existingRow.pago_em || null,
+        pago_em: isReceived ? (charge.dataHoraSituacao || existingRow.pago_em || now) : existingRow.pago_em || null,
         metadata: {
           ...(existingRow.metadata && typeof existingRow.metadata === "object" ? existingRow.metadata : {}),
           charge_snapshot: charge,
@@ -5358,8 +5585,8 @@ Deno.serve(async (request) => {
         pix_copia_cola: charge.pixCopiaECola || null,
         pdf_disponivel: Boolean(charge.codigoSolicitacao),
         emitido_em: now,
-        pago_em: isReceived ? now : null,
-        valor_recebido: isReceived ? Number(charge.valorNominal || amount) : 0,
+        pago_em: isReceived ? (charge.dataHoraSituacao || now) : null,
+        valor_recebido: isReceived ? Number(charge.valorTotalRecebido || charge.valorNominal || amount) : 0,
         public_token_hash: publicTokenHash,
         public_token_expires_at: buildWalletChargeTokenExpiry(dueDate),
         created_by_user_id: sanitizeText(walletChargeStaff?.profile?.id) || null,

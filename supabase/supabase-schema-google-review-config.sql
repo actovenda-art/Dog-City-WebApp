@@ -31,26 +31,93 @@ where not exists (
     and empresa_id is null
 );
 
-create or replace function public.app_public_google_review_url()
-returns text
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select nullif(trim(config.value ->> 'url'), '')
+-- Preserve the existing Sousas destination only for the matching unit. Other
+-- units must receive their own Google review URL through Branding.
+insert into public.app_config (
+  id,
+  key,
+  label,
+  description,
+  value,
+  ativo,
+  created_date,
+  updated_date,
+  empresa_id
+)
+select
+  'branding_google_review_url_' || unit.id,
+  'branding.google_review_url',
+  'Link de avaliação no Google',
+  'Destino público usado pelo endereço curto de avaliação desta unidade',
+  source.value,
+  true,
+  now(),
+  now(),
+  unit.id
+from public.empresa unit
+cross join lateral (
+  select config.value
   from public.app_config config
   where config.key = 'branding.google_review_url'
     and config.empresa_id is null
     and config.ativo is true
   order by config.updated_date desc nulls last, config.created_date desc nulls last
   limit 1
+) source
+where (
+    lower(coalesce(unit.nome_fantasia, '')) like '%sousas%'
+    or lower(coalesce(unit.slug, '')) = 'dog-city'
+  )
+  and not exists (
+    select 1
+    from public.app_config existing
+    where existing.key = 'branding.google_review_url'
+      and existing.empresa_id = unit.id
+  )
+on conflict (id) do nothing;
+
+update public.app_config
+set
+  ativo = false,
+  updated_date = now()
+where key = 'branding.google_review_url'
+  and empresa_id is null
+  and ativo is true;
+
+drop function if exists public.app_public_google_review_url();
+
+create or replace function public.app_public_google_review_url(p_unit_ref text)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with target_unit as (
+    select unit.id
+    from public.empresa unit
+    where nullif(trim(p_unit_ref), '') is not null
+      and (
+        unit.id = trim(p_unit_ref)
+        or lower(coalesce(unit.slug, '')) = lower(trim(p_unit_ref))
+        or lower(coalesce(unit.codigo, '')) = lower(trim(p_unit_ref))
+      )
+    order by case when unit.id = trim(p_unit_ref) then 0 else 1 end
+    limit 1
+  )
+  select nullif(trim(config.value ->> 'url'), '')
+  from public.app_config config
+  join target_unit unit on unit.id = config.empresa_id
+  where config.key = 'branding.google_review_url'
+    and config.ativo is true
+  order by config.updated_date desc nulls last, config.created_date desc nulls last
+  limit 1
 $$;
 
-revoke all on function public.app_public_google_review_url() from public;
-grant execute on function public.app_public_google_review_url() to anon, authenticated, service_role;
+revoke all on function public.app_public_google_review_url(text) from public;
+grant execute on function public.app_public_google_review_url(text) to anon, authenticated, service_role;
 
-comment on function public.app_public_google_review_url() is
-  'Expõe somente o link público configurado para a avaliação da Dog City no Google.';
+comment on function public.app_public_google_review_url(text) is
+  'Expõe somente o link público de avaliação configurado para a unidade identificada.';
 
 commit;

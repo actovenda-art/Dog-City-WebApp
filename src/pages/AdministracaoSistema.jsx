@@ -21,9 +21,8 @@ import {
   setResourcePermissionLevel,
 } from "@/lib/access-permissions";
 import {
+  buildGoogleReviewPublicUrl,
   GOOGLE_REVIEW_CONFIG_KEY,
-  GOOGLE_REVIEW_PUBLIC_URL,
-  GOOGLE_REVIEW_TARGET_URL,
 } from "@/lib/google-review";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import { Button } from "@/components/ui/button";
@@ -329,7 +328,7 @@ export default function AdministracaoSistema() {
   const [isUploadingFranchiseLogo, setIsUploadingFranchiseLogo] = useState(false);
   const [isUploadingUnitAsset, setIsUploadingUnitAsset] = useState(false);
   const [hasCopiedGoogleReviewLink, setHasCopiedGoogleReviewLink] = useState(false);
-  const [googleReviewTargetUrl, setGoogleReviewTargetUrl] = useState(GOOGLE_REVIEW_TARGET_URL);
+  const [googleReviewTargetUrl, setGoogleReviewTargetUrl] = useState("");
   const [isSavingGoogleReviewUrl, setIsSavingGoogleReviewUrl] = useState(false);
   const [unitAddressLoading, setUnitAddressLoading] = useState(false);
   const [unitSelectionDialog, setUnitSelectionDialog] = useState({ open: false, unit: null });
@@ -470,10 +469,11 @@ export default function AdministracaoSistema() {
 
   useEffect(() => {
     const reviewConfig = configs.find(
-      (item) => item.key === GOOGLE_REVIEW_CONFIG_KEY && !item.empresa_id && item.ativo !== false,
+      (item) => item.key === GOOGLE_REVIEW_CONFIG_KEY && item.empresa_id === selectedUnitId && item.ativo !== false,
     );
-    setGoogleReviewTargetUrl(reviewConfig?.value?.url || GOOGLE_REVIEW_TARGET_URL);
-  }, [configs]);
+    setGoogleReviewTargetUrl(reviewConfig?.value?.url || "");
+    setHasCopiedGoogleReviewLink(false);
+  }, [configs, selectedUnitId]);
 
   useEffect(() => {
     const selectedNameConfig = configs.find((item) => item.key === "branding.company_name" && item.empresa_id === selectedUnitId)
@@ -490,6 +490,12 @@ export default function AdministracaoSistema() {
     () => units.find((item) => item.id === selectedUnitId) || null,
     [units, selectedUnitId]
   );
+
+  const googleReviewPublicUrl = useMemo(
+    () => buildGoogleReviewPublicUrl(selectedUnit?.slug || selectedUnit?.id),
+    [selectedUnit],
+  );
+  const hasGoogleReviewTarget = Boolean(normalizeExternalUrl(googleReviewTargetUrl));
 
   const selectedUnitMeta = selectedUnit?.metadata || {};
 
@@ -1118,8 +1124,13 @@ export default function AdministracaoSistema() {
   }
 
   async function handleCopyGoogleReviewLink() {
+    if (!googleReviewPublicUrl || !hasGoogleReviewTarget) {
+      alert("Configure e salve o link de avaliação desta unidade antes de copiá-lo.");
+      return;
+    }
+
     try {
-      await navigator.clipboard.writeText(GOOGLE_REVIEW_PUBLIC_URL);
+      await navigator.clipboard.writeText(googleReviewPublicUrl);
       setHasCopiedGoogleReviewLink(true);
 
       if (googleReviewCopyTimerRef.current) {
@@ -1135,6 +1146,11 @@ export default function AdministracaoSistema() {
   }
 
   async function handleSaveGoogleReviewUrl() {
+    if (!selectedUnitId) {
+      alert("Selecione uma unidade antes de configurar o link de avaliação.");
+      return;
+    }
+
     const normalizedUrl = normalizeExternalUrl(googleReviewTargetUrl);
     if (!normalizedUrl) {
       alert("Informe um link completo válido, começando com https:// ou http://.");
@@ -1144,15 +1160,15 @@ export default function AdministracaoSistema() {
     setIsSavingGoogleReviewUrl(true);
     try {
       const existingConfig = configs.find(
-        (item) => item.key === GOOGLE_REVIEW_CONFIG_KEY && !item.empresa_id,
+        (item) => item.key === GOOGLE_REVIEW_CONFIG_KEY && item.empresa_id === selectedUnitId,
       );
       const payload = {
         key: GOOGLE_REVIEW_CONFIG_KEY,
         label: "Link de avaliação no Google",
-        description: "Destino público usado pelo endereço curto /avaliar",
+        description: "Destino público usado pelo endereço curto de avaliação desta unidade",
         value: { url: normalizedUrl },
         ativo: true,
-        empresa_id: null,
+        empresa_id: selectedUnitId,
       };
 
       if (existingConfig?.id) {
@@ -1163,7 +1179,7 @@ export default function AdministracaoSistema() {
 
       setGoogleReviewTargetUrl(normalizedUrl);
       await loadData();
-      alert("Link de avaliação atualizado.");
+      alert("Link de avaliação desta unidade atualizado.");
     } catch (error) {
       console.error("Erro ao salvar link de avaliação:", error);
       alert(formatApiError(error, "Não foi possível salvar o link de avaliação."));
@@ -1555,7 +1571,7 @@ export default function AdministracaoSistema() {
                   <div className="min-w-0">
                     <h3 className="text-lg font-semibold text-gray-950">Avaliação da empresa no Google</h3>
                     <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600">
-                      Compartilhe o endereço curto com clientes para abrir diretamente a página de avaliações da Dog City Brasil - Sousas.
+                      Configure e compartilhe o endereço exclusivo de {selectedUnit?.nome_fantasia || "cada unidade"} para abrir a página correta no Google.
                     </p>
                     <div className="mt-4 max-w-2xl">
                       <Label htmlFor="google-review-target-url">Link estendido do Google</Label>
@@ -1563,19 +1579,20 @@ export default function AdministracaoSistema() {
                         id="google-review-target-url"
                         value={googleReviewTargetUrl}
                         onChange={(event) => setGoogleReviewTargetUrl(event.target.value)}
+                        disabled={!selectedUnitId}
                         rows={4}
                         className="mt-2 resize-y break-all bg-white text-sm"
                         placeholder="https://www.google.com/..."
                       />
                       <p className="mt-2 text-xs leading-5 text-gray-500">
-                        Cole manualmente o link completo da ficha ou da avaliação. O endereço curto abaixo permanecerá o mesmo.
+                        Cole o link completo da ficha ou da avaliação desta unidade. Cada unidade mantém seu próprio destino.
                       </p>
                     </div>
                     <div className="mt-4 max-w-xl">
-                      <Label htmlFor="google-review-public-url">Link público de avaliação</Label>
+                      <Label htmlFor="google-review-public-url">Link público desta unidade</Label>
                       <Input
                         id="google-review-public-url"
-                        value={GOOGLE_REVIEW_PUBLIC_URL}
+                        value={googleReviewPublicUrl}
                         readOnly
                         onFocus={(event) => event.currentTarget.select()}
                         className="mt-2 bg-gray-50 font-medium text-gray-800"
@@ -1588,22 +1605,29 @@ export default function AdministracaoSistema() {
                   <Button
                     type="button"
                     onClick={handleSaveGoogleReviewUrl}
-                    disabled={isSavingGoogleReviewUrl}
+                    disabled={isSavingGoogleReviewUrl || !selectedUnitId}
                     className="bg-emerald-600 text-white hover:bg-emerald-700"
                   >
                     <Save className="mr-2 h-4 w-4" />
                     {isSavingGoogleReviewUrl ? "Salvando..." : "Salvar destino"}
                   </Button>
-                  <Button type="button" onClick={handleCopyGoogleReviewLink} className="bg-blue-600 text-white hover:bg-blue-700">
+                  <Button type="button" onClick={handleCopyGoogleReviewLink} disabled={!googleReviewPublicUrl || !hasGoogleReviewTarget} className="bg-blue-600 text-white hover:bg-blue-700">
                     {hasCopiedGoogleReviewLink ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
                     {hasCopiedGoogleReviewLink ? "Link copiado" : "Copiar link"}
                   </Button>
-                  <Button asChild variant="outline">
-                    <a href={GOOGLE_REVIEW_PUBLIC_URL} target="_blank" rel="noreferrer">
+                  {googleReviewPublicUrl && hasGoogleReviewTarget ? (
+                    <Button asChild variant="outline">
+                      <a href={googleReviewPublicUrl} target="_blank" rel="noreferrer">
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Abrir avaliação
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button type="button" variant="outline" disabled>
                       <ExternalLink className="mr-2 h-4 w-4" />
                       Abrir avaliação
-                    </a>
-                  </Button>
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { bancoInter } from "@/api/functions";
 import LoadingScreen from "@/components/layout/LoadingScreen";
@@ -157,9 +157,13 @@ export default function CobrancaPublica() {
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
             <p className="text-xs font-medium text-slate-500">Responsável financeiro</p>
             <p className="mt-1 text-base font-semibold text-slate-950">{charge.responsavel_nome}</p>
-            <p className="mt-4 text-xs font-medium text-slate-500">Descrição</p>
-            <p className="mt-1 text-sm leading-6 text-slate-800">{charge.descricao}</p>
-            <div className="mt-5 flex items-end justify-between gap-3 border-t border-slate-200 pt-4">
+            {charge.descricao ? (
+              <>
+                <p className="mt-4 text-xs font-medium text-slate-500">Descrição</p>
+                <p className="mt-1 text-sm leading-6 text-slate-800">{charge.descricao}</p>
+              </>
+            ) : null}
+            <div className={`${charge.descricao ? "mt-5" : "mt-4"} flex items-end justify-between gap-3 border-t border-slate-200 pt-4`}>
               <div>
                 <p className="text-xs font-medium text-slate-500">Vencimento</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">{formatDate(charge.data_vencimento)}</p>

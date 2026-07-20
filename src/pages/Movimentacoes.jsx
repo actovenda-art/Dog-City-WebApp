@@ -51,6 +51,7 @@ import {
   ArrowUpCircle,
   Calendar,
   CircleDollarSign,
+  CreditCard,
   ChevronLeft,
   ChevronDown,
   CheckCircle2,
@@ -59,9 +60,11 @@ import {
   FileText,
   FileWarning,
   ListFilter,
+  Landmark,
   MoreHorizontal,
   Pencil,
   Plus,
+  QrCode,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -139,6 +142,12 @@ const EMPTY_WALLET_CHARGE_FORM = {
   descricao: "",
   metodo: "boleto_bancario",
 };
+const WALLET_CHARGE_STEPS = [
+  { id: 1, label: "Valor", icon: CircleDollarSign },
+  { id: 2, label: "Vencimento", icon: Calendar },
+  { id: 3, label: "Descrição", icon: FileText },
+  { id: 4, label: "Pagamento", icon: Landmark },
+];
 const WALLET_OPERATION_MODAL_LABEL = "Alteração manual";
 
 const MOVEMENTS_PAGE_SIZE = 50;
@@ -1345,6 +1354,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletChargeForm, setWalletChargeForm] = useState({ ...EMPTY_WALLET_CHARGE_FORM });
   const [walletChargeSaving, setWalletChargeSaving] = useState(false);
   const [walletChargeResult, setWalletChargeResult] = useState(null);
+  const [walletChargeError, setWalletChargeError] = useState("");
   const [showWalletOpenChargesModal, setShowWalletOpenChargesModal] = useState(false);
   const [walletOpenCharges, setWalletOpenCharges] = useState([]);
   const [walletOpenChargesSort, setWalletOpenChargesSort] = useState("due_date");
@@ -2215,6 +2225,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       data_vencimento: getDefaultWalletChargeDueDate(),
     });
     setWalletChargeResult(null);
+    setWalletChargeError("");
     setWalletChargeStep(1);
     setShowWalletChargeModal(true);
   };
@@ -2246,9 +2257,10 @@ export default function Movimentacoes({ walletOnly = false }) {
   };
 
   const handleWalletChargeStepNext = () => {
+    setWalletChargeError("");
     if (walletChargeStep === 1) {
       if (parseWalletChargeAmount(walletChargeForm.valor) <= 0) {
-        alert("Informe um valor maior que zero.");
+        setWalletChargeError("Informe um valor maior que zero para continuar.");
         return;
       }
     }
@@ -2256,33 +2268,29 @@ export default function Movimentacoes({ walletOnly = false }) {
     if (walletChargeStep === 2) {
       const dueDate = String(walletChargeForm.data_vencimento || "").slice(0, 10);
       if (!dueDate || dueDate < new Date().toISOString().slice(0, 10)) {
-        alert("Informe um vencimento valido, a partir de hoje.");
+        setWalletChargeError("Escolha um vencimento válido, a partir de hoje.");
         return;
       }
-    }
-
-    if (walletChargeStep === 3 && !walletChargeForm.descricao.trim()) {
-      alert("Informe uma descricao para a cobranca.");
-      return;
     }
 
     setWalletChargeStep((current) => Math.min(current + 1, 4));
   };
 
   const handleWalletChargeIssue = async () => {
+    setWalletChargeError("");
     const amount = parseWalletChargeAmount(walletChargeForm.valor);
     const dueDate = String(walletChargeForm.data_vencimento || "").slice(0, 10);
     const description = walletChargeForm.descricao.trim();
     if (!selectedWalletAccount?.carteira_id || !selectedWalletRuntimeAccountId || !currentUser?.empresa_id) {
-      alert("A carteira selecionada nao esta pronta para emitir cobrancas.");
+      setWalletChargeError("A carteira selecionada ainda não está pronta para emitir cobranças.");
       return;
     }
-    if (amount <= 0 || !dueDate || !description) {
-      alert("Revise valor, vencimento e descricao antes de confirmar.");
+    if (amount <= 0 || !dueDate) {
+      setWalletChargeError("Revise o valor e o vencimento antes de confirmar.");
       return;
     }
     if (walletChargeForm.metodo !== "boleto_bancario") {
-      alert("Nesta fase, somente boleto bancario com Pix integrado esta habilitado.");
+      setWalletChargeError("Nesta fase, somente boleto bancário com Pix integrado está habilitado.");
       return;
     }
 
@@ -2312,6 +2320,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       });
       await loadWalletOpenCharges(walletOpenChargesSort);
     } catch (error) {
+      setWalletChargeError(error?.message || "Não foi possível emitir a cobrança.");
       setWalletActionMessage({
         type: "error",
         message: error?.message || "Nao foi possivel emitir a cobranca.",
@@ -3766,155 +3775,298 @@ export default function Movimentacoes({ walletOnly = false }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showWalletChargeModal} onOpenChange={setShowWalletChargeModal}>
-        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[560px] overflow-hidden rounded-3xl">
-          <DialogHeader>
-            <DialogTitle>{walletChargeStep === 5 ? "Link de cobrança pronto" : "Gerar cobrança"}</DialogTitle>
-            <DialogDescription>
-              {walletChargeStep === 5
-                ? "Compartilhe este link seguro com o responsável financeiro."
-                : `Etapa ${Math.min(walletChargeStep, 4)} de 4. A cobrança será vinculada à carteira de ${selectedWalletAccount?.carteira_nome || "responsável financeiro"}.`}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="max-h-[calc(90vh-180px)] overflow-y-auto py-1 pr-1">
-            {walletChargeStep === 1 ? (
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3 text-sm text-emerald-900">
-                  Informe o valor total que o responsável poderá pagar por esta cobrança.
+      <Dialog
+        open={showWalletChargeModal}
+        onOpenChange={(open) => {
+          setShowWalletChargeModal(open);
+          if (!open) setWalletChargeError("");
+        }}
+      >
+        <DialogContent className="max-h-[92vh] w-[calc(100vw-24px)] max-w-[620px] gap-0 overflow-hidden rounded-[28px] border-slate-200 bg-white p-0 shadow-[0_28px_80px_rgba(15,23,42,0.22)] sm:w-full">
+          <div className="border-b border-slate-200/80 bg-gradient-to-br from-blue-50 via-white to-emerald-50 px-5 pb-4 pt-5 sm:px-7 sm:pb-5 sm:pt-6">
+            <DialogHeader className="pr-8 text-left">
+              <div className="flex items-center gap-3">
+                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${walletChargeStep === 5 ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
+                  {walletChargeStep === 5 ? <CheckCircle2 className="h-5 w-5" /> : <CircleDollarSign className="h-5 w-5" />}
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="wallet-charge-value">Valor da cobrança *</Label>
+                <div className="min-w-0">
+                  <DialogTitle className="font-brand text-xl tracking-tight text-slate-950 sm:text-2xl">
+                    {walletChargeStep === 5 ? "Cobrança pronta" : "Gerar cobrança"}
+                  </DialogTitle>
+                  <DialogDescription className="mt-0.5 truncate text-xs text-slate-500 sm:text-sm">
+                    {walletChargeStep === 5
+                      ? "Link seguro disponível para compartilhamento."
+                      : selectedWalletAccount?.carteira_nome || "Responsável financeiro"}
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {walletChargeStep < 5 ? (
+              <div className="mt-5 grid grid-cols-4 gap-1.5 sm:gap-2">
+                {WALLET_CHARGE_STEPS.map((step) => {
+                  const StepIcon = step.icon;
+                  const isActive = walletChargeStep === step.id;
+                  const isComplete = walletChargeStep > step.id;
+                  return (
+                    <button
+                      key={step.id}
+                      type="button"
+                      onClick={() => {
+                        if (isComplete && !walletChargeSaving) {
+                          setWalletChargeStep(step.id);
+                          setWalletChargeError("");
+                        }
+                      }}
+                      disabled={!isComplete || walletChargeSaving}
+                      className={`flex min-w-0 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-[10px] font-semibold transition sm:text-[11px] ${
+                        isActive
+                          ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-200"
+                          : isComplete
+                            ? "cursor-pointer bg-emerald-100/70 text-emerald-700 hover:bg-emerald-100"
+                            : "bg-white/45 text-slate-400"
+                      }`}
+                      aria-current={isActive ? "step" : undefined}
+                    >
+                      {isComplete ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <StepIcon className="h-3.5 w-3.5 shrink-0" />}
+                      <span className="truncate">{step.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="max-h-[calc(92vh-205px)] min-h-[300px] overflow-y-auto px-5 py-6 sm:min-h-[330px] sm:px-7 sm:py-7">
+            {walletChargeStep === 1 ? (
+              <div className="mx-auto max-w-lg">
+                <div className="mb-6 flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                    <CircleDollarSign className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700">Valor da cobrança</p>
+                    <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-950">Quanto deseja cobrar?</h3>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">Informe o valor total que será enviado ao responsável financeiro.</p>
+                  </div>
+                </div>
+
+                <Label htmlFor="wallet-charge-value" className="text-xs font-semibold text-slate-700">Valor *</Label>
+                <div className="mt-2 flex h-16 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 shadow-sm transition focus-within:border-blue-400 focus-within:bg-white focus-within:ring-4 focus-within:ring-blue-100">
+                  <span className="text-sm font-bold text-slate-500">R$</span>
                   <Input
                     id="wallet-charge-value"
                     inputMode="decimal"
                     value={walletChargeForm.valor}
-                    onChange={(event) => setWalletChargeForm((current) => ({ ...current, valor: event.target.value }))}
+                    onChange={(event) => {
+                      setWalletChargeForm((current) => ({ ...current, valor: event.target.value }));
+                      setWalletChargeError("");
+                    }}
                     placeholder="0,00"
                     autoFocus
+                    className="h-full flex-1 border-0 bg-transparent px-0 text-2xl font-bold tracking-tight text-slate-950 shadow-none placeholder:text-slate-300 focus-visible:ring-0"
                   />
                 </div>
               </div>
             ) : null}
 
             {walletChargeStep === 2 ? (
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-3 text-sm text-blue-900">
-                  Escolha o vencimento que será enviado ao Banco Inter.
+              <div className="mx-auto max-w-lg">
+                <div className="mb-6 flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-700">Vencimento</p>
+                    <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-950">Quando esta cobrança vence?</h3>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">A data escolhida será usada na emissão do boleto pelo Banco Inter.</p>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="wallet-charge-due-date">Vencimento *</Label>
-                  <Input
-                    id="wallet-charge-due-date"
-                    type="date"
-                    min={new Date().toISOString().slice(0, 10)}
-                    value={walletChargeForm.data_vencimento}
-                    onChange={(event) => setWalletChargeForm((current) => ({ ...current, data_vencimento: event.target.value }))}
-                  />
-                </div>
+
+                <Label className="text-xs font-semibold text-slate-700">Data de vencimento *</Label>
+                <DatePickerInput
+                  className="mt-2 h-14 rounded-2xl border-slate-200 bg-slate-50 px-4 shadow-sm"
+                  value={walletChargeForm.data_vencimento}
+                  onChange={(value) => {
+                    setWalletChargeForm((current) => ({ ...current, data_vencimento: value }));
+                    setWalletChargeError("");
+                  }}
+                  placeholder="Selecione o vencimento"
+                />
               </div>
             ) : null}
 
             {walletChargeStep === 3 ? (
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                  A descrição ajuda a operação e o responsável a reconhecerem esta cobrança.
+              <div className="mx-auto max-w-lg">
+                <div className="mb-6 flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">Identificação</p>
+                    <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-950">Como identificar a cobrança?</h3>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">Se desejar, use uma descrição curta para facilitar a identificação.</p>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="wallet-charge-description">Descrição *</Label>
-                  <Textarea
-                    id="wallet-charge-description"
-                    rows={4}
-                    maxLength={180}
-                    value={walletChargeForm.descricao}
-                    onChange={(event) => setWalletChargeForm((current) => ({ ...current, descricao: event.target.value }))}
-                    placeholder="Ex.: Recarga de carteira - serviços de julho"
-                  />
-                  <p className="text-right text-[11px] text-slate-400">{walletChargeForm.descricao.length}/180</p>
+
+                <Label htmlFor="wallet-charge-description" className="text-xs font-semibold text-slate-700">Descrição (opcional)</Label>
+                <Textarea
+                  id="wallet-charge-description"
+                  rows={4}
+                  maxLength={180}
+                  value={walletChargeForm.descricao}
+                  onChange={(event) => {
+                    setWalletChargeForm((current) => ({ ...current, descricao: event.target.value }));
+                    setWalletChargeError("");
+                  }}
+                  placeholder="Ex.: Serviços de hospedagem de julho"
+                  className="mt-2 min-h-[132px] resize-none rounded-2xl border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 shadow-sm focus:bg-white"
+                />
+                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Quando informada, aparecerá no link de pagamento.</span>
+                  <span className="shrink-0 pl-3">{walletChargeForm.descricao.length}/180</span>
                 </div>
               </div>
             ) : null}
 
             {walletChargeStep === 4 ? (
-              <div className="space-y-3">
-                <p className="text-sm font-medium text-slate-700">Forma de pagamento</p>
-                <button
-                  type="button"
-                  onClick={() => setWalletChargeForm((current) => ({ ...current, metodo: "boleto_bancario" }))}
-                  className={`flex w-full items-center justify-between rounded-2xl border p-3.5 text-left transition ${
-                    walletChargeForm.metodo === "boleto_bancario"
-                      ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
-                      : "border-slate-200 bg-white hover:border-slate-300"
-                  }`}
-                >
-                  <span>
-                    <span className="block text-sm font-semibold text-slate-900">Boleto bancário</span>
-                    <span className="mt-0.5 block text-xs text-slate-500">Inclui Pix copia e cola gerado pelo Banco Inter.</span>
-                  </span>
-                  <CheckCircle2 className={`h-5 w-5 ${walletChargeForm.metodo === "boleto_bancario" ? "text-blue-600" : "text-slate-300"}`} />
-                </button>
-                <div className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3.5 opacity-65">
-                  <span>
-                    <span className="block text-sm font-semibold text-slate-700">Pix com vencimento</span>
-                    <span className="mt-0.5 block text-xs text-slate-500">Temporariamente indisponível até existir suporte específico na integração.</span>
-                  </span>
-                  <Badge variant="outline" className="border-slate-300 bg-white text-[10px] text-slate-500">Indisponível</Badge>
+              <div className="mx-auto max-w-lg">
+                <div className="mb-5 flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+                    <Landmark className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-700">Pagamento</p>
+                    <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-950">Escolha como o cliente pagará</h3>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">A cobrança disponível hoje combina boleto e Pix copia e cola.</p>
+                  </div>
                 </div>
-                <div className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3.5 opacity-65">
-                  <span>
-                    <span className="block text-sm font-semibold text-slate-700">Cartão</span>
-                    <span className="mt-0.5 block text-xs text-slate-500">Temporariamente indisponível até a implementação do gateway online.</span>
-                  </span>
-                  <Badge variant="outline" className="border-slate-300 bg-white text-[10px] text-slate-500">Indisponível</Badge>
+
+                <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    aria-pressed={walletChargeForm.metodo === "boleto_bancario"}
+                    onClick={() => setWalletChargeForm((current) => ({ ...current, metodo: "boleto_bancario" }))}
+                    className="flex w-full items-center gap-3 rounded-[20px] border border-blue-300 bg-blue-50/70 p-3.5 text-left shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50"
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-blue-700 shadow-sm">
+                      <Landmark className="h-[18px] w-[18px]" />
+                    </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold text-slate-950">Boleto bancário</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-slate-500">Boleto em PDF com Pix copia e cola integrado.</span>
+                    </span>
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-blue-600" />
+                  </button>
+
+                  <div className="flex w-full items-center gap-3 rounded-[20px] border border-slate-200 bg-slate-50/80 p-3.5 text-left">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-400">
+                      <QrCode className="h-[18px] w-[18px]" />
+                    </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-slate-600">Pix com vencimento</span>
+                      <span className="mt-0.5 block text-xs text-slate-400">Aguardando suporte específico da integração.</span>
+                    </span>
+                    <Badge variant="outline" className="shrink-0 rounded-full border-slate-300 bg-white px-2 text-[9px] text-slate-500">Em breve</Badge>
+                  </div>
+
+                  <div className="flex w-full items-center gap-3 rounded-[20px] border border-slate-200 bg-slate-50/80 p-3.5 text-left">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-400">
+                      <CreditCard className="h-[18px] w-[18px]" />
+                    </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-slate-600">Cartão</span>
+                      <span className="mt-0.5 block text-xs text-slate-400">Disponível após a integração do gateway online.</span>
+                    </span>
+                    <Badge variant="outline" className="shrink-0 rounded-full border-slate-300 bg-white px-2 text-[9px] text-slate-500">Em breve</Badge>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-3 divide-x divide-slate-200 border-t border-slate-200 pt-4 text-center">
+                  <div className="px-2">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Valor</p>
+                    <p className="mt-1 truncate text-xs font-semibold text-slate-800">{formatCurrency(parseWalletChargeAmount(walletChargeForm.valor))}</p>
+                  </div>
+                  <div className="px-2">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Vencimento</p>
+                    <p className="mt-1 truncate text-xs font-semibold text-slate-800">{formatWalletStatementDate(walletChargeForm.data_vencimento)}</p>
+                  </div>
+                  <div className="px-2">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Cliente</p>
+                    <p className="mt-1 truncate text-xs font-semibold text-slate-800">{selectedWalletAccount?.carteira_nome || "-"}</p>
+                  </div>
                 </div>
               </div>
             ) : null}
 
             {walletChargeStep === 5 ? (
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-                  <p className="font-semibold">Cobrança emitida</p>
-                  <p className="mt-1">{formatCurrency(walletChargeResult?.charge?.valor || parseWalletChargeAmount(walletChargeForm.valor))} com vencimento em {formatWalletStatementDate(walletChargeResult?.charge?.data_vencimento || walletChargeForm.data_vencimento)}.</p>
+              <div className="mx-auto max-w-lg text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-8 ring-emerald-50">
+                  <CheckCircle2 className="h-7 w-7" />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="wallet-charge-public-link">Link de cobrança</Label>
-                  <div className="flex gap-2">
-                    <Input id="wallet-charge-public-link" value={walletChargeResult?.publicUrl || ""} readOnly className="min-w-0 text-xs" />
+                <h3 className="mt-5 text-xl font-bold tracking-tight text-slate-950">Cobrança emitida com sucesso</h3>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
+                  {formatCurrency(walletChargeResult?.charge?.valor || parseWalletChargeAmount(walletChargeForm.valor))} com vencimento em {formatWalletStatementDate(walletChargeResult?.charge?.data_vencimento || walletChargeForm.data_vencimento)}.
+                </p>
+
+                <div className="mt-6 text-left">
+                  <Label htmlFor="wallet-charge-public-link" className="text-xs font-semibold text-slate-700">Link de cobrança</Label>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                    <Input id="wallet-charge-public-link" value={walletChargeResult?.publicUrl || ""} readOnly className="h-12 min-w-0 rounded-2xl border-slate-200 bg-slate-50 px-4 text-xs" />
                     <Button
                       type="button"
-                      variant="outline"
                       onClick={() => handleCopyWalletChargeLink(walletChargeResult?.publicUrl)}
                       disabled={!walletChargeResult?.publicUrl}
-                      className="shrink-0"
+                      className="h-12 shrink-0 rounded-2xl bg-blue-600 px-5 text-white hover:bg-blue-700"
                     >
                       <ClipboardCopy className="mr-1.5 h-4 w-4" />
-                      Copiar
+                      Copiar link
                     </Button>
                   </div>
                 </div>
-                <p className="text-xs leading-5 text-slate-500">
-                  O link não exige login. Ele mostra somente os dados necessários para pagar o boleto ou usar o Pix integrado e expira automaticamente.
-                </p>
+                <p className="mt-4 text-xs leading-5 text-slate-400">O cliente pode abrir este link seguro sem fazer login.</p>
+              </div>
+            ) : null}
+
+            {walletChargeError && walletChargeStep < 5 ? (
+              <div className="mx-auto mt-5 flex max-w-lg items-start gap-2.5 rounded-2xl bg-red-50 px-3.5 py-3 text-xs leading-5 text-red-700" role="alert">
+                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{walletChargeError}</span>
               </div>
             ) : null}
           </div>
 
-          <DialogFooter className="gap-2 border-t border-slate-200 pt-4">
+          <DialogFooter className="flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
             {walletChargeStep === 5 ? (
-              <Button onClick={() => setShowWalletChargeModal(false)}>Concluir</Button>
+              <Button onClick={() => setShowWalletChargeModal(false)} className="h-11 w-full rounded-full bg-slate-950 px-6 text-white hover:bg-slate-800 sm:ml-auto sm:w-auto">Concluir</Button>
             ) : (
               <>
-                <Button variant="outline" onClick={() => setShowWalletChargeModal(false)}>Cancelar</Button>
-                {walletChargeStep > 1 ? (
-                  <Button variant="outline" onClick={() => setWalletChargeStep((current) => current - 1)}>Voltar</Button>
-                ) : null}
-                {walletChargeStep < 4 ? (
-                  <Button onClick={handleWalletChargeStepNext}>Seguir</Button>
-                ) : (
-                  <Button onClick={handleWalletChargeIssue} disabled={walletChargeSaving} className="bg-blue-600 text-white hover:bg-blue-700">
-                    {walletChargeSaving ? "Emitindo..." : "Confirmar cobrança"}
-                  </Button>
-                )}
+                <Button variant="ghost" onClick={() => setShowWalletChargeModal(false)} disabled={walletChargeSaving} className="h-11 rounded-full px-5 text-slate-500 hover:bg-slate-200/70 hover:text-slate-800">Cancelar</Button>
+                <div className="flex gap-2">
+                  {walletChargeStep > 1 ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setWalletChargeStep((current) => current - 1);
+                        setWalletChargeError("");
+                      }}
+                      disabled={walletChargeSaving}
+                      className="h-11 flex-1 rounded-full border-slate-300 bg-white px-5 sm:flex-none"
+                    >
+                      <ChevronLeft className="mr-1.5 h-4 w-4" />
+                      Voltar
+                    </Button>
+                  ) : null}
+                  {walletChargeStep < 4 ? (
+                    <Button onClick={handleWalletChargeStepNext} className="h-11 flex-1 rounded-full bg-blue-600 px-7 text-white hover:bg-blue-700 sm:flex-none">
+                      {walletChargeStep === 3 && !walletChargeForm.descricao.trim() ? "Pular" : "Seguir"}
+                    </Button>
+                  ) : (
+                    <Button onClick={handleWalletChargeIssue} disabled={walletChargeSaving} className="h-11 flex-1 rounded-full bg-blue-600 px-6 text-white hover:bg-blue-700 sm:flex-none">
+                      {walletChargeSaving ? "Emitindo..." : "Confirmar e emitir"}
+                    </Button>
+                  )}
+                </div>
               </>
             )}
           </DialogFooter>
@@ -3963,7 +4115,9 @@ export default function Movimentacoes({ walletOnly = false }) {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-semibold text-slate-900">{charge.descricao}</p>
+                          <p className={`text-sm ${charge.descricao ? "font-semibold text-slate-900" : "font-medium text-slate-500"}`}>
+                            {charge.descricao || "Sem descrição"}
+                          </p>
                           <Badge variant="outline" className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">Boleto + Pix</Badge>
                         </div>
                         <div className="mt-2 grid grid-cols-2 gap-x-5 gap-y-1 text-xs text-slate-500 sm:grid-cols-3">

@@ -3,6 +3,7 @@
 // - Otherwise fall back to a lightweight local mock (localStorage) so the app remains functional.
 
 import { createClient } from '@supabase/supabase-js';
+import { GOOGLE_REVIEW_CONFIG_KEY } from '../../shared/google-review.js';
 import {
   clearStoredActiveUnitId,
   getStoredActiveUnitId,
@@ -2040,6 +2041,21 @@ function expireMockBudgets(payload = {}) {
 }
 
 const mockFunctions = {
+  getPublicGoogleReviewUrl: async (payload = {}) => {
+    const unitReference = String(payload?.unit_reference || '').trim();
+    if (!unitReference) return { url: null };
+
+    const normalizedReference = unitReference.toLowerCase();
+    const unit = readStorage('Empresa').find((item) => [item?.id, item?.slug, item?.codigo]
+      .some((candidate) => String(candidate || '').trim().toLowerCase() === normalizedReference));
+    if (!unit?.id) return { url: null };
+
+    const config = readStorage('AppConfig')
+      .filter((item) => item?.key === GOOGLE_REVIEW_CONFIG_KEY && item?.empresa_id === unit.id && item?.ativo !== false)
+      .sort((left, right) => new Date(right?.updated_date || right?.created_date || 0).getTime() - new Date(left?.updated_date || left?.created_date || 0).getTime())[0];
+
+    return { url: String(config?.value?.url || '').trim() || null };
+  },
   notificacoesOrcamento: async (payload) => {
     console.info('[mock] notificacoesOrcamento called with', payload);
     return { ok: true };
@@ -2062,7 +2078,7 @@ const mockFunctions = {
       if (metodo !== 'boleto_bancario') throw new Error('Nesta fase, somente boleto bancario com Pix integrado esta habilitado.');
       if (!Number.isFinite(valor) || valor <= 0) throw new Error('Informe um valor maior que zero para a cobranca.');
       if (!dataVencimento || dataVencimento < new Date().toISOString().slice(0, 10)) throw new Error('Informe um vencimento valido, a partir de hoje.');
-      if (!descricao || descricao.length > 180) throw new Error('A descricao da cobranca e obrigatoria e deve ter no maximo 180 caracteres.');
+      if (descricao.length > 180) throw new Error('A descricao da cobranca deve ter no maximo 180 caracteres.');
 
       const carteira = readStorage('Carteira').find((item) => item?.id === carteiraId && item?.empresa_id === empresaId);
       if (!carteira) throw new Error('Carteira do responsavel financeiro nao localizada para esta unidade.');
@@ -2107,7 +2123,7 @@ const mockFunctions = {
         public_token_expires_at: tokenExpiresAt.toISOString(),
         created_by_user_id: payload?.usuario_id || null,
         metadata: {
-          responsavel_nome: contato?.nome || carteira?.nome_razao_social || carteira?.nome_fantasia || '',
+          responsavel_nome: carteira?.nome_razao_social || '',
           responsavel_cpf_cnpj: carteira?.cpf_cnpj || '',
           responsavel_email: contato?.email || carteira?.email || '',
           responsavel_telefone: contato?.celular || carteira?.celular || '',
@@ -5710,6 +5726,18 @@ if (SUPABASE_URL && SUPABASE_ANON) {
   });
 
   const supabaseFunctions = {
+    getPublicGoogleReviewUrl: async (payload = {}) => {
+      const unitReference = String(payload?.unit_reference || '').trim();
+      if (!unitReference) return { url: null };
+
+      const { data, error } = await supabase.rpc('app_public_google_review_url', {
+        p_unit_ref: unitReference,
+      });
+      if (error) {
+        throw toAppError(error, 'Erro ao localizar o link público de avaliação da unidade.');
+      }
+      return { url: typeof data === 'string' && data.trim() ? data.trim() : null };
+    },
     notificacoesOrcamento: async (payload) => {
       try {
         if (payload) {

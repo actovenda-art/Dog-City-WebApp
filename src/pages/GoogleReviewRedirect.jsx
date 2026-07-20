@@ -1,14 +1,58 @@
-import { useEffect } from "react";
-import { ExternalLink, LoaderCircle, Star } from "lucide-react";
-import { GOOGLE_REVIEW_TARGET_URL } from "@/lib/google-review";
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import { ExternalLink, LoaderCircle, Star, TriangleAlert } from "lucide-react";
+import { getPublicGoogleReviewUrl } from "@/api/functions";
 import { useBranding } from "@/hooks/use-branding";
 
+function normalizeReviewTarget(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 export default function GoogleReviewRedirect() {
+  const { unitReference = "" } = useParams();
   const { companyName, logoUrl } = useBranding({ variant: "base", updateDocument: false });
+  const [targetUrl, setTargetUrl] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    window.location.replace(GOOGLE_REVIEW_TARGET_URL);
-  }, []);
+    let active = true;
+    const normalizedReference = String(unitReference || "").trim();
+
+    if (!normalizedReference) {
+      setErrorMessage("Este link de avaliação não identifica uma unidade.");
+      return () => {
+        active = false;
+      };
+    }
+
+    async function resolveReviewTarget() {
+      setErrorMessage("");
+      try {
+        const response = await getPublicGoogleReviewUrl({ unit_reference: normalizedReference });
+        const normalizedTarget = normalizeReviewTarget(response?.url);
+        if (!normalizedTarget) {
+          throw new Error("A avaliação desta unidade ainda não foi configurada.");
+        }
+        if (!active) return;
+        setTargetUrl(normalizedTarget);
+        window.location.replace(normalizedTarget);
+      } catch (error) {
+        if (active) {
+          setErrorMessage(error?.message || "Não foi possível localizar a avaliação desta unidade.");
+        }
+      }
+    }
+
+    resolveReviewTarget();
+    return () => {
+      active = false;
+    };
+  }, [unitReference]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-5 py-10">
@@ -23,21 +67,32 @@ export default function GoogleReviewRedirect() {
 
         <h1 className="mt-5 text-xl font-semibold text-slate-950">Avalie a Dog City Brasil</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          Você será direcionado para a página de avaliações da empresa no Google.
+          {errorMessage
+            ? errorMessage
+            : "Você será direcionado para a página de avaliações desta unidade no Google."}
         </p>
 
-        <div className="mt-6 flex items-center justify-center gap-2 text-sm font-medium text-blue-700">
-          <LoaderCircle className="h-4 w-4 animate-spin" />
-          Abrindo o Google...
-        </div>
+        {errorMessage ? (
+          <div className="mt-6 flex items-center justify-center gap-2 text-sm font-medium text-amber-700">
+            <TriangleAlert className="h-4 w-4" />
+            Link indisponível
+          </div>
+        ) : (
+          <div className="mt-6 flex items-center justify-center gap-2 text-sm font-medium text-blue-700">
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+            Abrindo o Google...
+          </div>
+        )}
 
-        <a
-          href={GOOGLE_REVIEW_TARGET_URL}
-          className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-700 underline underline-offset-4"
-        >
-          Abrir avaliação manualmente
-          <ExternalLink className="h-4 w-4" />
-        </a>
+        {targetUrl ? (
+          <a
+            href={targetUrl}
+            className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-700 underline underline-offset-4"
+          >
+            Abrir avaliação manualmente
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        ) : null}
       </section>
     </main>
   );

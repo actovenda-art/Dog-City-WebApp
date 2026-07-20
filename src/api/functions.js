@@ -62,6 +62,14 @@ export const financeShadowSync = async (...args) => {
 	return f.financeShadowSync(...args);
 };
 
+export const getPublicGoogleReviewUrl = async (...args) => {
+	const f = getFunctions();
+	if (!f || typeof f.getPublicGoogleReviewUrl !== 'function') {
+		return Promise.reject(new Error('appClient.functions.getPublicGoogleReviewUrl is not available'));
+	}
+	return f.getPublicGoogleReviewUrl(...args);
+};
+
 export const financeExpireBudgets = async (...args) => {
 	const f = getFunctions();
 	if (!f || typeof f.financeExpireBudgets !== 'function') {

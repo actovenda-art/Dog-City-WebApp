@@ -9,3 +9,9 @@ const configuredSiteUrl = String(import.meta.env.VITE_SITE_URL || "").trim();
 const publicSiteUrl = (configuredSiteUrl || DEFAULT_SITE_URL).replace(/\/+$/, "");
 
 export const GOOGLE_REVIEW_PUBLIC_URL = `${publicSiteUrl}${GOOGLE_REVIEW_SHORT_PATH}`;
+
+export function buildGoogleReviewPublicUrl(unitReference) {
+  const normalizedReference = String(unitReference || "").trim();
+  if (!normalizedReference) return "";
+  return `${GOOGLE_REVIEW_PUBLIC_URL}/${encodeURIComponent(normalizedReference)}`;
+}

@@ -2313,7 +2313,7 @@ function parseCarteiraContact(value: unknown) {
 async function loadWalletChargePayer(empresaId: string, carteiraId: string) {
   const { data: carteira, error } = await supabase
     .from("carteira")
-    .select("id, empresa_id, nome_razao_social, nome_fantasia, cpf_cnpj, email, celular, street, numero_residencia, neighborhood, city, state, cep, contato_orcamentos")
+    .select("id, empresa_id, nome_razao_social, cpf_cnpj, email, celular, street, numero_residencia, neighborhood, city, state, cep, contato_orcamentos")
     .eq("id", carteiraId)
     .eq("empresa_id", empresaId)
     .maybeSingle();
@@ -2329,7 +2329,7 @@ async function loadWalletChargePayer(empresaId: string, carteiraId: string) {
     payer: {
       // The registered wallet owner is the legal payer. The budget contact may
       // be another person and must never replace the payer's name on the bill.
-      responsavel_nome: sanitizeText(carteira.nome_razao_social, sanitizeText(carteira.nome_fantasia)),
+      responsavel_nome: sanitizeText(carteira.nome_razao_social),
       responsavel_cpf_cnpj: normalizeCpfCnpj(carteira.cpf_cnpj),
       responsavel_email: sanitizeText(contact.email, sanitizeText(carteira.email)),
       responsavel_telefone: sanitizeText(contact.celular, sanitizeText(carteira.celular)),
@@ -5302,8 +5302,8 @@ Deno.serve(async (request) => {
       if (!dueDate || dueDate < getBusinessDateKey()) {
         return jsonResponse({ error: "Informe um vencimento valido, a partir de hoje." }, 400);
       }
-      if (!description || description.length > 180) {
-        return jsonResponse({ error: "A descricao da cobranca e obrigatoria e deve ter no maximo 180 caracteres." }, 400);
+      if (description.length > 180) {
+        return jsonResponse({ error: "A descricao da cobranca deve ter no maximo 180 caracteres." }, 400);
       }
 
       const { payer } = await loadWalletChargePayer(empresaId, carteiraId);
@@ -5330,7 +5330,7 @@ Deno.serve(async (request) => {
         valor: Number(amount.toFixed(2)),
         data_vencimento: dueDate,
         seu_numero: buildWalletChargeSeuNumero(walletChargeId),
-        mensagem_linha_1: description,
+        mensagem_linha_1: description || "Cobranca Dog City Brasil",
         mensagem_linha_2: "Dog City Brasil",
       });
       const now = new Date().toISOString();

@@ -324,6 +324,7 @@ function PagesContent() {
 
   return (
     <Routes>
+      <Route path="/avaliar/:unitReference" element={<GoogleReviewRedirect />} />
       <Route path="/avaliar" element={<GoogleReviewRedirect />} />
       <Route path="/" element={<DefaultHomeRedirect authEnabled={authEnabled} authReady={authReady} currentUser={currentUser} />} />
 

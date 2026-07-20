@@ -186,7 +186,7 @@ export function buildFinanceWriteFlowMap({ empresaId = null, flags = {} } = {}) 
       flow_key: "comissao_quitacao",
       dominio: "comissao",
       origem: "gatilho em obrigacao quitada",
-      frontend_surface: "ControleGerencial",
+      frontend_surface: "Cockpit",
       backend_surface: "trigger trg_obrigacao_financeira_after_commission",
       legacy_tables: [],
       v2_tables: ["comissao_evento", "obrigacao_financeira"],

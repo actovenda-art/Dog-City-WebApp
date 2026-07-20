@@ -36,7 +36,6 @@ const PAGE_ACCESS_REQUIREMENTS = {
   ContasPagar: ["platform:*", ...readAccess("financeiro")],
   ContasReceber: ["platform:*", ...readAccess("financeiro")],
   Cockpit: ["platform:*", ...readAccess("financeiro")],
-  ControleGerencial: ["platform:*", ...readAccess("financeiro")],
   Escalacao: ["platform:*", ...readAccess("empresa")],
 
   Orcamentos: ["platform:*", ...readAccess("orcamentos")],

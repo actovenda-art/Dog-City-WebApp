@@ -15,7 +15,6 @@ export const PAGE_ROUTES: Record<string, string> = {
     Perfis: "perfis",
     Planos: "planos",
     Cockpit: "cockpit",
-    ControleGerencial: "controle-gerencial",
     Escalacao: "escalacao",
     ContasReceber: "contas-receber",
     CarteirasFinanceiras: "carteiras-financeiras",

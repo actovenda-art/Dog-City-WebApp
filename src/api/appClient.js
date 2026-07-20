@@ -28,10 +28,7 @@ import {
   buildGenerationResourcesReport,
   buildRealBillingReport,
   buildServicesProvidedReport,
-  buildSnapshotPayload,
   buildWalletReport,
-  compareSnapshotPayloads,
-  createMockChecksum,
 } from '@/lib/finance-reports';
 import {
   buildCommissionSourceKey,
@@ -1130,24 +1127,6 @@ function getMockObservabilityFlags(empresaId) {
     ...getMockCockpitFlags(empresaId),
     ...getMockReportsFlags(empresaId),
   };
-}
-
-function getMockCommissionSellerMap(empresaId) {
-  const providers = readStorage('ServiceProvider').filter((item) => !empresaId || item?.empresa_id === empresaId || !item?.empresa_id);
-  return Object.fromEntries(providers.map((item) => [item.id, item]));
-}
-
-function getMockCommissionListRows(empresaId, status = null, limit = 100) {
-  const sellersById = getMockCommissionSellerMap(empresaId);
-  return readStorage('ComissaoEvento')
-    .filter((item) => item?.empresa_id === empresaId)
-    .filter((item) => !status || item?.status === status)
-    .sort((left, right) => new Date(right?.data_comissao || right?.created_date || 0).getTime() - new Date(left?.data_comissao || left?.created_date || 0).getTime())
-    .slice(0, Math.max(1, Math.min(Number(limit) || 100, 500)))
-    .map((item) => ({
-      ...item,
-      vendedor_nome: sellersById[item?.vendedor_user_id]?.nome || sellersById[item?.vendedor_user_id]?.full_name || item?.vendedor_user_id || '-',
-    }));
 }
 
 function buildMockLegacyCockpitSummary(empresaId, periodoInicio = null, periodoFim = null) {
@@ -3201,22 +3180,6 @@ mockFunctions.financeProcessBudgetCancellationV2 = async (payload = {}) => {
   };
 };
 
-mockFunctions.financeReportsV2Context = async (payload = {}) => {
-  const empresaId = payload?.empresa_id || getMockScopedUnitId();
-  const snapshots = readStorage('FinanceSnapshot').filter((item) => item?.empresa_id === empresaId);
-  const flags = getMockReportsFlags(empresaId);
-  const latestSnapshot = snapshots
-    .slice()
-    .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime())[0];
-
-  return {
-    empresa_id: empresaId,
-    ...flags,
-    snapshots_count: snapshots.length,
-    latest_snapshot_created_at: latestSnapshot?.created_date || null,
-  };
-};
-
 mockFunctions.financeReportsV2Summary = async (payload = {}) => {
   const empresaId = payload?.empresa_id || getMockScopedUnitId();
   const flags = getMockReportsFlags(empresaId);
@@ -3291,206 +3254,6 @@ mockFunctions.financeReportServicesProvided = async (payload = {}) => {
     throw new Error(`Feature flag finance.financial_competence_enabled está desligada para a empresa ${empresaId}.`);
   }
   return buildMockReportItemsByType(empresaId, 'servicos_prestados', payload?.periodo_inicio || null, payload?.periodo_fim || null);
-};
-
-mockFunctions.financeSnapshotCreate = async (payload = {}) => {
-  const empresaId = payload?.empresa_id || getMockScopedUnitId();
-  const tipo = String(payload?.tipo || '').trim();
-  const competencia = String(payload?.competencia || '').trim();
-  const flags = getMockReportsFlags(empresaId);
-
-  if (!flags.snapshots_enabled) {
-    throw new Error(`Feature flag finance.snapshots_enabled está desligada para a empresa ${empresaId}.`);
-  }
-  if (!flags.reports_v2_enabled) {
-    throw new Error(`Feature flag finance.reports_v2_enabled está desligada para a empresa ${empresaId}.`);
-  }
-  if (!tipo || !competencia) {
-    throw new Error('tipo e competencia são obrigatórios para gerar snapshot.');
-  }
-
-  const snapshots = readStorage('FinanceSnapshot');
-  const existing = snapshots.find((item) =>
-    item?.empresa_id === empresaId
-    && item?.tipo === tipo
-    && item?.competencia === competencia
-  );
-  if (existing) {
-    return {
-      snapshot_id: existing.id,
-      empresa_id: empresaId,
-      competencia,
-      tipo,
-      status: 'reutilizado',
-      hash_checksum: existing.hash_checksum,
-      item_count: Number(existing?.payload?.summary?.count || 0),
-      total_valor: roundMockCurrency(existing?.payload?.summary?.total_valor || 0),
-      created_date: existing.created_date,
-      reused: true,
-    };
-  }
-
-  const items = buildMockReportItemsByType(
-    empresaId,
-    tipo,
-    payload?.periodo_inicio || null,
-    payload?.periodo_fim || null,
-  );
-  const snapshotPayload = buildSnapshotPayload(tipo, items, {
-    competencia,
-    periodo_inicio: payload?.periodo_inicio || null,
-    periodo_fim: payload?.periodo_fim || null,
-    ...(payload?.metadata || {}),
-  });
-  const checksum = createMockChecksum(snapshotPayload);
-  const now = new Date().toISOString();
-  const row = {
-    id: makeId(),
-    empresa_id: empresaId,
-    competencia,
-    periodo_inicio: payload?.periodo_inicio || null,
-    periodo_fim: payload?.periodo_fim || null,
-    tipo,
-    status: 'fechado',
-    source_key: `finance_snapshot|${empresaId}|${competencia}|${tipo}`,
-    hash_checksum: checksum,
-    payload: snapshotPayload,
-    usuario_id: payload?.usuario_id || null,
-    metadata: payload?.metadata || {},
-    lock_version: 0,
-    created_date: now,
-    updated_date: now,
-  };
-  snapshots.push(row);
-  writeStorage('FinanceSnapshot', snapshots);
-
-  return {
-    snapshot_id: row.id,
-    empresa_id: empresaId,
-    competencia,
-    tipo,
-    status: 'fechado',
-    hash_checksum: checksum,
-    item_count: Number(snapshotPayload?.summary?.count || 0),
-    total_valor: roundMockCurrency(snapshotPayload?.summary?.total_valor || 0),
-    created_date: row.created_date,
-    reused: false,
-  };
-};
-
-mockFunctions.financeSnapshotCompare = async (payload = {}) => {
-  const snapshotId = payload?.snapshot_id;
-  const snapshots = readStorage('FinanceSnapshot');
-  const deltas = readStorage('FinanceSnapshotDelta');
-  const snapshot = snapshots.find((item) => item?.id === snapshotId);
-  if (!snapshot) {
-    throw new Error('snapshot não encontrado.');
-  }
-
-  const flags = getMockReportsFlags(snapshot.empresa_id);
-  if (!flags.snapshots_enabled) {
-    throw new Error(`Feature flag finance.snapshots_enabled está desligada para a empresa ${snapshot.empresa_id}.`);
-  }
-
-  const currentItems = buildMockReportItemsByType(
-    snapshot.empresa_id,
-    snapshot.tipo,
-    snapshot.periodo_inicio || null,
-    snapshot.periodo_fim || null,
-  );
-  const currentPayload = buildSnapshotPayload(snapshot.tipo, currentItems, {
-    competencia: snapshot.competencia,
-    periodo_inicio: snapshot.periodo_inicio,
-    periodo_fim: snapshot.periodo_fim,
-    ...(payload?.metadata || {}),
-  });
-  const differences = compareSnapshotPayloads(snapshot.payload, currentPayload);
-  const comparisonRunId = makeId();
-  const now = new Date().toISOString();
-
-  const rows = differences.map((item) => ({
-    id: makeId(),
-    snapshot_id: snapshot.id,
-    comparison_run_id: comparisonRunId,
-    empresa_id: snapshot.empresa_id,
-    competencia: snapshot.competencia,
-    tipo: snapshot.tipo,
-    delta_kind: item.delta_kind,
-    entity_key: item.entity_key,
-    entity_label: item.entity_label,
-    valor_anterior: roundMockCurrency(item.valor_anterior || 0),
-    valor_atual: roundMockCurrency(item.valor_atual || 0),
-    impacto_financeiro: roundMockCurrency(item.impacto_financeiro || 0),
-    payload_before: item.payload_before || null,
-    payload_after: item.payload_after || null,
-    usuario_id: payload?.usuario_id || null,
-    metadata: payload?.metadata || {},
-    created_date: now,
-  }));
-
-  writeStorage('FinanceSnapshotDelta', [...deltas, ...rows]);
-  return rows;
-};
-
-mockFunctions.financeSnapshotList = async (payload = {}) => {
-  const empresaId = payload?.empresa_id || getMockScopedUnitId();
-  const flags = getMockReportsFlags(empresaId);
-  if (!flags.reports_v2_enabled) {
-    throw new Error(`Feature flag finance.reports_v2_enabled está desligada para a empresa ${empresaId}.`);
-  }
-  return readStorage('FinanceSnapshot')
-    .filter((item) => item?.empresa_id === empresaId)
-    .filter((item) => !payload?.tipo || item?.tipo === payload?.tipo)
-    .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime())
-    .slice(0, Math.max(Number(payload?.limit || 20), 1))
-    .map((item) => ({
-      id: item.id,
-      empresa_id: item.empresa_id,
-      competencia: item.competencia,
-      periodo_inicio: item.periodo_inicio,
-      periodo_fim: item.periodo_fim,
-      tipo: item.tipo,
-      status: item.status,
-      hash_checksum: item.hash_checksum,
-      item_count: Number(item?.payload?.summary?.count || 0),
-      total_valor: roundMockCurrency(item?.payload?.summary?.total_valor || 0),
-      usuario_id: item.usuario_id || null,
-      created_date: item.created_date,
-    }));
-};
-
-mockFunctions.financeSnapshotDeltaList = async (payload = {}) => {
-  if (!payload?.snapshot_id) {
-    throw new Error('snapshot_id é obrigatório para listar deltas.');
-  }
-  return readStorage('FinanceSnapshotDelta')
-    .filter((item) => item?.snapshot_id === payload?.snapshot_id)
-    .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime())
-    .slice(0, Math.max(Number(payload?.limit || 200), 1));
-};
-
-mockFunctions.financeCommissionReadContext = async (payload = {}) => {
-  const empresaId = payload?.empresa_id || getMockScopedUnitId();
-  const flags = getMockCommissionFlags(empresaId);
-  const eventos = readStorage('ComissaoEvento').filter((item) => item?.empresa_id === empresaId);
-  return {
-    empresa_id: empresaId,
-    ...flags,
-    events_count: eventos.length,
-    granted_count: eventos.filter((item) => item?.status === 'concedida').length,
-    latest_event_created_at: eventos
-      .slice()
-      .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime())[0]?.created_date || null,
-  };
-};
-
-mockFunctions.financeCommissionList = async (payload = {}) => {
-  const empresaId = payload?.empresa_id || getMockScopedUnitId();
-  const flags = getMockCommissionFlags(empresaId);
-  if (!flags.commission_visualization_enabled) {
-    throw new Error(`Feature flag finance.commission_visualization_enabled está desligada para a empresa ${empresaId}.`);
-  }
-  return getMockCommissionListRows(empresaId, payload?.status || null, payload?.limit || 100);
 };
 
 mockFunctions.financeProcessCommissionForObrigacao = async (payload = {}) => {
@@ -6102,15 +5865,6 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       }
       return Array.isArray(data) ? (data[0] || null) : data;
     },
-    financeReportsV2Context: async (payload = {}) => {
-      const { data, error } = await supabase.rpc('finance_reports_v2_context', {
-        p_empresa_id: payload?.empresa_id || null,
-      });
-      if (error) {
-        throw toAppError(error, 'Erro ao carregar o contexto dos relatórios V2.');
-      }
-      return Array.isArray(data) ? (data[0] || null) : data;
-    },
     financeReportsV2Summary: async (payload = {}) => {
       const { data, error } = await supabase.rpc('finance_reports_v2_summary', {
         p_empresa_id: payload?.empresa_id || null,
@@ -6161,73 +5915,6 @@ if (SUPABASE_URL && SUPABASE_ANON) {
       });
       if (error) {
         throw toAppError(error, 'Erro ao carregar o relatório de serviços prestados V2.');
-      }
-      return Array.isArray(data) ? data : [];
-    },
-    financeSnapshotCreate: async (payload = {}) => {
-      const { data, error } = await supabase.rpc('finance_snapshot_create', {
-        p_empresa_id: payload?.empresa_id || null,
-        p_tipo: payload?.tipo || null,
-        p_competencia: payload?.competencia || null,
-        p_periodo_inicio: payload?.periodo_inicio || null,
-        p_periodo_fim: payload?.periodo_fim || null,
-        p_usuario_id: payload?.usuario_id || null,
-        p_metadata: payload?.metadata || {},
-      });
-      if (error) {
-        throw toAppError(error, 'Erro ao gerar o snapshot financeiro.');
-      }
-      return Array.isArray(data) ? (data[0] || null) : data;
-    },
-    financeSnapshotCompare: async (payload = {}) => {
-      const { data, error } = await supabase.rpc('finance_snapshot_compare', {
-        p_snapshot_id: payload?.snapshot_id || null,
-        p_usuario_id: payload?.usuario_id || null,
-        p_metadata: payload?.metadata || {},
-      });
-      if (error) {
-        throw toAppError(error, 'Erro ao comparar o snapshot financeiro.');
-      }
-      return Array.isArray(data) ? data : [];
-    },
-    financeSnapshotList: async (payload = {}) => {
-      const { data, error } = await supabase.rpc('finance_snapshot_list', {
-        p_empresa_id: payload?.empresa_id || null,
-        p_tipo: payload?.tipo || null,
-        p_limit: payload?.limit || 20,
-      });
-      if (error) {
-        throw toAppError(error, 'Erro ao listar snapshots financeiros.');
-      }
-      return Array.isArray(data) ? data : [];
-    },
-    financeSnapshotDeltaList: async (payload = {}) => {
-      const { data, error } = await supabase.rpc('finance_snapshot_delta_list', {
-        p_snapshot_id: payload?.snapshot_id || null,
-        p_limit: payload?.limit || 200,
-      });
-      if (error) {
-        throw toAppError(error, 'Erro ao listar deltas de snapshot.');
-      }
-      return Array.isArray(data) ? data : [];
-    },
-    financeCommissionReadContext: async (payload = {}) => {
-      const { data, error } = await supabase.rpc('finance_commission_read_context', {
-        p_empresa_id: payload?.empresa_id || null,
-      });
-      if (error) {
-        throw toAppError(error, 'Erro ao carregar o contexto administrativo de comissões.');
-      }
-      return Array.isArray(data) ? (data[0] || null) : data;
-    },
-    financeCommissionList: async (payload = {}) => {
-      const { data, error } = await supabase.rpc('finance_commission_list', {
-        p_empresa_id: payload?.empresa_id || null,
-        p_status: payload?.status || null,
-        p_limit: payload?.limit || 100,
-      });
-      if (error) {
-        throw toAppError(error, 'Erro ao listar eventos de comissão.');
       }
       return Array.isArray(data) ? data : [];
     },

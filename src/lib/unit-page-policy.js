@@ -25,11 +25,6 @@ export const UNIT_PAGE_POLICY = {
     label: "Cockpit",
     description: "Indicadores agregados por múltiplas unidades podem ser exibidos juntos.",
   },
-  ControleGerencial: {
-    mergedMode: "read_only",
-    label: "Controle Gerencial",
-    description: "Os indicadores gerenciais podem ser consolidados entre unidades. Ações de cadastro permanecem restritas.",
-  },
   Movimentacoes: {
     mergedMode: "read_only",
     label: "Transações",

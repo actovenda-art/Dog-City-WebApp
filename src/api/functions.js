@@ -166,14 +166,6 @@ export const financeProcessBudgetCancellationV2 = async (...args) => {
 	return f.financeProcessBudgetCancellationV2(...args);
 };
 
-export const financeReportsV2Context = async (...args) => {
-	const f = getFunctions();
-	if (!f || typeof f.financeReportsV2Context !== 'function') {
-		return Promise.reject(new Error('appClient.functions.financeReportsV2Context is not available'));
-	}
-	return f.financeReportsV2Context(...args);
-};
-
 export const financeReportsV2Summary = async (...args) => {
 	const f = getFunctions();
 	if (!f || typeof f.financeReportsV2Summary !== 'function') {
@@ -212,54 +204,6 @@ export const financeReportServicesProvided = async (...args) => {
 		return Promise.reject(new Error('appClient.functions.financeReportServicesProvided is not available'));
 	}
 	return f.financeReportServicesProvided(...args);
-};
-
-export const financeSnapshotCreate = async (...args) => {
-	const f = getFunctions();
-	if (!f || typeof f.financeSnapshotCreate !== 'function') {
-		return Promise.reject(new Error('appClient.functions.financeSnapshotCreate is not available'));
-	}
-	return f.financeSnapshotCreate(...args);
-};
-
-export const financeSnapshotCompare = async (...args) => {
-	const f = getFunctions();
-	if (!f || typeof f.financeSnapshotCompare !== 'function') {
-		return Promise.reject(new Error('appClient.functions.financeSnapshotCompare is not available'));
-	}
-	return f.financeSnapshotCompare(...args);
-};
-
-export const financeSnapshotList = async (...args) => {
-	const f = getFunctions();
-	if (!f || typeof f.financeSnapshotList !== 'function') {
-		return Promise.reject(new Error('appClient.functions.financeSnapshotList is not available'));
-	}
-	return f.financeSnapshotList(...args);
-};
-
-export const financeSnapshotDeltaList = async (...args) => {
-	const f = getFunctions();
-	if (!f || typeof f.financeSnapshotDeltaList !== 'function') {
-		return Promise.reject(new Error('appClient.functions.financeSnapshotDeltaList is not available'));
-	}
-	return f.financeSnapshotDeltaList(...args);
-};
-
-export const financeCommissionReadContext = async (...args) => {
-	const f = getFunctions();
-	if (!f || typeof f.financeCommissionReadContext !== 'function') {
-		return Promise.reject(new Error('appClient.functions.financeCommissionReadContext is not available'));
-	}
-	return f.financeCommissionReadContext(...args);
-};
-
-export const financeCommissionList = async (...args) => {
-	const f = getFunctions();
-	if (!f || typeof f.financeCommissionList !== 'function') {
-		return Promise.reject(new Error('appClient.functions.financeCommissionList is not available'));
-	}
-	return f.financeCommissionList(...args);
 };
 
 export const financeProcessCommissionForObrigacao = async (...args) => {

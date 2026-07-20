@@ -326,7 +326,7 @@ as $$
         'comissao_quitacao',
         'comissao',
         'gatilho em obrigacao quitada',
-        'ControleGerencial',
+        'Cockpit',
         'trigger trg_obrigacao_financeira_after_commission',
         array[]::text[],
         array['comissao_evento','obrigacao_financeira']::text[],

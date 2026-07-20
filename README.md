@@ -12,7 +12,7 @@ Principais frentes do produto:
 
 - Operacao: `Agendamentos`, `Registrador`, `Escalacao`
 - Comercial e cadastro: `Cadastro`, `Perfis`, `Orcamentos`
-- Financeiro: `CarteirasFinanceiras`, `Movimentacoes`, `Cockpit`, `ControleGerencial`, `PlanosConfig`
+- Financeiro: `CarteirasFinanceiras`, `Movimentacoes`, `Cockpit`, `PlanosConfig`
 - Administracao: `Dev_Dashboard`, `AdministracaoSistema`, `ConfiguracoesPrecos`, `ConfigurarIntegracoes`
 - Fluxos publicos: cadastro de cliente, cadastro de monitor, aprovacao de responsavel
 

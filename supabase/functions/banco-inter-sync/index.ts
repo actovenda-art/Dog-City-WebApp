@@ -28,6 +28,7 @@ const INTER_TOKEN_REFRESH_WAIT_MS = 15_000;
 const INTER_TOKEN_REFRESH_POLL_MS = 350;
 const INTER_TOKEN_EXPIRY_SAFETY_MS = 30_000;
 const MAX_RECEIPT_PDF_BYTES = 12 * 1024 * 1024;
+const MIN_INTER_CHARGE_AMOUNT = 2.5;
 
 type InterTokenResult = {
   accessToken: string;
@@ -2063,7 +2064,9 @@ function buildChargeIssuePayload(payload: Record<string, unknown>) {
   if (!payerName) throw new Error("Nome do responsável financeiro é obrigatório para emitir a cobrança.");
   if (!payerDocument || ![11, 14].includes(payerDocument.length)) throw new Error("CPF/CNPJ válido do responsável financeiro é obrigatório para emitir a cobrança.");
   if (!dueDate) throw new Error("Data de vencimento é obrigatória para emitir a cobrança.");
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Valor do orçamento deve ser maior que zero para emitir a cobrança.");
+  if (!Number.isFinite(amount) || amount < MIN_INTER_CHARGE_AMOUNT) {
+    throw new Error("O valor da cobrança deve ser igual ou superior a R$ 2,50.");
+  }
   if (!payerStreet || !payerCity || !payerState || !payerZip) {
     throw new Error("Endereço completo da carteira (rua, cidade, UF e CEP) é obrigatório para emitir a cobrança no Banco Inter.");
   }
@@ -5523,8 +5526,8 @@ Deno.serve(async (request) => {
       if (method !== "boleto_bancario") {
         return jsonResponse({ error: "Nesta fase, somente boleto bancario com Pix integrado esta habilitado." }, 400);
       }
-      if (!Number.isFinite(amount) || amount <= 0) {
-        return jsonResponse({ error: "Informe um valor maior que zero para a cobranca." }, 400);
+      if (!Number.isFinite(amount) || amount < MIN_INTER_CHARGE_AMOUNT) {
+        return jsonResponse({ error: "Informe um valor igual ou superior a R$ 2,50 para a cobranca." }, 400);
       }
       if (!dueDate || dueDate < getBusinessDateKey()) {
         return jsonResponse({ error: "Informe um vencimento valido, a partir de hoje." }, 400);

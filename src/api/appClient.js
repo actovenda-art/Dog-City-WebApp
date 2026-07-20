@@ -65,6 +65,7 @@ const USE_SUPABASE_BACKEND = Boolean(SUPABASE_URL && SUPABASE_ANON && !FORCE_LOC
 const SUPABASE_PUBLIC_BUCKET = import.meta.env.VITE_SUPABASE_PUBLIC_BUCKET || 'public-assets';
 const SUPABASE_PRIVATE_BUCKET = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'private-files';
 const DEFAULT_EMAIL_WEBHOOK_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/send-email` : '';
+const MIN_INTER_CHARGE_AMOUNT = 2.5;
 const MOCK_QA_ROLE_STORAGE_KEY = `${STORAGE_PREFIX}mock_qa_role`;
 const UNIT_SCOPED_ENTITIES = new Set([
   'Dog',
@@ -676,6 +677,10 @@ function ensureMockAgendamentosDesktopSeed() {
 
   const today = new Date();
   const todayKey = formatMockDateKey(today);
+  const futureDueDate = new Date(today);
+  futureDueDate.setDate(futureDueDate.getDate() + 5);
+  const overdueDueDate = new Date(today);
+  overdueDueDate.setDate(overdueDueDate.getDate() - 2);
   const seedCreatedAt = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 6, 0, 0).toISOString();
   const companies = [
     {
@@ -989,6 +994,59 @@ function ensureMockAgendamentosDesktopSeed() {
     },
   ];
 
+  const walletAccounts = [
+    {
+      id: 'mock_wallet_account_juliana',
+      empresa_id: 'empresa_demo',
+      carteira_id: 'mock_wallet_juliana',
+      saldo_atual: 152.5,
+      saldo_negativo_autorizado: false,
+      ativo: true,
+      ultimo_movimento_em: buildMockIso(todayKey, '09:15'),
+      created_date: seedCreatedAt,
+      updated_date: seedCreatedAt,
+    },
+  ];
+
+  const walletCharges = [
+    {
+      id: 'mock_wallet_charge_juliana_future',
+      empresa_id: 'empresa_demo',
+      carteira_id: 'mock_wallet_juliana',
+      carteira_conta_id: 'mock_wallet_account_juliana',
+      metodo: 'boleto_bancario',
+      status: 'emitido',
+      status_inter: 'EMABERTO',
+      valor: 285,
+      descricao: 'Mensalidade do plano de Day Care',
+      data_vencimento: formatMockDateKey(futureDueDate),
+      emitido_em: buildMockIso(todayKey, '08:30'),
+      pdf_disponivel: true,
+      public_token_expires_at: new Date(today.getTime() + (7 * 86400000)).toISOString(),
+      metadata: { mock_public_token: 'mock-wallet-charge-juliana-future' },
+      created_date: buildMockIso(todayKey, '08:30'),
+      updated_date: buildMockIso(todayKey, '08:30'),
+    },
+    {
+      id: 'mock_wallet_charge_juliana_overdue',
+      empresa_id: 'empresa_demo',
+      carteira_id: 'mock_wallet_juliana',
+      carteira_conta_id: 'mock_wallet_account_juliana',
+      metodo: 'boleto_bancario',
+      status: 'emitido',
+      status_inter: 'VENCIDO',
+      valor: 96.5,
+      descricao: 'Serviços avulsos do período',
+      data_vencimento: formatMockDateKey(overdueDueDate),
+      emitido_em: new Date(today.getTime() - (5 * 86400000)).toISOString(),
+      pdf_disponivel: true,
+      public_token_expires_at: new Date(today.getTime() + (2 * 86400000)).toISOString(),
+      metadata: { mock_public_token: 'mock-wallet-charge-juliana-overdue' },
+      created_date: new Date(today.getTime() - (5 * 86400000)).toISOString(),
+      updated_date: seedCreatedAt,
+    },
+  ];
+
   const financialConfigs = [
     {
       id: 'mock_flag_wallet_balance_read',
@@ -1002,6 +1060,24 @@ function ensureMockAgendamentosDesktopSeed() {
     {
       id: 'mock_flag_wallet_movements',
       key: 'finance.wallet_movements_enabled',
+      empresa_id: 'empresa_demo',
+      value: { enabled: true },
+      ativo: true,
+      created_date: seedCreatedAt,
+      updated_date: seedCreatedAt,
+    },
+    {
+      id: 'mock_flag_wallet_manual_adjustments',
+      key: 'finance.wallet_manual_adjustments_enabled',
+      empresa_id: 'empresa_demo',
+      value: { enabled: true },
+      ativo: true,
+      created_date: seedCreatedAt,
+      updated_date: seedCreatedAt,
+    },
+    {
+      id: 'mock_flag_wallet_manual_credit',
+      key: 'finance.manual_credit_enabled',
       empresa_id: 'empresa_demo',
       value: { enabled: true },
       ativo: true,
@@ -1086,6 +1162,8 @@ function ensureMockAgendamentosDesktopSeed() {
 
   ensureMockRows('Empresa', companies);
   ensureMockRows('Carteira', carteiras);
+  ensureMockRows('CarteiraConta', walletAccounts);
+  ensureMockRows('CarteiraCobranca', walletCharges);
   ensureMockRows('Dog', dogs);
   ensureMockRows('Orcamento', orcamentos);
   ensureMockRows('Appointment', appointments);
@@ -2202,7 +2280,7 @@ const mockFunctions = {
 
       if (!carteiraId) throw new Error('carteira_id e obrigatorio para emitir a cobranca.');
       if (metodo !== 'boleto_bancario') throw new Error('Nesta fase, somente boleto bancario com Pix integrado esta habilitado.');
-      if (!Number.isFinite(valor) || valor <= 0) throw new Error('Informe um valor maior que zero para a cobranca.');
+      if (!Number.isFinite(valor) || valor < MIN_INTER_CHARGE_AMOUNT) throw new Error('Informe um valor igual ou superior a R$ 2,50 para a cobrança.');
       if (!dataVencimento || dataVencimento < new Date().toISOString().slice(0, 10)) throw new Error('Informe um vencimento valido, a partir de hoje.');
       if (descricao.length > 180) throw new Error('A descricao da cobranca deve ter no maximo 180 caracteres.');
 
@@ -2361,7 +2439,7 @@ const mockFunctions = {
 
       if (!orcamentoId) throw new Error('orcamento_id é obrigatório para emitir a cobrança do orçamento.');
       if (!carteiraId) throw new Error('carteira_id é obrigatório para emitir a cobrança do orçamento.');
-      if (!Number.isFinite(valor) || valor <= 0) throw new Error('valor precisa ser maior que zero para emitir a cobrança do orçamento.');
+      if (!Number.isFinite(valor) || valor < MIN_INTER_CHARGE_AMOUNT) throw new Error('O valor da cobrança do orçamento deve ser igual ou superior a R$ 2,50.');
 
       expireMockBudgets({ empresa_id: empresaId, orcamento_id: orcamentoId });
       const budget = readStorage('Orcamento').find((item) => item?.id === orcamentoId);

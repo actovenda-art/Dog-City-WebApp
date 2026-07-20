@@ -141,6 +141,33 @@ const WALLET_OPERATION_LABELS = {
   entrada_direcionada: "Entrada direcionada",
 };
 
+const WALLET_MANUAL_OPERATION_OPTIONS = [
+  {
+    value: "credito_manual",
+    label: "Crédito manual",
+    helper: "Registra um crédito administrativo no saldo.",
+    icon: CircleDollarSign,
+    activeClassName: "border-emerald-300 bg-emerald-50/80 ring-2 ring-emerald-100",
+    iconClassName: "bg-emerald-100 text-emerald-700",
+  },
+  {
+    value: "ajuste_manual",
+    label: "Ajuste manual",
+    helper: "Corrige o saldo com justificativa auditável.",
+    icon: Pencil,
+    activeClassName: "border-blue-300 bg-blue-50/80 ring-2 ring-blue-100",
+    iconClassName: "bg-blue-100 text-blue-700",
+  },
+  {
+    value: "estorno_manual",
+    label: "Estorno manual",
+    helper: "Registra uma devolução administrativa de saldo.",
+    icon: Undo2,
+    activeClassName: "border-amber-300 bg-amber-50/80 ring-2 ring-amber-100",
+    iconClassName: "bg-amber-100 text-amber-700",
+  },
+];
+
 const EMPTY_WALLET_CHARGE_FORM = {
   valor: "",
   data_vencimento: "",
@@ -154,6 +181,7 @@ const WALLET_CHARGE_STEPS = [
   { id: 4, label: "Pagamento", icon: Landmark },
 ];
 const WALLET_OPERATION_MODAL_LABEL = "Alteração manual";
+const MIN_INTER_CHARGE_AMOUNT = 2.5;
 
 const MOVEMENTS_PAGE_SIZE = 50;
 const MOVEMENT_CACHE_KEY = "movimentacoes:last-overview";
@@ -592,6 +620,41 @@ function formatWalletStatementDate(value) {
   const normalized = normalizeDateOnly(value);
   if (!normalized) return "—";
   return new Date(`${normalized}T00:00:00`).toLocaleDateString("pt-BR");
+}
+
+function getWalletChargeDuePresentation(value) {
+  const normalized = normalizeDateOnly(value);
+  if (!normalized) {
+    return {
+      label: "Sem vencimento",
+      className: "border-slate-200 bg-slate-50 text-slate-600",
+    };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDate = new Date(`${normalized}T00:00:00`);
+  const differenceInDays = Math.round((dueDate.getTime() - today.getTime()) / 86400000);
+
+  if (differenceInDays < 0) {
+    const overdueDays = Math.abs(differenceInDays);
+    return {
+      label: overdueDays === 1 ? "Vencida há 1 dia" : `Vencida há ${overdueDays} dias`,
+      className: "border-red-200 bg-red-50 text-red-700",
+    };
+  }
+
+  if (differenceInDays === 0) {
+    return {
+      label: "Vence hoje",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+    };
+  }
+
+  return {
+    label: differenceInDays === 1 ? "Vence amanhã" : `Vence em ${differenceInDays} dias`,
+    className: "border-blue-200 bg-blue-50 text-blue-700",
+  };
 }
 
 function buildWalletCreditTransactionCandidates(transaction) {
@@ -1390,6 +1453,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletActionMessage, setWalletActionMessage] = useState(null);
   const [showWalletOperationModal, setShowWalletOperationModal] = useState(false);
   const [walletOperationForm, setWalletOperationForm] = useState({ ...EMPTY_WALLET_OPERATION_FORM });
+  const [walletOperationError, setWalletOperationError] = useState("");
   const [showWalletChargeModal, setShowWalletChargeModal] = useState(false);
   const [walletChargeStep, setWalletChargeStep] = useState(1);
   const [walletChargeForm, setWalletChargeForm] = useState({ ...EMPTY_WALLET_CHARGE_FORM });
@@ -1829,6 +1893,9 @@ export default function Movimentacoes({ walletOnly = false }) {
 
   const selectedWalletAccount = walletAccounts.find((item) => item.carteira_selection_id === selectedWalletAccountId) || null;
   const selectedWalletRuntimeAccountId = selectedWalletAccount?.carteira_conta_id || "";
+  const walletOperationTargetAccount = walletAccounts.find(
+    (item) => item.carteira_conta_id === walletOperationForm.carteira_conta_id,
+  ) || selectedWalletAccount;
   const filteredWalletAccounts = useMemo(() => {
     const normalizedSearch = String(walletListSearchTerm || "").trim().toLowerCase();
     if (!normalizedSearch) return walletAccounts;
@@ -2282,6 +2349,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
 
     setWalletActionMessage(null);
+    setWalletOperationError("");
     setWalletChargeForm({
       ...EMPTY_WALLET_CHARGE_FORM,
       data_vencimento: getDefaultWalletChargeDueDate(),
@@ -2321,8 +2389,8 @@ export default function Movimentacoes({ walletOnly = false }) {
   const handleWalletChargeStepNext = () => {
     setWalletChargeError("");
     if (walletChargeStep === 1) {
-      if (parseWalletChargeAmount(walletChargeForm.valor) <= 0) {
-        setWalletChargeError("Informe um valor maior que zero para continuar.");
+      if (parseWalletChargeAmount(walletChargeForm.valor) < MIN_INTER_CHARGE_AMOUNT) {
+        setWalletChargeError("Informe um valor igual ou superior a R$ 2,50 para continuar.");
         return;
       }
     }
@@ -2347,8 +2415,12 @@ export default function Movimentacoes({ walletOnly = false }) {
       setWalletChargeError("A carteira selecionada ainda não está pronta para emitir cobranças.");
       return;
     }
-    if (amount <= 0 || !dueDate) {
-      setWalletChargeError("Revise o valor e o vencimento antes de confirmar.");
+    if (amount < MIN_INTER_CHARGE_AMOUNT) {
+      setWalletChargeError("O Banco Inter exige cobrança mínima de R$ 2,50.");
+      return;
+    }
+    if (!dueDate) {
+      setWalletChargeError("Revise o vencimento antes de confirmar.");
       return;
     }
     if (walletChargeForm.metodo !== "boleto_bancario") {
@@ -2531,13 +2603,24 @@ export default function Movimentacoes({ walletOnly = false }) {
   };
 
   const handleWalletOperationSave = async () => {
-    if (!walletOperationForm.carteira_conta_id || !walletOperationForm.valor || !walletOperationForm.referencia_amigavel.trim() || !walletOperationForm.motivo.trim()) {
-      alert("Selecione a carteira e preencha valor, referência e motivo.");
+    setWalletOperationError("");
+    if (!walletOperationForm.carteira_conta_id) {
+      setWalletOperationError("Selecione a carteira que receberá a alteração.");
+      return;
+    }
+
+    if (parseCurrencyInput(walletOperationForm.valor) <= 0) {
+      setWalletOperationError("Informe um valor maior que zero.");
+      return;
+    }
+
+    if (!walletOperationForm.referencia_amigavel.trim() || !walletOperationForm.motivo.trim()) {
+      setWalletOperationError("Preencha a identificação no extrato e o motivo da alteração.");
       return;
     }
 
     if (walletOperationForm.natureza !== "entrada") {
-      alert("Essa operação deve usar natureza de entrada.");
+      setWalletOperationError("Alterações manuais da carteira devem usar natureza de entrada.");
       return;
     }
 
@@ -2570,10 +2653,7 @@ export default function Movimentacoes({ walletOnly = false }) {
         message: `${WALLET_OPERATION_LABELS[walletOperationForm.tipo] || "Operação"} registrada na carteira.`,
       });
     } catch (error) {
-      setWalletActionMessage({
-        type: "error",
-        message: error?.message || "Não foi possível registrar a operação da carteira.",
-      });
+      setWalletOperationError(error?.message || "Não foi possível registrar a alteração na carteira.");
     } finally {
       setWalletSaving(false);
     }
@@ -3121,7 +3201,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                             key={account.carteira_selection_id}
                             type="button"
                             onClick={() => setSelectedWalletAccountId(account.carteira_selection_id)}
-                            className="group grid w-full grid-cols-[minmax(220px,1.15fr)_140px_165px_minmax(240px,1.4fr)_42px] items-center gap-5 border-l-[3px] border-l-transparent px-5 py-4 text-left transition hover:border-l-blue-500 hover:bg-blue-50/45 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                            className="group relative grid w-full grid-cols-[minmax(220px,1.15fr)_140px_165px_minmax(240px,1.4fr)_42px] items-center gap-5 px-5 py-4 text-left transition before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-center before:scale-y-0 before:bg-blue-500 before:transition-transform before:duration-150 hover:bg-blue-50/45 hover:before:scale-y-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 focus-visible:before:scale-y-100"
                             aria-label={`Abrir carteira de ${account.carteira_nome}`}
                           >
                             <div className="flex min-w-0 items-center gap-3">
@@ -4110,6 +4190,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                     className="h-full flex-1 border-0 bg-transparent px-0 text-2xl font-bold tracking-tight text-slate-950 shadow-none placeholder:text-slate-300 focus-visible:ring-0"
                   />
                 </div>
+                <p className="mt-2 text-[11px] text-slate-500">Valor mínimo para emissão pelo Banco Inter: R$ 2,50.</p>
               </div>
             ) : null}
 
@@ -4317,216 +4398,396 @@ export default function Movimentacoes({ walletOnly = false }) {
       </Dialog>
 
       <Dialog open={showWalletOpenChargesModal} onOpenChange={setShowWalletOpenChargesModal}>
-        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[720px] overflow-hidden rounded-3xl">
-          <DialogHeader>
-            <DialogTitle>Cobranças em aberto</DialogTitle>
-            <DialogDescription>
-              Boletos e links de pagamento emitidos para esta carteira. O boleto inclui Pix copia e cola quando o Banco Inter disponibiliza o código.
-            </DialogDescription>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[760px] flex-col gap-0 overflow-hidden rounded-[26px] border-slate-200 bg-slate-50 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:max-h-[88vh] sm:rounded-[30px]">
+          <DialogHeader className="border-b border-slate-200 bg-gradient-to-br from-white via-white to-blue-50/70 px-5 py-5 pr-14 text-left sm:px-7 sm:py-6 sm:pr-16">
+            <div className="flex items-start gap-3.5">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-[0_8px_20px_rgba(37,99,235,0.24)]">
+                <FileText className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <DialogTitle className="text-xl tracking-tight text-slate-950 sm:text-2xl">Cobranças em aberto</DialogTitle>
+                <DialogDescription className="mt-1.5 max-w-xl text-xs leading-relaxed text-slate-600 sm:text-sm">
+                  Acompanhe boletos e links de pagamento emitidos para {selectedWalletAccount?.carteira_nome || "esta carteira"}.
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
 
-          <div className="max-h-[calc(90vh-175px)] overflow-y-auto pr-1">
-            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs font-medium text-slate-500">{walletOpenCharges.length} cobrança(ças) em aberto</p>
-              <Select
-                value={walletOpenChargesSort}
-                onValueChange={(value) => {
-                  setWalletOpenChargesSort(value);
-                  loadWalletOpenCharges(value);
-                }}
-              >
-                <SelectTrigger className="h-9 w-full text-xs sm:w-[190px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="due_date">Ordenar por vencimento</SelectItem>
-                  <SelectItem value="issued_at">Ordenar por emissão</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-col gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <div className="flex items-center gap-2">
+                <Badge className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 shadow-none hover:bg-blue-50">
+                  {walletOpenCharges.length} {walletOpenCharges.length === 1 ? "cobrança" : "cobranças"}
+                </Badge>
+                <span className="text-xs text-slate-500">aguardando pagamento</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={walletOpenChargesSort}
+                  onValueChange={(value) => {
+                    setWalletOpenChargesSort(value);
+                    loadWalletOpenCharges(value);
+                  }}
+                >
+                  <SelectTrigger className="h-9 min-w-0 flex-1 rounded-xl border-slate-200 bg-slate-50 text-xs shadow-none sm:w-[205px] sm:flex-none">
+                    <ListFilter className="mr-2 h-3.5 w-3.5 text-slate-500" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="due_date">Vencimento mais próximo</SelectItem>
+                    <SelectItem value="issued_at">Emissão mais recente</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 rounded-xl border-slate-200 bg-white"
+                  onClick={() => loadWalletOpenCharges(walletOpenChargesSort)}
+                  disabled={walletOpenChargesLoading}
+                  aria-label="Atualizar cobranças em aberto"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${walletOpenChargesLoading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
             </div>
 
-            {walletOpenChargesLoading ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">Carregando cobranças...</div>
-            ) : walletOpenChargesError ? (
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{walletOpenChargesError}</div>
-            ) : walletOpenCharges.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma cobrança em aberto foi emitida para esta carteira.</div>
-            ) : (
-              <div className="space-y-2.5">
-                {walletOpenCharges.map((charge) => (
-                  <div key={charge.id} className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className={`text-sm ${charge.descricao ? "font-semibold text-slate-900" : "font-medium text-slate-500"}`}>
-                            {charge.descricao || "Sem descrição"}
-                          </p>
-                          <Badge variant="outline" className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">Boleto + Pix</Badge>
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 gap-x-5 gap-y-1 text-xs text-slate-500 sm:grid-cols-3">
-                          <p><span className="font-medium text-slate-700">Valor:</span> {formatCurrency(charge.valor)}</p>
-                          <p><span className="font-medium text-slate-700">Vencimento:</span> {formatWalletStatementDate(charge.data_vencimento)}</p>
-                          <p><span className="font-medium text-slate-700">Emissão:</span> {formatWalletStatementDate(charge.emitido_em || charge.criado_em)}</p>
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 shrink-0 rounded-full px-3 text-[11px]"
-                        onClick={() => handleRenewWalletChargeLink(charge.id)}
-                      >
-                        <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />
-                        Novo link
-                      </Button>
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+              {walletOpenChargesLoading ? (
+                <div className="space-y-3" aria-label="Carregando cobranças">
+                  {[0, 1, 2].map((item) => (
+                    <div key={item} className="animate-pulse rounded-[22px] border border-slate-200 bg-white p-4">
+                      <div className="h-4 w-40 rounded bg-slate-200" />
+                      <div className="mt-3 h-8 w-28 rounded bg-slate-100" />
+                      <div className="mt-4 h-3 w-full rounded bg-slate-100" />
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              ) : walletOpenChargesError ? (
+                <div className="flex flex-col items-center rounded-[22px] border border-red-200 bg-red-50/70 px-5 py-8 text-center">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-red-700">
+                    <FileWarning className="h-5 w-5" />
+                  </span>
+                  <p className="mt-3 text-sm font-semibold text-red-900">Não foi possível carregar as cobranças</p>
+                  <p className="mt-1 max-w-md text-xs leading-relaxed text-red-700">{walletOpenChargesError}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-4 rounded-full border-red-200 bg-white text-red-700 hover:bg-red-100"
+                    onClick={() => loadWalletOpenCharges(walletOpenChargesSort)}
+                  >
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                    Tentar novamente
+                  </Button>
+                </div>
+              ) : walletOpenCharges.length === 0 ? (
+                <div className="flex min-h-[260px] flex-col items-center justify-center rounded-[22px] border border-dashed border-slate-300 bg-white px-6 py-10 text-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                    <CheckCircle2 className="h-6 w-6" />
+                  </span>
+                  <p className="mt-4 text-sm font-semibold text-slate-900">Nenhuma cobrança em aberto</p>
+                  <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-slate-500">
+                    Quando uma nova cobrança for emitida para esta carteira, ela aparecerá aqui com valor e vencimento.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {walletOpenCharges.map((charge) => {
+                    const duePresentation = getWalletChargeDuePresentation(charge.data_vencimento);
+                    return (
+                      <article key={charge.id} className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition hover:border-blue-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.07)] sm:p-5">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+                            <Landmark className="h-4.5 w-4.5" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <Badge variant="outline" className="rounded-full border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Boleto + Pix</Badge>
+                                  <Badge variant="outline" className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${duePresentation.className}`}>
+                                    {duePresentation.label}
+                                  </Badge>
+                                  {charge.public_link_available ? (
+                                    <Badge variant="outline" className="rounded-full border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Link ativo</Badge>
+                                  ) : null}
+                                </div>
+                                <h3 className="mt-2 truncate text-sm font-semibold text-slate-950 sm:text-[15px]">
+                                  {charge.descricao || "Cobrança sem descrição"}
+                                </h3>
+                              </div>
+                              <p className="shrink-0 text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">{formatCurrency(charge.valor)}</p>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 text-xs sm:grid-cols-3">
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Vencimento</p>
+                                <p className="mt-1 font-medium text-slate-700">{formatWalletStatementDate(charge.data_vencimento)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Emissão</p>
+                                <p className="mt-1 font-medium text-slate-700">{formatWalletStatementDate(charge.emitido_em || charge.criado_em)}</p>
+                              </div>
+                              <div className="col-span-2 sm:col-span-1">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Situação</p>
+                                <p className="mt-1 font-medium text-slate-700">Aguardando pagamento</p>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="text-[10px] leading-relaxed text-slate-400">Um novo link invalida o endereço compartilhado anteriormente.</p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-9 w-full shrink-0 rounded-full border-slate-300 bg-white px-4 text-xs text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 sm:w-auto"
+                                onClick={() => handleRenewWalletChargeLink(charge.id)}
+                              >
+                                <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                                Gerar e copiar novo link
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
-          <DialogFooter className="border-t border-slate-200 pt-4">
-            <Button variant="outline" onClick={() => setShowWalletOpenChargesModal(false)}>Fechar</Button>
+          <DialogFooter className="border-t border-slate-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
+            <Button variant="outline" className="h-10 w-full rounded-full border-slate-300 sm:w-auto" onClick={() => setShowWalletOpenChargesModal(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showWalletOperationModal} onOpenChange={setShowWalletOperationModal}>
-        <DialogContent className="max-h-[90vh] w-[95vw] max-w-[720px] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>{WALLET_OPERATION_MODAL_LABEL}</DialogTitle>
-            <DialogDescription>
-              Registre créditos, ajustes ou estornos manuais diretamente no extrato da carteira do responsável financeiro.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="max-h-[calc(90vh-180px)] overflow-y-auto pr-1">
-            <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
-            <div className="md:col-span-2">
-              <Label>Responsável financeiro destino *</Label>
-              <Select
-                value={walletOperationForm.carteira_conta_id}
-                onValueChange={(value) => setWalletOperationForm((prev) => ({ ...prev, carteira_conta_id: value }))}
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue placeholder="Selecione a carteira" />
-                </SelectTrigger>
-                <SelectContent>
-                  {walletAccounts.filter((account) => account.has_wallet_account).map((account) => (
-                    <SelectItem key={account.carteira_conta_id} value={account.carteira_conta_id}>
-                      {account.carteira_nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Tipo *</Label>
-              <Select
-                value={walletOperationForm.tipo}
-                onValueChange={(value) =>
-                  setWalletOperationForm((prev) => ({
-                    ...prev,
-                    tipo: value,
-                    natureza: "entrada",
-                  }))
-                }
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {walletFlags.manualCreditEnabled ? (
-                    <SelectItem value="credito_manual">Crédito manual</SelectItem>
-                  ) : null}
-                  <SelectItem value="ajuste_manual">Ajuste manual</SelectItem>
-                  <SelectItem value="estorno_manual">Estorno manual</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Natureza</Label>
-              <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
-                Entrada
+      <Dialog
+        open={showWalletOperationModal}
+        onOpenChange={(open) => {
+          setShowWalletOperationModal(open);
+          if (!open) setWalletOperationError("");
+        }}
+      >
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[760px] flex-col gap-0 overflow-hidden rounded-[26px] border-slate-200 bg-slate-50 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:max-h-[90vh] sm:rounded-[30px]">
+          <DialogHeader className="border-b border-slate-200 bg-gradient-to-br from-white via-white to-blue-50/70 px-5 py-5 pr-14 text-left sm:px-7 sm:py-6 sm:pr-16">
+            <div className="flex items-start gap-3.5">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-[0_8px_20px_rgba(15,23,42,0.2)]">
+                <Pencil className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <DialogTitle className="text-xl tracking-tight text-slate-950 sm:text-2xl">{WALLET_OPERATION_MODAL_LABEL}</DialogTitle>
+                <DialogDescription className="mt-1.5 max-w-xl text-xs leading-relaxed text-slate-600 sm:text-sm">
+                  Registre uma entrada administrativa com justificativa e trilha de auditoria.
+                </DialogDescription>
               </div>
             </div>
+          </DialogHeader>
 
-            <div>
-              <Label>Valor *</Label>
-              <Input
-                className="mt-2"
-                value={walletOperationForm.valor}
-                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, valor: event.target.value }))}
-                placeholder="0,00"
-              />
-            </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+            <div className="space-y-4">
+              <section className="rounded-[22px] border border-slate-200 bg-white p-4 sm:p-5">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                    <Wallet className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Carteira de destino</p>
+                    <p className="mt-0.5 truncate text-sm font-semibold text-slate-950">{walletOperationTargetAccount?.carteira_nome || "Selecione um responsável financeiro"}</p>
+                  </div>
+                  <Badge variant="outline" className="hidden rounded-full border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-600 sm:inline-flex">Entrada no saldo</Badge>
+                </div>
+                <Select
+                  value={walletOperationForm.carteira_conta_id}
+                  onValueChange={(value) => {
+                    setWalletOperationError("");
+                    setWalletOperationForm((prev) => ({ ...prev, carteira_conta_id: value }));
+                  }}
+                >
+                  <SelectTrigger className="mt-3 h-11 rounded-xl border-slate-200 bg-slate-50 shadow-none">
+                    <SelectValue placeholder="Selecione a carteira" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {walletAccounts.filter((account) => account.has_wallet_account).map((account) => (
+                      <SelectItem key={account.carteira_conta_id} value={account.carteira_conta_id}>
+                        {account.carteira_nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </section>
 
-            <div>
-              <Label>Origem *</Label>
-              <Input
-                className="mt-2"
-                value={walletOperationForm.origem}
-                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, origem: event.target.value }))}
-              />
-            </div>
+              <section className="rounded-[22px] border border-slate-200 bg-white p-4 sm:p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-950">Tipo de alteração</h3>
+                    <p className="mt-0.5 text-xs text-slate-500">Escolha como o lançamento aparecerá no extrato.</p>
+                  </div>
+                  <Badge variant="outline" className="rounded-full border-emerald-200 bg-emerald-50 text-[10px] font-semibold text-emerald-700 sm:hidden">Entrada</Badge>
+                </div>
 
-            <div className="md:col-span-2">
-              <Label>Referência amigável *</Label>
-              <Input
-                className="mt-2"
-                value={walletOperationForm.referencia_amigavel}
-                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, referencia_amigavel: event.target.value }))}
-              />
-            </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  {WALLET_MANUAL_OPERATION_OPTIONS
+                    .filter((option) => option.value !== "credito_manual" || walletFlags.manualCreditEnabled)
+                    .map((option) => {
+                      const OptionIcon = option.icon;
+                      const isActive = walletOperationForm.tipo === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`rounded-2xl border p-3 text-left transition ${isActive
+                            ? option.activeClassName
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}
+                          onClick={() => {
+                            setWalletOperationError("");
+                            setWalletOperationForm((prev) => ({ ...prev, tipo: option.value, natureza: "entrada" }));
+                          }}
+                          aria-pressed={isActive}
+                        >
+                          <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${option.iconClassName}`}>
+                            <OptionIcon className="h-4 w-4" />
+                          </span>
+                          <span className="mt-2 block text-xs font-semibold text-slate-900">{option.label}</span>
+                          <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">{option.helper}</span>
+                        </button>
+                      );
+                    })}
+                </div>
 
-            <div className="md:col-span-2">
-              <Label>Motivo *</Label>
-              <Input
-                className="mt-2"
-                value={walletOperationForm.motivo}
-                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, motivo: event.target.value }))}
-                placeholder="Explique por que essa movimentação está sendo registrada"
-              />
-            </div>
+                <div className="mt-4">
+                  <Label htmlFor="wallet-operation-amount" className="text-xs font-semibold text-slate-700">Valor da alteração *</Label>
+                  <div className="relative mt-2">
+                    <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-semibold text-slate-500">R$</span>
+                    <Input
+                      id="wallet-operation-amount"
+                      className="h-12 rounded-xl border-slate-200 bg-slate-50 pl-12 text-lg font-semibold tracking-tight shadow-none focus-visible:bg-white"
+                      value={walletOperationForm.valor}
+                      onChange={(event) => {
+                        setWalletOperationError("");
+                        setWalletOperationForm((prev) => ({ ...prev, valor: event.target.value }));
+                      }}
+                      inputMode="decimal"
+                      placeholder="0,00"
+                    />
+                  </div>
+                  <p className="mt-2 text-[10px] leading-relaxed text-slate-400">Débitos de serviços não são lançados aqui; eles vêm dos agendamentos e planos vinculados.</p>
+                </div>
+              </section>
 
-            <div className="md:col-span-2">
-              <Label>Observação</Label>
-              <Textarea
-                className="mt-2"
-                rows={3}
-                value={walletOperationForm.observacao}
-                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, observacao: event.target.value }))}
-              />
-            </div>
+              <section className="rounded-[22px] border border-slate-200 bg-white p-4 sm:p-5">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-950">Identificação e justificativa</h3>
+                  <p className="mt-0.5 text-xs text-slate-500">Estas informações ficam disponíveis no histórico da carteira.</p>
+                </div>
 
-            <div className="md:col-span-2">
-              <Label>Transação de origem</Label>
-              <Input
-                className="mt-2"
-                value={walletOperationForm.transacao_id}
-                onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, transacao_id: event.target.value }))}
-                placeholder="Opcional, para direcionamento ou rastreabilidade"
-              />
-            </div>
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <Label htmlFor="wallet-operation-reference" className="text-xs font-semibold text-slate-700">Identificação no extrato *</Label>
+                    <Input
+                      id="wallet-operation-reference"
+                      className="mt-2 h-11 rounded-xl border-slate-200 bg-slate-50 shadow-none focus-visible:bg-white"
+                      value={walletOperationForm.referencia_amigavel}
+                      onChange={(event) => {
+                        setWalletOperationError("");
+                        setWalletOperationForm((prev) => ({ ...prev, referencia_amigavel: event.target.value }));
+                      }}
+                      placeholder="Ex.: Crédito autorizado pela gerência"
+                    />
+                  </div>
 
-            <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              <p><span className="font-medium text-slate-900">Usuário:</span> {currentUser?.full_name || currentUser?.name || currentUser?.email || "Sessão atual"}</p>
-              <p className="mt-1"><span className="font-medium text-slate-900">Data/hora:</span> {new Date().toLocaleString("pt-BR")}</p>
-            </div>
+                  <div>
+                    <Label htmlFor="wallet-operation-reason" className="text-xs font-semibold text-slate-700">Motivo *</Label>
+                    <Textarea
+                      id="wallet-operation-reason"
+                      className="mt-2 min-h-[88px] resize-none rounded-xl border-slate-200 bg-slate-50 shadow-none focus-visible:bg-white"
+                      rows={3}
+                      value={walletOperationForm.motivo}
+                      onChange={(event) => {
+                        setWalletOperationError("");
+                        setWalletOperationForm((prev) => ({ ...prev, motivo: event.target.value }));
+                      }}
+                      placeholder="Explique por que esta alteração está sendo registrada"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="wallet-operation-note" className="text-xs font-semibold text-slate-700">Observação <span className="font-normal text-slate-400">(opcional)</span></Label>
+                    <Textarea
+                      id="wallet-operation-note"
+                      className="mt-2 min-h-[72px] resize-none rounded-xl border-slate-200 bg-slate-50 shadow-none focus-visible:bg-white"
+                      rows={2}
+                      value={walletOperationForm.observacao}
+                      onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, observacao: event.target.value }))}
+                      placeholder="Informações complementares para a equipe financeira"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <details className="group rounded-[22px] border border-slate-200 bg-white">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 text-xs font-semibold text-slate-700 sm:px-5">
+                  Rastreabilidade técnica
+                  <ChevronDown className="h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="grid gap-4 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5">
+                  <div>
+                    <Label htmlFor="wallet-operation-origin" className="text-xs text-slate-600">Origem</Label>
+                    <Input
+                      id="wallet-operation-origin"
+                      className="mt-2 h-10 rounded-xl border-slate-200 bg-slate-50 text-xs shadow-none"
+                      value={walletOperationForm.origem}
+                      onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, origem: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="wallet-operation-transaction" className="text-xs text-slate-600">Transação de origem</Label>
+                    <Input
+                      id="wallet-operation-transaction"
+                      className="mt-2 h-10 rounded-xl border-slate-200 bg-slate-50 text-xs shadow-none"
+                      value={walletOperationForm.transacao_id}
+                      onChange={(event) => setWalletOperationForm((prev) => ({ ...prev, transacao_id: event.target.value }))}
+                      placeholder="Opcional"
+                    />
+                  </div>
+                </div>
+              </details>
+
+              <div className="flex flex-col gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+                <span className="flex min-w-0 items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <span className="truncate">Registrado por {currentUser?.full_name || currentUser?.name || currentUser?.email || "Sessão atual"}</span>
+                </span>
+                <span className="shrink-0 text-slate-400">{new Date().toLocaleString("pt-BR")}</span>
+              </div>
             </div>
           </div>
 
-          <DialogFooter className="gap-2 border-t border-slate-200 pt-4">
-            <Button variant="outline" onClick={() => setShowWalletOperationModal(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleWalletOperationSave} disabled={walletSaving}>
-              {walletSaving ? "Salvando..." : "Registrar movimento"}
-            </Button>
-          </DialogFooter>
+          <div className="border-t border-slate-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
+            {walletOperationError ? (
+              <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800" role="alert" aria-live="polite">
+                <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{walletOperationError}</span>
+              </div>
+            ) : null}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="outline" className="h-10 w-full rounded-full border-slate-300 sm:w-auto" onClick={() => setShowWalletOperationModal(false)} disabled={walletSaving}>
+                Cancelar
+              </Button>
+              <Button className="h-10 w-full rounded-full bg-blue-600 px-5 text-white hover:bg-blue-700 sm:w-auto" onClick={handleWalletOperationSave} disabled={walletSaving}>
+                {walletSaving ? (
+                  <>
+                    <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    Registrando...
+                  </>
+                ) : (
+                  "Confirmar alteração"
+                )}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

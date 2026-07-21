@@ -72,6 +72,7 @@ import { buildBudgetPreviewItems, resolveRecurringPackageFinancialBehavior } fro
 import { canViewSensitivePersonalData, isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
 import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 import { formatAddressParts, maskAddressParts, maskCpfCnpj, maskPhone, maskSensitiveValue } from "@/lib/privacy";
+import { normalizeLegacyUtf8Text } from "@/lib/text-encoding";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -232,7 +233,7 @@ function buildIncludedAppointments(orcamento, dogs = []) {
           title: "Adaptação",
           lines: [
             `Dia: ${formatDate(cao.adaptacao_data)}`,
-            `HorÃ¡rio: ${formatTimeRange(cao.adaptacao_horario_entrada, cao.adaptacao_horario_saida)}`,
+            `Horário: ${formatTimeRange(cao.adaptacao_horario_entrada, cao.adaptacao_horario_saida)}`,
           ],
         });
       }
@@ -244,7 +245,7 @@ function buildIncludedAppointments(orcamento, dogs = []) {
           title: "Banho",
           lines: [
             `Dia: ${formatDate(banhoDate)}`,
-            `HorÃ¡rio: ${formatTimeRange(cao.banho_horario_inicio || cao.banho_horario, cao.banho_horario_saida)}`,
+            `Horário: ${formatTimeRange(cao.banho_horario_inicio || cao.banho_horario, cao.banho_horario_saida)}`,
           ],
         });
       }
@@ -256,7 +257,7 @@ function buildIncludedAppointments(orcamento, dogs = []) {
           title: "Tosa",
           lines: [
             `Dia: ${formatDate(tosaDate)}`,
-            `HorÃ¡rio: ${formatTimeRange(cao.tosa_horario_entrada, cao.tosa_horario_saida)}`,
+            `Horário: ${formatTimeRange(cao.tosa_horario_entrada, cao.tosa_horario_saida)}`,
           ],
         });
       }
@@ -271,7 +272,7 @@ function buildIncludedAppointments(orcamento, dogs = []) {
               `Partida: ${viagem.partida || "-"}`,
               `Destino: ${viagem.destino || "-"}`,
               `Dia: ${formatDate(viagem.data)}`,
-              `HorÃ¡rio: ${formatTimeRange(viagem.horario, viagem.horario_fim)}`,
+              `Horário: ${formatTimeRange(viagem.horario, viagem.horario_fim)}`,
             ],
           });
         });
@@ -870,7 +871,7 @@ export default function OrcamentosHistoricoPanel({
       setWhatsappConfigs((integracoesData || []).filter((item) => (item.provider || item.nome) === "whatsapp_web"));
       setBudgetPayments(budgetPaymentRows || []);
     } catch (error) {
-      console.error("Erro ao carregar histÃ³rico de orÃ§amentos:", error);
+      console.error("Erro ao carregar histórico de orçamentos:", error);
     }
     setIsLoading(false);
   }
@@ -1250,8 +1251,8 @@ export default function OrcamentosHistoricoPanel({
         rows: buildOperationalRecordSuggestion(generatedAppointments, dogs),
       });
     } catch (error) {
-      console.error("Erro ao excluir orÃ§amento:", error);
-      showFeedback("NÃ£o foi possÃ­vel preparar a exclusÃ£o", "Tente novamente em alguns instantes.", "error");
+      console.error("Erro ao excluir orçamento:", error);
+      showFeedback("Não foi possível preparar a exclusão", "Tente novamente em alguns instantes.", "error");
     }
   }
 
@@ -1267,10 +1268,10 @@ export default function OrcamentosHistoricoPanel({
       await loadData();
       await onChange?.();
       setDeleteConfirmContext(null);
-      showFeedback("OrÃ§amento excluÃ­do", "Os registros gerados por ele tambÃ©m foram removidos.", "success");
+      showFeedback("Orçamento excluído", "Os registros gerados por ele também foram removidos.", "success");
     } catch (error) {
-      console.error("Erro ao excluir orÃ§amento:", error);
-      showFeedback("NÃ£o foi possÃ­vel excluir", "O orÃ§amento nÃ£o foi removido. Verifique as permissÃµes ou tente novamente.", "error");
+      console.error("Erro ao excluir orçamento:", error);
+      showFeedback("Não foi possível excluir", "O orçamento não foi removido. Verifique as permissões ou tente novamente.", "error");
     } finally {
       setIsDeletingOrcamento(false);
     }
@@ -1288,8 +1289,8 @@ export default function OrcamentosHistoricoPanel({
       cliente_id: blockedDeleteContext.orcamento?.cliente_id || firstAppointment.cliente_id || null,
       created_at: new Date().toISOString(),
       observacoes: [
-        "OrÃ§amento criado para atendimentos jÃ¡ utilizados.",
-        blockedDeleteContext.orcamento?.id ? `Origem: orÃ§amento ${blockedDeleteContext.orcamento.id}.` : "",
+        "Orçamento criado para atendimentos já utilizados.",
+        blockedDeleteContext.orcamento?.id ? `Origem: orçamento ${blockedDeleteContext.orcamento.id}.` : "",
         "Revise valores e datas antes de enviar.",
       ].filter(Boolean).join("\n"),
       appointments: blockedDeleteContext.appointments.map(serializeOperationalAppointmentForPrefill),
@@ -1531,7 +1532,7 @@ export default function OrcamentosHistoricoPanel({
             }
           }
         } catch (error) {
-          console.error("Erro ao sincronizar agendamentos do orÃ§amento:", error);
+          console.error("Erro ao sincronizar agendamentos do orçamento:", error);
         }
 
         if (!skipShadowSync) {
@@ -1578,15 +1579,15 @@ export default function OrcamentosHistoricoPanel({
           data: { novo_status: newStatus },
         });
       } catch (error) {
-        console.log("NotificaÃ§Ã£o de orÃ§amento nÃ£o enviada");
+        console.log("Notificação de orçamento não enviada");
       }
 
       await loadData();
       await onChange?.();
       return true;
     } catch (error) {
-      console.error("Erro ao alterar status do orÃ§amento:", error);
-      showFeedback("NÃ£o foi possÃ­vel alterar o status", "A alteraÃ§Ã£o nÃ£o foi salva. Tente novamente em alguns instantes.", "error");
+      console.error("Erro ao alterar status do orçamento:", error);
+      showFeedback("Não foi possível alterar o status", "A alteração não foi salva. Tente novamente em alguns instantes.", "error");
       return false;
     }
   }
@@ -1793,7 +1794,7 @@ export default function OrcamentosHistoricoPanel({
     const saved = await handleStatusChange(selectedOrcamento.id, selectedStatusDraft);
     if (saved) {
       setSelectedOrcamento((current) => current ? { ...current, status: selectedStatusDraft } : current);
-      showFeedback("AlteraÃ§Ãµes salvas", "O status do orÃ§amento foi atualizado.", "success");
+      showFeedback("Alterações salvas", "O status do orçamento foi atualizado.", "success");
     }
     setIsSavingStatus(false);
   }
@@ -1837,10 +1838,10 @@ export default function OrcamentosHistoricoPanel({
       await onChange?.();
       setShowAppointmentsEditor(false);
       setEditingOrcamento(null);
-      showFeedback("Agendamentos atualizados", "As alteraÃ§Ãµes foram salvas nos agendamentos deste orÃ§amento.", "success");
+      showFeedback("Agendamentos atualizados", "As alterações foram salvas nos agendamentos deste orçamento.", "success");
     } catch (error) {
-      console.error("Erro ao salvar agendamentos do orÃ§amento:", error);
-      showFeedback("NÃ£o foi possÃ­vel salvar", "Revise os dados dos agendamentos e tente novamente.", "error");
+      console.error("Erro ao salvar agendamentos do orçamento:", error);
+      showFeedback("Não foi possível salvar", "Revise os dados dos agendamentos e tente novamente.", "error");
     } finally {
       setIsSavingAppointmentEdits(false);
     }
@@ -2059,7 +2060,7 @@ export default function OrcamentosHistoricoPanel({
 
                       {orcamento.observacoes && (
                         <p className="ml-0 rounded bg-yellow-50 p-2 text-sm text-gray-600 sm:ml-13">
-                          {orcamento.observacoes}
+                          {normalizeLegacyUtf8Text(orcamento.observacoes)}
                         </p>
                       )}
                     </div>
@@ -2233,7 +2234,7 @@ export default function OrcamentosHistoricoPanel({
                   <hr />
                   <div>
                     <h4 className="mb-2 font-semibold">Observações</h4>
-                    <p className="rounded bg-yellow-50 p-3 text-gray-600">{selectedOrcamento.observacoes}</p>
+                    <p className="rounded bg-yellow-50 p-3 text-gray-600">{normalizeLegacyUtf8Text(selectedOrcamento.observacoes)}</p>
                   </div>
                 </>
               )}

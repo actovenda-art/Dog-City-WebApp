@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment, Checkin, RecurringPackage, AppConfig, ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
+import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment, Checkin, ContaReceber, RecurringPackage, Replacement, AppConfig, ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import { useLocation } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,6 +24,7 @@ import { findEntityByReference } from "@/lib/entity-identifiers";
 import { buildBudgetPreviewItems } from "@/lib/finance-budget";
 import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
 import { maskCpfCnpj, maskPhone, maskSensitiveValue } from "@/lib/privacy";
+import { normalizeLegacyUtf8Text } from "@/lib/text-encoding";
 import { financePreviewBudgetConsumption, financeWalletBudgetReadContext } from "@/api/functions";
 
 const PRECOS_PADRAO = {
@@ -144,6 +145,132 @@ const RECURRING_SNAPSHOT_FIELDS = [
   "tosa_reuse_appointment_id",
   "tosa_reuse_service_type",
 ];
+
+function getBudgetTransferMetadata(record) {
+  const metadata = record?.metadata;
+  if (!metadata) return {};
+  if (typeof metadata === "object") return metadata;
+  try {
+    return JSON.parse(metadata);
+  } catch {
+    return {};
+  }
+}
+
+function isAppointmentLinkedToBudget(appointment, budgetId) {
+  if (!appointment || !budgetId) return false;
+  const metadata = getAppointmentMeta(appointment);
+  const sourceKey = String(appointment.source_key || "");
+  return appointment.orcamento_id === budgetId
+    || metadata.orcamento_id === budgetId
+    || (appointment.source_type === "orcamento_aprovado" && sourceKey.startsWith(`orcamento|${budgetId}|`));
+}
+
+function isTransferRecordLinkedToBudget(record, budgetId, appointmentIds) {
+  if (!record || !budgetId) return false;
+  const metadata = getBudgetTransferMetadata(record);
+  const sourceKey = String(record.source_key || "");
+  const possibleAppointmentIds = [
+    record.appointment_id,
+    record.source_appointment_id,
+    record.original_appointment_id,
+    record.linked_appointment_id,
+    record.replacement_of_appointment_id,
+    metadata.appointment_id,
+    metadata.source_appointment_id,
+    metadata.original_appointment_id,
+    metadata.linked_appointment_id,
+    metadata.replacement_of_appointment_id,
+  ].filter(Boolean);
+
+  return record.orcamento_id === budgetId
+    || metadata.orcamento_id === budgetId
+    || possibleAppointmentIds.some((appointmentId) => appointmentIds.has(appointmentId))
+    || [...appointmentIds].some((appointmentId) => sourceKey.includes(`|${appointmentId}|`));
+}
+
+async function readTransferCollection(entity, sort = "-created_date") {
+  if (entity.listAll) return entity.listAll(sort, 1000, 10000);
+  return entity.list(sort, 5000);
+}
+
+async function replaceBudgetForUsedAppointments({
+  sourceBudgetId,
+  targetBudgetId,
+  usedAppointmentIds,
+}) {
+  if (!sourceBudgetId || !targetBudgetId || sourceBudgetId === targetBudgetId) return;
+
+  const requestedUsedIds = new Set((usedAppointmentIds || []).filter(Boolean));
+  if (!requestedUsedIds.size) {
+    throw new Error("Nenhum atendimento utilizado foi informado para substituir o orçamento anterior.");
+  }
+
+  const [appointmentRows, receivableRows, replacementRows] = await Promise.all([
+    readTransferCollection(Appointment),
+    readTransferCollection(ContaReceber),
+    readTransferCollection(Replacement),
+  ]);
+  const sourceAppointments = (appointmentRows || []).filter((appointment) =>
+    isAppointmentLinkedToBudget(appointment, sourceBudgetId)
+  );
+  const sourceAppointmentIds = new Set(sourceAppointments.map((appointment) => appointment.id).filter(Boolean));
+  const usedAppointments = sourceAppointments.filter((appointment) => requestedUsedIds.has(appointment.id));
+
+  if (usedAppointments.length !== requestedUsedIds.size) {
+    throw new Error("Um ou mais atendimentos utilizados não pertencem mais ao orçamento anterior. Reabra o fluxo e tente novamente.");
+  }
+
+  const migratedAt = new Date().toISOString();
+  const originalAppointmentLinks = usedAppointments.map((appointment) => ({
+    id: appointment.id,
+    orcamento_id: appointment.orcamento_id || null,
+    metadata: getAppointmentMeta(appointment),
+  }));
+
+  try {
+    await Promise.all(usedAppointments.map((appointment) => {
+      const metadata = getAppointmentMeta(appointment);
+      return Appointment.update(appointment.id, {
+        orcamento_id: targetBudgetId,
+        metadata: {
+          ...metadata,
+          orcamento_id: targetBudgetId,
+          linked_orcamento_id: metadata.linked_orcamento_id === sourceBudgetId
+            ? targetBudgetId
+            : metadata.linked_orcamento_id,
+          overnight_orcamento_id: metadata.overnight_orcamento_id === sourceBudgetId
+            ? targetBudgetId
+            : metadata.overnight_orcamento_id,
+          migrated_from_orcamento_id: sourceBudgetId,
+          migrated_to_orcamento_id: targetBudgetId,
+          migrated_at: migratedAt,
+        },
+      });
+    }));
+
+    const linkedReceivables = (receivableRows || []).filter((record) =>
+      isTransferRecordLinkedToBudget(record, sourceBudgetId, sourceAppointmentIds)
+    );
+    const linkedReplacements = (replacementRows || []).filter((record) =>
+      isTransferRecordLinkedToBudget(record, sourceBudgetId, sourceAppointmentIds)
+    );
+    const unusedAppointments = sourceAppointments.filter((appointment) => !requestedUsedIds.has(appointment.id));
+
+    await Promise.all(linkedReplacements.map((record) => Replacement.delete(record.id)));
+    await Promise.all(linkedReceivables.map((record) => ContaReceber.delete(record.id)));
+    await Promise.all(unusedAppointments.map((appointment) => Appointment.delete(appointment.id)));
+    await Orcamento.delete(sourceBudgetId);
+  } catch (error) {
+    await Promise.allSettled(originalAppointmentLinks.map((appointment) =>
+      Appointment.update(appointment.id, {
+        orcamento_id: appointment.orcamento_id,
+        metadata: appointment.metadata,
+      })
+    ));
+    throw error;
+  }
+}
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -822,6 +949,7 @@ export default function Orcamentos() {
   const [prefillApplied, setPrefillApplied] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [prefillNotice, setPrefillNotice] = useState(null);
+  const [budgetReplacementContext, setBudgetReplacementContext] = useState(null);
 
   const [showModal, setShowModal] = useState(false);
   const [etapa, setEtapa] = useState("cliente");
@@ -1031,6 +1159,14 @@ export default function Orcamentos() {
           if (cancelled) return;
 
           sessionStorage.removeItem(storageKey);
+          setBudgetReplacementContext(
+            payload.type === "used_appointments_from_deleted_budget" && payload.source_orcamento_id
+              ? {
+                  sourceBudgetId: payload.source_orcamento_id,
+                  usedAppointmentIds: appointments.map((appointment) => appointment?.id).filter(Boolean),
+                }
+              : null,
+          );
           setClienteSelecionado(selectedCarteira);
           setCaes(prefilledCaes.map((cao) =>
             normalizeBudgetCaoWithRecurringContext(
@@ -1038,7 +1174,7 @@ export default function Orcamentos() {
               buildRecurringDogBudgetContext(cao?.dog_id, recurringPackages, appointments, checkins),
             ),
           ));
-          setObservacoes(payload.observacoes || "");
+          setObservacoes(normalizeLegacyUtf8Text(payload.observacoes || ""));
           setPrefillNotice({
             title: "Orçamento dos atendimentos utilizados",
             message: `${prefilledCaes.length} atendimento(s) já registrado(s) foram carregados. Revise responsável financeiro, datas e valores antes de enviar.`,
@@ -1231,6 +1367,7 @@ export default function Orcamentos() {
     setWalletUsageInput("");
     setSelectedSellerId("");
     setCommissionPercentualInput("");
+    setBudgetReplacementContext(null);
   }
 
   function getCaesDoCliente() {
@@ -1451,7 +1588,7 @@ export default function Orcamentos() {
         desconto_total: calculo.desconto_total,
         valor_total: calculo.valor_total,
         status,
-        observacoes,
+        observacoes: normalizeLegacyUtf8Text(observacoes),
         vendedor_user_id: commissionFlags.commissionEnabled ? selectedSellerId || null : null,
         commission_percentual: commissionFlags.commissionEnabled
           ? (Number.parseFloat(String(commissionPercentualInput || "0").replace(",", ".")) || 0)
@@ -1478,6 +1615,19 @@ export default function Orcamentos() {
             },
           });
         }));
+      }
+
+      if (createdOrcamento?.id && budgetReplacementContext?.sourceBudgetId) {
+        try {
+          await replaceBudgetForUsedAppointments({
+            sourceBudgetId: budgetReplacementContext.sourceBudgetId,
+            targetBudgetId: createdOrcamento.id,
+            usedAppointmentIds: budgetReplacementContext.usedAppointmentIds,
+          });
+        } catch (transferError) {
+          await Orcamento.delete(createdOrcamento.id).catch(() => null);
+          throw transferError;
+        }
       }
 
       await loadData();

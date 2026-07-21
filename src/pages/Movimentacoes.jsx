@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   bancoInter,
   financePaymentV2ExecutionAudit,
@@ -46,6 +46,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import LoadingScreen from "@/components/layout/LoadingScreen";
@@ -1347,6 +1348,8 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletFlagsLoaded, setWalletFlagsLoaded] = useState(false);
   const [walletHistoryLoading, setWalletHistoryLoading] = useState(false);
+  const [walletDetailLoading, setWalletDetailLoading] = useState(false);
+  const walletDetailRequestRef = useRef(0);
   const [walletTimelineFilter, setWalletTimelineFilter] = useState("all");
   const [walletSaving, setWalletSaving] = useState(false);
   const [walletActionMessage, setWalletActionMessage] = useState(null);
@@ -1689,47 +1692,63 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
   };
 
-  const loadWalletMovements = async (walletAccountId, userProfile = currentUser) => {
+  const loadWalletMovements = async (walletAccountId, userProfile = currentUser, { requestId = null } = {}) => {
+    const isCurrentRequest = () => requestId === null || walletDetailRequestRef.current === requestId;
+
     if (!walletFlags.movementsEnabled || !userProfile?.empresa_id || !walletAccountId) {
-      setWalletRecentMovements([]);
+      if (isCurrentRequest()) {
+        setWalletRecentMovements([]);
+        setWalletLoading(false);
+      }
       return;
     }
 
-    setWalletLoading(true);
+    if (isCurrentRequest()) setWalletLoading(true);
     try {
       const recentMovements = await financeWalletAdminReadMovements({
         empresa_id: userProfile.empresa_id,
         carteira_conta_id: walletAccountId,
         limit: 100,
       });
-      setWalletRecentMovements(Array.isArray(recentMovements) ? recentMovements : []);
+      if (isCurrentRequest()) {
+        setWalletRecentMovements(Array.isArray(recentMovements) ? recentMovements : []);
+      }
     } catch (error) {
       console.warn("Não foi possível carregar os movimentos administrativos da carteira:", error);
-      setWalletRecentMovements([]);
+      if (isCurrentRequest()) setWalletRecentMovements([]);
     } finally {
-      setWalletLoading(false);
+      if (isCurrentRequest()) setWalletLoading(false);
     }
   };
 
-  const loadWalletOperationalHistory = async ({ walletAccountId, walletId } = {}, userProfile = currentUser) => {
+  const loadWalletOperationalHistory = async (
+    { walletAccountId, walletId } = {},
+    userProfile = currentUser,
+    { requestId = null } = {},
+  ) => {
+    const isCurrentRequest = () => requestId === null || walletDetailRequestRef.current === requestId;
+
     if (!userProfile?.empresa_id || (!walletAccountId && !walletId)) {
-      setWalletOperationalContext({
-        appointments: [],
-        services: [],
-        obligations: [],
-        charges: [],
-        accountsReceivable: [],
-        dogs: [],
-        budgets: [],
-        recurringPackages: [],
-        transactions: [],
-        budgetPayments: [],
-      });
-      setWalletOperationalHistory([]);
+      if (isCurrentRequest()) {
+        setWalletOperationalContext({
+          appointments: [],
+          services: [],
+          obligations: [],
+          charges: [],
+          accountsReceivable: [],
+          dogs: [],
+          budgets: [],
+          recurringPackages: [],
+          transactions: [],
+          budgetPayments: [],
+        });
+        setWalletOperationalHistory([]);
+        setWalletHistoryLoading(false);
+      }
       return;
     }
 
-    setWalletHistoryLoading(true);
+    if (isCurrentRequest()) setWalletHistoryLoading(true);
     try {
       const [executionRows, reversalRows, appointments, services, obligations, charges, accountsReceivable, dogs, budgets, recurringPackages, transactions, budgetPayments] = await Promise.all([
         financePaymentV2ExecutionAudit({ empresa_id: userProfile.empresa_id, limit: OPERATIONAL_HISTORY_LIMIT }),
@@ -1758,38 +1777,42 @@ export default function Movimentacoes({ walletOnly = false }) {
         dogs: Array.isArray(dogs) ? dogs : [],
       });
 
-      setWalletReceivables(Array.isArray(accountsReceivable) ? accountsReceivable : []);
-      setWalletOperationalContext({
-        appointments: Array.isArray(appointments) ? appointments : [],
-        services: Array.isArray(services) ? services : [],
-        obligations: Array.isArray(obligations) ? obligations : [],
-        charges: Array.isArray(charges) ? charges : [],
-        accountsReceivable: Array.isArray(accountsReceivable) ? accountsReceivable : [],
-        dogs: Array.isArray(dogs) ? dogs : [],
-        budgets: Array.isArray(budgets) ? budgets : [],
-        recurringPackages: Array.isArray(recurringPackages) ? recurringPackages : [],
-        transactions: Array.isArray(transactions) ? transactions : [],
-        budgetPayments: Array.isArray(budgetPayments) ? budgetPayments : [],
-      });
-      setWalletOperationalHistory(nextHistory);
+      if (isCurrentRequest()) {
+        setWalletReceivables(Array.isArray(accountsReceivable) ? accountsReceivable : []);
+        setWalletOperationalContext({
+          appointments: Array.isArray(appointments) ? appointments : [],
+          services: Array.isArray(services) ? services : [],
+          obligations: Array.isArray(obligations) ? obligations : [],
+          charges: Array.isArray(charges) ? charges : [],
+          accountsReceivable: Array.isArray(accountsReceivable) ? accountsReceivable : [],
+          dogs: Array.isArray(dogs) ? dogs : [],
+          budgets: Array.isArray(budgets) ? budgets : [],
+          recurringPackages: Array.isArray(recurringPackages) ? recurringPackages : [],
+          transactions: Array.isArray(transactions) ? transactions : [],
+          budgetPayments: Array.isArray(budgetPayments) ? budgetPayments : [],
+        });
+        setWalletOperationalHistory(nextHistory);
+      }
     } catch (error) {
       console.warn("Não foi possível carregar a trilha operacional do Payment/Estorno V2:", error);
-      setWalletReceivables([]);
-      setWalletOperationalContext({
-        appointments: [],
-        services: [],
-        obligations: [],
-        charges: [],
-        accountsReceivable: [],
-        dogs: [],
-        budgets: [],
-        recurringPackages: [],
-        transactions: [],
-        budgetPayments: [],
-      });
-      setWalletOperationalHistory([]);
+      if (isCurrentRequest()) {
+        setWalletReceivables([]);
+        setWalletOperationalContext({
+          appointments: [],
+          services: [],
+          obligations: [],
+          charges: [],
+          accountsReceivable: [],
+          dogs: [],
+          budgets: [],
+          recurringPackages: [],
+          transactions: [],
+          budgetPayments: [],
+        });
+        setWalletOperationalHistory([]);
+      }
     } finally {
-      setWalletHistoryLoading(false);
+      if (isCurrentRequest()) setWalletHistoryLoading(false);
     }
   };
 
@@ -1823,17 +1846,15 @@ export default function Movimentacoes({ walletOnly = false }) {
   }, [currentUser?.empresa_id]);
 
   useEffect(() => {
-    if (!currentUser?.empresa_id) return;
-    if (!walletFlags.movementsEnabled) return;
-    if (!selectedWalletRuntimeAccountId) {
-      setWalletRecentMovements([]);
-      return;
-    }
-    loadWalletMovements(selectedWalletRuntimeAccountId, currentUser);
-  }, [currentUser?.empresa_id, selectedWalletRuntimeAccountId, walletFlags.movementsEnabled]);
+    const walletId = selectedWalletAccount?.carteira_id || "";
+    const companyId = currentUser?.empresa_id || "";
 
-  useEffect(() => {
-    if (!currentUser?.empresa_id || !selectedWalletAccount?.carteira_id) {
+    if (!companyId || !walletId) {
+      walletDetailRequestRef.current += 1;
+      setWalletDetailLoading(false);
+      setWalletLoading(false);
+      setWalletHistoryLoading(false);
+      setWalletRecentMovements([]);
       setWalletReceivables([]);
       setWalletOperationalContext({
         appointments: [],
@@ -1848,13 +1869,36 @@ export default function Movimentacoes({ walletOnly = false }) {
         budgetPayments: [],
       });
       setWalletOperationalHistory([]);
-      return;
+      return undefined;
     }
-    loadWalletOperationalHistory({
-      walletAccountId: selectedWalletRuntimeAccountId,
-      walletId: selectedWalletAccount?.carteira_id || null,
-    }, currentUser);
-  }, [currentUser?.empresa_id, selectedWalletRuntimeAccountId, selectedWalletAccount?.carteira_id]);
+
+    const requestId = walletDetailRequestRef.current + 1;
+    walletDetailRequestRef.current = requestId;
+    setWalletDetailLoading(true);
+
+    Promise.all([
+      loadWalletMovements(selectedWalletRuntimeAccountId, currentUser, { requestId }),
+      loadWalletOperationalHistory({
+        walletAccountId: selectedWalletRuntimeAccountId,
+        walletId,
+      }, currentUser, { requestId }),
+    ]).finally(() => {
+      if (walletDetailRequestRef.current === requestId) {
+        setWalletDetailLoading(false);
+      }
+    });
+
+    return () => {
+      if (walletDetailRequestRef.current === requestId) {
+        walletDetailRequestRef.current += 1;
+      }
+    };
+  }, [
+    currentUser?.empresa_id,
+    selectedWalletRuntimeAccountId,
+    selectedWalletAccount?.carteira_id,
+    walletFlags.movementsEnabled,
+  ]);
 
   const normalizedMovements = React.useMemo(
     () =>
@@ -1941,6 +1985,9 @@ export default function Movimentacoes({ walletOnly = false }) {
   const saldoAtual = hasOfficialBalance ? currentBalance : null;
   const saldoAtualDisplay = hasOfficialBalance ? formatCurrency(currentBalance) : "—";
   const walletReadEnabled = walletFlags.balanceReadEnabled || walletFlags.movementsEnabled;
+  const walletDetailContentLoading = Boolean(
+    selectedWalletAccount && (walletDetailLoading || walletLoading || walletHistoryLoading),
+  );
   const selectedWalletAudit = walletAuditRows.find((item) => item.carteira_conta_id === selectedWalletRuntimeAccountId) || null;
   const walletFinancialStatusMap = useMemo(
     () => buildFinancialOperationalStatusMap(walletReceivables),
@@ -3146,7 +3193,10 @@ export default function Movimentacoes({ walletOnly = false }) {
                           <button
                             key={account.carteira_selection_id}
                             type="button"
-                            onClick={() => setSelectedWalletAccountId(account.carteira_selection_id)}
+                            onClick={() => {
+                              setWalletDetailLoading(true);
+                              setSelectedWalletAccountId(account.carteira_selection_id);
+                            }}
                             className="group relative grid w-full grid-cols-[minmax(220px,1.15fr)_140px_165px_minmax(240px,1.4fr)_42px] items-center gap-5 px-5 py-4 text-left transition before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-center before:scale-y-0 before:bg-blue-500 before:transition-transform before:duration-150 hover:bg-blue-50/45 hover:before:scale-y-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 focus-visible:before:scale-y-100"
                             aria-label={`Abrir carteira de ${account.carteira_nome}`}
                           >
@@ -3190,7 +3240,10 @@ export default function Movimentacoes({ walletOnly = false }) {
                           <button
                             key={account.carteira_selection_id}
                             type="button"
-                            onClick={() => setSelectedWalletAccountId(account.carteira_selection_id)}
+                            onClick={() => {
+                              setWalletDetailLoading(true);
+                              setSelectedWalletAccountId(account.carteira_selection_id);
+                            }}
                             className="group min-w-0 rounded-2xl border border-slate-200 bg-white p-3.5 text-left shadow-[0_3px_12px_rgba(15,23,42,0.04)] transition hover:border-blue-200 hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                             aria-label={`Abrir carteira de ${account.carteira_nome}`}
                           >
@@ -3238,7 +3291,10 @@ export default function Movimentacoes({ walletOnly = false }) {
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => setSelectedWalletAccountId("")}
+                        onClick={() => {
+                          setWalletDetailLoading(false);
+                          setSelectedWalletAccountId("");
+                        }}
                         className="h-9 shrink-0 rounded-full border-slate-300 px-3 text-xs shadow-sm"
                       >
                         <ChevronLeft className="mr-1 h-3.5 w-3.5" />
@@ -3302,39 +3358,54 @@ export default function Movimentacoes({ walletOnly = false }) {
                   </div>
 
                   <div className="space-y-4">
-                      <section className="overflow-hidden rounded-[20px] border border-slate-300/80 bg-slate-200 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:rounded-[22px]">
+                      <section
+                        className="overflow-hidden rounded-[20px] border border-slate-300/80 bg-slate-200 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:rounded-[22px]"
+                        aria-busy={walletDetailContentLoading}
+                      >
                         <div className="grid grid-cols-2 gap-px lg:grid-cols-[1.25fr_0.8fr_1fr]">
                           <div className="bg-gradient-to-br from-blue-50 to-white px-3 py-3.5 sm:px-4">
                             <div className="flex items-center gap-1.5 text-blue-700">
                               <Wallet className="h-3.5 w-3.5" />
                               <p className="text-[9px] font-bold uppercase tracking-[0.14em]">Saldo da carteira</p>
                             </div>
-                            <p className={`mt-1.5 text-xl font-bold tracking-tight sm:text-2xl ${
-                              walletStatementSummary.balance < 0 ? "text-red-600" : "text-slate-950"
-                            }`}>
-                              {formatCurrency(walletStatementSummary.balance)}
-                            </p>
+                            {walletDetailContentLoading ? (
+                              <Skeleton className="mt-2 h-7 w-28 rounded-lg bg-blue-100 sm:h-8 sm:w-32" />
+                            ) : (
+                              <p className={`mt-1.5 text-xl font-bold tracking-tight sm:text-2xl ${
+                                walletStatementSummary.balance < 0 ? "text-red-600" : "text-slate-950"
+                              }`}>
+                                {formatCurrency(walletStatementSummary.balance)}
+                              </p>
+                            )}
                           </div>
 
                           <div className="bg-white px-3 py-3.5 sm:px-4">
                             <div className="flex items-center gap-2">
                               <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Situação</p>
-                              <Badge
-                                variant="outline"
-                                className={`whitespace-nowrap rounded-full px-2 py-0 text-[10px] font-bold ${
-                                  selectedWalletFinancialStatus?.tone === "irregular"
-                                    ? "border-red-200 bg-red-50 text-red-700"
-                                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                }`}
-                              >
-                                {selectedWalletFinancialStatus?.tone === "irregular" ? "IRREGULAR" : "REGULAR"}
-                              </Badge>
+                              {walletDetailContentLoading ? (
+                                <Skeleton className="h-5 w-20 rounded-full" />
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className={`whitespace-nowrap rounded-full px-2 py-0 text-[10px] font-bold ${
+                                    selectedWalletFinancialStatus?.tone === "irregular"
+                                      ? "border-red-200 bg-red-50 text-red-700"
+                                      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  }`}
+                                >
+                                  {selectedWalletFinancialStatus?.tone === "irregular" ? "IRREGULAR" : "REGULAR"}
+                                </Badge>
+                              )}
                             </div>
-                            <p className="mt-1 text-[11px] text-slate-500">
-                              {walletStatementSummary.latestDate
-                                ? `Último lançamento: ${formatWalletStatementDate(walletStatementSummary.latestDate)}`
-                                : "Aguardando primeiro lançamento"}
-                            </p>
+                            {walletDetailContentLoading ? (
+                              <Skeleton className="mt-2 h-3 w-32 rounded-full" />
+                            ) : (
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                {walletStatementSummary.latestDate
+                                  ? `Último lançamento: ${formatWalletStatementDate(walletStatementSummary.latestDate)}`
+                                  : "Aguardando primeiro lançamento"}
+                              </p>
+                            )}
                           </div>
 
                           <div className="col-span-2 min-w-0 bg-white px-3 py-3.5 sm:px-4 lg:col-span-1">
@@ -3352,7 +3423,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                           </div>
                         </div>
 
-                        {selectedWalletFinancialStatus?.tone === "irregular" ? (
+                        {!walletDetailContentLoading && selectedWalletFinancialStatus?.tone === "irregular" ? (
                           <div className="border-t border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800 sm:px-4">
                             Regularize os débitos em aberto.
                           </div>
@@ -3386,6 +3457,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                     key={filter.value}
                                     type="button"
                                     variant={walletTimelineFilter === filter.value ? "default" : "outline"}
+                                    disabled={walletDetailContentLoading}
                                     className={`h-8 min-w-0 rounded-full px-2.5 text-[10px] sm:px-3 sm:text-xs ${
                                       walletTimelineFilter === filter.value ? "bg-slate-900 text-white hover:bg-slate-800" : ""
                                     }`}
@@ -3397,9 +3469,31 @@ export default function Movimentacoes({ walletOnly = false }) {
                               </div>
                             </div>
 
-                            <div className="p-3 sm:p-4">
-
-                              {filteredWalletTimelineRows.length === 0 ? (
+                            <div className="p-3 sm:p-4" aria-busy={walletDetailContentLoading}>
+                              {walletDetailContentLoading ? (
+                                <div className="relative pl-4 sm:pl-5" aria-label="Carregando extrato da carteira">
+                                  <div className="absolute bottom-0 left-1 top-0 w-px bg-slate-200 sm:left-1.5" />
+                                  <div className="space-y-2">
+                                    {[0, 1, 2, 3].map((item) => (
+                                      <div key={`wallet-skeleton-${item}`} className="relative">
+                                        <Skeleton className="absolute -left-[0.95rem] top-4 h-2.5 w-2.5 rounded-full sm:-left-[1.15rem]" />
+                                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 sm:px-3.5">
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0 flex-1 space-y-2">
+                                              <Skeleton className="h-4 w-2/5 rounded-full" />
+                                              <Skeleton className="h-3 w-3/5 rounded-full" />
+                                            </div>
+                                            <div className="flex w-20 shrink-0 flex-col items-end gap-2">
+                                              <Skeleton className="h-4 w-full rounded-full" />
+                                              <Skeleton className="h-3 w-14 rounded-full" />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : filteredWalletTimelineRows.length === 0 ? (
                                 <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
                                   Nenhum lançamento foi encontrado para o filtro selecionado.
                                 </div>

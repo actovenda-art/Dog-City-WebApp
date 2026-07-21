@@ -376,6 +376,45 @@ function appointmentHasOperationalRecord(appointment, checkins = []) {
   return checkins.some((checkin) => checkinMatchesAppointment(checkin, appointment));
 }
 
+function buildBudgetAppointmentMatchKey(appointment) {
+  if (!appointment) return "";
+  return [
+    appointment.dog_id || "",
+    appointment.service_type || "",
+    getAppointmentDateKey(appointment) || "",
+    getAppointmentTimeValue(appointment, "entrada") || "",
+  ].join("|");
+}
+
+function findMigratedBudgetAppointment({
+  plannedAppointment,
+  existingAppointments,
+  budgetId,
+  claimedIds,
+}) {
+  const plannedMetadata = getAppointmentMeta(plannedAppointment);
+  const explicitAppointmentId = plannedMetadata.replacement_used_appointment_id
+    || plannedMetadata.snapshot?.replacement_used_appointment_id;
+
+  if (explicitAppointmentId) {
+    const explicitAppointment = (existingAppointments || []).find((item) => {
+      if (item.id !== explicitAppointmentId || claimedIds.has(item.id)) return false;
+      const metadata = getAppointmentMeta(item);
+      return item.orcamento_id === budgetId && metadata.migrated_to_orcamento_id === budgetId;
+    });
+    if (explicitAppointment) return explicitAppointment;
+  }
+
+  const matchKey = buildBudgetAppointmentMatchKey(plannedAppointment);
+  return (existingAppointments || []).find((item) => {
+    if (!item?.id || claimedIds.has(item.id)) return false;
+    const metadata = getAppointmentMeta(item);
+    return item.orcamento_id === budgetId
+      && metadata.migrated_to_orcamento_id === budgetId
+      && buildBudgetAppointmentMatchKey(item) === matchKey;
+  }) || null;
+}
+
 function isReceivableLinkedToDeletion(receivable, orcamentoId, appointmentIds) {
   if (!receivable) return false;
   const metadata = getSafeMetadata(receivable);
@@ -1353,6 +1392,7 @@ export default function OrcamentosHistoricoPanel({
                 .filter((item) => item.source_key)
                 .map((item) => [item.source_key, item])
             );
+            const claimedMigratedAppointmentIds = new Set();
             const dogsById = Object.fromEntries((dogs || []).map((dog) => [dog.id, dog]));
             const packageSessionCache = new Map();
             let resolvedWalletContext = budgetFinanceContext || null;
@@ -1512,6 +1552,46 @@ export default function OrcamentosHistoricoPanel({
               }
 
               const existing = appointment.source_key ? existingBySourceKey.get(appointment.source_key) : null;
+              const migratedAppointment = findMigratedBudgetAppointment({
+                plannedAppointment: appointment,
+                existingAppointments,
+                budgetId: id,
+                claimedIds: claimedMigratedAppointmentIds,
+              });
+
+              if (migratedAppointment?.id) {
+                if (existing?.id && existing.id !== migratedAppointment.id) {
+                  if (appointmentHasOperationalRecord(existing, checkins)) {
+                    throw new Error("Foram encontrados dois atendimentos operacionais para o mesmo item do orçamento substituto.");
+                  }
+                  await Appointment.delete(existing.id);
+                  existingBySourceKey.delete(appointment.source_key);
+                }
+
+                const migratedMetadata = getAppointmentMeta(migratedAppointment);
+                await Appointment.update(migratedAppointment.id, {
+                  ...appointment,
+                  status: migratedAppointment.status || appointment.status,
+                  metadata: {
+                    ...migratedMetadata,
+                    ...getAppointmentMeta(appointment),
+                    migrated_from_orcamento_id: migratedMetadata.migrated_from_orcamento_id,
+                    migrated_to_orcamento_id: id,
+                    migrated_at: migratedMetadata.migrated_at,
+                    orcamento_status_bloqueado: false,
+                    orcamento_status_atual: newStatus,
+                  },
+                });
+                claimedMigratedAppointmentIds.add(migratedAppointment.id);
+                existingBySourceKey.set(appointment.source_key, {
+                  ...migratedAppointment,
+                  ...appointment,
+                  id: migratedAppointment.id,
+                  status: migratedAppointment.status || appointment.status,
+                });
+                continue;
+              }
+
               if (!existing) {
                 await Appointment.create(appointment);
                 continue;

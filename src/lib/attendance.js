@@ -512,6 +512,7 @@ export function buildAppointmentsFromOrcamento({ orcamento, dogs = [], precos, o
       origem_orcamento: true,
       orcamento_id: orcamento.id,
       cao_index: caoIndex,
+      replacement_used_appointment_id: cao.replacement_used_appointment_id || null,
       owner_nome: owner.nome || "",
       owner_celular: owner.celular || "",
     };

@@ -2018,6 +2018,9 @@ function buildMockWalletChargeResponse(row = {}) {
     pago_em: row?.pago_em || null,
     criado_em: row?.created_date || null,
     pdf_disponivel: Boolean(row?.pdf_disponivel),
+    linha_digitavel: row?.linha_digitavel || null,
+    codigo_barras: row?.codigo_barras || null,
+    pix_copia_cola: row?.pix_copia_cola || null,
     public_link_available: Boolean(row?.metadata?.mock_public_token),
     public_link_expires_at: row?.public_token_expires_at || null,
   };
@@ -2279,7 +2282,7 @@ const mockFunctions = {
       const dataVencimento = String(payload?.data_vencimento || '').slice(0, 10);
 
       if (!carteiraId) throw new Error('carteira_id e obrigatorio para emitir a cobranca.');
-      if (metodo !== 'boleto_bancario') throw new Error('Nesta fase, somente boleto bancario com Pix integrado esta habilitado.');
+      if (!['boleto_bancario', 'pix'].includes(metodo)) throw new Error('Selecione boleto bancario ou Pix para emitir a cobranca.');
       if (!Number.isFinite(valor) || valor < MIN_INTER_CHARGE_AMOUNT) throw new Error('Informe um valor igual ou superior a R$ 2,50 para a cobrança.');
       if (!dataVencimento || dataVencimento < new Date().toISOString().slice(0, 10)) throw new Error('Informe um vencimento valido, a partir de hoje.');
       if (descricao.length > 180) throw new Error('A descricao da cobranca deve ter no maximo 180 caracteres.');
@@ -2410,6 +2413,29 @@ const mockFunctions = {
         rows[index] = row;
         writeStorage('CarteiraCobranca', rows);
       }
+      return { ok: true, charge: buildMockWalletChargeResponse(rows[index]) };
+    }
+
+    if (payload?.action === 'cancelWalletCharge') {
+      const chargeId = String(payload?.carteira_cobranca_id || '').trim();
+      const rows = readStorage('CarteiraCobranca');
+      const index = rows.findIndex((row) => row?.id === chargeId);
+      if (index < 0) throw new Error('Cobranca da carteira nao localizada.');
+      if (rows[index]?.status !== 'emitido') throw new Error('Somente cobrancas em aberto podem ser canceladas.');
+      rows[index] = {
+        ...rows[index],
+        status: 'cancelado',
+        status_inter: 'CANCELADO',
+        pdf_disponivel: false,
+        public_token_expires_at: new Date().toISOString(),
+        metadata: {
+          ...(rows[index]?.metadata || {}),
+          mock_public_token: null,
+          cancelled_at: new Date().toISOString(),
+        },
+        updated_date: new Date().toISOString(),
+      };
+      writeStorage('CarteiraCobranca', rows);
       return { ok: true, charge: buildMockWalletChargeResponse(rows[index]) };
     }
 

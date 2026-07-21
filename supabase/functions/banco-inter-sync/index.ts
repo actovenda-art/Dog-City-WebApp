@@ -2158,6 +2158,46 @@ async function createChargeForBudget(config: IntegrationConfig, payload: Record<
   return normalizeChargeApiResponse(parsed);
 }
 
+async function cancelChargeForBudget(
+  config: IntegrationConfig,
+  codigoSolicitacao: string,
+  motivoCancelamento: string,
+) {
+  const { accessToken, httpClient } = await getAccessToken(config, {
+    scopeConfigKey: "charge_write_scope",
+    fallbackScope: DEFAULT_CHARGE_WRITE_SCOPE,
+    actionLabel: "cancelar cobrança",
+  });
+  const apiBaseUrl = sanitizeText(config.api_base_url || getConfigValue(config, "api_base_url"), DEFAULT_API_BASE_URL);
+  const chargePath = sanitizeText(getConfigValue(config, "charge_path"), DEFAULT_CHARGE_PATH);
+  const url = new URL(`${chargePath}/${codigoSolicitacao}/cancelar`, apiBaseUrl);
+  const headers = buildChargeHeaders(config, accessToken);
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ motivoCancelamento: sanitizeText(motivoCancelamento).slice(0, 50) }),
+    client: httpClient,
+  });
+
+  const rawText = await response.text();
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    parsed = { raw: rawText };
+  }
+
+  if (!response.ok) {
+    const authHint = response.status === 401 ? buildInterApi401Hint(config, parsed) : null;
+    if (authHint) {
+      throw new Error(`Falha ao cancelar cobrança no Banco Inter (${response.status}): ${authHint}`);
+    }
+    throw new Error(`Falha ao cancelar cobrança no Banco Inter (${response.status}): ${JSON.stringify(parsed)}`);
+  }
+
+  return { accepted: response.status === 202, response: parsed };
+}
+
 async function fetchChargeForBudget(config: IntegrationConfig, codigoSolicitacao: string) {
   const { accessToken, httpClient } = await getAccessToken(config, {
     scopeConfigKey: "charge_read_scope",
@@ -2319,6 +2359,9 @@ function buildWalletChargeStaffResponse(row: Record<string, unknown>) {
     pago_em: row.pago_em || null,
     criado_em: row.created_date || null,
     pdf_disponivel: row.pdf_disponivel === true,
+    linha_digitavel: sanitizeText(row.linha_digitavel) || null,
+    codigo_barras: sanitizeText(row.codigo_barras) || null,
+    pix_copia_cola: sanitizeText(row.pix_copia_cola) || null,
     public_link_available: Boolean(row.public_token_hash && row.public_token_expires_at),
     public_link_expires_at: row.public_token_expires_at || null,
   };
@@ -5244,6 +5287,7 @@ Deno.serve(async (request) => {
       "issueWalletCharge",
       "refreshWalletChargeStatus",
       "renewWalletChargePublicLink",
+      "cancelWalletCharge",
     ]);
     let walletChargeStaff: { profile: Record<string, unknown>; empresaId: string } | null = null;
     if (walletChargeRestrictedActions.has(action)) {
@@ -5523,8 +5567,8 @@ Deno.serve(async (request) => {
       if (!carteiraId) {
         return jsonResponse({ error: "carteira_id e obrigatorio para emitir a cobranca." }, 400);
       }
-      if (method !== "boleto_bancario") {
-        return jsonResponse({ error: "Nesta fase, somente boleto bancario com Pix integrado esta habilitado." }, 400);
+      if (!["boleto_bancario", "pix"].includes(method)) {
+        return jsonResponse({ error: "Selecione boleto bancário ou Pix para emitir a cobrança." }, 400);
       }
       if (!Number.isFinite(amount) || amount < MIN_INTER_CHARGE_AMOUNT) {
         return jsonResponse({ error: "Informe um valor igual ou superior a R$ 2,50 para a cobranca." }, 400);
@@ -5625,6 +5669,51 @@ Deno.serve(async (request) => {
 
       const refreshedRow = await refreshWalletChargeFromInter(config, existingRow);
       return jsonResponse({ ok: true, charge: buildWalletChargeStaffResponse(refreshedRow) });
+    }
+
+    if (action === "cancelWalletCharge") {
+      const chargeId = sanitizeText(payload.carteira_cobranca_id);
+      if (!chargeId) {
+        return jsonResponse({ error: "carteira_cobranca_id e obrigatorio para cancelar a cobranca." }, 400);
+      }
+
+      const existingRow = await loadWalletChargeRow(chargeId);
+      if (!existingRow || sanitizeText(existingRow.empresa_id) !== walletChargeStaff?.empresaId) {
+        return jsonResponse({ error: "Cobranca da carteira nao localizada." }, 404);
+      }
+      if (!isWalletChargeActive(existingRow)) {
+        return jsonResponse({ error: "Somente cobrancas em aberto podem ser canceladas." }, 409);
+      }
+      const codigoSolicitacao = sanitizeText(existingRow.codigo_solicitacao);
+      if (!codigoSolicitacao) {
+        return jsonResponse({ error: "A cobranca nao possui codigo de solicitacao do Banco Inter." }, 409);
+      }
+
+      const cancellation = await cancelChargeForBudget(
+        config,
+        codigoSolicitacao,
+        sanitizeText(payload.motivo_cancelamento, "Cancelada pela operacao Dog City"),
+      );
+      const now = new Date().toISOString();
+      const invalidToken = buildWalletChargePublicToken();
+      const cancelledRow = await saveWalletChargeRow({
+        ...existingRow,
+        status: "cancelado",
+        status_inter: cancellation.accepted ? "CANCELAMENTO_SOLICITADO" : "CANCELADO",
+        pdf_disponivel: false,
+        public_token_hash: await hashWalletChargePublicToken(invalidToken),
+        public_token_expires_at: now,
+        metadata: {
+          ...getWalletChargeMetadata(existingRow),
+          cancelled_at: now,
+          cancelled_by_user_id: sanitizeText(walletChargeStaff?.profile?.id) || null,
+          cancellation_requested_async: cancellation.accepted,
+          cancellation_response: cancellation.response,
+        },
+        updated_date: now,
+      });
+
+      return jsonResponse({ ok: true, charge: buildWalletChargeStaffResponse(cancelledRow) });
     }
 
     if (action === "renewWalletChargePublicLink") {

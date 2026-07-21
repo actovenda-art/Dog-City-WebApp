@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { bancoInter } from "@/api/functions";
+import PixQrCode from "@/components/finance/PixQrCode";
 import LoadingScreen from "@/components/layout/LoadingScreen";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { CheckCircle2, ClipboardCopy, Download, Landmark, LockKeyhole, QrCode, XCircle } from "lucide-react";
+import PropTypes from "prop-types";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value) || 0);
@@ -42,10 +44,42 @@ function getStatusPresentation(charge) {
     return { label: "Pagamento confirmado", tone: "border-emerald-200 bg-emerald-50 text-emerald-700", icon: CheckCircle2 };
   }
   if (["baixado", "cancelado", "expirado"].includes(charge?.status)) {
-    return { label: charge?.status === "expirado" ? "Cobrança expirada" : "Cobrança encerrada", tone: "border-slate-200 bg-slate-100 text-slate-600", icon: XCircle };
+    return {
+      label: charge?.status === "expirado" ? "Cobrança expirada" : "Cobrança encerrada",
+      tone: "border-slate-200 bg-slate-100 text-slate-600",
+      icon: XCircle,
+    };
   }
   return { label: "Aguardando pagamento", tone: "border-blue-200 bg-blue-50 text-blue-700", icon: Landmark };
 }
+
+function CopyableValue({ label, value, tone = "blue", onCopy }) {
+  if (!value) return null;
+  const color = tone === "emerald"
+    ? "border-emerald-100 text-emerald-800"
+    : "border-blue-100 text-blue-800";
+  const buttonColor = tone === "emerald" ? "border-emerald-200" : "border-blue-200";
+
+  return (
+    <div className="mt-3">
+      <p className={`text-[10px] font-bold uppercase tracking-[0.12em] ${color.split(" ")[1]}`}>{label}</p>
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+        <div className={`min-w-0 flex-1 break-all rounded-xl border bg-white px-3 py-2 text-xs text-slate-700 ${color.split(" ")[0]}`}>{value}</div>
+        <Button type="button" variant="outline" size="sm" className={`h-9 shrink-0 bg-white ${buttonColor}`} onClick={() => onCopy(value, label)}>
+          <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />
+          Copiar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+CopyableValue.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.string,
+  tone: PropTypes.oneOf(["blue", "emerald"]),
+  onCopy: PropTypes.func.isRequired,
+};
 
 export default function CobrancaPublica() {
   const { token = "" } = useParams();
@@ -74,15 +108,11 @@ export default function CobrancaPublica() {
     if (!token) {
       setErrorMessage("Link de cobrança inválido.");
       setIsLoading(false);
-      return () => {
-        active = false;
-      };
+      return () => { active = false; };
     }
 
     loadCharge();
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [token]);
 
   async function handleCopy(value, label) {
@@ -133,6 +163,7 @@ export default function CobrancaPublica() {
 
   const status = getStatusPresentation(charge);
   const StatusIcon = status.icon;
+  const isPixPresentation = charge.metodo === "pix";
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,#eff6ff,transparent_45%),linear-gradient(180deg,#f8fafc,#ffffff)] px-4 py-8 sm:px-6 sm:py-12">
@@ -176,43 +207,49 @@ export default function CobrancaPublica() {
           </div>
 
           {charge.ativo ? (
-            <>
-              <div className="rounded-2xl border border-blue-100 bg-blue-50/55 p-4">
+            isPixPresentation ? (
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/55 p-4 sm:p-5">
                 <div className="flex items-center gap-2 text-slate-900">
-                  <Landmark className="h-4 w-4 text-blue-700" />
-                  <p className="text-sm font-semibold">Boleto bancário</p>
+                  <QrCode className="h-4 w-4 text-emerald-700" />
+                  <p className="text-sm font-semibold">Pix</p>
                 </div>
-                <p className="mt-2 text-xs leading-5 text-slate-600">Use o código de barras ou baixe o boleto para pagar no seu banco.</p>
-                {charge?.boleto?.linha_digitavel ? (
-                  <div className="mt-3 flex gap-2">
-                    <div className="min-w-0 flex-1 break-all rounded-xl border border-blue-100 bg-white px-3 py-2 text-xs text-slate-700">{charge.boleto.linha_digitavel}</div>
-                    <Button type="button" variant="outline" size="sm" className="h-auto shrink-0 border-blue-200 bg-white" onClick={() => handleCopy(charge.boleto.linha_digitavel, "Código do boleto")}>
-                      <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />Copiar
-                    </Button>
+                <p className="mt-2 text-xs leading-5 text-slate-600">Escaneie o QR Code ou use o Pix copia e cola para pagar.</p>
+                {charge?.pix?.copia_e_cola ? (
+                  <>
+                    <PixQrCode value={charge.pix.copia_e_cola} className="mx-auto mt-4 w-full max-w-[210px]" />
+                    <CopyableValue label="Pix copia e cola" value={charge.pix.copia_e_cola} tone="emerald" onCopy={handleCopy} />
+                  </>
+                ) : (
+                  <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Os dados do Pix ainda não foram disponibilizados pelo banco.</p>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/55 p-4">
+                  <div className="flex items-center gap-2 text-slate-900">
+                    <Landmark className="h-4 w-4 text-blue-700" />
+                    <p className="text-sm font-semibold">Boleto bancário</p>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-600">Use o código de barras, a linha digitável ou baixe o boleto para pagar no seu banco.</p>
+                  <CopyableValue label="Código de barras" value={charge?.boleto?.codigo_barras} onCopy={handleCopy} />
+                  <CopyableValue label="Linha digitável" value={charge?.boleto?.linha_digitavel} onCopy={handleCopy} />
+                  <Button type="button" variant="outline" className="mt-3 border-blue-200 bg-white" onClick={handleDownload} disabled={isDownloading}>
+                    <Download className="mr-2 h-4 w-4" />
+                    {isDownloading ? "Preparando boleto..." : "Baixar boleto"}
+                  </Button>
+                </div>
+                {charge?.pix?.copia_e_cola ? (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/55 p-4">
+                    <div className="flex items-center gap-2 text-slate-900">
+                      <QrCode className="h-4 w-4 text-emerald-700" />
+                      <p className="text-sm font-semibold">Pix copia e cola</p>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-600">Este Pix foi emitido junto com o boleto pelo Banco Inter.</p>
+                    <CopyableValue label="Pix copia e cola" value={charge.pix.copia_e_cola} tone="emerald" onCopy={handleCopy} />
                   </div>
                 ) : null}
-                <Button type="button" variant="outline" className="mt-3 border-blue-200 bg-white" onClick={handleDownload} disabled={isDownloading}>
-                  <Download className="mr-2 h-4 w-4" />
-                  {isDownloading ? "Preparando boleto..." : "Baixar boleto"}
-                </Button>
-              </div>
-
-              {charge?.pix?.copia_e_cola ? (
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/55 p-4">
-                  <div className="flex items-center gap-2 text-slate-900">
-                    <QrCode className="h-4 w-4 text-emerald-700" />
-                    <p className="text-sm font-semibold">Pix copia e cola</p>
-                  </div>
-                  <p className="mt-2 text-xs leading-5 text-slate-600">Este Pix foi emitido junto com o boleto pelo Banco Inter.</p>
-                  <div className="mt-3 flex gap-2">
-                    <div className="min-w-0 flex-1 break-all rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs text-slate-700">{charge.pix.copia_e_cola}</div>
-                    <Button type="button" variant="outline" size="sm" className="h-auto shrink-0 border-emerald-200 bg-white" onClick={() => handleCopy(charge.pix.copia_e_cola, "Pix copia e cola")}>
-                      <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />Copiar
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </>
+              </>
+            )
           ) : (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
               {charge.status === "recebido"
@@ -222,7 +259,6 @@ export default function CobrancaPublica() {
           )}
 
           {feedback ? <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">{feedback}</p> : null}
-
           <div className="flex items-center justify-center gap-2 pt-1 text-[11px] text-slate-400">
             <LockKeyhole className="h-3.5 w-3.5" />
             Link protegido para esta cobrança

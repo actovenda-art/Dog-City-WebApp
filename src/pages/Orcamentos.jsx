@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment, Checkin, ContaReceber, RecurringPackage, Replacement, AppConfig, ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
+import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment, Checkin, ContaReceber, RecurringPackage, Replacement, ObrigacaoFinanceira, CobrancaFinanceira, AppConfig, ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import { useLocation } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -189,6 +189,22 @@ function isTransferRecordLinkedToBudget(record, budgetId, appointmentIds) {
     || [...appointmentIds].some((appointmentId) => sourceKey.includes(`|${appointmentId}|`));
 }
 
+function isOpenFinancialStatus(status) {
+  return ["", "aberta", "vencida", "pendente", "parcial"].includes(
+    String(status || "").trim().toLowerCase(),
+  );
+}
+
+function buildBudgetReplacementCancellationMetadata(record, sourceBudgetId, targetBudgetId, migratedAt) {
+  return {
+    ...getAppointmentMeta(record),
+    budget_replacement_cancelled: true,
+    migrated_from_orcamento_id: sourceBudgetId,
+    migrated_to_orcamento_id: targetBudgetId,
+    migrated_at: migratedAt,
+  };
+}
+
 async function readTransferCollection(entity, sort = "-created_date") {
   if (entity.listAll) return entity.listAll(sort, 1000, 10000);
   return entity.list(sort, 5000);
@@ -206,10 +222,12 @@ async function replaceBudgetForUsedAppointments({
     throw new Error("Nenhum atendimento utilizado foi informado para substituir o orçamento anterior.");
   }
 
-  const [appointmentRows, receivableRows, replacementRows] = await Promise.all([
+  const [appointmentRows, receivableRows, replacementRows, obligationRows, chargeRows] = await Promise.all([
     readTransferCollection(Appointment),
     readTransferCollection(ContaReceber),
     readTransferCollection(Replacement),
+    readTransferCollection(ObrigacaoFinanceira),
+    readTransferCollection(CobrancaFinanceira),
   ]);
   const sourceAppointments = (appointmentRows || []).filter((appointment) =>
     isAppointmentLinkedToBudget(appointment, sourceBudgetId)
@@ -227,6 +245,7 @@ async function replaceBudgetForUsedAppointments({
     orcamento_id: appointment.orcamento_id || null,
     metadata: getAppointmentMeta(appointment),
   }));
+  const originalFinancialRows = [];
 
   try {
     await Promise.all(usedAppointments.map((appointment) => {
@@ -255,19 +274,57 @@ async function replaceBudgetForUsedAppointments({
     const linkedReplacements = (replacementRows || []).filter((record) =>
       isTransferRecordLinkedToBudget(record, sourceBudgetId, sourceAppointmentIds)
     );
+    const linkedObligations = (obligationRows || []).filter((record) =>
+      isTransferRecordLinkedToBudget(record, sourceBudgetId, sourceAppointmentIds)
+    );
+    const linkedCharges = (chargeRows || []).filter((record) =>
+      isTransferRecordLinkedToBudget(record, sourceBudgetId, sourceAppointmentIds)
+    );
     const unusedAppointments = sourceAppointments.filter((appointment) => !requestedUsedIds.has(appointment.id));
+
+    const pendingFinancialRows = [
+      ...linkedObligations.map((record) => ({ entity: ObrigacaoFinanceira, record })),
+      ...linkedCharges.map((record) => ({ entity: CobrancaFinanceira, record })),
+    ].filter(({ record }) => isOpenFinancialStatus(record.status));
+
+    await Promise.all(pendingFinancialRows.map(async ({ entity, record }) => {
+      originalFinancialRows.push({
+        entity,
+        id: record.id,
+        status: record.status,
+        valor_em_aberto: record.valor_em_aberto,
+        metadata: getAppointmentMeta(record),
+      });
+      await entity.update(record.id, {
+        status: "cancelada",
+        valor_em_aberto: 0,
+        metadata: buildBudgetReplacementCancellationMetadata(
+          record,
+          sourceBudgetId,
+          targetBudgetId,
+          migratedAt,
+        ),
+      });
+    }));
 
     await Promise.all(linkedReplacements.map((record) => Replacement.delete(record.id)));
     await Promise.all(linkedReceivables.map((record) => ContaReceber.delete(record.id)));
     await Promise.all(unusedAppointments.map((appointment) => Appointment.delete(appointment.id)));
     await Orcamento.delete(sourceBudgetId);
   } catch (error) {
-    await Promise.allSettled(originalAppointmentLinks.map((appointment) =>
-      Appointment.update(appointment.id, {
-        orcamento_id: appointment.orcamento_id,
-        metadata: appointment.metadata,
-      })
-    ));
+    await Promise.allSettled([
+      ...originalAppointmentLinks.map((appointment) =>
+        Appointment.update(appointment.id, {
+          orcamento_id: appointment.orcamento_id,
+          metadata: appointment.metadata,
+        })
+      ),
+      ...originalFinancialRows.map((row) => row.entity.update(row.id, {
+        status: row.status,
+        valor_em_aberto: row.valor_em_aberto,
+        metadata: row.metadata,
+      })),
+    ]);
     throw error;
   }
 }
@@ -583,6 +640,7 @@ function buildPrefilledCaoFromAppointment(appointment, dog) {
   const cao = {
     ...createEmptyCao(),
     dog_id: appointment.dog_id || "",
+    replacement_used_appointment_id: appointment.id || "",
     servicos: { ...createEmptyCao().servicos },
   };
 

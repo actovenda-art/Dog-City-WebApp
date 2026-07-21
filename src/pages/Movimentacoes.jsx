@@ -975,9 +975,18 @@ function buildWalletStatementRows({
       return rightDate - leftDate;
     });
 
+  const excludedManualMovementIds = new Set(
+    (movements || [])
+      .map((movement) => String(movement?.origem || "").trim().toLowerCase())
+      .filter((origin) => origin.startsWith("admin_manual_exclusao:"))
+      .map((origin) => origin.slice("admin_manual_exclusao:".length))
+      .filter(Boolean),
+  );
+
   const creditRowsFromWallet = (movements || [])
     .filter((movement) => movement?.carteira_conta_id === walletAccountId)
     .filter((movement) => String(movement?.natureza || "").toLowerCase() === "entrada")
+    .filter((movement) => !excludedManualMovementIds.has(String(movement?.movimento_id || "").toLowerCase()))
     .filter((movement) => {
       const movementType = String(movement?.tipo || "").trim().toLowerCase();
       return (
@@ -1003,6 +1012,9 @@ function buildWalletStatementRows({
         counterparty: normalizedTransaction?.contraparte || movement?.descricao || movement?.referencia_amigavel || "Contraparte não informada",
         amount: Number(movement?.valor || 0),
         paymentMethod: resolveWalletCreditPaymentMethod({ movement, transaction }),
+        isManualMovement: ["credito_manual", "ajuste_manual", "estorno_manual"].includes(
+          String(movement?.tipo || "").trim().toLowerCase(),
+        ) && String(movement?.origem || "").trim().toLowerCase() === "admin_manual",
       };
     });
 
@@ -1036,6 +1048,7 @@ function buildWalletStatementRows({
       counterparty: row?.metadata?.responsavel_nome || "Contraparte não informada",
       amount: Number(row?.valor_recebido || row?.valor || 0),
       paymentMethod: resolveBudgetPaymentMethod(row),
+      isManualMovement: false,
     }));
 
   const creditRows = [...creditRowsFromWallet, ...creditRowsFromBudgetPayments]
@@ -1370,6 +1383,8 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletOpenChargeGeneratedLinks, setWalletOpenChargeGeneratedLinks] = useState({});
   const [walletOpenChargeFeedback, setWalletOpenChargeFeedback] = useState({});
   const [walletOpenChargeRenewingId, setWalletOpenChargeRenewingId] = useState("");
+  const [walletOpenChargeCancellingId, setWalletOpenChargeCancellingId] = useState("");
+  const [walletManualDeletingId, setWalletManualDeletingId] = useState("");
   const [showWalletReversalModal, setShowWalletReversalModal] = useState(false);
   const [walletReversalForm, setWalletReversalForm] = useState({ ...EMPTY_WALLET_REVERSAL_FORM });
   const [walletReversalUploading, setWalletReversalUploading] = useState(false);
@@ -2145,6 +2160,8 @@ export default function Movimentacoes({ walletOnly = false }) {
         referenceCode: null,
         referenceLabel: null,
         transactionRow: row,
+        movementId: row.movementId || null,
+        isManualMovement: Boolean(row.isManualMovement),
         details: {
           data: formatWalletStatementDate(row.primaryDate),
           formaPagamento: row.paymentMethod || "Forma não informada",
@@ -2334,6 +2351,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     setWalletOpenChargeGeneratedLinks({});
     setWalletOpenChargeFeedback({});
     setWalletOpenChargeRenewingId("");
+    setWalletOpenChargeCancellingId("");
     setShowWalletOpenChargesModal(true);
     await loadWalletOpenCharges(walletOpenChargesSort);
   };
@@ -2375,8 +2393,8 @@ export default function Movimentacoes({ walletOnly = false }) {
       setWalletChargeError("Revise o vencimento antes de confirmar.");
       return;
     }
-    if (walletChargeForm.metodo !== "boleto_bancario") {
-      setWalletChargeError("Nesta fase, somente boleto bancário com Pix integrado está habilitado.");
+    if (!["boleto_bancario", "pix"].includes(walletChargeForm.metodo)) {
+      setWalletChargeError("Selecione boleto bancário ou Pix para continuar.");
       return;
     }
 
@@ -2489,6 +2507,45 @@ export default function Movimentacoes({ walletOnly = false }) {
       }));
     } finally {
       setWalletOpenChargeRenewingId("");
+    }
+  };
+
+  const handleCancelWalletCharge = async (charge) => {
+    if (!charge?.id || !currentUser?.empresa_id) return;
+
+    const paymentLabel = charge.metodo === "pix" ? "a cobrança Pix" : "o boleto";
+    if (!window.confirm(`Cancelar ${paymentLabel} de ${formatCurrency(charge.valor)}? O link compartilhado deixará de funcionar.`)) {
+      return;
+    }
+
+    setWalletOpenChargeCancellingId(charge.id);
+    setWalletOpenChargeFeedback((current) => {
+      const next = { ...current };
+      delete next[charge.id];
+      return next;
+    });
+    try {
+      await bancoInter({
+        action: "cancelWalletCharge",
+        empresa_id: currentUser.empresa_id,
+        carteira_cobranca_id: charge.id,
+        motivo_cancelamento: "Cancelada pela operação Dog City",
+      });
+      setWalletActionMessage({
+        type: "success",
+        message: `${charge.metodo === "pix" ? "Cobrança Pix" : "Boleto"} cancelado com sucesso.`,
+      });
+      await loadWalletOpenCharges(walletOpenChargesSort);
+    } catch (error) {
+      setWalletOpenChargeFeedback((current) => ({
+        ...current,
+        [charge.id]: {
+          type: "error",
+          message: error?.message || `Não foi possível cancelar ${paymentLabel}.`,
+        },
+      }));
+    } finally {
+      setWalletOpenChargeCancellingId("");
     }
   };
 
@@ -2756,6 +2813,56 @@ export default function Movimentacoes({ walletOnly = false }) {
       return [];
     } finally {
       setComplementOptionsLoading(false);
+    }
+  };
+
+  const handleDeleteWalletManualMovement = async (row) => {
+    if (!row?.movementId || !row?.isManualMovement || !selectedWalletRuntimeAccountId) return;
+
+    const sourceMovement = walletRecentMovements.find((movement) => movement?.movimento_id === row.movementId);
+    if (!sourceMovement) {
+      setWalletActionMessage({ type: "error", message: "O lançamento manual não foi encontrado para exclusão." });
+      return;
+    }
+
+    if (!window.confirm(`Excluir o lançamento manual “${row.title}” de ${formatCurrency(row.amount)}? O saldo será compensado e a auditoria será preservada.`)) {
+      return;
+    }
+
+    setWalletManualDeletingId(row.movementId);
+    setWalletActionMessage(null);
+    try {
+      await financeWalletAdminApplyOperation({
+        carteira_conta_id: selectedWalletRuntimeAccountId,
+        operacao_idempotencia: `wallet-manual-delete:${row.movementId}`,
+        tipo: "ajuste_manual",
+        natureza: String(sourceMovement.natureza || "").toLowerCase() === "saida" ? "entrada" : "saida",
+        valor: Math.abs(Number(sourceMovement.valor || row.amount || 0)),
+        referencia_amigavel: `Exclusão de ${row.title}`.slice(0, 180),
+        motivo: `Exclusão operacional do lançamento manual ${row.movementId}.`,
+        observacao: "Movimento compensatório automático. O lançamento original permanece na trilha de auditoria.",
+        origem: `admin_manual_exclusao:${String(row.movementId).toLowerCase()}`,
+        transacao_id: null,
+        usuario_id: currentUser?.id || null,
+        metadata: {
+          initiated_from: "wallet_manual_movement_delete",
+          excluded_manual_movement_id: row.movementId,
+          initiated_at: new Date().toISOString(),
+        },
+      });
+
+      await loadWalletAdminData(currentUser, selectedWalletAccountId);
+      setWalletActionMessage({
+        type: "success",
+        message: "Lançamento manual excluído e saldo compensado com auditoria preservada.",
+      });
+    } catch (error) {
+      setWalletActionMessage({
+        type: "error",
+        message: error?.message || "Não foi possível excluir o lançamento manual.",
+      });
+    } finally {
+      setWalletManualDeletingId("");
     }
   };
 
@@ -3415,11 +3522,6 @@ export default function Movimentacoes({ walletOnly = false }) {
                                 ? `Dia ${selectedWalletAccount.carteira_vencimento_padrao}`
                                 : "Não informado"}
                             </p>
-                            <p className="mt-1.5 truncate text-[11px] text-slate-500" title={selectedWalletAccount.linked_dog_labels?.join(", ") || "Nenhum cão vinculado"}>
-                              {selectedWalletAccount.linked_dog_labels?.length
-                                ? selectedWalletAccount.linked_dog_labels.join(", ")
-                                : "Nenhum cão vinculado"}
-                            </p>
                           </div>
                         </div>
 
@@ -3605,6 +3707,23 @@ export default function Movimentacoes({ walletOnly = false }) {
                                                   onClick={() => openWalletStatementTransaction(row.transactionRow)}
                                                 >
                                                   Abrir transação
+                                                </Button>
+                                              ) : null}
+                                              {row.sourceKind === "transaction" && row.isManualMovement && row.movementId ? (
+                                                <Button
+                                                  type="button"
+                                                  variant="outline"
+                                                  size="sm"
+                                                  className="h-7 rounded-full border-red-200 px-2.5 text-[10px] text-red-700 hover:bg-red-50 hover:text-red-800"
+                                                  onClick={() => handleDeleteWalletManualMovement(row)}
+                                                  disabled={walletManualDeletingId === row.movementId}
+                                                >
+                                                  {walletManualDeletingId === row.movementId ? (
+                                                    <RefreshCw className="mr-1.5 h-3 w-3 animate-spin" />
+                                                  ) : (
+                                                    <Trash2 className="mr-1.5 h-3 w-3" />
+                                                  )}
+                                                  {walletManualDeletingId === row.movementId ? "Excluindo..." : "Excluir"}
                                                 </Button>
                                               ) : null}
                                             </div>
@@ -4302,7 +4421,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-700">Pagamento</p>
                     <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-950">Escolha como o cliente pagará</h3>
-                    <p className="mt-1 text-xs leading-5 text-slate-500">A cobrança disponível hoje combina boleto e Pix copia e cola.</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">O Banco Inter emite uma cobrança com boleto e Pix; escolha quais dados serão apresentados ao cliente.</p>
                   </div>
                 </div>
 
@@ -4311,28 +4430,37 @@ export default function Movimentacoes({ walletOnly = false }) {
                     type="button"
                     aria-pressed={walletChargeForm.metodo === "boleto_bancario"}
                     onClick={() => setWalletChargeForm((current) => ({ ...current, metodo: "boleto_bancario" }))}
-                    className="flex w-full items-center gap-3 rounded-[20px] border border-blue-300 bg-blue-50/70 p-3.5 text-left shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50"
+                    className={`flex w-full items-center gap-3 rounded-[20px] border p-3.5 text-left transition ${walletChargeForm.metodo === "boleto_bancario"
+                      ? "border-blue-300 bg-blue-50/70 shadow-sm ring-1 ring-blue-200"
+                      : "border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/40"}`}
                   >
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-blue-700 shadow-sm">
                       <Landmark className="h-[18px] w-[18px]" />
                     </div>
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-bold text-slate-950">Boleto bancário</span>
-                      <span className="mt-0.5 block text-xs leading-5 text-slate-500">Boleto em PDF com Pix copia e cola integrado.</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-slate-500">Código de barras, linha digitável e Pix copia e cola.</span>
                     </span>
-                    <CheckCircle2 className="h-5 w-5 shrink-0 text-blue-600" />
+                    {walletChargeForm.metodo === "boleto_bancario" ? <CheckCircle2 className="h-5 w-5 shrink-0 text-blue-600" /> : null}
                   </button>
 
-                  <div className="flex w-full items-center gap-3 rounded-[20px] border border-slate-200 bg-slate-50/80 p-3.5 text-left">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-400">
+                  <button
+                    type="button"
+                    aria-pressed={walletChargeForm.metodo === "pix"}
+                    onClick={() => setWalletChargeForm((current) => ({ ...current, metodo: "pix" }))}
+                    className={`flex w-full items-center gap-3 rounded-[20px] border p-3.5 text-left transition ${walletChargeForm.metodo === "pix"
+                      ? "border-emerald-300 bg-emerald-50/70 shadow-sm ring-1 ring-emerald-200"
+                      : "border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40"}`}
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-emerald-700 shadow-sm">
                       <QrCode className="h-[18px] w-[18px]" />
                     </div>
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold text-slate-600">Pix com vencimento</span>
-                      <span className="mt-0.5 block text-xs text-slate-400">Aguardando suporte específico da integração.</span>
+                      <span className="block text-sm font-bold text-slate-950">Pix com vencimento</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-slate-500">QR Code e Pix copia e cola, sem exibir os dados do boleto.</span>
                     </span>
-                    <Badge variant="outline" className="shrink-0 rounded-full border-slate-300 bg-white px-2 text-[9px] text-slate-500">Em breve</Badge>
-                  </div>
+                    {walletChargeForm.metodo === "pix" ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" /> : null}
+                  </button>
 
                   <div className="flex w-full items-center gap-3 rounded-[20px] border border-slate-200 bg-slate-50/80 p-3.5 text-left">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-400">
@@ -4538,6 +4666,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                     const generatedLink = walletOpenChargeGeneratedLinks[charge.id] || "";
                     const linkFeedback = walletOpenChargeFeedback[charge.id] || null;
                     const isRenewingLink = walletOpenChargeRenewingId === charge.id;
+                    const isCancelling = walletOpenChargeCancellingId === charge.id;
                     return (
                       <article key={charge.id} className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition hover:border-blue-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.07)] sm:p-5">
                         <div className="flex items-start gap-3">
@@ -4548,7 +4677,11 @@ export default function Movimentacoes({ walletOnly = false }) {
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-1.5">
-                                  <Badge variant="outline" className="rounded-full border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Boleto + Pix</Badge>
+                                  <Badge variant="outline" className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${charge.metodo === "pix"
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+                                    {charge.metodo === "pix" ? "Pix" : "Boleto + Pix"}
+                                  </Badge>
                                   <Badge variant="outline" className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${duePresentation.className}`}>
                                     {duePresentation.label}
                                   </Badge>
@@ -4615,21 +4748,34 @@ export default function Movimentacoes({ walletOnly = false }) {
 
                             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                               <p className="text-[10px] leading-relaxed text-slate-400">Gerar um novo link invalida o endereço compartilhado anteriormente.</p>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-9 w-full shrink-0 rounded-full border-slate-300 bg-white px-4 text-xs text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 sm:w-auto"
-                                onClick={() => handleRenewWalletChargeLink(charge.id)}
-                                disabled={isRenewingLink}
-                              >
-                                {isRenewingLink ? (
-                                  <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Link2 className="mr-1.5 h-3.5 w-3.5" />
-                                )}
-                                {isRenewingLink ? "Gerando..." : generatedLink ? "Gerar outro link" : "Gerar novo link"}
-                              </Button>
+                              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-9 w-full shrink-0 rounded-full border-red-200 bg-white px-4 text-xs text-red-700 hover:bg-red-50 hover:text-red-800 sm:w-auto"
+                                  onClick={() => handleCancelWalletCharge(charge)}
+                                  disabled={isCancelling || isRenewingLink}
+                                >
+                                  {isCancelling ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}
+                                  {isCancelling ? "Cancelando..." : charge.metodo === "pix" ? "Cancelar cobrança Pix" : "Cancelar boleto"}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-9 w-full shrink-0 rounded-full border-slate-300 bg-white px-4 text-xs text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 sm:w-auto"
+                                  onClick={() => handleRenewWalletChargeLink(charge.id)}
+                                  disabled={isRenewingLink || isCancelling}
+                                >
+                                  {isRenewingLink ? (
+                                    <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                                  )}
+                                  {isRenewingLink ? "Gerando..." : generatedLink ? "Gerar outro link" : "Gerar novo link"}
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         </div>

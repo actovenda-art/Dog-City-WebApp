@@ -45,6 +45,16 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
@@ -1384,6 +1394,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletOpenChargeFeedback, setWalletOpenChargeFeedback] = useState({});
   const [walletOpenChargeRenewingId, setWalletOpenChargeRenewingId] = useState("");
   const [walletOpenChargeCancellingId, setWalletOpenChargeCancellingId] = useState("");
+  const [walletChargePendingCancellation, setWalletChargePendingCancellation] = useState(null);
   const [walletManualDeletingId, setWalletManualDeletingId] = useState("");
   const [showWalletReversalModal, setShowWalletReversalModal] = useState(false);
   const [walletReversalForm, setWalletReversalForm] = useState({ ...EMPTY_WALLET_REVERSAL_FORM });
@@ -2513,11 +2524,15 @@ export default function Movimentacoes({ walletOnly = false }) {
   const handleCancelWalletCharge = async (charge) => {
     if (!charge?.id || !currentUser?.empresa_id) return;
 
-    const paymentLabel = charge.metodo === "pix" ? "a cobrança Pix" : "o boleto";
-    if (!window.confirm(`Cancelar ${paymentLabel} de ${formatCurrency(charge.valor)}? O link compartilhado deixará de funcionar.`)) {
-      return;
-    }
+    setWalletChargePendingCancellation(charge);
+  };
 
+  const confirmWalletChargeCancellation = async () => {
+    const charge = walletChargePendingCancellation;
+    if (!charge?.id || !currentUser?.empresa_id) return;
+
+    const paymentLabel = charge.metodo === "pix" ? "a cobrança Pix" : "o boleto";
+    setWalletChargePendingCancellation(null);
     setWalletOpenChargeCancellingId(charge.id);
     setWalletOpenChargeFeedback((current) => {
       const next = { ...current };
@@ -4792,6 +4807,72 @@ export default function Movimentacoes({ walletOnly = false }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(walletChargePendingCancellation)}
+        onOpenChange={(open) => {
+          if (!open) setWalletChargePendingCancellation(null);
+        }}
+      >
+        <AlertDialogContent className="w-[calc(100vw-1.5rem)] max-w-[440px] overflow-hidden rounded-[26px] border-slate-200 bg-white p-0 shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+          <div className="border-b border-red-100 bg-gradient-to-br from-red-50 via-white to-white px-5 py-5 sm:px-6">
+            <AlertDialogHeader className="space-y-0 text-left">
+              <div className="flex items-start gap-3.5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-700">
+                  <ShieldAlert className="h-5 w-5" />
+                </span>
+                <div className="min-w-0 pt-0.5">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-red-700">Confirmação necessária</p>
+                  <AlertDialogTitle className="mt-1 text-xl font-bold tracking-tight text-slate-950">
+                    {walletChargePendingCancellation?.metodo === "pix" ? "Cancelar cobrança Pix?" : "Cancelar boleto?"}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="mt-2 text-xs leading-5 text-slate-600">
+                    A solicitação será enviada ao Banco Inter e o link compartilhado deixará de aceitar pagamentos.
+                  </AlertDialogDescription>
+                </div>
+              </div>
+            </AlertDialogHeader>
+          </div>
+
+          <div className="space-y-4 px-5 py-5 sm:px-6">
+            <div className="grid grid-cols-2 gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Forma</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {walletChargePendingCancellation?.metodo === "pix" ? "Pix" : "Boleto bancário"}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Valor</p>
+                <p className="mt-1 text-base font-bold text-slate-950">{formatCurrency(walletChargePendingCancellation?.valor)}</p>
+              </div>
+              <div className="col-span-2 border-t border-slate-200 pt-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Vencimento</p>
+                <p className="mt-1 text-sm font-medium text-slate-700">
+                  {formatWalletStatementDate(walletChargePendingCancellation?.data_vencimento)}
+                </p>
+              </div>
+            </div>
+
+            <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
+              O boleto e o Pix vinculado serão inutilizados. A cobrança continuará registrada no histórico com a situação cancelada.
+            </p>
+          </div>
+
+          <AlertDialogFooter className="gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-6">
+            <AlertDialogCancel className="mt-0 h-10 rounded-full border-slate-300 bg-white px-5 text-slate-700">
+              Manter cobrança
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="h-10 rounded-full bg-red-600 px-5 text-white hover:bg-red-700"
+              onClick={confirmWalletChargeCancellation}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {walletChargePendingCancellation?.metodo === "pix" ? "Cancelar cobrança Pix" : "Cancelar boleto"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog
         open={showWalletOperationModal}

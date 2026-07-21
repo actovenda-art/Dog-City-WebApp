@@ -1496,41 +1496,47 @@ export default function Orcamentos() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="mt-1">
-              <Calculator className="h-6 w-6 text-blue-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Orçamentos</h1>
-            </div>
+    <div className="min-h-screen bg-slate-50 p-2.5 sm:p-6">
+      <div className="mx-auto max-w-[1480px]">
+        <div className="mb-4 flex flex-col gap-3 border-b border-slate-200 pb-5 sm:mb-6 sm:gap-4 sm:pb-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600 sm:text-xs">
+              Comercial / Orçamentos
+            </p>
+            <h1 className="font-brand text-2xl font-bold leading-tight tracking-tight text-slate-950 sm:text-4xl">Orçamentos</h1>
+            <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500 sm:text-[15px]">
+              Crie propostas, acompanhe aprovações e consulte o histórico comercial da unidade em uma única visão.
+            </p>
           </div>
-          <div className="flex w-full gap-2 md:w-auto md:pr-16">
-            <Button onClick={() => { resetForm(); setShowModal(true); }} className="h-9 w-full rounded-full bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 sm:h-10 sm:w-auto sm:px-4 sm:text-sm">
+          <div className="flex w-full items-center gap-2 lg:w-auto lg:shrink-0">
+            <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex">
+              <FileText className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-semibold text-slate-900">{orcamentos.length}</span>
+              <span className="text-xs text-slate-500">orçamento{orcamentos.length === 1 ? "" : "s"}</span>
+            </div>
+            <Button onClick={() => { resetForm(); setShowModal(true); }} className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-sm text-white shadow-sm hover:bg-blue-700 sm:flex-none">
               <Plus className="mr-2 h-4 w-4" />
               Novo Orçamento
             </Button>
           </div>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="mb-4 grid grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_6px_20px_rgba(15,23,42,0.04)] sm:mb-6 lg:grid-cols-4 lg:divide-x lg:divide-slate-100">
           {[
-            { label: "Total", val: orcamentos.length, color: "text-blue-600", border: "border-blue-200" },
-            { label: "Aprovados", val: orcamentos.filter((item) => item.status === "aprovado").length, color: "text-green-600", border: "border-green-200" },
-            { label: "Enviados", val: orcamentos.filter((item) => item.status === "enviado").length, color: "text-orange-600", border: "border-orange-200" },
-            { label: "Rascunhos", val: orcamentos.filter((item) => item.status === "rascunho").length, color: "text-gray-600", border: "border-gray-200" },
+            { label: "Total", val: orcamentos.length, color: "text-blue-700", iconBg: "bg-blue-50" },
+            { label: "Aprovados", val: orcamentos.filter((item) => item.status === "aprovado").length, color: "text-emerald-700", iconBg: "bg-emerald-50" },
+            { label: "Enviados", val: orcamentos.filter((item) => item.status === "enviado").length, color: "text-amber-700", iconBg: "bg-amber-50" },
+            { label: "Rascunhos", val: orcamentos.filter((item) => item.status === "rascunho").length, color: "text-slate-700", iconBg: "bg-slate-100" },
           ].map((stat) => (
-            <Card key={stat.label} className={`bg-white ${stat.border}`}>
-              <CardContent className="flex items-center justify-between p-2.5 sm:p-4">
-                <div>
-                  <p className="text-[11px] text-gray-600 sm:text-sm">{stat.label}</p>
-                  <p className={`text-lg font-bold sm:text-2xl ${stat.color}`}>{stat.val}</p>
-                </div>
-                <FileText className={`h-7 w-7 sm:h-10 sm:w-10 ${stat.color} opacity-60`} />
-              </CardContent>
-            </Card>
+            <div key={stat.label} className="flex items-center gap-3 border-b border-slate-100 p-3.5 last:border-b-0 even:border-l even:border-slate-100 sm:p-4 lg:border-b-0 lg:border-l-0">
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${stat.iconBg} ${stat.color}`}>
+                <FileText className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{stat.label}</p>
+                <p className={`mt-0.5 text-xl font-bold tracking-tight ${stat.color}`}>{stat.val}</p>
+              </div>
+            </div>
           ))}
         </div>
 

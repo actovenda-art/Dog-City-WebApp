@@ -1945,15 +1945,17 @@ export default function OrcamentosHistoricoPanel({
         </>
       )}
 
-      <Card className="border-gray-200 bg-white">
-        <CardHeader className={embedded ? "border-b border-gray-100" : undefined}>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-blue-600" />
-            {embedded ? "Histórico de Orçamentos" : "Orçamentos"}
-          </CardTitle>
-        </CardHeader>
+      <Card className="overflow-hidden rounded-[24px] border-slate-300/80 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.07)] sm:rounded-[28px]">
+        {!embedded ? (
+          <CardHeader className="border-b border-slate-200 bg-slate-50/70">
+            <CardTitle className="flex items-center gap-2 font-brand text-xl tracking-tight text-slate-950">
+              <FileText className="h-5 w-5 text-blue-600" />
+              Orçamentos
+            </CardTitle>
+          </CardHeader>
+        ) : null}
         <CardContent className="p-0">
-          <div className="border-b border-gray-100 p-4">
+          <div className="border-b border-slate-200 bg-slate-50/70 p-3 sm:p-4">
             <SearchFiltersToolbar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
@@ -1964,6 +1966,7 @@ export default function OrcamentosHistoricoPanel({
                 setFilterStatus("all");
                 setFilterPeriodo("all");
               }}
+              searchInputClassName="border-slate-300 bg-white shadow-none focus-visible:ring-blue-500"
               filters={[
                 {
                   id: "status",
@@ -2016,25 +2019,27 @@ export default function OrcamentosHistoricoPanel({
           </div>
 
           {filtered.length === 0 ? (
-            <div className="py-12 text-center">
-              <FileText className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-              <p className="text-gray-500">Nenhum orçamento encontrado para os filtros atuais.</p>
+            <div className="px-4 py-14 text-center sm:py-20">
+              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50">
+                <FileText className="h-5 w-5 text-slate-400" />
+              </div>
+              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-500">Nenhum orçamento encontrado para os filtros atuais.</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-slate-100">
               {filtered.map((orcamento) => (
-                <div key={orcamento.id} className="p-4 transition-colors hover:bg-gray-50">
+                <div key={orcamento.id} className="group relative p-4 transition before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-center before:scale-y-0 before:bg-blue-500 before:transition-transform before:duration-150 hover:bg-blue-50/45 hover:before:scale-y-100 sm:px-5 sm:py-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="mb-2 flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-                          <FileText className="h-5 w-5 text-blue-600" />
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 transition group-hover:border-blue-200 group-hover:bg-blue-100">
+                          <FileText className="h-4 w-4 text-blue-600" />
                         </div>
-                        <div>
-                          <p className="font-medium text-gray-900">
+                        <div className="min-w-0">
+                          <p className="truncate text-[15px] font-semibold tracking-tight text-slate-950">
                             {orcamento.caes?.map((cao) => getDogName(cao.dog_id)).join(", ") || "Sem cães"}
                           </p>
-                          <p className="text-sm text-gray-500">
+                          <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
                             Criado em {formatDate(orcamento.data_criacao)} • Válido até {formatDate(orcamento.data_validade)}
                           </p>
                         </div>
@@ -2060,7 +2065,7 @@ export default function OrcamentosHistoricoPanel({
                     </div>
 
                     <div className="flex flex-col items-end gap-2">
-                      <span className="text-xl font-bold text-green-600">{formatCurrency(orcamento.valor_total)}</span>
+                      <span className="whitespace-nowrap text-lg font-bold tracking-tight text-emerald-700 sm:text-xl">{formatCurrency(orcamento.valor_total)}</span>
                       {getStatusBadge(orcamento.status)}
 
                       <div className="mt-2 flex gap-1">

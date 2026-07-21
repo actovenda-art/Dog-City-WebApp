@@ -692,9 +692,18 @@ function resolveWalletCreditPaymentMethod({ movement, transaction }) {
   const method = normalizedTransaction?.tipoDetalhado && normalizedTransaction.tipoDetalhado !== "-"
     ? normalizedTransaction.tipoDetalhado
     : normalizedTransaction?.metodo;
+  const movementOrigin = String(movement?.origem || "").trim().toLowerCase();
+  const movementType = String(movement?.tipo || "").trim().toLowerCase();
 
-  if (String(movement?.origem || "").trim() === "orcamento_pagamento_banco_inter") {
+  if (movementOrigin === "orcamento_pagamento_banco_inter") {
     return method ? `${method} via boleto bancário` : "Pix via boleto bancário";
+  }
+
+  if (
+    movementOrigin === "admin_manual"
+    || ["credito_manual", "ajuste_manual", "estorno_manual"].includes(movementType)
+  ) {
+    return "Crédito em carteira";
   }
 
   return method || movement?.origem || "Forma não informada";

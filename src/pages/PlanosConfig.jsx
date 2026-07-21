@@ -21,6 +21,7 @@ import {
   Sparkles,
   Trash2,
   Truck,
+  Users,
   WandSparkles,
   Zap,
 } from "lucide-react";
@@ -3147,25 +3148,31 @@ export default function PlanosConfig() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 shadow-sm">
-              <CreditCard className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Planos Recorrentes</h1>
-            </div>
+    <div className="min-h-screen bg-slate-50 p-2.5 sm:p-6">
+      <div className="mx-auto max-w-[1480px]">
+        <div className="mb-4 flex flex-col gap-3 border-b border-slate-200 pb-5 sm:mb-6 sm:gap-4 sm:pb-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600 sm:text-xs">
+              Operação / Planos recorrentes
+            </p>
+            <h1 className="font-brand text-2xl font-bold leading-tight tracking-tight text-slate-950 sm:text-4xl">Planos Recorrentes</h1>
+            <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500 sm:text-[15px]">
+              Acompanhe contratações recorrentes, cães vinculados, serviços e resumos mensais de cada plano.
+            </p>
           </div>
 
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+          <div className="flex w-full items-center gap-2 lg:w-auto lg:shrink-0">
+            <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex">
+              <CreditCard className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-semibold text-slate-900">{filteredPlanGroups.length}</span>
+              <span className="text-xs text-slate-500">plano{filteredPlanGroups.length === 1 ? "" : "s"}</span>
+            </div>
             <Button
               onClick={() => {
                 resetForm();
                 setShowModal(true);
               }}
-              className="h-9 w-full rounded-full bg-purple-600 px-3 text-xs text-white hover:bg-purple-700 sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
+              className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-sm text-white shadow-sm hover:bg-blue-700 sm:flex-none"
             >
               <Plus className="mr-2 h-4 w-4" />
               Novo plano
@@ -3173,27 +3180,33 @@ export default function PlanosConfig() {
           </div>
         </div>
 
-        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Card className="border-blue-200 bg-white">
-            <CardContent className="p-2.5 text-center sm:p-4">
-              <p className="text-lg font-bold text-blue-600 sm:text-2xl">{stats.dayCare}</p>
-              <p className="text-[11px] text-gray-600 sm:text-sm">Pacotes Day Care</p>
-            </CardContent>
-          </Card>
-          <Card className="border-amber-200 bg-white">
-            <CardContent className="p-2.5 text-center sm:p-4">
-              <p className="text-lg font-bold text-amber-600 sm:text-2xl">{stats.clientes}</p>
-              <p className="text-[11px] text-gray-600 sm:text-sm">Responsáveis financeiros</p>
-            </CardContent>
-          </Card>
+        <div className="mb-4 grid grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_6px_20px_rgba(15,23,42,0.04)] sm:mb-6 sm:divide-x sm:divide-slate-100">
+          <div className="flex items-center gap-3 p-3.5 sm:p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+              <CreditCard className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Planos Day Care</p>
+              <p className="mt-0.5 text-xl font-bold tracking-tight text-blue-700">{stats.dayCare}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 border-l border-slate-100 p-3.5 sm:p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+              <Users className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Responsáveis financeiros</p>
+              <p className="mt-0.5 text-xl font-bold tracking-tight text-amber-700">{stats.clientes}</p>
+            </div>
+          </div>
         </div>
 
-        <Card className="mb-6 border-gray-200 bg-white">
+        <Card className="mb-0 rounded-[24px] rounded-b-none border-slate-300/80 border-b-0 bg-slate-50/70 shadow-[0_14px_40px_rgba(15,23,42,0.07)] sm:rounded-[28px] sm:rounded-b-none">
           <CardContent className="p-3 sm:p-4">
             <SearchFiltersToolbar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
-              searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
+              searchInputClassName="border-slate-300 bg-white shadow-none focus-visible:ring-blue-500"
               searchPlaceholder="Buscar responsável financeiro ou cão..."
               hasActiveFilters={Boolean(searchTerm)}
               onClear={() => {
@@ -3296,9 +3309,9 @@ export default function PlanosConfig() {
           </CardContent>
         </Card>
 
-        <Card className="border-gray-200 bg-white">
+        <Card className="overflow-hidden rounded-[24px] rounded-t-none border-slate-300/80 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.07)] sm:rounded-[28px] sm:rounded-t-none">
           <CardContent className="p-0">
-            <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto] gap-4 border-b border-gray-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto] gap-5 border-b border-slate-200 bg-slate-100/70 px-5 py-3.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 md:grid">
               <span>Responsável financeiro</span>
               <span>Cães inclusos</span>
               <span>Serviço</span>
@@ -3306,9 +3319,11 @@ export default function PlanosConfig() {
             </div>
 
             {filteredPlanGroups.length === 0 ?(
-              <div className="p-8 text-center sm:p-12">
-                <CreditCard className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-                <p className="text-gray-500">Nenhum plano encontrado para os filtros atuais.</p>
+              <div className="px-4 py-14 text-center sm:py-20">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50">
+                  <CreditCard className="h-5 w-5 text-slate-400" />
+                </div>
+                <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-500">Nenhum plano encontrado para os filtros atuais.</p>
               </div>
             ) : filteredPlanGroups.map((group) => {
               const ServiceIcon = group.serviceMeta.icon;
@@ -3318,29 +3333,29 @@ export default function PlanosConfig() {
                   key={group.id}
                   type="button"
                   onClick={() => setDetailItem(group)}
-                  className="grid w-full gap-3 border-t border-gray-100 px-3 py-3 text-left transition hover:bg-gray-50 sm:px-5 sm:py-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto] md:items-center"
+                  className="group relative grid w-full gap-3 border-t border-slate-100 px-3 py-3 text-left transition before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-center before:scale-y-0 before:bg-blue-500 before:transition-transform before:duration-150 hover:bg-blue-50/45 hover:before:scale-y-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 sm:px-5 sm:py-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_auto] md:items-center md:gap-5"
                 >
                   <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Responsável financeiro</p>
-                    <p className="truncate font-semibold text-gray-900">{group.clientName}</p>
-                    <p className="mt-1 text-sm text-gray-500">{group.frequencyLabel}</p>
+                    <p className="truncate text-[15px] font-semibold tracking-tight text-slate-950">{group.clientName}</p>
+                    <p className="mt-1 text-xs text-slate-500 sm:text-sm">{group.frequencyLabel}</p>
                   </div>
 
                   <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Cães inclusos</p>
-                    <p className="truncate text-sm font-medium text-gray-900">{group.dogNames.join(", ") || "-"}</p>
+                    <p className="truncate text-sm font-medium text-slate-700">{group.dogNames.join(", ") || "-"}</p>
                   </div>
 
                   <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Serviço</p>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700">
                       <ServiceIcon className="h-4 w-4" />
                       <span>{group.serviceMeta.label}</span>
                     </div>
                   </div>
 
                   <div className="flex justify-end">
-                    <span className="inline-flex items-center rounded-full bg-purple-50 px-3 py-1.5 text-sm font-medium text-purple-700">
+                    <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 transition group-hover:bg-white group-hover:shadow-sm">
                       Ver plano
                     </span>
                   </div>

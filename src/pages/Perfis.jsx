@@ -360,15 +360,15 @@ function formatCep(value) {
 
 function ProfileCountCard({ title, value, icon: Icon, colorClass, borderClass }) {
   return (
-    <Card className={`bg-white ${borderClass}`}>
-      <CardContent className="flex items-center justify-between p-2.5 sm:p-4">
-        <div>
-          <p className="text-[11px] text-gray-600 sm:text-sm">{title}</p>
-          <p className={`text-lg font-bold sm:text-2xl ${colorClass}`}>{value}</p>
-        </div>
-        <Icon className={`h-7 w-7 sm:h-10 sm:w-10 ${colorClass} opacity-60`} />
-      </CardContent>
-    </Card>
+    <div className={`flex items-center gap-3 border-b border-slate-100 p-3.5 last:border-b-0 even:border-l even:border-slate-100 sm:p-4 lg:border-b-0 lg:border-l-0 ${borderClass}`}>
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 ${colorClass}`}>
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{title}</p>
+        <p className={`mt-0.5 text-xl font-bold tracking-tight ${colorClass}`}>{value}</p>
+      </div>
+    </div>
   );
 }
 
@@ -393,14 +393,14 @@ function EmptyState({ title, description }) {
 
 function ProfileLineHeader({ columns, children }) {
   return (
-    <div className="hidden border-b border-gray-200 bg-gray-50 px-4 py-3 md:grid md:items-center md:gap-4" style={{ gridTemplateColumns: columns }}>
+    <div className="hidden border-b border-slate-200 bg-slate-100/70 px-5 py-3.5 md:grid md:items-center md:gap-4" style={{ gridTemplateColumns: columns }}>
       {children}
     </div>
   );
 }
 
 function ProfileColumnTitle({ children }) {
-  return <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">{children}</p>;
+  return <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{children}</p>;
 }
 
 function ProfileDetailField({ label, value, className = "" }) {
@@ -1708,29 +1708,30 @@ export default function Perfis() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="mt-1 rounded-xl bg-blue-100 p-2.5 text-blue-600 sm:rounded-2xl sm:p-3">
-              <Users className="h-5 w-5 sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Perfis</h1>
-            </div>
+    <div className="min-h-screen bg-slate-50 p-2.5 sm:p-6">
+      <div className="mx-auto max-w-[1480px] space-y-4 sm:space-y-6">
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 sm:gap-4 sm:pb-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600 sm:text-xs">
+              Cadastros / Perfis
+            </p>
+            <h1 className="font-brand text-2xl font-bold leading-tight tracking-tight text-slate-950 sm:text-4xl">Perfis</h1>
+            <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500 sm:text-[15px]">
+              Consulte cães, responsáveis e responsáveis financeiros com seus vínculos em uma visão única da unidade.
+            </p>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <div className="grid w-full grid-cols-2 gap-2 lg:w-auto lg:shrink-0">
             <Button
               variant="outline"
               onClick={() => setDeletedProfilesOpen(true)}
-              className="h-9 w-full rounded-full border-gray-200 px-3 text-xs text-gray-700 hover:bg-gray-100 sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
+              className="h-10 rounded-full border-slate-300 bg-white px-3 text-xs text-slate-700 shadow-sm hover:bg-slate-100 sm:px-4 sm:text-sm"
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Perfis excluídos{deletedProfiles.length ? ` (${deletedProfiles.length})` : ""}
             </Button>
             <Link to={createPageUrl("Cadastro")}>
-              <Button variant="outline" className="h-9 w-full rounded-full border-blue-200 px-3 text-xs text-blue-700 hover:bg-blue-50 sm:h-10 sm:w-auto sm:px-4 sm:text-sm">
+              <Button className="h-10 w-full rounded-full bg-blue-600 px-3 text-xs text-white shadow-sm hover:bg-blue-700 sm:px-4 sm:text-sm">
                 <FileText className="mr-2 h-4 w-4" />
                 Ir para Cadastro
               </Button>
@@ -1748,68 +1749,69 @@ export default function Perfis() {
 
         <FeedbackBanner feedback={pageFeedback} />
 
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_6px_20px_rgba(15,23,42,0.04)] lg:grid-cols-4 lg:divide-x lg:divide-slate-100">
           <ProfileCountCard
             title="Total de Perfis"
             value={totalProfiles}
             icon={Users}
             colorClass="text-blue-600"
-            borderClass="border-blue-200"
+            borderClass=""
           />
           <ProfileCountCard
             title="Cães"
             value={dogs.length}
             icon={DogIcon}
             colorClass="text-emerald-600"
-            borderClass="border-emerald-200"
+            borderClass=""
           />
           <ProfileCountCard
             title="Responsáveis"
             value={responsaveis.length}
             icon={ShieldCheck}
             colorClass="text-violet-600"
-            borderClass="border-violet-200"
+            borderClass=""
           />
           <ProfileCountCard
             title="Carteiras"
             value={carteiras.length}
             icon={Wallet}
             colorClass="text-orange-600"
-            borderClass="border-orange-200"
+            borderClass=""
           />
         </div>
 
-        <Card className="border-gray-200 bg-white">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg text-gray-900">Consultar Perfis</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-6">
-            <SearchFiltersToolbar
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-              searchPlaceholder="Buscar por nome, contato, raça, CPF/CNPJ ou vínculos..."
-              hasActiveFilters={Boolean(searchTerm)}
-              onClear={() => setSearchTerm("")}
-              searchInputClassName="h-9 text-[13px] sm:h-11 sm:text-sm"
-            />
-
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-              <PageSubTabs
-                items={[
-                  { value: "caes", label: "Cães" },
-                  { value: "responsaveis", label: "Responsáveis" },
-                  { value: "carteiras", label: "Carteiras" },
-                ]}
+        <Card className="overflow-hidden rounded-[24px] border-slate-300/80 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.07)] sm:rounded-[28px]">
+          <CardContent className="p-0">
+            <div className="border-b border-slate-200 bg-slate-50/70 p-3 sm:p-4">
+              <SearchFiltersToolbar
+                searchTerm={searchTerm}
+                onSearchChange={setSearchTerm}
+                searchPlaceholder="Buscar por nome, contato, raça, CPF/CNPJ ou vínculos..."
+                hasActiveFilters={Boolean(searchTerm)}
+                onClear={() => setSearchTerm("")}
+                searchInputClassName="border-slate-300 bg-white shadow-none focus-visible:ring-blue-500"
               />
+            </div>
 
-              <TabsContent value="caes" className="space-y-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-0">
+              <div className="px-3 py-3 sm:px-4">
+                <PageSubTabs
+                  items={[
+                    { value: "caes", label: "Cães" },
+                    { value: "responsaveis", label: "Responsáveis" },
+                    { value: "carteiras", label: "Carteiras" },
+                  ]}
+                />
+              </div>
+
+              <TabsContent value="caes" className="mt-0 border-t border-slate-200">
                 {filteredDogs.length === 0 ? (
                   <EmptyState
                     title="Nenhum cão encontrado"
                     description="Ajuste a busca para localizar um perfil canino desta unidade."
                   />
                 ) : (
-                  <Card className="overflow-hidden border-emerald-100 bg-white">
+                  <div className="overflow-hidden bg-white">
                     <ProfileLineHeader columns="minmax(0,1.7fr) minmax(0,1.1fr) minmax(0,1.1fr) 120px 120px 24px">
                       <ProfileColumnTitle>Nome</ProfileColumnTitle>
                       <ProfileColumnTitle>Apelido</ProfileColumnTitle>
@@ -1819,13 +1821,13 @@ export default function Perfis() {
                       <span />
                     </ProfileLineHeader>
 
-                    <div className="divide-y divide-gray-100">
+                    <div className="md:divide-y md:divide-slate-100">
                       {filteredDogs.map((dog) => (
                         <Link
                           key={dog.id}
                           to={`${createPageUrl("PerfilCao")}?id=${encodeURIComponent(getInternalEntityReference(dog))}`}
                           state={{ backTo: `${location.pathname}${location.search}`, backLabel: "Perfis" }}
-                          className="grid gap-3 px-4 py-4 transition-colors hover:bg-emerald-50/60 md:grid-cols-[minmax(0,1.7fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_120px_120px_24px] md:items-center md:gap-4"
+                          className="group relative mx-2 my-2 grid gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_3px_12px_rgba(15,23,42,0.04)] transition before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-center before:scale-y-0 before:bg-blue-500 before:transition-transform before:duration-150 hover:border-blue-200 hover:bg-blue-50/45 hover:before:scale-y-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 md:mx-0 md:my-0 md:grid-cols-[minmax(0,1.7fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_120px_120px_24px] md:items-center md:gap-4 md:rounded-none md:border-0 md:px-5 md:shadow-none md:focus-visible:ring-inset"
                         >
                           <div className="min-w-0">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Nome</p>
@@ -1853,31 +1855,31 @@ export default function Perfis() {
                         </Link>
                       ))}
                     </div>
-                  </Card>
+                  </div>
                 )}
               </TabsContent>
 
-              <TabsContent value="responsaveis" className="space-y-4">
+              <TabsContent value="responsaveis" className="mt-0 border-t border-slate-200">
                 {filteredResponsaveis.length === 0 ? (
                   <EmptyState
                     title="Nenhum responsável encontrado"
                     description="Ajuste a busca para localizar um responsável desta unidade."
                   />
                 ) : (
-                  <Card className="overflow-hidden border-violet-100 bg-white">
+                  <div className="overflow-hidden bg-white">
                     <ProfileLineHeader columns="minmax(0,1.8fr) minmax(0,1.1fr) 24px">
                       <ProfileColumnTitle>Nome completo</ProfileColumnTitle>
                       <ProfileColumnTitle>Telefone</ProfileColumnTitle>
                       <span />
                     </ProfileLineHeader>
 
-                    <div className="divide-y divide-gray-100">
+                    <div className="md:divide-y md:divide-slate-100">
                       {filteredResponsaveis.map((responsavel) => (
                         <button
                           key={responsavel.id}
                           type="button"
                           onClick={() => openResponsavelDetails(responsavel.id)}
-                          className="grid w-full gap-3 px-4 py-4 text-left transition-colors hover:bg-violet-50/60 md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_24px] md:items-center md:gap-4"
+                          className="group relative mx-2 my-2 grid w-[calc(100%_-_1rem)] gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-[0_3px_12px_rgba(15,23,42,0.04)] transition before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-center before:scale-y-0 before:bg-blue-500 before:transition-transform before:duration-150 hover:border-blue-200 hover:bg-blue-50/45 hover:before:scale-y-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 md:mx-0 md:my-0 md:w-full md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_24px] md:items-center md:gap-4 md:rounded-none md:border-0 md:px-5 md:shadow-none md:focus-visible:ring-inset"
                         >
                           <div className="min-w-0">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Nome completo</p>
@@ -1899,31 +1901,31 @@ export default function Perfis() {
                         </button>
                       ))}
                     </div>
-                  </Card>
+                  </div>
                 )}
               </TabsContent>
 
-              <TabsContent value="carteiras" className="space-y-4">
+              <TabsContent value="carteiras" className="mt-0 border-t border-slate-200">
                 {filteredCarteiras.length === 0 ? (
                   <EmptyState
                     title="Nenhuma carteira encontrada"
                     description="Ajuste a busca para localizar uma carteira desta unidade."
                   />
                 ) : (
-                  <Card className="overflow-hidden border-orange-100 bg-white">
+                  <div className="overflow-hidden bg-white">
                     <ProfileLineHeader columns="minmax(0,1.8fr) minmax(0,1.1fr) 24px">
                       <ProfileColumnTitle>Nome completo</ProfileColumnTitle>
                       <ProfileColumnTitle>Telefone</ProfileColumnTitle>
                       <span />
                     </ProfileLineHeader>
 
-                    <div className="divide-y divide-gray-100">
+                    <div className="md:divide-y md:divide-slate-100">
                       {filteredCarteiras.map((carteira) => (
                         <button
                           key={carteira.id}
                           type="button"
                           onClick={() => openCarteiraDetails(carteira.id)}
-                          className="grid w-full gap-3 px-4 py-4 text-left transition-colors hover:bg-orange-50/60 md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_24px] md:items-center md:gap-4"
+                          className="group relative mx-2 my-2 grid w-[calc(100%_-_1rem)] gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-[0_3px_12px_rgba(15,23,42,0.04)] transition before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-center before:scale-y-0 before:bg-blue-500 before:transition-transform before:duration-150 hover:border-blue-200 hover:bg-blue-50/45 hover:before:scale-y-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 md:mx-0 md:my-0 md:w-full md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_24px] md:items-center md:gap-4 md:rounded-none md:border-0 md:px-5 md:shadow-none md:focus-visible:ring-inset"
                         >
                           <div className="min-w-0">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 md:hidden">Nome completo</p>
@@ -1941,7 +1943,7 @@ export default function Perfis() {
                         </button>
                       ))}
                     </div>
-                  </Card>
+                  </div>
                 )}
               </TabsContent>
             </Tabs>

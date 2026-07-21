@@ -11,7 +11,8 @@
     "test:access-permissions": "node scripts/test-access-permissions.mjs",
     "test:recurring-packages": "node scripts/test-recurring-packages.mjs",
     "test:finance:payment-v2": "node scripts/test-finance-payment-sprint9b1.mjs",
-    "test:finance:payment-v2:suite": "node scripts/test-finance-payment-suite-sprint9b1.mjs"
+    "test:finance:payment-v2:suite": "node scripts/test-finance-payment-suite-sprint9b1.mjs",
+    "test:finance:wallet-settlement": "node scripts/test-finance-wallet-settlement.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",

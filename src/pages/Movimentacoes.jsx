@@ -92,6 +92,7 @@ import FinancialOperationalAlert from "@/components/finance/FinancialOperational
 import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
 import { getAppointmentDateKey } from "@/lib/attendance";
+import { buildWalletChronologicalSettlement } from "@/lib/finance-wallet-settlement";
 
 const EMPTY_FORM = {
   data_hora_transacao: "",
@@ -746,13 +747,6 @@ function roundWalletStatementAmount(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 }
 
-function getWalletStatementDateTimestamp(value, fallback = 0) {
-  const normalized = normalizeDateOnly(value);
-  if (!normalized) return fallback;
-  const parsed = new Date(`${normalized}T00:00:00`).getTime();
-  return Number.isNaN(parsed) ? fallback : parsed;
-}
-
 function buildMonthlyDueDate(referenceDateValue, dueDayValue) {
   const normalizedReference = normalizeDateOnly(referenceDateValue);
   const parsedDueDay = Number.parseInt(String(dueDayValue || "").trim(), 10);
@@ -792,110 +786,6 @@ function resolveRecurringPackageDueDate({
     || normalizeDateOnly(recurringPackage?.data_vencimento)
     || normalizeDateOnly(appointmentDate)
     || null;
-}
-
-function buildWalletChronologicalSettlement({
-  debitRows = [],
-  creditRows = [],
-  walletAvailableBalance = 0,
-}) {
-  const officialAvailableBalance = roundWalletStatementAmount(Math.max(Number(walletAvailableBalance || 0), 0));
-  const visibleCreditTotal = roundWalletStatementAmount(
-    (creditRows || []).reduce((sum, row) => sum + Number(row?.amount || 0), 0),
-  );
-  const settlementBudget = roundWalletStatementAmount(
-    visibleCreditTotal > 0 ? visibleCreditTotal : officialAvailableBalance,
-  );
-  const canSimulateWithWalletCredits = settlementBudget > 0 || (creditRows || []).length > 0;
-
-  let remainingBudget = settlementBudget;
-  let openDebitTotal = 0;
-  let settledDebitTotal = 0;
-  let paidDebitCount = 0;
-  let pendingDebitCount = 0;
-  const creditsInChronologicalOrder = [...(creditRows || [])].sort((left, right) => {
-    const leftDate = getWalletStatementDateTimestamp(left?.receivedDate);
-    const rightDate = getWalletStatementDateTimestamp(right?.receivedDate);
-    if (leftDate !== rightDate) {
-      return leftDate - rightDate;
-    }
-    return String(left?.id || "").localeCompare(String(right?.id || ""));
-  });
-  let creditCursor = 0;
-  let lastAppliedCreditDate = null;
-
-  const debitRowsById = new Map();
-  const debitsInChronologicalOrder = [...(debitRows || [])].sort((left, right) => {
-    const leftAppointmentDate = getWalletStatementDateTimestamp(left?.appointmentDate || left?.dueDate);
-    const rightAppointmentDate = getWalletStatementDateTimestamp(right?.appointmentDate || right?.dueDate);
-    if (leftAppointmentDate !== rightAppointmentDate) {
-      return leftAppointmentDate - rightAppointmentDate;
-    }
-
-    const leftDueDate = getWalletStatementDateTimestamp(left?.dueDate);
-    const rightDueDate = getWalletStatementDateTimestamp(right?.dueDate);
-    if (leftDueDate !== rightDueDate) {
-      return leftDueDate - rightDueDate;
-    }
-
-    return String(left?.id || "").localeCompare(String(right?.id || ""));
-  });
-
-  debitsInChronologicalOrder.forEach((row) => {
-    const amount = roundWalletStatementAmount(row?.amount || 0);
-    const fallbackStatus = row?.paymentStatus || "pending";
-    let paymentStatus = fallbackStatus;
-    let settlementDate = row?.settlementDate || null;
-
-    if (canSimulateWithWalletCredits) {
-      if (amount <= 0) {
-        paymentStatus = "paid";
-        settlementDate = settlementDate || lastAppliedCreditDate || null;
-      } else {
-        while (remainingBudget + 0.0001 < amount && creditCursor < creditsInChronologicalOrder.length) {
-          const creditRow = creditsInChronologicalOrder[creditCursor];
-          remainingBudget = roundWalletStatementAmount(remainingBudget + Number(creditRow?.amount || 0));
-          lastAppliedCreditDate = creditRow?.receivedDate || lastAppliedCreditDate || null;
-          creditCursor += 1;
-        }
-
-        if (remainingBudget + 0.0001 >= amount) {
-          paymentStatus = "paid";
-          settlementDate = lastAppliedCreditDate || settlementDate || null;
-          remainingBudget = roundWalletStatementAmount(remainingBudget - amount);
-        } else {
-          paymentStatus = "pending";
-        }
-      }
-    }
-
-    if (paymentStatus === "paid") {
-      paidDebitCount += 1;
-      settledDebitTotal = roundWalletStatementAmount(settledDebitTotal + amount);
-    } else {
-      pendingDebitCount += 1;
-      openDebitTotal = roundWalletStatementAmount(openDebitTotal + amount);
-    }
-
-    debitRowsById.set(row.id, {
-      ...row,
-      paymentStatus,
-      settlementDate,
-      settlementRule: canSimulateWithWalletCredits ? "wallet_chronological_full_only" : "source_status_fallback",
-    });
-  });
-
-  return {
-    debitRows: (debitRows || []).map((row) => debitRowsById.get(row.id) || row),
-    availableBalance: canSimulateWithWalletCredits
-      ? roundWalletStatementAmount(Math.max(remainingBudget, 0))
-      : officialAvailableBalance,
-    creditTotal: visibleCreditTotal,
-    openDebitTotal,
-    settledDebitTotal,
-    paidDebitCount,
-    pendingDebitCount,
-  };
 }
 
 function buildWalletStatementRows({
@@ -1465,6 +1355,9 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletOpenChargesSort, setWalletOpenChargesSort] = useState("due_date");
   const [walletOpenChargesLoading, setWalletOpenChargesLoading] = useState(false);
   const [walletOpenChargesError, setWalletOpenChargesError] = useState("");
+  const [walletOpenChargeGeneratedLinks, setWalletOpenChargeGeneratedLinks] = useState({});
+  const [walletOpenChargeFeedback, setWalletOpenChargeFeedback] = useState({});
+  const [walletOpenChargeRenewingId, setWalletOpenChargeRenewingId] = useState("");
   const [showWalletReversalModal, setShowWalletReversalModal] = useState(false);
   const [walletReversalForm, setWalletReversalForm] = useState({ ...EMPTY_WALLET_REVERSAL_FORM });
   const [walletReversalUploading, setWalletReversalUploading] = useState(false);
@@ -2382,6 +2275,9 @@ export default function Movimentacoes({ walletOnly = false }) {
   };
 
   const openWalletOpenChargesModal = async () => {
+    setWalletOpenChargeGeneratedLinks({});
+    setWalletOpenChargeFeedback({});
+    setWalletOpenChargeRenewingId("");
     setShowWalletOpenChargesModal(true);
     await loadWalletOpenCharges(walletOpenChargesSort);
   };
@@ -2470,13 +2366,34 @@ export default function Movimentacoes({ walletOnly = false }) {
       type: copied ? "success" : "error",
       message: copied ? "Link de cobranca copiado." : "Nao foi possivel copiar o link de cobranca.",
     });
+    return copied;
+  };
+
+  const handleCopyWalletOpenChargeLink = async (chargeId) => {
+    const url = walletOpenChargeGeneratedLinks[chargeId];
+    if (!url) return;
+
+    const copied = await copyTextToClipboard(url);
+    setWalletOpenChargeFeedback((current) => ({
+      ...current,
+      [chargeId]: {
+        type: copied ? "success" : "error",
+        message: copied
+          ? "Link copiado."
+          : "Não foi possível copiar automaticamente. Pressione e segure o endereço para copiá-lo.",
+      },
+    }));
   };
 
   const handleRenewWalletChargeLink = async (chargeId) => {
     if (!chargeId || !currentUser?.empresa_id) return;
 
-    setWalletOpenChargesLoading(true);
-    setWalletOpenChargesError("");
+    setWalletOpenChargeRenewingId(chargeId);
+    setWalletOpenChargeFeedback((current) => {
+      const next = { ...current };
+      delete next[chargeId];
+      return next;
+    });
     try {
       const result = await bancoInter({
         action: "renewWalletChargePublicLink",
@@ -2484,18 +2401,38 @@ export default function Movimentacoes({ walletOnly = false }) {
         carteira_cobranca_id: chargeId,
         public_base_url: typeof window !== "undefined" ? window.location.origin : "",
       });
-      const copied = await copyTextToClipboard(result?.public_url || "");
-      await loadWalletOpenCharges(walletOpenChargesSort);
+      const publicUrl = String(result?.public_url || "").trim();
+      if (!publicUrl) {
+        throw new Error("O novo link não foi retornado pela emissão.");
+      }
+
+      setWalletOpenChargeGeneratedLinks((current) => ({ ...current, [chargeId]: publicUrl }));
+      const copied = await copyTextToClipboard(publicUrl);
+      setWalletOpenChargeFeedback((current) => ({
+        ...current,
+        [chargeId]: {
+          type: copied ? "success" : "info",
+          message: copied
+            ? "Novo link gerado e copiado."
+            : "Novo link gerado. Use o botão Copiar link abaixo.",
+        },
+      }));
       setWalletActionMessage({
         type: copied ? "success" : "warning",
         message: copied
           ? "Novo link seguro gerado e copiado. O link anterior foi invalidado."
-          : "Novo link seguro gerado. Copie-o na tela de cobranca emitida.",
+          : "Novo link seguro gerado. Use o botao Copiar link na cobranca.",
       });
     } catch (error) {
-      setWalletOpenChargesError(error?.message || "Nao foi possivel gerar um novo link.");
+      setWalletOpenChargeFeedback((current) => ({
+        ...current,
+        [chargeId]: {
+          type: "error",
+          message: error?.message || "Não foi possível gerar um novo link.",
+        },
+      }));
     } finally {
-      setWalletOpenChargesLoading(false);
+      setWalletOpenChargeRenewingId("");
     }
   };
 
@@ -4495,6 +4432,9 @@ export default function Movimentacoes({ walletOnly = false }) {
                 <div className="space-y-3">
                   {walletOpenCharges.map((charge) => {
                     const duePresentation = getWalletChargeDuePresentation(charge.data_vencimento);
+                    const generatedLink = walletOpenChargeGeneratedLinks[charge.id] || "";
+                    const linkFeedback = walletOpenChargeFeedback[charge.id] || null;
+                    const isRenewingLink = walletOpenChargeRenewingId === charge.id;
                     return (
                       <article key={charge.id} className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition hover:border-blue-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.07)] sm:p-5">
                         <div className="flex items-start gap-3">
@@ -4535,17 +4475,57 @@ export default function Movimentacoes({ walletOnly = false }) {
                               </div>
                             </div>
 
+                            {generatedLink ? (
+                              <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-blue-200 bg-blue-50/70 p-3 sm:flex-row sm:items-center">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-700">Link seguro pronto</p>
+                                  <p className="mt-1 truncate text-[11px] text-blue-900" title={generatedLink}>{generatedLink}</p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="h-9 w-full shrink-0 rounded-full bg-blue-600 px-4 text-xs text-white hover:bg-blue-700 sm:w-auto"
+                                  onClick={() => handleCopyWalletOpenChargeLink(charge.id)}
+                                >
+                                  {linkFeedback?.type === "success" ? (
+                                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                                  ) : (
+                                    <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />
+                                  )}
+                                  Copiar link
+                                </Button>
+                              </div>
+                            ) : null}
+
+                            {linkFeedback ? (
+                              <p
+                                className={`mt-2 text-[11px] font-medium ${linkFeedback.type === "error"
+                                  ? "text-red-700"
+                                  : linkFeedback.type === "success"
+                                    ? "text-emerald-700"
+                                    : "text-blue-700"}`}
+                                role={linkFeedback.type === "error" ? "alert" : "status"}
+                              >
+                                {linkFeedback.message}
+                              </p>
+                            ) : null}
+
                             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                              <p className="text-[10px] leading-relaxed text-slate-400">Um novo link invalida o endereço compartilhado anteriormente.</p>
+                              <p className="text-[10px] leading-relaxed text-slate-400">Gerar um novo link invalida o endereço compartilhado anteriormente.</p>
                               <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
                                 className="h-9 w-full shrink-0 rounded-full border-slate-300 bg-white px-4 text-xs text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 sm:w-auto"
                                 onClick={() => handleRenewWalletChargeLink(charge.id)}
+                                disabled={isRenewingLink}
                               >
-                                <Link2 className="mr-1.5 h-3.5 w-3.5" />
-                                Gerar e copiar novo link
+                                {isRenewingLink ? (
+                                  <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                                )}
+                                {isRenewingLink ? "Gerando..." : generatedLink ? "Gerar outro link" : "Gerar novo link"}
                               </Button>
                             </div>
                           </div>

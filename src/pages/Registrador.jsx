@@ -137,6 +137,10 @@ function nowDateTimeValue() {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
 }
 
+function nowTimestampValue() {
+  return new Date().toISOString();
+}
+
 function buildDateTimeForDate(dateKey, timeValue = "09:00") {
   if (!dateKey) return nowDateTimeValue();
   return `${dateKey}T${String(timeValue || "09:00").slice(0, 5)}:00`;
@@ -163,6 +167,37 @@ function formatDateTime(value) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatStayDuration(checkinValue, checkoutValue) {
+  const checkinTime = new Date(checkinValue).getTime();
+  const checkoutTime = new Date(checkoutValue).getTime();
+  if (!Number.isFinite(checkinTime) || !Number.isFinite(checkoutTime) || checkoutTime < checkinTime) return "-";
+
+  const totalMinutes = Math.floor((checkoutTime - checkinTime) / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  return [
+    days ? `${days}d` : "",
+    hours ? `${hours}h` : "",
+    `${minutes}min`,
+  ].filter(Boolean).join(" ");
+}
+
+function getProviderCheckinStartValue(checkin) {
+  const recordedValue = checkin?.checkin_datetime || checkin?.data_checkin || "";
+  const createdValue = checkin?.created_at || checkin?.created_date || "";
+  if (!recordedValue || !createdValue) return recordedValue;
+
+  const recordedTime = new Date(recordedValue).getTime();
+  const createdTime = new Date(createdValue).getTime();
+  if (!Number.isFinite(recordedTime) || !Number.isFinite(createdTime)) return recordedValue;
+
+  const timezoneOffset = new Date(createdTime).getTimezoneOffset() * 60000;
+  const matchesLegacyTimezoneShift = Math.abs((createdTime - recordedTime) - timezoneOffset) <= 5 * 60000;
+  return matchesLegacyTimezoneShift ? createdValue : recordedValue;
 }
 
 function sanitizeDateKey(value) {
@@ -1934,7 +1969,7 @@ export default function Registrador() {
         return;
       }
 
-      const now = nowDateTimeValue();
+      const now = nowTimestampValue();
       const activeCheckin = activeProviderCheckins.find((checkin) => checkin.user_id === provider.id) || null;
       setProviderCheckinDraft({
         provider,
@@ -1944,7 +1979,7 @@ export default function Registrador() {
       });
       setProviderCheckinForm({
         ...EMPTY_PROVIDER_CHECKIN_FORM,
-        contest_time: now.slice(11, 16),
+        contest_time: nowDateTimeValue().slice(11, 16),
       });
       setShowProviderCheckinDialog(true);
     } catch (error) {
@@ -1996,7 +2031,7 @@ export default function Registrador() {
 
     setIsSaving(true);
     try {
-      const now = nowDateTimeValue();
+      const now = nowTimestampValue();
       const contestacaoHorario = providerCheckinForm.contest_reason.trim()
         ? {
             motivo: providerCheckinForm.contest_reason.trim(),
@@ -2012,7 +2047,10 @@ export default function Registrador() {
           throw new Error("O registro de entrada deste funcionário não foi localizado.");
         }
         const currentMetadata = getCheckinMeta(activeCheckin);
+        const normalizedCheckinStart = getProviderCheckinStartValue(activeCheckin);
         await Checkin.update(activeCheckin.id, {
+          checkin_datetime: normalizedCheckinStart,
+          data_checkin: normalizedCheckinStart,
           checkout_datetime: now,
           data_checkout: now,
           status: "finalizado",
@@ -2061,7 +2099,7 @@ export default function Registrador() {
   }
 
   function openProviderCheckoutDialog(checkin, provider) {
-    const now = nowDateTimeValue();
+    const now = nowTimestampValue();
     setProviderCheckinDraft({
       provider,
       checkin,
@@ -2070,7 +2108,7 @@ export default function Registrador() {
     });
     setProviderCheckinForm({
       ...EMPTY_PROVIDER_CHECKIN_FORM,
-      contest_time: now.slice(11, 16),
+      contest_time: nowDateTimeValue().slice(11, 16),
     });
     setShowProviderCheckinDialog(true);
   }
@@ -2445,16 +2483,16 @@ export default function Registrador() {
 
           <TabsContent value="providers" className="space-y-4 sm:space-y-6">
             <Card className="border-gray-200 bg-white">
-              <CardHeader>
+              <CardHeader className="p-3 pb-2 sm:p-6 sm:pb-3">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <UserRound className="h-5 w-5 text-orange-600" />
                   Registro de funcionários
                 </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-6">
                 <p className="text-xs leading-5 text-slate-500 sm:text-sm">
                   Informe o CPF. Se o funcionário ainda não entrou, será iniciado o check-in; se já estiver presente, será iniciado o check-out.
                 </p>
+              </CardHeader>
+              <CardContent className="space-y-3 p-3 pt-0 sm:space-y-4 sm:p-6 sm:pt-0">
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Input
                     value={providerCpf}
@@ -2476,7 +2514,7 @@ export default function Registrador() {
                         <div>
                           <p className="font-medium text-gray-900">{getProviderDisplayName(provider)}</p>
                           <p className="text-sm text-gray-500">CPF: {formatCpf(provider?.cpf || "")}</p>
-                          <p className="text-sm text-gray-500">Entrada: {formatDateTime(checkin.checkin_datetime || checkin.data_checkin)}</p>
+                          <p className="text-sm text-gray-500">Entrada: {formatDateTime(getProviderCheckinStartValue(checkin))}</p>
                         </div>
                         <Button variant="outline" onClick={() => openProviderCheckoutDialog(checkin, provider)} className="w-full sm:w-auto">
                           Registrar saída
@@ -2523,9 +2561,17 @@ export default function Registrador() {
                   Horário do registro: {formatDateTime(providerCheckinDraft.expectedAt)}
                 </p>
                 {providerCheckinDraft.mode === "checkout" && providerCheckinDraft.checkin ? (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Entrada registrada em {formatDateTime(providerCheckinDraft.checkin.checkin_datetime || providerCheckinDraft.checkin.data_checkin)}.
-                  </p>
+                  <>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Entrada registrada em {formatDateTime(getProviderCheckinStartValue(providerCheckinDraft.checkin))}.
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-800">
+                      Tempo de permanência: {formatStayDuration(
+                        getProviderCheckinStartValue(providerCheckinDraft.checkin),
+                        providerCheckinDraft.expectedAt
+                      )}
+                    </p>
+                  </>
                 ) : null}
               </div>
 

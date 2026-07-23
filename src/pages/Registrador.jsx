@@ -1921,7 +1921,7 @@ export default function Registrador() {
   async function handleProviderCheckin() {
     const digits = providerCpf.replace(/\D/g, "");
     if (digits.length !== 11) {
-      openNotify("CPF invalido", "Informe um CPF valido para o funcionário.");
+      openNotify("CPF inválido", "Informe um CPF válido para o funcionário.");
       return;
     }
 
@@ -1934,17 +1934,13 @@ export default function Registrador() {
         return;
       }
 
-      const alreadyPresent = activeProviderCheckins.some((checkin) => checkin.user_id === provider.id);
-      if (alreadyPresent) {
-        openNotify("Funcionário já presente", `${getProviderDisplayName(provider)} já está registrado.`);
-        setIsSaving(false);
-        return;
-      }
-
       const now = nowDateTimeValue();
+      const activeCheckin = activeProviderCheckins.find((checkin) => checkin.user_id === provider.id) || null;
       setProviderCheckinDraft({
         provider,
-        expectedCheckinAt: now,
+        checkin: activeCheckin,
+        mode: activeCheckin ? "checkout" : "checkin",
+        expectedAt: now,
       });
       setProviderCheckinForm({
         ...EMPTY_PROVIDER_CHECKIN_FORM,
@@ -1988,10 +1984,13 @@ export default function Registrador() {
     setShowProviderContestDialog(false);
   }
 
-  async function confirmProviderCheckin() {
+  async function confirmProviderAttendance() {
     if (!providerCheckinDraft?.provider) return;
     if (!providerCheckinForm.selfie_url) {
-      openNotify("Campos obrigatórios", "Envie a selfie antes de confirmar a entrada.");
+      openNotify(
+        "Campos obrigatórios",
+        `Envie a selfie antes de confirmar a ${providerCheckinDraft.mode === "checkout" ? "saída" : "entrada"}.`
+      );
       return;
     }
 
@@ -2007,49 +2006,73 @@ export default function Registrador() {
           }
         : null;
 
-      await Checkin.create({
-        empresa_id: currentUser?.empresa_id || null,
-        tipo: "prestador",
-        user_id: providerCheckinDraft.provider.id,
-        checkin_datetime: now,
-        data_checkin: now,
-        status: "presente",
-        metadata: {
-          provider_nome: getProviderDisplayName(providerCheckinDraft.provider),
-          provider_cpf: normalizeCpfDigits(providerCheckinDraft.provider?.cpf || ""),
-          selfie_url: providerCheckinForm.selfie_url,
-          contestacao_horario: contestacaoHorario,
-        },
-      });
+      if (providerCheckinDraft.mode === "checkout") {
+        const activeCheckin = providerCheckinDraft.checkin;
+        if (!activeCheckin?.id) {
+          throw new Error("O registro de entrada deste funcionário não foi localizado.");
+        }
+        const currentMetadata = getCheckinMeta(activeCheckin);
+        await Checkin.update(activeCheckin.id, {
+          checkout_datetime: now,
+          data_checkout: now,
+          status: "finalizado",
+          metadata: {
+            ...currentMetadata,
+            checkout_provider_nome: getProviderDisplayName(providerCheckinDraft.provider),
+            checkout_selfie_url: providerCheckinForm.selfie_url,
+            checkout_contestacao_horario: contestacaoHorario,
+          },
+        });
+      } else {
+        await Checkin.create({
+          empresa_id: currentUser?.empresa_id || null,
+          tipo: "prestador",
+          user_id: providerCheckinDraft.provider.id,
+          checkin_datetime: now,
+          data_checkin: now,
+          status: "presente",
+          metadata: {
+            provider_nome: getProviderDisplayName(providerCheckinDraft.provider),
+            provider_cpf: normalizeCpfDigits(providerCheckinDraft.provider?.cpf || ""),
+            selfie_url: providerCheckinForm.selfie_url,
+            contestacao_horario: contestacaoHorario,
+          },
+        });
+      }
 
       setProviderCpf("");
       setShowProviderCheckinDialog(false);
       resetProviderCheckinState();
       await loadData();
-      openNotify("Funcionário registrado", "Registro realizado com sucesso.");
+      openNotify(
+        providerCheckinDraft.mode === "checkout" ? "Saída registrada" : "Funcionário registrado",
+        providerCheckinDraft.mode === "checkout"
+          ? "Check-out do funcionário concluído."
+          : "Registro de entrada realizado com sucesso."
+      );
     } catch (error) {
       console.error("Erro ao registrar funcionário:", error);
-      openNotify("Erro", error?.message || "Não foi possível registrar o funcionário.");
+      openNotify(
+        "Erro",
+        error?.message || `Não foi possível confirmar a ${providerCheckinDraft.mode === "checkout" ? "saída" : "entrada"} do funcionário.`
+      );
     }
     setIsSaving(false);
   }
 
-  async function handleProviderCheckout(checkin) {
-    setIsSaving(true);
-    try {
-      const now = nowDateTimeValue();
-      await Checkin.update(checkin.id, {
-        checkout_datetime: now,
-        data_checkout: now,
-        status: "finalizado",
-      });
-      await loadData();
-      openNotify("Saída registrada", "Check-out do funcionário concluído.");
-    } catch (error) {
-      console.error("Erro ao registrar saída do funcionário:", error);
-      openNotify("Erro", error?.message || "Não foi possível concluir a saída.");
-    }
-    setIsSaving(false);
+  function openProviderCheckoutDialog(checkin, provider) {
+    const now = nowDateTimeValue();
+    setProviderCheckinDraft({
+      provider,
+      checkin,
+      mode: "checkout",
+      expectedAt: now,
+    });
+    setProviderCheckinForm({
+      ...EMPTY_PROVIDER_CHECKIN_FORM,
+      contest_time: now.slice(11, 16),
+    });
+    setShowProviderCheckinDialog(true);
   }
 
   async function handleAttachmentUpload(event, target, folder) {
@@ -2118,11 +2141,12 @@ export default function Registrador() {
                   onSearchChange={setSearchTerm}
                   searchPlaceholder="Buscar por nome do cão, raça ou responsável..."
                   hasActiveFilters={Boolean(searchTerm || selectedDate !== TODAY_KEY)}
-                  searchClassName="min-w-0 max-w-[218px] sm:max-w-none"
-                  searchInputClassName="h-[30px] pl-8 pr-2 text-[11px] sm:h-11 sm:pl-11 sm:pr-4 sm:text-base"
-                  searchIconClassName="left-2.5 h-3.5 w-3.5 sm:left-4 sm:h-4 sm:w-4"
-                  filtersClassName="gap-1.5 sm:gap-2"
-                  filterButtonClassName="h-8 w-8 sm:h-11 sm:w-11"
+                  className="flex-row items-center gap-2 sm:gap-3"
+                  searchClassName="min-w-0 flex-1"
+                  searchInputClassName="h-9 pl-9 pr-3 text-xs sm:h-11 sm:pl-11 sm:pr-4 sm:text-base"
+                  searchIconClassName="left-3 h-3.5 w-3.5 sm:left-4 sm:h-4 sm:w-4"
+                  filtersClassName="shrink-0 flex-nowrap gap-1.5 sm:gap-2"
+                  filterButtonClassName="h-9 w-9 sm:h-11 sm:w-11"
                   filterIconClassName="h-3.5 w-3.5 sm:h-4 sm:w-4"
                   onClear={() => {
                     setSearchTerm("");
@@ -2154,7 +2178,7 @@ export default function Registrador() {
                           setSearchTerm("");
                           loadData();
                         }}
-                        className="h-8 w-8 rounded-full p-0 sm:hidden"
+                        className="h-9 w-9 rounded-full p-0 sm:hidden"
                         aria-label="Atualizar agendamentos"
                       >
                         <RefreshCcw className="h-3.5 w-3.5" />
@@ -2172,8 +2196,8 @@ export default function Registrador() {
                     </>
                   )}
                 />
-                <p className="mt-2 px-1 text-[10px] text-gray-500 sm:mt-3 sm:px-0 sm:text-xs">
-                  <span className="sm:hidden">{selectedDateTitle}: {filteredAppointments.length} encontrado(s).</span>
+                <p className="mt-2 px-1 text-[10px] font-medium text-gray-500 sm:mt-3 sm:px-0 sm:text-xs">
+                  <span className="sm:hidden">{selectedDateTitle} • {filteredAppointments.length} encontrado(s)</span>
                   <span className="hidden sm:inline">{selectedDateTitle} • {filteredAppointments.length} agendamento(s) para esta busca.</span>
                 </p>
               </CardContent>
@@ -2428,6 +2452,9 @@ export default function Registrador() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-6">
+                <p className="text-xs leading-5 text-slate-500 sm:text-sm">
+                  Informe o CPF. Se o funcionário ainda não entrou, será iniciado o check-in; se já estiver presente, será iniciado o check-out.
+                </p>
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Input
                     value={providerCpf}
@@ -2436,7 +2463,7 @@ export default function Registrador() {
                     className="h-10 text-[13px] sm:h-12 sm:text-sm"
                   />
                   <Button onClick={handleProviderCheckin} disabled={isSaving} className="h-10 w-full rounded-full bg-orange-600 text-xs text-white hover:bg-orange-700 sm:h-12 sm:w-auto sm:rounded-md sm:text-sm">
-                    Registrar entrada
+                    Continuar
                   </Button>
                 </div>
 
@@ -2451,8 +2478,8 @@ export default function Registrador() {
                           <p className="text-sm text-gray-500">CPF: {formatCpf(provider?.cpf || "")}</p>
                           <p className="text-sm text-gray-500">Entrada: {formatDateTime(checkin.checkin_datetime || checkin.data_checkin)}</p>
                         </div>
-                        <Button variant="outline" onClick={() => handleProviderCheckout(checkin)} className="w-full sm:w-auto">
-                          Registrar saida
+                        <Button variant="outline" onClick={() => openProviderCheckoutDialog(checkin, provider)} className="w-full sm:w-auto">
+                          Registrar saída
                         </Button>
                       </div>
                     ))
@@ -2471,25 +2498,39 @@ export default function Registrador() {
           if (!open) resetProviderCheckinState();
         }}
       >
-        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Confirmar entrada do funcionário</DialogTitle>
-            <DialogDescription>
-              O registro será salvo com o horário atual no momento da confirmação.
-            </DialogDescription>
+        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-[24px] border-slate-200 p-4 sm:max-w-lg sm:rounded-[28px] sm:p-6">
+          <DialogHeader className="pr-8 text-left">
+            <div className="flex items-center gap-3">
+              <div className={`rounded-2xl p-2.5 text-white ${providerCheckinDraft?.mode === "checkout" ? "bg-slate-900" : "bg-orange-600"}`}>
+                {providerCheckinDraft?.mode === "checkout" ? <LogOut className="h-5 w-5" /> : <LogIn className="h-5 w-5" />}
+              </div>
+              <div>
+                <DialogTitle>
+                  Confirmar {providerCheckinDraft?.mode === "checkout" ? "saída" : "entrada"} do funcionário
+                </DialogTitle>
+                <DialogDescription className="mt-1">
+                  O registro será salvo com o horário atual após a confirmação.
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
 
           {providerCheckinDraft?.provider ? (
             <div className="space-y-4 py-2">
-              <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
-                <p className="font-semibold text-orange-950">{getProviderDisplayName(providerCheckinDraft.provider)}</p>
-                <p className="mt-1 text-sm text-orange-800">
-                  Horário previsto: {formatDateTime(providerCheckinDraft.expectedCheckinAt)}
+              <div className={`rounded-2xl border p-4 ${providerCheckinDraft.mode === "checkout" ? "border-slate-200 bg-slate-50" : "border-orange-200 bg-orange-50"}`}>
+                <p className="font-semibold text-slate-950">{getProviderDisplayName(providerCheckinDraft.provider)}</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Horário do registro: {formatDateTime(providerCheckinDraft.expectedAt)}
                 </p>
+                {providerCheckinDraft.mode === "checkout" && providerCheckinDraft.checkin ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Entrada registrada em {formatDateTime(providerCheckinDraft.checkin.checkin_datetime || providerCheckinDraft.checkin.data_checkin)}.
+                  </p>
+                ) : null}
               </div>
 
-              <div>
-                <Label>Selfie</Label>
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                <RequiredLabel>Selfie na {providerCheckinDraft.mode === "checkout" ? "saída" : "entrada"}</RequiredLabel>
                 <input
                   ref={providerSelfieInputRef}
                   type="file"
@@ -2498,13 +2539,14 @@ export default function Registrador() {
                   className="hidden"
                   onChange={(event) => handleProviderAssetUpload(event.target.files?.[0], "selfie")}
                 />
-                <Button type="button" variant="outline" className="mt-2" onClick={() => providerSelfieInputRef.current?.click()}>
+                <Button type="button" variant="outline" className="mt-3 h-11 w-full rounded-xl bg-white" onClick={() => providerSelfieInputRef.current?.click()}>
                   <Camera className="mr-2 h-4 w-4" />
-                  Tirar selfie
+                  {providerCheckinForm.selfie_url ? "Trocar selfie" : "Tirar selfie"}
                 </Button>
                 {providerCheckinForm.selfie_url ? (
-                  <button type="button" onClick={() => handleAttachmentPreview(providerCheckinForm.selfie_url, "Selfie do funcionário")} className="mt-2 block text-sm text-blue-600">
-                    Ver selfie enviada
+                  <button type="button" onClick={() => handleAttachmentPreview(providerCheckinForm.selfie_url, `Selfie na ${providerCheckinDraft.mode === "checkout" ? "saída" : "entrada"}`)} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Selfie registrada • visualizar
                   </button>
                 ) : null}
               </div>
@@ -2531,8 +2573,13 @@ export default function Registrador() {
             <Button type="button" variant="outline" onClick={() => setShowProviderCheckinDialog(false)} className="w-full sm:w-auto">
               Cancelar
             </Button>
-            <Button type="button" onClick={confirmProviderCheckin} disabled={isSaving} className="w-full bg-orange-600 text-white hover:bg-orange-700 sm:w-auto">
-              {isSaving ? "Confirmando..." : "Confirmar entrada"}
+            <Button
+              type="button"
+              onClick={confirmProviderAttendance}
+              disabled={isSaving}
+              className={`w-full text-white sm:w-auto ${providerCheckinDraft?.mode === "checkout" ? "bg-slate-900 hover:bg-slate-800" : "bg-orange-600 hover:bg-orange-700"}`}
+            >
+              {isSaving ? "Confirmando..." : `Confirmar ${providerCheckinDraft?.mode === "checkout" ? "saída" : "entrada"}`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2541,9 +2588,9 @@ export default function Registrador() {
       <Dialog open={showProviderContestDialog} onOpenChange={setShowProviderContestDialog}>
         <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Contestar horário</DialogTitle>
+            <DialogTitle>Contestar horário de {providerCheckinDraft?.mode === "checkout" ? "saída" : "entrada"}</DialogTitle>
             <DialogDescription>
-              Registre o motivo e o horário desejado para análise.
+              Registre o motivo e o horário correto para análise.
             </DialogDescription>
           </DialogHeader>
 

@@ -1396,6 +1396,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletOpenChargeCancellingId, setWalletOpenChargeCancellingId] = useState("");
   const [walletChargePendingCancellation, setWalletChargePendingCancellation] = useState(null);
   const [walletManualDeletingId, setWalletManualDeletingId] = useState("");
+  const [walletManualMovementPendingDeletion, setWalletManualMovementPendingDeletion] = useState(null);
   const [showWalletReversalModal, setShowWalletReversalModal] = useState(false);
   const [walletReversalForm, setWalletReversalForm] = useState({ ...EMPTY_WALLET_REVERSAL_FORM });
   const [walletReversalUploading, setWalletReversalUploading] = useState(false);
@@ -2429,10 +2430,6 @@ export default function Movimentacoes({ walletOnly = false }) {
         charge: result?.charge || null,
       });
       setWalletChargeStep(5);
-      setWalletActionMessage({
-        type: "success",
-        message: "Cobranca emitida. O link seguro esta pronto para compartilhar.",
-      });
       await loadWalletOpenCharges(walletOpenChargesSort);
     } catch (error) {
       setWalletChargeError(error?.message || "Não foi possível emitir a cobrança.");
@@ -2446,12 +2443,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   };
 
   const handleCopyWalletChargeLink = async (url) => {
-    const copied = await copyTextToClipboard(url);
-    setWalletActionMessage({
-      type: copied ? "success" : "error",
-      message: copied ? "Link de cobranca copiado." : "Nao foi possivel copiar o link de cobranca.",
-    });
-    return copied;
+    return copyTextToClipboard(url);
   };
 
   const handleCopyWalletOpenChargeLink = async (chargeId) => {
@@ -2502,12 +2494,6 @@ export default function Movimentacoes({ walletOnly = false }) {
             : "Novo link gerado. Use o botão Copiar link abaixo.",
         },
       }));
-      setWalletActionMessage({
-        type: copied ? "success" : "warning",
-        message: copied
-          ? "Novo link seguro gerado e copiado. O link anterior foi invalidado."
-          : "Novo link seguro gerado. Use o botao Copiar link na cobranca.",
-      });
     } catch (error) {
       setWalletOpenChargeFeedback((current) => ({
         ...current,
@@ -2831,7 +2817,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
   };
 
-  const handleDeleteWalletManualMovement = async (row) => {
+  const handleDeleteWalletManualMovement = (row) => {
     if (!row?.movementId || !row?.isManualMovement || !selectedWalletRuntimeAccountId) return;
 
     const sourceMovement = walletRecentMovements.find((movement) => movement?.movimento_id === row.movementId);
@@ -2840,10 +2826,15 @@ export default function Movimentacoes({ walletOnly = false }) {
       return;
     }
 
-    if (!window.confirm(`Excluir o lançamento manual “${row.title}” de ${formatCurrency(row.amount)}? O saldo será compensado e a auditoria será preservada.`)) {
-      return;
-    }
+    setWalletManualMovementPendingDeletion({ ...row, sourceMovement });
+  };
 
+  const confirmDeleteWalletManualMovement = async () => {
+    const row = walletManualMovementPendingDeletion;
+    const sourceMovement = row?.sourceMovement;
+    if (!row?.movementId || !sourceMovement || !selectedWalletRuntimeAccountId) return;
+
+    setWalletManualMovementPendingDeletion(null);
     setWalletManualDeletingId(row.movementId);
     setWalletActionMessage(null);
     try {
@@ -4869,6 +4860,70 @@ export default function Movimentacoes({ walletOnly = false }) {
             >
               <Trash2 className="mr-2 h-4 w-4" />
               {walletChargePendingCancellation?.metodo === "pix" ? "Cancelar cobrança Pix" : "Cancelar boleto"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={Boolean(walletManualMovementPendingDeletion)}
+        onOpenChange={(open) => {
+          if (!open) setWalletManualMovementPendingDeletion(null);
+        }}
+      >
+        <AlertDialogContent className="w-[calc(100vw-1.5rem)] max-w-[440px] overflow-hidden rounded-[26px] border-slate-200 bg-white p-0 shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+          <div className="border-b border-red-100 bg-gradient-to-br from-red-50 via-white to-white px-5 py-5 sm:px-6">
+            <AlertDialogHeader className="space-y-0 text-left">
+              <div className="flex items-start gap-3.5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-700">
+                  <Trash2 className="h-5 w-5" />
+                </span>
+                <div className="min-w-0 pt-0.5">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-red-700">Alteração manual</p>
+                  <AlertDialogTitle className="mt-1 text-xl font-bold tracking-tight text-slate-950">
+                    Excluir este lançamento?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="mt-2 text-xs leading-5 text-slate-600">
+                    O item deixará de aparecer no extrato da carteira e o saldo será corrigido automaticamente.
+                  </AlertDialogDescription>
+                </div>
+              </div>
+            </AlertDialogHeader>
+          </div>
+
+          <div className="space-y-4 px-5 py-5 sm:px-6">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Lançamento</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-950">{walletManualMovementPendingDeletion?.title || "Alteração manual"}</p>
+                  <p className="mt-1 text-xs text-slate-500">{formatWalletStatementDate(walletManualMovementPendingDeletion?.primaryDate)}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Valor</p>
+                  <p className="mt-1 text-lg font-bold text-slate-950">{formatCurrency(walletManualMovementPendingDeletion?.amount)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950">
+              <Undo2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+              <p className="text-xs leading-5">
+                Será criado um movimento compensatório de {walletManualMovementPendingDeletion?.sourceMovement?.natureza === "saida" ? "+" : "-"}{formatCurrency(walletManualMovementPendingDeletion?.amount)}. O registro original continuará preservado na auditoria.
+              </p>
+            </div>
+          </div>
+
+          <AlertDialogFooter className="gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-6">
+            <AlertDialogCancel className="mt-0 h-10 rounded-full border-slate-300 bg-white px-5 text-slate-700">
+              Manter lançamento
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="h-10 rounded-full bg-red-600 px-5 text-white hover:bg-red-700"
+              onClick={confirmDeleteWalletManualMovement}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Excluir e compensar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

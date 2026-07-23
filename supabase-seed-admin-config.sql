@@ -8,7 +8,7 @@ VALUES
   (
     'empresa_demo',
     'DOGCITY',
-    'Dog City Brasil',
+    'DC Sousas',
     'Dog City Brasil',
     'dog-city-brasil',
     'ativa',

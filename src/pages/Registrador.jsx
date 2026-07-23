@@ -38,7 +38,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, DateTimePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { BellRing, Building2, CalendarClock, Camera, CheckCircle2, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, RefreshCcw, Search, UserRound, UtensilsCrossed, X } from "lucide-react";
+import { BellRing, Building2, CalendarClock, Camera, CheckCircle2, Clock3, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, RefreshCcw, Search, ShieldCheck, UserRound, UtensilsCrossed, X } from "lucide-react";
 import { isCommercialProfile, isManagerialProfile, isOperationalProfile } from "@/lib/access-control";
 
 const TODAY_KEY = new Date().toISOString().slice(0, 10);
@@ -181,20 +181,111 @@ function getProviderSignatureCode(provider) {
   return normalizeSignatureCode(provider?.signature_code);
 }
 
-function MonitorSignatureInput({ value, onChange, className = "" }) {
+function MonitorSignatureInput({ value, onChange, className = "", contained = false }) {
   return (
-    <div className={className}>
-      <Label>Verificação: Insira a sua senha</Label>
+    <div className={`${contained ? "rounded-2xl border border-slate-200 bg-slate-50/80 p-4" : ""} ${className}`}>
+      <div className="flex items-start gap-3">
+        {contained ? (
+          <div className="mt-0.5 rounded-xl bg-white p-2 text-slate-600 shadow-sm ring-1 ring-slate-200">
+            <ShieldCheck className="h-4 w-4" />
+          </div>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <Label>Senha de confirmação do monitor</Label>
+          {contained ? <p className="mt-1 text-xs leading-5 text-slate-500">Use o código de 4 dígitos do funcionário selecionado.</p> : null}
+        </div>
+      </div>
       <Input
         value={value}
         onChange={(event) => onChange(normalizeSignatureCode(event.target.value))}
-        className="mt-2 font-mono tracking-[0.35em]"
+        className="mt-3 h-11 bg-white font-mono tracking-[0.35em]"
         inputMode="numeric"
         maxLength={4}
         placeholder="4 dígitos"
         type="password"
       />
     </div>
+  );
+}
+
+function RequiredLabel({ children }) {
+  return (
+    <Label>
+      {children}
+      <span className="ml-1 text-rose-500" aria-hidden="true">*</span>
+    </Label>
+  );
+}
+
+function AttendanceDialogHeader({ mode, appointment, dog, checkin }) {
+  const isCheckin = mode === "checkin";
+  const Icon = isCheckin ? LogIn : LogOut;
+  const dateKey = getAppointmentDateKey(appointment);
+  const checkinTime = checkin?.checkin_datetime || checkin?.data_checkin;
+
+  return (
+    <div className={`border-b px-4 pb-4 pt-5 pr-14 sm:px-6 sm:pb-5 sm:pt-6 ${isCheckin ? "border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-sky-50" : "border-blue-100 bg-gradient-to-br from-blue-50 via-white to-slate-50"}`}>
+      <DialogHeader className="text-left">
+        <div className="flex items-start gap-3.5">
+          {dog?.foto_url ? (
+            <img src={dog.foto_url} alt={getDogDisplayName(dog)} className="h-12 w-12 shrink-0 rounded-2xl object-cover shadow-sm ring-2 ring-white sm:h-14 sm:w-14" />
+          ) : (
+            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-sm ring-2 ring-white sm:h-14 sm:w-14 ${isCheckin ? "bg-emerald-600 text-white" : "bg-slate-900 text-white"}`}>
+              <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className={`text-[10px] font-bold uppercase tracking-[0.22em] sm:text-xs ${isCheckin ? "text-emerald-700" : "text-blue-700"}`}>
+              {isCheckin ? "Entrada do atendimento" : "Saída do atendimento"}
+            </p>
+            <DialogTitle className="mt-1 truncate text-xl font-bold text-slate-950 sm:text-2xl">
+              {isCheckin ? "Confirmar check-in" : "Confirmar check-out"}
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-xs leading-5 text-slate-600 sm:text-sm">
+              {getDogDisplayName(dog)} • {getServiceLabel(appointment?.service_type)}
+            </DialogDescription>
+          </div>
+        </div>
+      </DialogHeader>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {dateKey ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm">
+            <CalendarClock className="h-3.5 w-3.5 text-slate-500" />
+            {formatDateLabel(dateKey)}
+          </span>
+        ) : null}
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-white bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm">
+          <Clock3 className="h-3.5 w-3.5 text-slate-500" />
+          {getAppointmentDisplayTime(appointment)}
+        </span>
+        {!isCheckin && checkinTime ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800">
+            <LogIn className="h-3.5 w-3.5" />
+            Entrada {formatDateTime(checkinTime)}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AttendanceFormSection({ icon: Icon, title, description, children, className = "" }) {
+  return (
+    <section className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_12px_32px_-28px_rgba(15,23,42,0.55)] sm:p-5 ${className}`}>
+      <div className="mb-4 flex items-start gap-3">
+        {Icon ? (
+          <div className="rounded-xl bg-slate-100 p-2 text-slate-600">
+            <Icon className="h-4 w-4" />
+          </div>
+        ) : null}
+        <div>
+          <h3 className="text-sm font-bold text-slate-950 sm:text-base">{title}</h3>
+          {description ? <p className="mt-0.5 text-xs leading-5 text-slate-500">{description}</p> : null}
+        </div>
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -2517,23 +2608,27 @@ export default function Registrador() {
           if (!open) setCheckinSharedSource(null);
         }}
       >
-        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Confirmar check-in</DialogTitle>
-            <DialogDescription>
-              Confirme horário, monitor, pertences e observaçàµes do atendimento.
-            </DialogDescription>
-          </DialogHeader>
-          <Tabs value={checkinDialogTab} onValueChange={setCheckinDialogTab} className="py-2">
-            <PageSubTabs
-              className="mb-4"
-              items={[
-                { value: "geral", label: "Dados do check-in" },
-                { value: "checkup", label: "Check-list corporal" },
-              ]}
+        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-hidden rounded-[24px] border-0 bg-slate-50 p-0 shadow-2xl sm:max-h-[min(92vh,860px)] sm:max-w-3xl sm:rounded-[28px]">
+          <div className="flex max-h-[calc(100dvh-1rem)] min-h-0 flex-col sm:max-h-[min(92vh,860px)]">
+            <AttendanceDialogHeader
+              mode="checkin"
+              appointment={selectedAppointment}
+              dog={dogsById[selectedAppointment?.dog_id]}
             />
+            <Tabs value={checkinDialogTab} onValueChange={setCheckinDialogTab} className="flex min-h-0 flex-1 flex-col">
+              <div className="border-b border-slate-200 bg-white px-4 pt-3 sm:px-6">
+                <PageSubTabs
+                  className="mb-2"
+                  triggerClassName="data-[state=active]:bg-white data-[state=active]:text-slate-950"
+                  items={[
+                    { value: "geral", label: "Dados do check-in", icon: LogIn },
+                    { value: "checkup", label: "Check-list corporal", icon: CheckCircle2 },
+                  ]}
+                />
+              </div>
 
-            <TabsContent value="geral" className="mt-4 space-y-4">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
+                <TabsContent value="geral" className="m-0 space-y-4 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0">
               {checkinSharedSource && (
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
                   Dados diários reaproveitados do primeiro check-in deste cão no dia:
@@ -2547,44 +2642,61 @@ export default function Registrador() {
                 </div>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <Label>Data e horário do check-in</Label>
-                  <DateTimePickerInput value={checkinForm.checkin_datetime} onChange={(value) => setCheckinForm((current) => ({ ...current, checkin_datetime: value }))} />
+              <AttendanceFormSection
+                icon={LogIn}
+                title="Registro da entrada"
+                description="Confirme quem recebeu o cão e o momento exato do check-in."
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <RequiredLabel>Data e horário do check-in</RequiredLabel>
+                    <DateTimePickerInput value={checkinForm.checkin_datetime} onChange={(value) => setCheckinForm((current) => ({ ...current, checkin_datetime: value }))} />
+                  </div>
+                  <div>
+                    <RequiredLabel>Monitor responsável</RequiredLabel>
+                    <Select value={checkinForm.monitor_id} onValueChange={(value) => setCheckinForm((current) => ({ ...current, monitor_id: value, monitor_signature_code: "" }))}>
+                      <SelectTrigger className="mt-2 h-11 bg-white">
+                        <SelectValue placeholder="Selecione o monitor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {monitors.map((monitor) => (
+                          <SelectItem key={monitor.id} value={monitor.id}>
+                            {getProviderDisplayName(monitor)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {checkinForm.monitor_id && !presentMonitorIds.has(checkinForm.monitor_id) ? (
+                      <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 text-xs font-medium text-amber-800">Este monitor não possui presença registrada agora.</p>
+                    ) : null}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <RequiredLabel>Responsável pela entrega</RequiredLabel>
+                    <Input
+                      value={checkinForm.entregador_nome}
+                      onChange={(event) => setCheckinForm((current) => ({ ...current, entregador_nome: event.target.value }))}
+                      className="mt-2 h-11 bg-white"
+                      placeholder="Nome de quem trouxe o cão"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <Label>Monitor responsável</Label>
-                  <Select value={checkinForm.monitor_id} onValueChange={(value) => setCheckinForm((current) => ({ ...current, monitor_id: value, monitor_signature_code: "" }))}>
-                    <SelectTrigger className="mt-2">
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {monitors.map((monitor) => (
-                        <SelectItem key={monitor.id} value={monitor.id}>
-                          {getProviderDisplayName(monitor)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {checkinForm.monitor_id && !presentMonitorIds.has(checkinForm.monitor_id) ? (
-                    <p className="mt-2 text-sm font-medium text-amber-700">Monitor ausente.⚠️</p>
-                  ) : null}
-                </div>
-              </div>
 
-              <MonitorSignatureInput
-                value={checkinForm.monitor_signature_code}
-                onChange={(value) => setCheckinForm((current) => ({ ...current, monitor_signature_code: value }))}
-              />
+                <MonitorSignatureInput
+                  contained
+                  className="mt-4"
+                  value={checkinForm.monitor_signature_code}
+                  onChange={(value) => setCheckinForm((current) => ({ ...current, monitor_signature_code: value }))}
+                />
+              </AttendanceFormSection>
 
-              <div>
-                <Label>Responsável pela entrega</Label>
-                <Input value={checkinForm.entregador_nome} onChange={(event) => setCheckinForm((current) => ({ ...current, entregador_nome: event.target.value }))} className="mt-2" />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Foto dos pertences</Label>
+              <AttendanceFormSection
+                icon={Camera}
+                title="Pertences e alimentação"
+                description="Registre os itens recebidos e indique se haverá refeição durante a permanência."
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                  <RequiredLabel>Foto dos pertences</RequiredLabel>
                   <input
                     ref={checkinPhotoInputRef}
                     type="file"
@@ -2593,17 +2705,18 @@ export default function Registrador() {
                     className="hidden"
                     onChange={(event) => handleAttachmentUpload(event, "checkin", "checkin")}
                   />
-                  <Button type="button" variant="outline" onClick={() => checkinPhotoInputRef.current?.click()} className="w-full">
+                  <Button type="button" variant="outline" onClick={() => checkinPhotoInputRef.current?.click()} className="h-11 w-full rounded-xl bg-white">
                     <Camera className="mr-2 h-4 w-4" />
-                    Tirar foto dos pertences
+                    {checkinForm.pertences_entrada_foto_url ? "Trocar foto" : "Tirar foto dos pertences"}
                   </Button>
                   {checkinForm.pertences_entrada_foto_url && (
-                    <button type="button" onClick={() => handleAttachmentPreview(checkinForm.pertences_entrada_foto_url, "Pertences na entrada")} className="text-sm text-blue-600">
-                      Ver imagem enviada
+                    <button type="button" onClick={() => handleAttachmentPreview(checkinForm.pertences_entrada_foto_url, "Pertences na entrada")} className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Foto registrada • visualizar
                     </button>
                   )}
                 </div>
-                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+                <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium text-gray-900">Tem refeição?</p>
@@ -2618,7 +2731,8 @@ export default function Registrador() {
                     </div>
                   )}
                 </div>
-              </div>
+                </div>
+              </AttendanceFormSection>
 
               <div className="rounded-[24px] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-3.5 shadow-sm sm:p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -2776,13 +2890,22 @@ export default function Registrador() {
                   </Button>
                 ) : null}
               </div>
-              <div>
-                <Label>Observaçàµes gerais</Label>
-                <Textarea value={checkinForm.observacoes} onChange={(event) => setCheckinForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
-              </div>
+              <AttendanceFormSection
+                icon={MessageSquareText}
+                title="Observações gerais"
+                description="Inclua somente informações relevantes para este atendimento."
+              >
+                <Textarea
+                  value={checkinForm.observacoes}
+                  onChange={(event) => setCheckinForm((current) => ({ ...current, observacoes: event.target.value }))}
+                  className="min-h-[96px] resize-none border-slate-200 bg-white"
+                  rows={3}
+                  placeholder="Cuidados, orientações ou informações importantes para a equipe."
+                />
+              </AttendanceFormSection>
             </TabsContent>
 
-            <TabsContent value="checkup" className="mt-4 space-y-4">
+                <TabsContent value="checkup" className="m-0 space-y-4 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0">
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
                 Assinale no check-list os pontos do corpo que estão OK na entrada do cão.
               </div>
@@ -2848,7 +2971,7 @@ export default function Registrador() {
               </div>
 
               <div>
-                <Label>Observaçàµes do check-up</Label>
+                <Label>Observações do check-up</Label>
                 <Textarea
                   value={checkinForm.body_checkup_observacao}
                   onChange={(event) => setCheckinForm((current) => ({ ...current, body_checkup_observacao: event.target.value }))}
@@ -2857,97 +2980,127 @@ export default function Registrador() {
                   placeholder="Ex.: sensibilidade na pata traseira direita, leve vermelhidão nas orelhas, sem outras alterações visíveis."
                 />
               </div>
-            </TabsContent>
-          </Tabs>
-          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
-            <Button variant="outline" onClick={() => { setShowCheckinDialog(false); setCheckinSharedSource(null); }} className="w-full sm:w-auto">Cancelar</Button>
-            <Button onClick={submitCheckin} disabled={isSaving} className="w-full bg-green-600 text-white hover:bg-green-700 sm:w-auto">
-              {isSaving ? "Salvando..." : "Confirmar check-in"}
-            </Button>
-          </DialogFooter>
+                </TabsContent>
+              </div>
+            </Tabs>
+            <DialogFooter className="flex-col-reverse gap-2 border-t border-slate-200 bg-white px-4 py-3 sm:flex-row sm:px-6 sm:py-4">
+              <Button variant="outline" onClick={() => { setShowCheckinDialog(false); setCheckinSharedSource(null); }} className="h-11 w-full rounded-xl sm:w-auto">Cancelar</Button>
+              <Button onClick={submitCheckin} disabled={isSaving} className="h-11 w-full rounded-xl bg-emerald-600 px-5 text-white shadow-sm hover:bg-emerald-700 sm:w-auto">
+                <LogIn className="mr-2 h-4 w-4" />
+                {isSaving ? "Salvando..." : "Confirmar check-in"}
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={showCheckoutDialog} onOpenChange={setShowCheckoutDialog}>
-        <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Confirmar check-out</DialogTitle>
-            <DialogDescription>
-              Registre a entrega, a foto dos itens devolvidos e o monitor responsável.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label>Data e horário do check-out</Label>
-                <DateTimePickerInput value={checkoutForm.checkout_datetime} onChange={(value) => setCheckoutForm((current) => ({ ...current, checkout_datetime: value }))} />
-              </div>
-              <div>
-                <Label>Monitor da entrega</Label>
-                <Select value={checkoutForm.monitor_id} onValueChange={(value) => setCheckoutForm((current) => ({ ...current, monitor_id: value, monitor_signature_code: "" }))}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {monitors.map((monitor) => (
-                      <SelectItem key={monitor.id} value={monitor.id}>
-                        {getProviderDisplayName(monitor)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {checkoutForm.monitor_id && !presentMonitorIds.has(checkoutForm.monitor_id) ? (
-                  <p className="mt-2 text-sm font-medium text-amber-700">Monitor ausente.⚠️</p>
-                ) : null}
-              </div>
-            </div>
-
-            <MonitorSignatureInput
-              value={checkoutForm.monitor_signature_code}
-              onChange={(value) => setCheckoutForm((current) => ({ ...current, monitor_signature_code: value }))}
+        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-hidden rounded-[24px] border-0 bg-slate-50 p-0 shadow-2xl sm:max-h-[min(92vh,760px)] sm:max-w-2xl sm:rounded-[28px]">
+          <div className="flex max-h-[calc(100dvh-1rem)] min-h-0 flex-col sm:max-h-[min(92vh,760px)]">
+            <AttendanceDialogHeader
+              mode="checkout"
+              appointment={selectedAppointment}
+              dog={dogsById[selectedAppointment?.dog_id]}
+              checkin={selectedCheckin}
             />
 
-            <div>
-              <Label>Quem buscou?</Label>
-              <Input
-                value={checkoutForm.retirador_nome}
-                onChange={(event) => setCheckoutForm((current) => ({ ...current, retirador_nome: event.target.value }))}
-                className="mt-2"
-              />
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
+              <AttendanceFormSection
+                icon={LogOut}
+                title="Registro da saída"
+                description="Confirme o horário, quem realizou a entrega e quem retirou o cão."
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <RequiredLabel>Data e horário do check-out</RequiredLabel>
+                    <DateTimePickerInput value={checkoutForm.checkout_datetime} onChange={(value) => setCheckoutForm((current) => ({ ...current, checkout_datetime: value }))} />
+                  </div>
+                  <div>
+                    <RequiredLabel>Monitor da entrega</RequiredLabel>
+                    <Select value={checkoutForm.monitor_id} onValueChange={(value) => setCheckoutForm((current) => ({ ...current, monitor_id: value, monitor_signature_code: "" }))}>
+                      <SelectTrigger className="mt-2 h-11 bg-white">
+                        <SelectValue placeholder="Selecione o monitor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {monitors.map((monitor) => (
+                          <SelectItem key={monitor.id} value={monitor.id}>
+                            {getProviderDisplayName(monitor)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {checkoutForm.monitor_id && !presentMonitorIds.has(checkoutForm.monitor_id) ? (
+                      <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 text-xs font-medium text-amber-800">Este monitor não possui presença registrada agora.</p>
+                    ) : null}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <RequiredLabel>Quem buscou?</RequiredLabel>
+                    <Input
+                      value={checkoutForm.retirador_nome}
+                      onChange={(event) => setCheckoutForm((current) => ({ ...current, retirador_nome: event.target.value }))}
+                      className="mt-2 h-11 bg-white"
+                      placeholder="Nome de quem retirou o cão"
+                    />
+                  </div>
+                </div>
+
+                <MonitorSignatureInput
+                  contained
+                  className="mt-4"
+                  value={checkoutForm.monitor_signature_code}
+                  onChange={(value) => setCheckoutForm((current) => ({ ...current, monitor_signature_code: value }))}
+                />
+              </AttendanceFormSection>
+
+              <AttendanceFormSection
+                icon={Camera}
+                title="Conferência dos itens"
+                description="Fotografe os pertences devolvidos e registre qualquer observação da saída."
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                    <RequiredLabel>Foto dos itens devolvidos</RequiredLabel>
+                    <input
+                      ref={checkoutPhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(event) => handleAttachmentUpload(event, "checkout", "checkout")}
+                    />
+                    <Button type="button" variant="outline" onClick={() => checkoutPhotoInputRef.current?.click()} className="h-11 w-full rounded-xl bg-white">
+                      <Camera className="mr-2 h-4 w-4" />
+                      {checkoutForm.pertences_saida_foto_url ? "Trocar foto" : "Tirar foto dos itens"}
+                    </Button>
+                    {checkoutForm.pertences_saida_foto_url ? (
+                      <button type="button" onClick={() => handleAttachmentPreview(checkoutForm.pertences_saida_foto_url, "Pertences na saída")} className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Foto registrada • visualizar
+                      </button>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label>Observações da saída</Label>
+                    <Textarea
+                      value={checkoutForm.observacoes}
+                      onChange={(event) => setCheckoutForm((current) => ({ ...current, observacoes: event.target.value }))}
+                      className="mt-2 min-h-[124px] resize-none border-slate-200 bg-white"
+                      rows={4}
+                      placeholder="Informe ocorrências, orientações ou observações da entrega."
+                    />
+                  </div>
+                </div>
+              </AttendanceFormSection>
             </div>
 
-            <div>
-              <Label>Foto dos itens devolvidos</Label>
-              <input
-                ref={checkoutPhotoInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(event) => handleAttachmentUpload(event, "checkout", "checkout")}
-              />
-              <Button type="button" variant="outline" onClick={() => checkoutPhotoInputRef.current?.click()} className="mt-2 w-full">
-                <Camera className="mr-2 h-4 w-4" />
-                Tirar foto dos itens devolvidos
+            <DialogFooter className="flex-col-reverse gap-2 border-t border-slate-200 bg-white px-4 py-3 sm:flex-row sm:px-6 sm:py-4">
+              <Button variant="outline" onClick={() => setShowCheckoutDialog(false)} className="h-11 w-full rounded-xl sm:w-auto">Cancelar</Button>
+              <Button onClick={submitCheckout} disabled={isSaving} className="h-11 w-full rounded-xl bg-slate-900 px-5 text-white shadow-sm hover:bg-slate-800 sm:w-auto">
+                <LogOut className="mr-2 h-4 w-4" />
+                {isSaving ? "Salvando..." : "Confirmar check-out"}
               </Button>
-              {checkoutForm.pertences_saida_foto_url && (
-            <button type="button" onClick={() => handleAttachmentPreview(checkoutForm.pertences_saida_foto_url, "Pertences na saída")} className="mt-2 text-sm text-blue-600">
-                  Ver imagem enviada
-                </button>
-              )}
-            </div>
-
-            <div>
-              <Label>Observaçàµes</Label>
-              <Textarea value={checkoutForm.observacoes} onChange={(event) => setCheckoutForm((current) => ({ ...current, observacoes: event.target.value }))} className="mt-2" rows={3} />
-            </div>
+            </DialogFooter>
           </div>
-          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
-            <Button variant="outline" onClick={() => setShowCheckoutDialog(false)} className="w-full sm:w-auto">Cancelar</Button>
-            <Button onClick={submitCheckout} disabled={isSaving} className="w-full bg-slate-900 text-white hover:bg-slate-800 sm:w-auto">
-              {isSaving ? "Salvando..." : "Confirmar check-out"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

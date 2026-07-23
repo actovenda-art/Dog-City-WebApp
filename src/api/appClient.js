@@ -686,8 +686,8 @@ function ensureMockAgendamentosDesktopSeed() {
     {
       id: 'empresa_demo',
       codigo: 'MTZ',
-      nome_fantasia: 'Unidade Matriz',
-      nome: 'Dog City Brasil',
+      nome_fantasia: 'DC Sousas',
+      nome: 'DC Sousas',
       ativo: true,
       created_date: seedCreatedAt,
     },
@@ -2704,7 +2704,7 @@ const mockFunctions = {
         link: row,
         empresa: {
           id: row.empresa_id,
-          nome_fantasia: 'Dog City Brasil',
+          nome_fantasia: row.empresa_id === 'empresa_demo' ? 'DC Sousas' : 'Empresa demo',
         },
       };
     }

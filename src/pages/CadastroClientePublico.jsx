@@ -1508,44 +1508,60 @@ export default function CadastroClientePublico() {
             requiredMessage: 'Informe as restrições e os cuidados ou marque "Não possui".',
           }),
         })}
-        {renderRequiredOrNoneField({
-          value: dog.veterinario_responsavel,
-          onChange: (value) => updateDog(dogIndex, { veterinario_responsavel: value }),
-          renderField: (hasNoInformation) => renderTextField({
-            fieldKey: `caes.${dogIndex}.veterinario_responsavel`,
-            label: "Veterinário responsável",
-            value: dog.veterinario_responsavel,
-            onChange: (event) => updateDog(dogIndex, { veterinario_responsavel: event.target.value }),
-            disabled: hasNoInformation,
-            requiredMessage: 'Informe o veterinário ou marque "Não possui".',
-          }),
-        })}
-        {renderRequiredOrNoneField({
-          value: dog.veterinario_horario_atendimento,
-          onChange: (value) => updateDog(dogIndex, { veterinario_horario_atendimento: value }),
-          renderField: (hasNoInformation) => renderTextField({
-            fieldKey: `caes.${dogIndex}.veterinario_horario_atendimento`,
-            label: "Horário de atendimento",
-            value: dog.veterinario_horario_atendimento,
-            onChange: (event) => updateDog(dogIndex, { veterinario_horario_atendimento: event.target.value }),
-            disabled: hasNoInformation,
-            requiredMessage: 'Informe o horário ou marque "Não possui".',
-          }),
-        })}
-        {renderRequiredOrNoneField({
-          value: dog.veterinario_telefone,
-          onChange: (value) => updateDog(dogIndex, { veterinario_telefone: value }),
-          renderField: (hasNoInformation) => renderTextField({
-            fieldKey: `caes.${dogIndex}.veterinario_telefone`,
-            label: "Telefone do veterinário",
-            kind: "phone",
-            value: dog.veterinario_telefone,
-            onChange: (event) => updateDog(dogIndex, { veterinario_telefone: formatPhone(event.target.value) }),
-            maxLength: 15,
-            disabled: hasNoInformation,
-            requiredMessage: 'Informe o telefone ou marque "Não possui".',
-          }),
-        })}
+        <div className="md:col-span-2 rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Dados do veterinário responsável</p>
+              <p className="mt-1 text-xs text-slate-500">Nome, horário de atendimento e telefone.</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Label className="text-xs font-medium text-slate-600">Não possui</Label>
+              <Switch
+                checked={[
+                  dog.veterinario_responsavel,
+                  dog.veterinario_horario_atendimento,
+                  dog.veterinario_telefone,
+                ].every((value) => value === NO_INFORMATION_VALUE)}
+                onCheckedChange={(checked) => updateDog(dogIndex, {
+                  veterinario_responsavel: checked ? NO_INFORMATION_VALUE : "",
+                  veterinario_horario_atendimento: checked ? NO_INFORMATION_VALUE : "",
+                  veterinario_telefone: checked ? NO_INFORMATION_VALUE : "",
+                })}
+              />
+            </div>
+          </div>
+          {![
+            dog.veterinario_responsavel,
+            dog.veterinario_horario_atendimento,
+            dog.veterinario_telefone,
+          ].every((value) => value === NO_INFORMATION_VALUE) ? (
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              {renderTextField({
+                fieldKey: `caes.${dogIndex}.veterinario_responsavel`,
+                label: "Veterinário responsável",
+                value: dog.veterinario_responsavel === NO_INFORMATION_VALUE ? "" : dog.veterinario_responsavel,
+                onChange: (event) => updateDog(dogIndex, { veterinario_responsavel: event.target.value }),
+                requiredMessage: 'Informe os dados do veterinário ou marque "Não possui".',
+              })}
+              {renderTextField({
+                fieldKey: `caes.${dogIndex}.veterinario_horario_atendimento`,
+                label: "Horário de atendimento",
+                value: dog.veterinario_horario_atendimento === NO_INFORMATION_VALUE ? "" : dog.veterinario_horario_atendimento,
+                onChange: (event) => updateDog(dogIndex, { veterinario_horario_atendimento: event.target.value }),
+                requiredMessage: 'Informe os dados do veterinário ou marque "Não possui".',
+              })}
+              {renderTextField({
+                fieldKey: `caes.${dogIndex}.veterinario_telefone`,
+                label: "Telefone do veterinário",
+                kind: "phone",
+                value: dog.veterinario_telefone === NO_INFORMATION_VALUE ? "" : dog.veterinario_telefone,
+                onChange: (event) => updateDog(dogIndex, { veterinario_telefone: formatPhone(event.target.value) }),
+                maxLength: 15,
+                requiredMessage: 'Informe os dados do veterinário ou marque "Não possui".',
+              })}
+            </div>
+          ) : null}
+        </div>
         {renderRequiredOrNoneField({
           value: dog.veterinario_clinica_telefone,
           onChange: (value) => updateDog(dogIndex, { veterinario_clinica_telefone: value }),

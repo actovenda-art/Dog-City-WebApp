@@ -33,12 +33,21 @@ export function validateDogNutrition(dog) {
 }
 
 export function validateDogCare(dog) {
+  const veterinarianFields = [
+    dog?.veterinario_responsavel,
+    dog?.veterinario_horario_atendimento,
+    dog?.veterinario_telefone,
+  ];
+  const hasNoVeterinarian = veterinarianFields.every((value) => value === NO_INFORMATION_VALUE);
+  const hasPartialVeterinarian = veterinarianFields.some((value) => value === NO_INFORMATION_VALUE);
+
+  if (!hasNoVeterinarian && (hasPartialVeterinarian || veterinarianFields.some((value) => !hasValue(value)))) {
+    return 'Preencha nome, horário e telefone do veterinário ou marque "Não possui".';
+  }
+
   const requiredFields = [
     ["alergias", "as alergias"],
     ["restricoes_cuidados", "as restrições e os cuidados"],
-    ["veterinario_responsavel", "o veterinário responsável"],
-    ["veterinario_horario_atendimento", "o horário de atendimento veterinário"],
-    ["veterinario_telefone", "o telefone do veterinário"],
     ["veterinario_clinica_telefone", "o telefone da clínica"],
     ["veterinario_endereco", "o endereço veterinário ou da clínica"],
   ];

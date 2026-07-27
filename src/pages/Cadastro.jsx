@@ -2163,47 +2163,64 @@ export default function Cadastro() {
                   })}
 
                   <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Veterinário</h4></div>
-                  {renderRequiredOrNoneField({
-                    value: dogForm.veterinario_responsavel,
-                    onChange: (value) => setDogForm({ ...dogForm, veterinario_responsavel: value }),
-                    renderField: (hasNoInformation) => renderTextField({
-                      fieldKey: "dog.veterinario_responsavel",
-                      label: "Veterinário responsável",
-                      value: dogForm.veterinario_responsavel,
-                      onChange: (e) => setDogForm({ ...dogForm, veterinario_responsavel: e.target.value }),
-                      placeholder: "Nome do veterinário",
-                      disabled: hasNoInformation,
-                      requiredMessage: 'Informe o veterinário ou marque "Não possui".',
-                    }),
-                  })}
-                  {renderRequiredOrNoneField({
-                    value: dogForm.veterinario_horario_atendimento,
-                    onChange: (value) => setDogForm({ ...dogForm, veterinario_horario_atendimento: value }),
-                    renderField: (hasNoInformation) => renderTextField({
-                      fieldKey: "dog.veterinario_horario_atendimento",
-                      label: "Horário de atendimento",
-                      value: dogForm.veterinario_horario_atendimento,
-                      onChange: (e) => setDogForm({ ...dogForm, veterinario_horario_atendimento: e.target.value }),
-                      placeholder: "Ex: seg a sex, 9h às 18h",
-                      disabled: hasNoInformation,
-                      requiredMessage: 'Informe o horário ou marque "Não possui".',
-                    }),
-                  })}
-                  {renderRequiredOrNoneField({
-                    value: dogForm.veterinario_telefone,
-                    onChange: (value) => setDogForm({ ...dogForm, veterinario_telefone: value }),
-                    renderField: (hasNoInformation) => renderTextField({
-                      fieldKey: "dog.veterinario_telefone",
-                      label: "Telefone do veterinário",
-                      value: dogForm.veterinario_telefone,
-                      onChange: (e) => setDogForm({ ...dogForm, veterinario_telefone: formatPhone(e.target.value) }),
-                      maxLength: 15,
-                      placeholder: "(00) 00000-0000",
-                      kind: "phone",
-                      disabled: hasNoInformation,
-                      requiredMessage: 'Informe o telefone ou marque "Não possui".',
-                    }),
-                  })}
+                  <div className="col-span-full rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Dados do veterinário responsável</p>
+                        <p className="mt-1 text-xs text-slate-500">Nome, horário de atendimento e telefone.</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Label className="text-xs font-medium text-slate-600">Não possui</Label>
+                        <Switch
+                          checked={[
+                            dogForm.veterinario_responsavel,
+                            dogForm.veterinario_horario_atendimento,
+                            dogForm.veterinario_telefone,
+                          ].every((value) => value === NO_INFORMATION_VALUE)}
+                          onCheckedChange={(checked) => setDogForm({
+                            ...dogForm,
+                            veterinario_responsavel: checked ? NO_INFORMATION_VALUE : "",
+                            veterinario_horario_atendimento: checked ? NO_INFORMATION_VALUE : "",
+                            veterinario_telefone: checked ? NO_INFORMATION_VALUE : "",
+                          })}
+                        />
+                      </div>
+                    </div>
+                    {![
+                      dogForm.veterinario_responsavel,
+                      dogForm.veterinario_horario_atendimento,
+                      dogForm.veterinario_telefone,
+                    ].every((value) => value === NO_INFORMATION_VALUE) ? (
+                      <div className="mt-4 grid gap-4 md:grid-cols-3">
+                        {renderTextField({
+                          fieldKey: "dog.veterinario_responsavel",
+                          label: "Veterinário responsável",
+                          value: dogForm.veterinario_responsavel === NO_INFORMATION_VALUE ? "" : dogForm.veterinario_responsavel,
+                          onChange: (e) => setDogForm({ ...dogForm, veterinario_responsavel: e.target.value }),
+                          placeholder: "Nome do veterinário",
+                          requiredMessage: 'Informe os dados do veterinário ou marque "Não possui".',
+                        })}
+                        {renderTextField({
+                          fieldKey: "dog.veterinario_horario_atendimento",
+                          label: "Horário de atendimento",
+                          value: dogForm.veterinario_horario_atendimento === NO_INFORMATION_VALUE ? "" : dogForm.veterinario_horario_atendimento,
+                          onChange: (e) => setDogForm({ ...dogForm, veterinario_horario_atendimento: e.target.value }),
+                          placeholder: "Ex: seg a sex, 9h às 18h",
+                          requiredMessage: 'Informe os dados do veterinário ou marque "Não possui".',
+                        })}
+                        {renderTextField({
+                          fieldKey: "dog.veterinario_telefone",
+                          label: "Telefone do veterinário",
+                          value: dogForm.veterinario_telefone === NO_INFORMATION_VALUE ? "" : dogForm.veterinario_telefone,
+                          onChange: (e) => setDogForm({ ...dogForm, veterinario_telefone: formatPhone(e.target.value) }),
+                          maxLength: 15,
+                          placeholder: "(00) 00000-0000",
+                          kind: "phone",
+                          requiredMessage: 'Informe os dados do veterinário ou marque "Não possui".',
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                   {renderRequiredOrNoneField({
                     value: dogForm.veterinario_clinica_telefone,
                     onChange: (value) => setDogForm({ ...dogForm, veterinario_clinica_telefone: value }),

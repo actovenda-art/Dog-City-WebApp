@@ -22,7 +22,6 @@ import AuthCallback from "./AuthCallback.jsx";
 import CompletarCadastro from "./CompletarCadastro.jsx";
 import CadastroClientePublico from "./CadastroClientePublico.jsx";
 import CadastroMonitorPublico from "./CadastroMonitorPublico.jsx";
-import AprovacaoResponsavelPublica from "./AprovacaoResponsavelPublica.jsx";
 import CobrancaPublica from "./CobrancaPublica.jsx";
 import DefinirPin from "./DefinirPin.jsx";
 import ValidarPin from "./ValidarPin.jsx";
@@ -60,7 +59,6 @@ const PAGES = {
   CompletarCadastro,
   CadastroClientePublico,
   CadastroMonitorPublico,
-  AprovacaoResponsavelPublica,
   CobrancaPublica,
   DefinirPin,
   ValidarPin,
@@ -92,8 +90,8 @@ const PAGES = {
   VisualizadorImagem,
 };
 
-const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "AprovacaoResponsavelPublica", "CobrancaPublica", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
-const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "AprovacaoResponsavelPublica", "CobrancaPublica", "VisualizadorImagem"]);
+const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "CobrancaPublica", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
+const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "CobrancaPublica", "VisualizadorImagem"]);
 
 function FullScreenAuthLoader() {
   return <LoadingScreen />;
@@ -351,10 +349,6 @@ function PagesContent() {
 
       {PUBLIC_PAGES.has("CadastroMonitorPublico") ? (
         <Route path={createPageUrl("CadastroMonitorPublico")} element={<StandalonePage pageName="CadastroMonitorPublico" />} />
-      ) : null}
-
-      {PUBLIC_PAGES.has("AprovacaoResponsavelPublica") ? (
-        <Route path={createPageUrl("AprovacaoResponsavelPublica")} element={<StandalonePage pageName="AprovacaoResponsavelPublica" />} />
       ) : null}
 
       {PUBLIC_PAGES.has("CobrancaPublica") ? (

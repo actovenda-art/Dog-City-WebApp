@@ -17,6 +17,12 @@ import { isValidCpfChecksum, normalizeCpfDigits, validateCpfWithGov } from "@/li
 import { createEmptyDogMeal } from "@/lib/dog-form-utils";
 import { formatDisplayName, isCompletePersonName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import {
+  NO_INFORMATION_VALUE,
+  validateDogCare,
+  validateDogNutrition,
+  validateDogOperationalProfile,
+} from "@/lib/dog-profile-validation";
+import {
   AlertTriangle,
   CircleAlert,
   Check,
@@ -129,10 +135,15 @@ const EMPTY_RESPONSAVEL = {
   celular: "",
   celular_alternativo: "",
   email: "",
-  login_portal: "",
-  senha_portal: "",
-  confirmar_senha_portal: "",
 };
+
+function removeClientAccessCredentials(value = {}) {
+  const sanitized = { ...value };
+  delete sanitized.login_portal;
+  delete sanitized.senha_portal;
+  delete sanitized.confirmar_senha_portal;
+  return sanitized;
+}
 
 const EMPTY_FINANCEIRO = {
   nome_razao_social: "",
@@ -321,21 +332,6 @@ function validateResponsavel(form) {
   if (!isCompletePersonName(form.nome_completo)) {
     return "Informe o nome completo do responsável com nome e sobrenome.";
   }
-  const portalLogin = String(form.login_portal || "").trim().toLowerCase();
-  const portalPassword = String(form.senha_portal || "").trim();
-  const portalConfirmPassword = String(form.confirmar_senha_portal || "").trim();
-
-  if (portalLogin || portalPassword || portalConfirmPassword) {
-    if (!portalLogin || !portalPassword || !portalConfirmPassword) {
-      return "Se quiser preparar a confirmação autenticada, preencha login, senha e confirmação da senha.";
-    }
-    if (portalPassword.length < 6) {
-      return "A senha para confirmação de orçamentos/agendamentos precisa ter pelo menos 6 caracteres.";
-    }
-    if (portalPassword !== portalConfirmPassword) {
-      return "A confirmação da senha do responsável não confere.";
-    }
-  }
   return "";
 }
 
@@ -346,6 +342,10 @@ function validateDogs(dogs) {
   const invalidDog = dogs.find((dog) => !dog.nome || !dog.raca);
   if (invalidDog) {
     return "Cada cão precisa ter pelo menos nome e raça informados.";
+  }
+  const incompleteOperationalProfile = dogs.find((dog) => validateDogOperationalProfile(dog));
+  if (incompleteOperationalProfile) {
+    return validateDogOperationalProfile(incompleteOperationalProfile);
   }
   return "";
 }
@@ -512,7 +512,7 @@ export default function CadastroClientePublico() {
   }
 
   function getFieldFeedback(fieldKey, options) {
-    const error = getTextFieldError(options);
+    const error = options.disabled ? "" : getTextFieldError(options);
     const showFeedback = shouldShowFieldFeedback(fieldKey);
     const showError = showFeedback && Boolean(error);
     const showValid = !options.disabled && hasValue(options.value) && !error;
@@ -683,6 +683,27 @@ export default function CadastroClientePublico() {
     });
   }
 
+  function renderRequiredOrNoneField({
+    value,
+    onChange,
+    renderField,
+    className = "",
+  }) {
+    const hasNoInformation = value === NO_INFORMATION_VALUE;
+    return (
+      <div className={`space-y-2 ${className}`}>
+        {renderField(hasNoInformation)}
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+          <Label className="text-xs font-medium text-slate-600">Não possui</Label>
+          <Switch
+            checked={hasNoInformation}
+            onCheckedChange={(checked) => onChange(checked ? NO_INFORMATION_VALUE : "")}
+          />
+        </div>
+      </div>
+    );
+  }
+
   function renderSelectField({ label, optional = false, description = "", className = "", children }) {
     return renderFieldShell({
       label,
@@ -783,15 +804,13 @@ export default function CadastroClientePublico() {
       setContext(data || null);
       const prefillResponsavel = data?.link?.metadata?.prefill?.responsavel || {};
       const prefillFinanceiro = data?.link?.metadata?.prefill?.financeiro || {};
+      const safePrefillResponsavel = removeClientAccessCredentials(prefillResponsavel);
       setResponsavelForm((current) => ({
         ...current,
-        ...prefillResponsavel,
+        ...safePrefillResponsavel,
         nome_completo: prefillResponsavel?.nome_completo || data?.link?.responsavel_nome || current.nome_completo,
         como_gostaria_de_ser_chamado: prefillResponsavel?.como_gostaria_de_ser_chamado || current.como_gostaria_de_ser_chamado,
         email: prefillResponsavel?.email || data?.link?.responsavel_email || current.email,
-        login_portal: prefillResponsavel?.login_portal || current.login_portal,
-        senha_portal: "",
-        confirmar_senha_portal: "",
       }));
       setFinanceiroForm((current) => ({
         ...current,
@@ -964,12 +983,13 @@ export default function CadastroClientePublico() {
     setSuccessMessage("");
 
     try {
+      const responsavelPayload = removeClientAccessCredentials(responsavelForm);
       await clientRegistration({
         action: "submit",
         token,
         payload: {
           responsavel: {
-            ...responsavelForm,
+            ...responsavelPayload,
             nome_completo: formatDisplayName(responsavelForm.nome_completo),
             como_gostaria_de_ser_chamado: formatDisplayName(responsavelForm.como_gostaria_de_ser_chamado),
           },
@@ -1002,7 +1022,11 @@ export default function CadastroClientePublico() {
       const currentDog = caesForm[activeDogIndex] || createEmptyDog();
       const validationError = activeDogSection === "basico"
         ? validateDogBasicSection(currentDog)
-        : validateDogs(caesForm);
+        : activeDogSection === "alimentacao"
+          ? validateDogNutrition(currentDog)
+          : activeDogSection === "cuidados"
+            ? validateDogCare(currentDog)
+            : "";
 
       if (validationError) {
         setErrorMessage(validationError);
@@ -1127,47 +1151,6 @@ export default function CadastroClientePublico() {
           placeholder: "email@exemplo.com",
           requiredMessage: "Informe o email do responsável.",
         })}
-        <div className="md:col-span-2">
-          <div className="rounded-3xl border border-violet-200 bg-violet-50/80 p-4 sm:p-5">
-            <div className="space-y-1.5">
-              <p className="text-sm font-semibold text-violet-950 sm:text-[15px]">
-                Senha para confirmação de orçamentos/agendamentos
-              </p>
-              <p className="text-[11px] leading-snug text-violet-800 sm:text-xs">
-                Compartilhe estas informações apenas com pessoas autorizadas a tomar decisões por você.
-              </p>
-            </div>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              {renderTextField({
-                fieldKey: "responsavel.login_portal",
-                label: "Login",
-                optional: true,
-                value: responsavelForm.login_portal,
-                onChange: (event) => setResponsavelForm((current) => ({ ...current, login_portal: event.target.value.toLowerCase() })),
-                placeholder: "email ou login",
-                className: "md:col-span-2",
-              })}
-              {renderTextField({
-                fieldKey: "responsavel.senha_portal",
-                label: "Senha",
-                optional: true,
-                value: responsavelForm.senha_portal,
-                onChange: (event) => setResponsavelForm((current) => ({ ...current, senha_portal: event.target.value })),
-                type: "password",
-                placeholder: "Senha do responsável",
-              })}
-              {renderTextField({
-                fieldKey: "responsavel.confirmar_senha_portal",
-                label: "Confirmar senha",
-                optional: true,
-                value: responsavelForm.confirmar_senha_portal,
-                onChange: (event) => setResponsavelForm((current) => ({ ...current, confirmar_senha_portal: event.target.value })),
-                type: "password",
-                placeholder: "Repita a senha",
-              })}
-            </div>
-          </div>
-        </div>
       </div>
     );
   }
@@ -1439,7 +1422,7 @@ export default function CadastroClientePublico() {
             checked={!!dog.alimentacao_natural}
             onCheckedChange={(checked) => updateDog(dogIndex, {
               alimentacao_natural: checked,
-              alimentacao_tipo: checked ? "Alimentação natural" : dog.alimentacao_tipo,
+              alimentacao_tipo: checked ? "Alimentação natural" : "",
               alimentacao_marca_racao: checked ? "" : dog.alimentacao_marca_racao,
               alimentacao_sabor: checked ? "" : dog.alimentacao_sabor,
             })}
@@ -1450,24 +1433,24 @@ export default function CadastroClientePublico() {
             {renderTextField({
               fieldKey: `caes.${dogIndex}.alimentacao_marca_racao`,
               label: "Marca da ração",
-              optional: true,
               value: dog.alimentacao_marca_racao,
               onChange: (event) => updateDog(dogIndex, { alimentacao_marca_racao: event.target.value }),
+              requiredMessage: "Informe a marca da ração.",
             })}
             {renderTextField({
               fieldKey: `caes.${dogIndex}.alimentacao_sabor`,
               label: "Sabor",
-              optional: true,
               value: dog.alimentacao_sabor,
               onChange: (event) => updateDog(dogIndex, { alimentacao_sabor: event.target.value }),
+              requiredMessage: "Informe o sabor da ração.",
             })}
             {renderTextField({
               fieldKey: `caes.${dogIndex}.alimentacao_tipo`,
               label: "Tipo",
-              optional: true,
               value: dog.alimentacao_tipo,
               onChange: (event) => updateDog(dogIndex, { alimentacao_tipo: event.target.value }),
               placeholder: "Ex: seca, úmida ou natural",
+              requiredMessage: "Informe o tipo da ração.",
             })}
           </div>
         ) : (
@@ -1497,62 +1480,98 @@ export default function CadastroClientePublico() {
   function renderDogCuidadosSection(dog, dogIndex) {
     return (
       <div className="grid gap-4 md:grid-cols-2">
-        {renderTextAreaField({
-          fieldKey: `caes.${dogIndex}.alergias`,
-          label: "Alergias",
-          optional: true,
+        {renderRequiredOrNoneField({
           value: dog.alergias,
-          onChange: (event) => updateDog(dogIndex, { alergias: event.target.value }),
-          rows: 3,
+          onChange: (value) => updateDog(dogIndex, { alergias: value }),
           className: "md:col-span-2",
+          renderField: (hasNoInformation) => renderTextAreaField({
+            fieldKey: `caes.${dogIndex}.alergias`,
+            label: "Alergias",
+            value: dog.alergias,
+            onChange: (event) => updateDog(dogIndex, { alergias: event.target.value }),
+            rows: 3,
+            disabled: hasNoInformation,
+            requiredMessage: 'Informe as alergias ou marque "Não possui".',
+          }),
         })}
-        {renderTextAreaField({
-          fieldKey: `caes.${dogIndex}.restricoes_cuidados`,
-          label: "Restrições e cuidados",
-          optional: true,
+        {renderRequiredOrNoneField({
           value: dog.restricoes_cuidados,
-          onChange: (event) => updateDog(dogIndex, { restricoes_cuidados: event.target.value }),
-          rows: 4,
+          onChange: (value) => updateDog(dogIndex, { restricoes_cuidados: value }),
           className: "md:col-span-2",
+          renderField: (hasNoInformation) => renderTextAreaField({
+            fieldKey: `caes.${dogIndex}.restricoes_cuidados`,
+            label: "Restrições e cuidados",
+            value: dog.restricoes_cuidados,
+            onChange: (event) => updateDog(dogIndex, { restricoes_cuidados: event.target.value }),
+            rows: 4,
+            disabled: hasNoInformation,
+            requiredMessage: 'Informe as restrições e os cuidados ou marque "Não possui".',
+          }),
         })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.veterinario_responsavel`,
-          label: "Veterinário responsável",
-          optional: true,
+        {renderRequiredOrNoneField({
           value: dog.veterinario_responsavel,
-          onChange: (event) => updateDog(dogIndex, { veterinario_responsavel: event.target.value }),
+          onChange: (value) => updateDog(dogIndex, { veterinario_responsavel: value }),
+          renderField: (hasNoInformation) => renderTextField({
+            fieldKey: `caes.${dogIndex}.veterinario_responsavel`,
+            label: "Veterinário responsável",
+            value: dog.veterinario_responsavel,
+            onChange: (event) => updateDog(dogIndex, { veterinario_responsavel: event.target.value }),
+            disabled: hasNoInformation,
+            requiredMessage: 'Informe o veterinário ou marque "Não possui".',
+          }),
         })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.veterinario_horario_atendimento`,
-          label: "Horário de atendimento",
-          optional: true,
+        {renderRequiredOrNoneField({
           value: dog.veterinario_horario_atendimento,
-          onChange: (event) => updateDog(dogIndex, { veterinario_horario_atendimento: event.target.value }),
+          onChange: (value) => updateDog(dogIndex, { veterinario_horario_atendimento: value }),
+          renderField: (hasNoInformation) => renderTextField({
+            fieldKey: `caes.${dogIndex}.veterinario_horario_atendimento`,
+            label: "Horário de atendimento",
+            value: dog.veterinario_horario_atendimento,
+            onChange: (event) => updateDog(dogIndex, { veterinario_horario_atendimento: event.target.value }),
+            disabled: hasNoInformation,
+            requiredMessage: 'Informe o horário ou marque "Não possui".',
+          }),
         })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.veterinario_telefone`,
-          label: "Telefone do veterinário",
-          optional: true,
-          kind: "phone",
+        {renderRequiredOrNoneField({
           value: dog.veterinario_telefone,
-          onChange: (event) => updateDog(dogIndex, { veterinario_telefone: formatPhone(event.target.value) }),
-          maxLength: 15,
+          onChange: (value) => updateDog(dogIndex, { veterinario_telefone: value }),
+          renderField: (hasNoInformation) => renderTextField({
+            fieldKey: `caes.${dogIndex}.veterinario_telefone`,
+            label: "Telefone do veterinário",
+            kind: "phone",
+            value: dog.veterinario_telefone,
+            onChange: (event) => updateDog(dogIndex, { veterinario_telefone: formatPhone(event.target.value) }),
+            maxLength: 15,
+            disabled: hasNoInformation,
+            requiredMessage: 'Informe o telefone ou marque "Não possui".',
+          }),
         })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.veterinario_clinica_telefone`,
-          label: "Telefone da clínica",
-          optional: true,
-          kind: "phone",
+        {renderRequiredOrNoneField({
           value: dog.veterinario_clinica_telefone,
-          onChange: (event) => updateDog(dogIndex, { veterinario_clinica_telefone: formatPhone(event.target.value) }),
-          maxLength: 15,
+          onChange: (value) => updateDog(dogIndex, { veterinario_clinica_telefone: value }),
+          renderField: (hasNoInformation) => renderTextField({
+            fieldKey: `caes.${dogIndex}.veterinario_clinica_telefone`,
+            label: "Telefone da clínica",
+            kind: "phone",
+            value: dog.veterinario_clinica_telefone,
+            onChange: (event) => updateDog(dogIndex, { veterinario_clinica_telefone: formatPhone(event.target.value) }),
+            maxLength: 15,
+            disabled: hasNoInformation,
+            requiredMessage: 'Informe o telefone da clínica ou marque "Não possui".',
+          }),
         })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.veterinario_endereco`,
-          label: "Endereço veterinário / clínica",
-          optional: true,
+        {renderRequiredOrNoneField({
           value: dog.veterinario_endereco,
-          onChange: (event) => updateDog(dogIndex, { veterinario_endereco: event.target.value }),
+          onChange: (value) => updateDog(dogIndex, { veterinario_endereco: value }),
+          className: "md:col-span-2",
+          renderField: (hasNoInformation) => renderTextField({
+            fieldKey: `caes.${dogIndex}.veterinario_endereco`,
+            label: "Endereço veterinário / clínica",
+            value: dog.veterinario_endereco,
+            onChange: (event) => updateDog(dogIndex, { veterinario_endereco: event.target.value }),
+            disabled: hasNoInformation,
+            requiredMessage: 'Informe o endereço ou marque "Não possui".',
+          }),
         })}
         <div className="md:col-span-2">
           <div className="rounded-[24px] border border-slate-200 bg-white/90 p-4 shadow-sm">
@@ -1561,10 +1580,17 @@ export default function CadastroClientePublico() {
                 <p className="text-sm font-semibold text-slate-900">Medicamentos de longo período / vitalício</p>
                 <p className="text-xs text-slate-500">Informe especificações, cuidados, horário e dose.</p>
               </div>
-              <Button type="button" variant="outline" onClick={() => addDogMedication(dogIndex)} className="h-9 rounded-xl px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
-                <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
-                Adicionar
-              </Button>
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <Label className="text-xs font-medium text-slate-600">Não possui</Label>
+                <Switch
+                  checked={(dog.medicamentos_continuos || []).length === 0}
+                  onCheckedChange={(checked) => updateDog(dogIndex, {
+                    medicamentos_continuos: checked
+                      ? []
+                      : [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
+                  })}
+                />
+              </div>
             </div>
             <div className="space-y-3">
               {(dog.medicamentos_continuos || []).map((medicacao, medicationIndex) => (
@@ -1580,20 +1606,19 @@ export default function CadastroClientePublico() {
                     {renderTextField({
                       fieldKey: `caes.${dogIndex}.medicamentos.${medicationIndex}.especificacoes`,
                       label: "Especificações",
-                      optional: true,
                       value: medicacao.especificacoes || "",
                       onChange: (event) => updateDogMedication(dogIndex, medicationIndex, "especificacoes", event.target.value),
+                      requiredMessage: "Informe as especificações.",
                     })}
                     {renderTextField({
                       fieldKey: `caes.${dogIndex}.medicamentos.${medicationIndex}.cuidados`,
                       label: "Cuidados",
-                      optional: true,
                       value: medicacao.cuidados || "",
                       onChange: (event) => updateDogMedication(dogIndex, medicationIndex, "cuidados", event.target.value),
+                      requiredMessage: "Informe os cuidados.",
                     })}
                     {renderSelectField({
                       label: "Horário",
-                      optional: true,
                       children: (
                         <TimePickerInput
                           value={medicacao.horario || ""}
@@ -1604,13 +1629,19 @@ export default function CadastroClientePublico() {
                     {renderTextField({
                       fieldKey: `caes.${dogIndex}.medicamentos.${medicationIndex}.dose`,
                       label: "Dose",
-                      optional: true,
                       value: medicacao.dose || "",
                       onChange: (event) => updateDogMedication(dogIndex, medicationIndex, "dose", event.target.value),
+                      requiredMessage: "Informe a dose.",
                     })}
                   </div>
                 </div>
               ))}
+              {(dog.medicamentos_continuos || []).length > 0 ? (
+                <Button type="button" variant="outline" onClick={() => addDogMedication(dogIndex)} className="h-9 rounded-xl px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
+                  <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+                  Adicionar medicamento
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>

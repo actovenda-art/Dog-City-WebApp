@@ -52,6 +52,7 @@ import {
   isInPeriod,
 } from '@/lib/finance-observability';
 import { isValidCpfChecksum } from '@/lib/cpf-validation';
+import { validateDogOperationalProfile } from '@/lib/dog-profile-validation';
 
 const STORAGE_PREFIX = 'local_app_client_';
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -2652,7 +2653,6 @@ const mockFunctions = {
   },
   clientRegistration: async (payload = {}) => {
     const links = readStorage('client_registration_links');
-    const accesses = readStorage('responsavel_portal_access');
     const action = payload?.action;
 
     if (action === 'create_link') {
@@ -2710,49 +2710,29 @@ const mockFunctions = {
     }
 
     if (action === 'submit') {
-      const responsavelPayload = payload?.payload?.responsavel || {};
-      const portalLogin = String(responsavelPayload?.login_portal || '').trim().toLowerCase();
-      const portalPassword = String(responsavelPayload?.senha_portal || '').trim();
-      const portalConfirmPassword = String(responsavelPayload?.confirmar_senha_portal || '').trim();
-
-      if (portalLogin || portalPassword || portalConfirmPassword) {
-        if (!portalLogin || !portalPassword || !portalConfirmPassword) {
-          throw new Error('Se quiser preparar a confirmação autenticada, preencha login, senha e confirmação da senha.');
-        }
-        if (portalPassword.length < 6) {
-          throw new Error('A senha para confirmação de orçamentos/agendamentos precisa ter pelo menos 6 caracteres.');
-        }
-        if (portalPassword !== portalConfirmPassword) {
-          throw new Error('A confirmação da senha do responsável não confere.');
-        }
+      const submittedPayload = payload?.payload || {};
+      const submittedDogs = Array.isArray(submittedPayload?.caes) ? submittedPayload.caes : [];
+      const incompleteDog = submittedDogs.find((dog) => validateDogOperationalProfile(dog));
+      if (incompleteDog) {
+        throw new Error(validateDogOperationalProfile(incompleteDog));
       }
+      const submittedResponsavel = { ...(submittedPayload?.responsavel || {}) };
+      delete submittedResponsavel.login_portal;
+      delete submittedResponsavel.senha_portal;
+      delete submittedResponsavel.confirmar_senha_portal;
+      const safeSubmittedPayload = {
+        ...submittedPayload,
+        responsavel: submittedResponsavel,
+      };
 
       links[rowIndex] = {
         ...row,
         status: 'concluido',
-        submitted_payload: payload?.payload || {},
+        submitted_payload: safeSubmittedPayload,
         completed_at: new Date().toISOString(),
         updated_date: new Date().toISOString(),
       };
       writeStorage('client_registration_links', links);
-
-      if (portalLogin && portalPassword) {
-        const currentIndex = accesses.findIndex((item) => item.login === portalLogin);
-        const responsavelId = links[rowIndex]?.responsavel_id || links[rowIndex]?.id || makeId();
-        const nextAccess = {
-          id: currentIndex >= 0 ? accesses[currentIndex].id : makeId(),
-          responsavel_id: responsavelId,
-          empresa_id: links[rowIndex]?.empresa_id || getMockScopedUnitId(),
-          login: portalLogin,
-          mock_password: portalPassword,
-          ativo: true,
-          created_at: currentIndex >= 0 ? accesses[currentIndex].created_at : new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        if (currentIndex >= 0) accesses[currentIndex] = nextAccess;
-        else accesses.push(nextAccess);
-        writeStorage('responsavel_portal_access', accesses);
-      }
 
       return {
         ok: true,
@@ -2789,113 +2769,6 @@ const mockFunctions = {
     }
 
     throw new Error('Ação de cadastro do funcionário inválida.');
-  },
-  responsavelApproval: async (payload = {}) => {
-    const action = String(payload?.action || '').trim();
-    const accesses = readStorage('responsavel_portal_access');
-    const requests = readStorage('responsavel_approval_request');
-    const sessions = readStorage('responsavel_approval_session');
-
-    if (action === 'upsert_access') {
-      const responsavelId = String(payload?.responsavel_id || '').trim();
-      const login = String(payload?.login || '').trim().toLowerCase();
-      const password = String(payload?.password || '').trim();
-      if (!responsavelId || !login || !password) {
-        throw new Error('Informe responsável, login e senha para liberar o acesso.');
-      }
-
-      const currentIndex = accesses.findIndex((item) => item.responsavel_id === responsavelId);
-      const nextRow = {
-        id: currentIndex >= 0 ? accesses[currentIndex].id : makeId(),
-        responsavel_id: responsavelId,
-        empresa_id: payload?.empresa_id || getMockScopedUnitId(),
-        login,
-        mock_password: password,
-        ativo: true,
-        updated_at: new Date().toISOString(),
-        created_at: currentIndex >= 0 ? accesses[currentIndex].created_at : new Date().toISOString(),
-      };
-
-      if (currentIndex >= 0) accesses[currentIndex] = nextRow;
-      else accesses.push(nextRow);
-      writeStorage('responsavel_portal_access', accesses);
-      return { ok: true, access: nextRow };
-    }
-
-    if (action === 'create_request') {
-      const requestToken = payload?.request_token || makeId();
-      const row = {
-        id: makeId(),
-        empresa_id: payload?.empresa_id || getMockScopedUnitId(),
-        responsavel_id: payload?.responsavel_id || '',
-        orcamento_id: payload?.orcamento_id || '',
-        appointment_id: payload?.appointment_id || '',
-        status: 'pendente',
-        access_link_token: requestToken,
-        requested_channel: payload?.requested_channel || 'manual',
-        source_context: payload?.source_context || {},
-        created_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      };
-      requests.push(row);
-      writeStorage('responsavel_approval_request', requests);
-      const origin = typeof window !== 'undefined' ? window.location.origin : '';
-      return {
-        ok: true,
-        request: row,
-        approval_url: `${origin}/aprovacao-responsavel?token=${encodeURIComponent(requestToken)}`,
-      };
-    }
-
-    const token = String(payload?.token || payload?.request_token || '').trim();
-    const requestRow = requests.find((item) => item.access_link_token === token);
-    if (!requestRow) {
-      throw new Error('Solicitação de aprovação não localizada.');
-    }
-
-    if (action === 'get_context') {
-      return { ok: true, request: requestRow, authenticated: false };
-    }
-
-    if (action === 'authenticate') {
-      const login = String(payload?.login || '').trim().toLowerCase();
-      const password = String(payload?.password || '').trim();
-      const access = accesses.find((item) => item.responsavel_id === requestRow.responsavel_id && item.login === login && item.mock_password === password && item.ativo !== false);
-      if (!access) {
-        throw new Error('Login ou senha inválidos para este responsável.');
-      }
-      const sessionToken = makeId();
-      const sessionRow = {
-        id: makeId(),
-        request_id: requestRow.id,
-        access_id: access.id,
-        session_token: sessionToken,
-        expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-        created_at: new Date().toISOString(),
-      };
-      sessions.push(sessionRow);
-      writeStorage('responsavel_approval_session', sessions);
-      return { ok: true, session_token: sessionToken, request: requestRow, authenticated: true };
-    }
-
-    if (action === 'approve' || action === 'decline') {
-      const sessionToken = String(payload?.session_token || '').trim();
-      const session = sessions.find((item) => item.request_id === requestRow.id && item.session_token === sessionToken);
-      if (!session) {
-        throw new Error('Sessão de aprovação inválida ou expirada.');
-      }
-
-      const requestIndex = requests.findIndex((item) => item.id === requestRow.id);
-      requests[requestIndex] = {
-        ...requestRow,
-        status: action === 'approve' ? 'aprovado' : 'recusado',
-        decided_at: new Date().toISOString(),
-      };
-      writeStorage('responsavel_approval_request', requests);
-      return { ok: true, request: requests[requestIndex] };
-    }
-
-    throw new Error('Ação de aprovação do responsável inválida.');
   },
   whatsappBridge: async (payload = {}) => {
     const action = String(payload?.action || '').trim();
@@ -6322,27 +6195,6 @@ if (USE_SUPABASE_BACKEND) {
         const baseMessage = details || error.message || 'Falha no cadastro do funcionário.';
         const shouldHintDeploy = /edge function|failed to send a request|non-2xx|not found/i.test(baseMessage);
         throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function monitor-registration no Supabase.` : baseMessage);
-      }
-      return data;
-    },
-    responsavelApproval: async (payload = {}) => {
-      const { data, error } = await supabase.functions.invoke('responsavel-approval', {
-        body: payload,
-      });
-      if (error) {
-        let details = '';
-        try {
-          if (error.context) {
-            const cloned = error.context.clone ? error.context.clone() : error.context;
-            const errorPayload = await cloned.json();
-            details = errorPayload?.details || errorPayload?.error || '';
-          }
-        } catch {
-          details = '';
-        }
-        const baseMessage = details || error.message || 'Falha na aprovação autenticada do responsável.';
-        const shouldHintDeploy = /failed to send a request|edge function.*not found|function.*not found|status.?404/i.test(baseMessage);
-        throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function responsavel-approval no Supabase.` : baseMessage);
       }
       return data;
     },

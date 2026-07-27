@@ -32,10 +32,6 @@ function sanitizeText(value: unknown) {
   return String(value).trim();
 }
 
-function normalizeLogin(value: unknown) {
-  return sanitizeText(value).toLowerCase();
-}
-
 function normalizeCpf(value: unknown) {
   return sanitizeText(value).replace(/\D/g, "").slice(0, 11);
 }
@@ -63,21 +59,6 @@ function formatDisplayName(value: unknown) {
         .join("")
     )
     .join(" ");
-}
-
-function randomToken(bytes = 24) {
-  const buffer = crypto.getRandomValues(new Uint8Array(bytes));
-  return Array.from(buffer).map((item) => item.toString(16).padStart(2, "0")).join("");
-}
-
-async function sha256Hex(value: string) {
-  const encoded = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", encoded);
-  return Array.from(new Uint8Array(digest)).map((item) => item.toString(16).padStart(2, "0")).join("");
-}
-
-async function hashPassword(password: string, salt: string) {
-  return sha256Hex(`${salt}:${password}`);
 }
 
 const COMMERCIAL_NOTIFICATION_PERMISSIONS = [
@@ -720,6 +701,53 @@ function isNaturalFoodSelection(value: unknown) {
     .includes("natural");
 }
 
+function validateDogOperationalFields(cao: Record<string, unknown>) {
+  const isNaturalFood = typeof cao.alimentacao_natural === "boolean"
+    ? cao.alimentacao_natural
+    : isNaturalFoodSelection(cao.alimentacao_tipo);
+  if (!isNaturalFood) {
+    if (!sanitizeText(cao.alimentacao_marca_racao)) throw new Error("Informe a marca da racao.");
+    if (!sanitizeText(cao.alimentacao_sabor)) throw new Error("Informe o sabor da racao.");
+    if (!sanitizeText(cao.alimentacao_tipo)) throw new Error("Informe o tipo da racao.");
+  }
+
+  const meals = Array.isArray(cao.refeicoes)
+    ? cao.refeicoes as Record<string, unknown>[]
+    : [];
+  if (meals.length === 0) {
+    throw new Error("Informe ao menos uma refeicao com quantidade e horario.");
+  }
+  if (meals.some((meal) => !sanitizeText(meal?.qnt) || !sanitizeText(meal?.horario))) {
+    throw new Error("Preencha a quantidade e o horario de todas as refeicoes adicionadas.");
+  }
+
+  const requiredCareFields = [
+    "alergias",
+    "restricoes_cuidados",
+    "veterinario_responsavel",
+    "veterinario_horario_atendimento",
+    "veterinario_telefone",
+    "veterinario_clinica_telefone",
+    "veterinario_endereco",
+  ];
+  if (requiredCareFields.some((field) => !sanitizeText(cao[field]))) {
+    throw new Error('Preencha todas as informacoes de restricoes e cuidados ou marque "Nao possui".');
+  }
+
+  if (!Array.isArray(cao.medicamentos_continuos)) {
+    throw new Error('Informe os medicamentos continuos ou marque "Nao possui".');
+  }
+  const medications = cao.medicamentos_continuos as Record<string, unknown>[];
+  if (medications.some((item) => (
+    !sanitizeText(item?.especificacoes)
+    || !sanitizeText(item?.cuidados)
+    || !sanitizeText(item?.horario)
+    || !sanitizeText(item?.dose)
+  ))) {
+    throw new Error('Preencha todos os dados dos medicamentos ou marque "Nao possui".');
+  }
+}
+
 function buildDogMealSlots(cao: Record<string, unknown>) {
   const rawMeals = Array.isArray(cao.refeicoes)
     ? cao.refeicoes.slice(0, 4)
@@ -806,6 +834,7 @@ function validatePayload(payload: Record<string, unknown>, registrationMode = "f
   if (caes.some((cao) => !sanitizeText(cao.nome) || !sanitizeText(cao.raca))) {
     throw new Error("Cada cao precisa ter ao menos nome e raca.");
   }
+  caes.forEach(validateDogOperationalFields);
 
   if ((registrationMode === "full" || registrationMode === "dog_and_financeiro") && (!sanitizeText(financeiro.nome_razao_social) || !sanitizeText(financeiro.cpf_cnpj) || !sanitizeText(financeiro.celular) || !sanitizeText(financeiro.email))) {
     throw new Error("Preencha os dados principais do responsavel financeiro.");
@@ -1009,12 +1038,20 @@ async function handleSubmit(payload: Record<string, unknown>) {
       return jsonResponse({ error: "Este link de cadastro expirou. Solicite um novo link." }, 410);
     }
 
-    const formPayload = (payload?.payload || {}) as Record<string, unknown>;
+    const rawFormPayload = (payload?.payload || {}) as Record<string, unknown>;
+    const rawResponsavel = (rawFormPayload.responsavel || {}) as Record<string, unknown>;
+    const responsavel = { ...rawResponsavel };
+    delete responsavel.login_portal;
+    delete responsavel.senha_portal;
+    delete responsavel.confirmar_senha_portal;
+    const formPayload = {
+      ...rawFormPayload,
+      responsavel,
+    };
     const metadata = getLinkMetadata(link as Record<string, unknown>);
     const registrationMode = getRegistrationMode(metadata);
     validatePayload(formPayload, registrationMode);
 
-    const responsavel = (formPayload.responsavel || {}) as Record<string, unknown>;
     const financeiro = (formPayload.financeiro || {}) as Record<string, unknown>;
     const caes = Array.isArray(formPayload.caes) ? formPayload.caes as Record<string, unknown>[] : [];
     const now = new Date().toISOString();
@@ -1042,7 +1079,9 @@ async function handleSubmit(payload: Record<string, unknown>) {
     const createdDogIds: string[] = [];
     for (const cao of caes) {
       const dogMeals = buildDogMealSlots(cao);
-      const isNaturalFood = Boolean(cao.alimentacao_natural) || isNaturalFoodSelection(cao.alimentacao_tipo);
+      const isNaturalFood = typeof cao.alimentacao_natural === "boolean"
+        ? cao.alimentacao_natural
+        : isNaturalFoodSelection(cao.alimentacao_tipo);
 
       const { data: dogRow, error: dogError } = await admin
         .from("dogs")
@@ -1135,61 +1174,6 @@ async function handleSubmit(payload: Record<string, unknown>) {
       }
 
       responsavelId = responsavelRow.id;
-
-      const portalLogin = normalizeLogin(responsavel.login_portal);
-      const portalPassword = sanitizeText(responsavel.senha_portal);
-      const portalConfirmPassword = sanitizeText(responsavel.confirmar_senha_portal);
-
-      if (portalLogin || portalPassword || portalConfirmPassword) {
-        if (!portalLogin || !portalPassword || !portalConfirmPassword) {
-          return jsonResponse({ error: "Se quiser preparar a confirmacao autenticada, preencha login, senha e confirmacao da senha." }, 400);
-        }
-
-        if (portalPassword.length < 6) {
-          return jsonResponse({ error: "A senha para confirmacao de orcamentos/agendamentos precisa ter pelo menos 6 caracteres." }, 400);
-        }
-
-        if (portalPassword !== portalConfirmPassword) {
-          return jsonResponse({ error: "A confirmacao da senha do responsavel nao confere." }, 400);
-        }
-
-        const { data: existingLogin } = await admin
-          .from("responsavel_portal_access")
-          .select("id, responsavel_id")
-          .eq("login", portalLogin)
-          .maybeSingle();
-
-        if (existingLogin && existingLogin.responsavel_id !== responsavelId) {
-          return jsonResponse({ error: "Este login ja esta sendo usado por outro responsavel." }, 409);
-        }
-
-        const { data: currentAccess } = await admin
-          .from("responsavel_portal_access")
-          .select("id")
-          .eq("responsavel_id", responsavelId)
-          .maybeSingle();
-
-        const salt = randomToken(16);
-        const passwordHash = await hashPassword(portalPassword, salt);
-        const accessPayload = {
-          empresa_id: link.empresa_id,
-          responsavel_id: responsavelId,
-          login: portalLogin,
-          password_hash: passwordHash,
-          password_salt: salt,
-          ativo: true,
-          updated_at: now,
-        };
-
-        const accessQuery = currentAccess
-          ? admin.from("responsavel_portal_access").update(accessPayload).eq("id", currentAccess.id).select("id").single()
-          : admin.from("responsavel_portal_access").insert([{ ...accessPayload, created_at: now }]).select("id").single();
-
-        const { error: accessError } = await accessQuery;
-        if (accessError) {
-          return jsonResponse({ error: accessError.message || "Nao foi possivel preparar a confirmacao autenticada do responsavel." }, 400);
-        }
-      }
     } else {
       if (!responsavelId) {
         return jsonResponse({ error: "Este link nao possui um responsavel existente vinculado." }, 400);

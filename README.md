@@ -225,7 +225,6 @@ Functions presentes em [`supabase/functions/`](./supabase/functions):
 - `user-admin`: rotinas administrativas de usuario
 - `client-registration`: fluxos de cadastro publico de cliente
 - `monitor-registration`: fluxos de cadastro publico de monitor
-- `responsavel-approval`: aprovacao publica de responsavel
 
 Importante:
 

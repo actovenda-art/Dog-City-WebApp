@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, IntegracaoConfig, Orcamento, OrcamentoPagamento, PackageSession, RecurringPackage, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, OrcamentoPagamento, PackageSession, RecurringPackage, Replacement, Responsavel, TabelaPrecos, User } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import {
   bancoInter,
@@ -11,8 +11,6 @@ import {
   financeShadowSync,
   financeWalletBudgetReadContext,
   notificacoesOrcamento,
-  responsavelApproval,
-  whatsappBridge,
 } from "@/api/functions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,10 +46,8 @@ import {
   ReceiptText,
   QrCode,
   Send,
-  MessageSquareText,
   Pencil,
   Save,
-  Link2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -632,10 +628,6 @@ export default function OrcamentosHistoricoPanel({
   const [isLoadingAppointmentEdits, setIsLoadingAppointmentEdits] = useState(false);
   const [isSavingAppointmentEdits, setIsSavingAppointmentEdits] = useState(false);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
-  const [whatsappConfigs, setWhatsappConfigs] = useState([]);
-  const [approvalDialog, setApprovalDialog] = useState(null);
-  const [approvalPhone, setApprovalPhone] = useState("");
-  const [approvalNote, setApprovalNote] = useState("");
   const [budgetFinanceContext, setBudgetFinanceContext] = useState(null);
   const [budgetFinancePreview, setBudgetFinancePreview] = useState(null);
   const [budgetFinanceLoading, setBudgetFinanceLoading] = useState(false);
@@ -650,8 +642,6 @@ export default function OrcamentosHistoricoPanel({
   const [generateCompensatoryCredit, setGenerateCompensatoryCredit] = useState(false);
   const [compensatoryCreditValue, setCompensatoryCreditValue] = useState("");
   const [cancellationReason, setCancellationReason] = useState("");
-  const [approvalWhatsappSlot, setApprovalWhatsappSlot] = useState("manual");
-  const [isSendingApproval, setIsSendingApproval] = useState(false);
   const [budgetPayments, setBudgetPayments] = useState([]);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentTab, setPaymentTab] = useState("boleto");
@@ -888,14 +878,13 @@ export default function OrcamentosHistoricoPanel({
         console.error("Erro ao aplicar expiração automática dos orçamentos:", expirationError);
       }
 
-      const [orcData, dogsData, carteirasData, recurringPackagesData, responsaveisData, precosData, integracoesData, receivableRows, budgetPaymentRows] = await Promise.all([
+      const [orcData, dogsData, carteirasData, recurringPackagesData, responsaveisData, precosData, receivableRows, budgetPaymentRows] = await Promise.all([
         Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 500),
         Carteira.list("-created_date", 500),
         RecurringPackage.list("-created_at", 1000),
         Responsavel.list("-created_date", 500),
         TabelaPrecos.list("-created_date", 1000),
-        IntegracaoConfig.list("-created_date", 100),
         ContaReceber.listAll("-created_date", 1000, 10000),
         OrcamentoPagamento.list("-created_date", 1000).catch(() => []),
       ]);
@@ -907,7 +896,6 @@ export default function OrcamentosHistoricoPanel({
       setResponsaveis(responsaveisData || []);
       setCurrentUser(loadedCurrentUser || null);
       setPrecos(buildPricingConfig(precosData || [], loadedCurrentUser?.empresa_id || null));
-      setWhatsappConfigs((integracoesData || []).filter((item) => (item.provider || item.nome) === "whatsapp_web"));
       setBudgetPayments(budgetPaymentRows || []);
     } catch (error) {
       console.error("Erro ao carregar histórico de orçamentos:", error);
@@ -922,105 +910,6 @@ export default function OrcamentosHistoricoPanel({
 
   function showFeedback(title, description, tone = "info") {
     setFeedbackDialog({ title, description, tone });
-  }
-
-  function openApprovalDialog(orcamento) {
-    if (isBudgetExpired(orcamento)) {
-      showFeedback(
-        "Orçamento expirado",
-        "A validade deste orçamento terminou. Ele permanece disponível apenas para consulta.",
-        "warning",
-      );
-      return;
-    }
-    const dogIds = (orcamento?.caes || []).map((cao) => cao?.dog_id).filter(Boolean);
-    const linkedResponsaveis = getLinkedResponsaveisForDogIds(responsaveis, dogIds);
-    if (!linkedResponsaveis.length) {
-      showFeedback("Responsável não localizado", "Vincule ao menos um responsável aos cães deste orçamento antes de solicitar uma aprovação autenticada.", "warning");
-      return;
-    }
-
-    const firstResponsavel = linkedResponsaveis[0];
-    const scopedWhatsappConfigs = whatsappConfigs.filter((item) => {
-      const companyId = currentUser?.empresa_id || null;
-      return (item.empresa_id || null) === companyId && String(item?.config?.slot_key || "");
-    });
-
-    setApprovalDialog({
-      orcamento,
-      responsaveis: linkedResponsaveis,
-      whatsappOptions: scopedWhatsappConfigs,
-      selectedResponsavelId: firstResponsavel.id,
-    });
-    setApprovalPhone(firstResponsavel.celular || "");
-    setApprovalNote("");
-    setApprovalWhatsappSlot(scopedWhatsappConfigs[0]?.config?.slot_key || "manual");
-  }
-
-  function handleApprovalResponsavelChange(responsavelId) {
-    setApprovalDialog((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        selectedResponsavelId: responsavelId,
-      };
-    });
-
-    const selectedResponsavel = approvalDialog?.responsaveis?.find((item) => item.id === responsavelId);
-    setApprovalPhone(selectedResponsavel?.celular || "");
-  }
-
-  async function submitApprovalRequest() {
-    if (!approvalDialog?.orcamento?.id || !approvalDialog?.selectedResponsavelId) return;
-    setIsSendingApproval(true);
-    try {
-      const selectedResponsavel = approvalDialog.responsaveis.find((item) => item.id === approvalDialog.selectedResponsavelId);
-      const dogIds = (approvalDialog.orcamento?.caes || []).map((cao) => cao?.dog_id).filter(Boolean);
-      const requestResult = await responsavelApproval({
-        action: "create_request",
-        orcamento_id: approvalDialog.orcamento.id,
-        responsavel_id: approvalDialog.selectedResponsavelId,
-        dog_ids: dogIds,
-        requested_channel: approvalWhatsappSlot === "manual" ? "manual" : "whatsapp",
-        requester_note: approvalNote,
-      });
-
-      let whatsappMessageResult = null;
-      if (approvalWhatsappSlot !== "manual" && approvalPhone) {
-        const dogNames = dogIds.map((dogId) => getDogName(dogId)).filter(Boolean).join(", ");
-        const messageLines = [
-          `Olá, ${selectedResponsavel?.nome_completo || "responsável"}!`,
-          "A Dog City precisa da sua confirmação autenticada para este orçamento.",
-          dogNames ? `Dogs: ${dogNames}` : "",
-          `Valor: ${formatCurrency(approvalDialog.orcamento?.valor_total || 0)}`,
-          requestResult?.approval_url || "",
-        ].filter(Boolean);
-
-        whatsappMessageResult = await whatsappBridge({
-          action: "send_message",
-          slot_key: approvalWhatsappSlot,
-          to: approvalPhone,
-          text: messageLines.join("\n"),
-        });
-      }
-
-      if (requestResult?.approval_url && navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(requestResult.approval_url);
-      }
-
-      setApprovalDialog(null);
-      showFeedback(
-        "Solicitação pronta",
-        whatsappMessageResult
-          ? "O link autenticado foi gerado, copiado e enviado pelo WhatsApp selecionado."
-          : "O link autenticado foi gerado e copiado. Se preferir, você pode enviá-lo manualmente.",
-        "success",
-      );
-    } catch (error) {
-      showFeedback("Não foi possível solicitar a aprovação", error?.message || "Falha ao preparar a aprovação autenticada do responsável.", "error");
-    } finally {
-      setIsSendingApproval(false);
-    }
   }
 
   function openBudgetPaymentDialog() {
@@ -1963,9 +1852,6 @@ export default function OrcamentosHistoricoPanel({
   const selectedOrcamentoIncludedAppointments = selectedOrcamento
     ? buildIncludedAppointments(selectedOrcamento, dogs)
     : [];
-  const selectedApprovalResponsavel = approvalDialog?.responsaveis?.find(
-    (item) => item.id === approvalDialog?.selectedResponsavelId,
-  ) || null;
   const deleteConfirmRows = deleteConfirmContext?.rows || [];
   const FeedbackIcon = feedbackDialog?.tone === "success" ? CheckCircle : AlertTriangle;
   const feedbackToneClasses = feedbackDialog?.tone === "error"
@@ -2586,14 +2472,6 @@ export default function OrcamentosHistoricoPanel({
           )}
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowDetailModal(false)}>Fechar</Button>
-            <Button
-              variant="outline"
-              onClick={() => openApprovalDialog(selectedOrcamento)}
-              disabled={!selectedOrcamento?.id || selectedBudgetExpired}
-            >
-              <Link2 className="mr-2 h-4 w-4" />
-              Solicitar aprovação
-            </Button>
             {selectedOrcamento?.status === "aprovado" ? (
               <Button
                 variant="outline"
@@ -2820,167 +2698,6 @@ export default function OrcamentosHistoricoPanel({
         }}
         onFeedback={showFeedback}
       />
-
-      <Dialog
-        open={Boolean(approvalDialog)}
-        onOpenChange={(open) => {
-          if (!open && !isSendingApproval) {
-            setApprovalDialog(null);
-          }
-        }}
-      >
-        <DialogContent className="max-h-[92vh] w-[95vw] max-w-[640px] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-start gap-3">
-              <div className="rounded-2xl bg-blue-100 p-3">
-                <Link2 className="h-6 w-6 text-blue-700" />
-              </div>
-              <div>
-                <DialogTitle>Solicitar aprovação autenticada</DialogTitle>
-                <DialogDescription className="mt-2 text-sm leading-6">
-                  Escolha o responsável, gere o link protegido e, se quiser, envie agora pelo WhatsApp conectado.
-                </DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-
-          {approvalDialog?.orcamento ? (
-            <div className="space-y-5">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Orçamento selecionado</p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <div>
-                    <p className="text-xs text-slate-500">Cães</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-900">
-                      {(approvalDialog.orcamento?.caes || []).map((cao) => getDogName(cao?.dog_id)).filter(Boolean).join(", ") || "Sem cães vinculados"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Valor</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-900">
-                      {formatCurrency(approvalDialog.orcamento?.valor_total || 0)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Validade</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-900">
-                      {formatDate(approvalDialog.orcamento?.data_validade)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-slate-900">Responsável que vai aprovar</p>
-                  <Select
-                    value={approvalDialog.selectedResponsavelId || ""}
-                    onValueChange={handleApprovalResponsavelChange}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o responsável" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(approvalDialog.responsaveis || []).map((responsavel) => (
-                        <SelectItem key={responsavel.id} value={responsavel.id}>
-                          {responsavel.nome_completo || "Responsável"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs leading-5 text-slate-500">
-                    Só aparecem responsáveis já vinculados aos cães presentes neste orçamento.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-slate-900">Número para envio</p>
-                  <Input
-                    value={approvalPhone}
-                    onChange={(event) => setApprovalPhone(event.target.value)}
-                    placeholder="DDD + número"
-                  />
-                  <p className="text-xs leading-5 text-slate-500">
-                    Você pode ajustar o telefone antes do envio. O link também será copiado para envio manual.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-slate-900">Canal de entrega</p>
-                  <Select value={approvalWhatsappSlot} onValueChange={setApprovalWhatsappSlot}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Escolha como enviar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="manual">Só copiar o link</SelectItem>
-                      {(approvalDialog.whatsappOptions || []).map((item) => (
-                        <SelectItem key={item.id || item.config?.slot_key} value={String(item.config?.slot_key || "")}>
-                          {item.config?.connection_name || `WhatsApp ${item.config?.slot_key || ""}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs leading-5 text-slate-500">
-                    {approvalDialog.whatsappOptions?.length
-                      ? "Escolha uma conexão ativa ou deixe em modo manual para apenas copiar o link."
-                      : "Nenhum WhatsApp conectado para esta unidade. O sistema vai gerar e copiar o link manualmente."}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-slate-900">Observação para a equipe</p>
-                  <Textarea
-                    value={approvalNote}
-                    onChange={(event) => setApprovalNote(event.target.value)}
-                    placeholder="Ex.: confirmar apenas a extensão da estadia até amanhã às 12h."
-                    rows={4}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">Resumo do envio</p>
-                <div className="mt-3 space-y-2 text-sm text-slate-700">
-                  <p>
-                    <span className="font-semibold text-slate-900">Responsável:</span>{" "}
-                    {selectedApprovalResponsavel?.nome_completo || "Selecione um responsável"}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">Canal:</span>{" "}
-                    {approvalWhatsappSlot === "manual"
-                      ? "Link copiado para envio manual"
-                      : `WhatsApp ${approvalDialog.whatsappOptions?.find((item) => String(item.config?.slot_key || "") === approvalWhatsappSlot)?.config?.connection_name || approvalWhatsappSlot}`}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">Telefone:</span>{" "}
-                    {approvalPhone || "Não informado"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setApprovalDialog(null)}
-              disabled={isSendingApproval}
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={submitApprovalRequest}
-              disabled={!approvalDialog?.selectedResponsavelId || isSendingApproval || (approvalWhatsappSlot !== "manual" && !approvalPhone)}
-              className="bg-blue-600 text-white hover:bg-blue-700"
-            >
-              <Send className="mr-2 h-4 w-4" />
-              {isSendingApproval ? "Preparando..." : "Gerar link protegido"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={Boolean(blockedDeleteContext)} onOpenChange={(open) => !open && setBlockedDeleteContext(null)}>
         <DialogContent className="max-h-[92vh] w-[95vw] max-w-[680px] overflow-y-auto">

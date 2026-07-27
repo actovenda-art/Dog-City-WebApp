@@ -11,6 +11,3 @@ verify_jwt = false
 
 [functions.client-registration]
 verify_jwt = false
-
-[functions.responsavel-approval]
-verify_jwt = false

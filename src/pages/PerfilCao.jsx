@@ -5,6 +5,14 @@ import { useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
@@ -16,6 +24,7 @@ import {
   Pencil,
   Phone,
   Syringe,
+  Trash2,
   Utensils,
   Upload,
   Wallet,
@@ -84,14 +93,6 @@ const DOG_EXPORTABLE_FIELDS = [
 
 function getLinkedDogIds(record) {
   return RELATION_SLOTS.map((slot) => record?.[`dog_id_${slot}`]).filter(Boolean);
-}
-
-function buildDogRelationPayload(linkedDogIds) {
-  const payload = {};
-  RELATION_SLOTS.forEach((slot, index) => {
-    payload[`dog_id_${slot}`] = linkedDogIds[index] || null;
-  });
-  return payload;
 }
 
 function pickFields(source, fields) {
@@ -211,6 +212,8 @@ export default function PerfilCao() {
   const [faltas, setFaltas] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isImportingProfile, setIsImportingProfile] = useState(false);
+  const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
+  const [isDeletingProfile, setIsDeletingProfile] = useState(false);
   const [profileFeedback, setProfileFeedback] = useState(null);
   const [dogPhotoUrl, setDogPhotoUrl] = useState("");
   const [vaccineCardUrls, setVaccineCardUrls] = useState([]);
@@ -395,14 +398,6 @@ export default function PerfilCao() {
       }
 
       if (importedDog.acao === "delete") {
-        for (const responsavel of responsaveis) {
-          const linkedIds = getLinkedDogIds(responsavel).filter((dogId) => dogId !== dog.id);
-          await Responsavel.update(responsavel.id, buildDogRelationPayload(linkedIds));
-        }
-        for (const carteira of carteiras) {
-          const linkedIds = getLinkedDogIds(carteira).filter((dogId) => dogId !== dog.id);
-          await Carteira.update(carteira.id, buildDogRelationPayload(linkedIds));
-        }
         await Dog.delete(dog.id);
         setProfileFeedback({ tone: "success", message: "Perfil do cão removido a partir do arquivo importado." });
         handleGoBack();
@@ -420,6 +415,27 @@ export default function PerfilCao() {
       });
     } finally {
       setIsImportingProfile(false);
+    }
+  };
+
+  const handleDeleteDogProfile = async () => {
+    if (!dog?.id) return;
+    setIsDeletingProfile(true);
+    setProfileFeedback(null);
+
+    try {
+      await Dog.delete(dog.id);
+      setDeleteProfileOpen(false);
+      navigate(`${createPageUrl("Perfis")}?tab=caes`, { replace: true });
+    } catch (error) {
+      console.error("Erro ao excluir perfil do cão:", error);
+      setProfileFeedback({
+        tone: "error",
+        message: error?.message || "Não foi possível excluir o perfil do cão agora.",
+      });
+      setDeleteProfileOpen(false);
+    } finally {
+      setIsDeletingProfile(false);
     }
   };
 
@@ -507,6 +523,15 @@ export default function PerfilCao() {
                           Atualizar cadastro
                         </Button>
                       </Link>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                        onClick={() => setDeleteProfileOpen(true)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Excluir perfil
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -856,6 +881,26 @@ export default function PerfilCao() {
             </div>
           </TabsContent>
         </Tabs>
+
+        <Dialog open={deleteProfileOpen} onOpenChange={(open) => !isDeletingProfile && setDeleteProfileOpen(open)}>
+          <DialogContent className="w-[94vw] max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Excluir o perfil de {dog.nome}?</DialogTitle>
+              <DialogDescription>
+                O cão deixará de aparecer nos cadastros e telas operacionais. Agendamentos, serviços e vínculos serão preservados, e a exclusão poderá ser desfeita em “Perfis excluídos” durante 30 dias.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => setDeleteProfileOpen(false)} disabled={isDeletingProfile}>
+                Cancelar
+              </Button>
+              <Button type="button" variant="destructive" onClick={handleDeleteDogProfile} disabled={isDeletingProfile}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                {isDeletingProfile ? "Excluindo..." : "Excluir perfil"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

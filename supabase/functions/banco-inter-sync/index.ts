@@ -2955,16 +2955,83 @@ async function loadWalletChargeFromPublicToken(token: string) {
   return row;
 }
 
-async function rotateWalletChargePublicLink(row: Record<string, unknown>) {
+function buildWalletChargeTokenAdditionalData(
+  chargeId: string,
+  empresaId: string,
+) {
+  return new TextEncoder().encode(`wallet-charge|${empresaId}|${chargeId}`);
+}
+
+async function encryptWalletChargePublicToken(
+  chargeId: string,
+  empresaId: string,
+  publicToken: string,
+) {
+  const key = await getPersistentTokenCryptoKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv,
+      additionalData: buildWalletChargeTokenAdditionalData(chargeId, empresaId),
+    },
+    key,
+    new TextEncoder().encode(publicToken),
+  ));
+  return {
+    public_token_ciphertext: encodeTokenBytesBase64(ciphertext),
+    public_token_iv: encodeTokenBytesBase64(iv),
+  };
+}
+
+async function decryptWalletChargePublicToken(
+  row: Record<string, unknown>,
+) {
+  const ciphertext = sanitizeText(row.public_token_ciphertext);
+  const iv = sanitizeText(row.public_token_iv);
+  if (!ciphertext || !iv) return null;
+
+  const key = await getPersistentTokenCryptoKey();
+  const decrypted = await crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: decodeTokenBytesBase64(iv),
+      additionalData: buildWalletChargeTokenAdditionalData(
+        sanitizeText(row.id),
+        sanitizeText(row.empresa_id),
+      ),
+    },
+    key,
+    decodeTokenBytesBase64(ciphertext),
+  );
+  const publicToken = new TextDecoder().decode(decrypted);
+  if (!publicToken || await hashWalletChargePublicToken(publicToken) !== sanitizeText(row.public_token_hash)) {
+    throw new Error("O link persistido da cobranca nao passou na verificacao de integridade.");
+  }
+  return publicToken;
+}
+
+async function getStableWalletChargePublicLink(
+  row: Record<string, unknown>,
+) {
+  const persistedToken = await decryptWalletChargePublicToken(row);
+  if (persistedToken) return { row, publicToken: persistedToken };
+
+  // Registros anteriores nao armazenavam o token recuperavel. Esta migracao
+  // unica estabelece o link que permanecera estavel a partir de agora.
   const publicToken = buildWalletChargePublicToken();
-  const publicTokenHash = await hashWalletChargePublicToken(publicToken);
+  const encryptedToken = await encryptWalletChargePublicToken(
+    sanitizeText(row.id),
+    sanitizeText(row.empresa_id),
+    publicToken,
+  );
   const updatedRow = await saveWalletChargeRow({
     ...row,
-    public_token_hash: publicTokenHash,
-    public_token_expires_at: buildWalletChargeTokenExpiry(sanitizeText(row.data_vencimento)),
+    public_token_hash: await hashWalletChargePublicToken(publicToken),
+    ...encryptedToken,
     metadata: {
       ...getWalletChargeMetadata(row),
-      public_link_rotated_at: new Date().toISOString(),
+      stable_public_link_migrated_at: new Date().toISOString(),
     },
     updated_date: new Date().toISOString(),
   });
@@ -5286,6 +5353,7 @@ Deno.serve(async (request) => {
     const walletChargeRestrictedActions = new Set([
       "issueWalletCharge",
       "refreshWalletChargeStatus",
+      "getWalletChargePublicLink",
       "renewWalletChargePublicLink",
       "cancelWalletCharge",
     ]);
@@ -5589,6 +5657,11 @@ Deno.serve(async (request) => {
       const publicToken = buildWalletChargePublicToken();
       const publicUrl = resolveWalletChargePublicUrl(config, payload, publicToken);
       const publicTokenHash = await hashWalletChargePublicToken(publicToken);
+      const encryptedPublicToken = await encryptWalletChargePublicToken(
+        walletChargeId,
+        empresaId,
+        publicToken,
+      );
 
       try {
         await ensureChargeWebhookConfigured(config);
@@ -5635,6 +5708,7 @@ Deno.serve(async (request) => {
         pago_em: isReceived ? (charge.dataHoraSituacao || now) : null,
         valor_recebido: isReceived ? Number(charge.valorTotalRecebido || charge.valorNominal || amount) : 0,
         public_token_hash: publicTokenHash,
+        ...encryptedPublicToken,
         public_token_expires_at: buildWalletChargeTokenExpiry(dueDate),
         created_by_user_id: sanitizeText(walletChargeStaff?.profile?.id) || null,
         metadata: {
@@ -5702,6 +5776,8 @@ Deno.serve(async (request) => {
         status_inter: cancellation.accepted ? "CANCELAMENTO_SOLICITADO" : "CANCELADO",
         pdf_disponivel: false,
         public_token_hash: await hashWalletChargePublicToken(invalidToken),
+        public_token_ciphertext: null,
+        public_token_iv: null,
         public_token_expires_at: now,
         metadata: {
           ...getWalletChargeMetadata(existingRow),
@@ -5716,10 +5792,10 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: true, charge: buildWalletChargeStaffResponse(cancelledRow) });
     }
 
-    if (action === "renewWalletChargePublicLink") {
+    if (action === "getWalletChargePublicLink" || action === "renewWalletChargePublicLink") {
       const chargeId = sanitizeText(payload.carteira_cobranca_id);
       if (!chargeId) {
-        return jsonResponse({ error: "carteira_cobranca_id e obrigatorio para gerar um novo link." }, 400);
+        return jsonResponse({ error: "carteira_cobranca_id e obrigatorio para copiar o link." }, 400);
       }
 
       const existingRow = await loadWalletChargeRow(chargeId);
@@ -5727,12 +5803,12 @@ Deno.serve(async (request) => {
         return jsonResponse({ error: "Cobranca da carteira nao localizada." }, 404);
       }
       if (!isWalletChargeActive(existingRow)) {
-        return jsonResponse({ error: "Somente cobrancas em aberto podem receber um novo link." }, 409);
+        return jsonResponse({ error: "Somente cobrancas em aberto possuem link de pagamento ativo." }, 409);
       }
 
-      // Validate the configured public origin before invalidating the current link.
+      // Validate the configured public origin without rotating the persisted token.
       resolveWalletChargePublicUrl(config, payload, "preview");
-      const { row, publicToken } = await rotateWalletChargePublicLink(existingRow);
+      const { row, publicToken } = await getStableWalletChargePublicLink(existingRow);
       return jsonResponse({
         ok: true,
         charge: buildWalletChargeStaffResponse(row),

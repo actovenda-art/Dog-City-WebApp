@@ -1,5 +1,10 @@
 -- Exclusao reversivel de perfis e unicidade de CPF por categoria/unidade.
 
+alter table if exists public.dogs
+  add column if not exists deleted_at timestamptz,
+  add column if not exists deletion_expires_at timestamptz,
+  add column if not exists deleted_by text;
+
 alter table if exists public.responsavel
   add column if not exists deleted_at timestamptz,
   add column if not exists deletion_expires_at timestamptz,
@@ -28,12 +33,25 @@ alter table if exists public.carteira
     or (deleted_at is not null and deletion_expires_at = deleted_at + interval '30 days')
   );
 
+alter table if exists public.dogs
+  drop constraint if exists dogs_deletion_window_check;
+
+alter table if exists public.dogs
+  add constraint dogs_deletion_window_check check (
+    (deleted_at is null and deletion_expires_at is null)
+    or (deleted_at is not null and deletion_expires_at = deleted_at + interval '30 days')
+  );
+
 create index if not exists idx_responsavel_empresa_cpf_ativo
   on public.responsavel (empresa_id, (regexp_replace(coalesce(cpf, ''), '[^0-9]', '', 'g')))
   where deleted_at is null;
 
 create index if not exists idx_carteira_empresa_cpf_ativo
   on public.carteira (empresa_id, (regexp_replace(coalesce(cpf_cnpj, ''), '[^0-9]', '', 'g')))
+  where deleted_at is null;
+
+create index if not exists idx_dogs_empresa_ativos
+  on public.dogs (empresa_id, created_date)
   where deleted_at is null;
 
 create or replace function public.app_enforce_profile_cpf_uniqueness()
@@ -155,3 +173,7 @@ comment on column public.carteira.deleted_at is
   'Exclusao logica do perfil financeiro. O registro deixa de aparecer na operacao imediatamente.';
 comment on column public.carteira.deletion_expires_at is
   'Prazo final para desfazer a exclusao do perfil financeiro.';
+comment on column public.dogs.deleted_at is
+  'Exclusao logica do perfil do cao. O registro deixa de aparecer na operacao imediatamente.';
+comment on column public.dogs.deletion_expires_at is
+  'Prazo final para desfazer a exclusao do perfil do cao.';

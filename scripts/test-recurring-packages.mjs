@@ -185,6 +185,52 @@ assert.equal(julyDayCareBilling.expected_sessions, 5, "Julho/2026 deve ter cinco
 assert.equal(julyDayCareBilling.unit_price, 85, "Cinco sessões devem ratear R$ 425,00 em R$ 85,00");
 assert.equal(julyDayCareBilling.total_amount, 425, "O total mensal de julho deve permanecer em R$ 425,00");
 
+const midMonthDayCarePackage = {
+  ...legacyWeeklyDayCarePackage,
+  id: "pkg_day_care_mid_month",
+  pet_id: "bud",
+  start_date: "2026-06-11",
+  weekdays: [5],
+  weekday: 5,
+  metadata: {
+    plan_config_id: "plan_day_care_mid_month",
+    plan_monthly_value: 425,
+    plan_metadata: {
+      start_date: "2026-06-11",
+      first_month_real_dates: ["2026-06-11", "2026-06-19", "2026-06-26"],
+      first_cycle: {
+        due_date: "2026-06-12",
+        total_value: 318.75,
+        planned_uses: 3,
+        billed_uses: 3,
+        cycle_slots: 4,
+      },
+    },
+  },
+};
+const midMonthSessions = generateMonthlySessions({
+  packages: [midMonthDayCarePackage],
+  existingSessions: [],
+  month: 6,
+  year: 2026,
+}).sessionsToCreate.map((session, index) => ({ ...session, id: `mid_month_${index + 1}` }));
+const midMonthBilling = calculateMonthlyBilling({
+  packageRecord: midMonthDayCarePackage,
+  sessions: midMonthSessions,
+  credits: [],
+  month: 6,
+  year: 2026,
+});
+
+assert.deepEqual(
+  midMonthSessions.map((session) => session.scheduled_date),
+  ["2026-06-11", "2026-06-19", "2026-06-26"],
+  "O primeiro mes deve respeitar as datas reais informadas no cadastro",
+);
+assert.equal(midMonthBilling.expected_sessions, 3, "O primeiro mes deve conter as tres utilizacoes informadas");
+assert.equal(midMonthBilling.unit_price, 106.25, "O valor proporcional deve ser dividido pelas tres utilizacoes");
+assert.equal(midMonthBilling.total_amount, 318.75, "O primeiro mes parcial deve cobrar somente 3/4 do plano");
+
 assert.deepEqual(
   getAutomaticRecurringMonthKeys(new Date(2026, 6, 24, 12, 0, 0)),
   ["2026-07"],

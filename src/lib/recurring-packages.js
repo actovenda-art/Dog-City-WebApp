@@ -520,6 +520,7 @@ export function getPackageScheduledDates(packageRecord, monthKey, options = {}) 
   if (!packageRecord || !month) return [];
 
   const metadata = normalizeMetadata(packageRecord.metadata);
+  const planMetadata = normalizeMetadata(metadata.plan_metadata);
   const frequencyMode = getFrequencyMode(packageRecord.frequency);
   const scheduleRule = getScheduleRule(packageRecord);
   const customDates = normalizeDateSet([
@@ -544,6 +545,16 @@ export function getPackageScheduledDates(packageRecord, monthKey, options = {}) 
     if (isPaused(dateKey, pauseRanges)) return false;
     return true;
   };
+
+  const firstMonthKey = getMonthKey(planMetadata.start_date || packageRecord.start_date);
+  const firstMonthRealDates = normalizeDateSet(
+    Array.isArray(planMetadata.first_month_real_dates) ? planMetadata.first_month_real_dates : [],
+  );
+  if (monthKey === firstMonthKey && firstMonthRealDates.size > 0) {
+    return [...firstMonthRealDates]
+      .filter((dateKey) => getMonthKey(dateKey) === monthKey && shouldIncludeDate(parseDateKey(dateKey)))
+      .sort();
+  }
 
   if (frequencyMode === "personalizada") {
     return [...customDates]
@@ -730,15 +741,25 @@ export function calculateMonthlyBilling({ packageRecord, sessions = [], credits 
   const creditsUsed = Math.min(availableCredits.length, creditEligibleSessions.length);
   const chargedSessions = Math.max(0, creditEligibleSessions.length - creditsUsed);
   const monthlyValue = getPackageMonthlyValue(packageRecord);
+  const packageMetadata = normalizeMetadata(packageRecord?.metadata);
+  const planMetadata = normalizeMetadata(packageMetadata.plan_metadata);
+  const firstCycle = normalizeMetadata(planMetadata.first_cycle);
+  const firstCycleMonthKey = getMonthKey(planMetadata.start_date || firstCycle.due_date);
+  const firstCycleValue = Math.max(0, Number(firstCycle.total_value || 0) || 0);
+  const billingBaseValue = packageRecord?.service_id === "day_care"
+    && monthKey === firstCycleMonthKey
+    && firstCycleValue > 0
+    ? firstCycleValue
+    : monthlyValue;
   const divisor = creditEligibleSessions.length;
   const baseSessionPrice = Math.max(0, Number(packageRecord?.price_per_session || 0) || 0);
   const isFixedMonthlyDayCare = packageRecord?.service_id === "day_care";
   const unitPrice = isFixedMonthlyDayCare && divisor > 0
-    ? roundCurrency(monthlyValue / divisor)
+    ? roundCurrency(billingBaseValue / divisor)
     : baseSessionPrice;
   const totalAmount = chargedSessions > 0
     ? isFixedMonthlyDayCare && divisor > 0
-      ? roundCurrency(monthlyValue * (chargedSessions / divisor))
+      ? roundCurrency(billingBaseValue * (chargedSessions / divisor))
       : roundCurrency(unitPrice * chargedSessions)
     : 0;
 
@@ -751,7 +772,7 @@ export function calculateMonthlyBilling({ packageRecord, sessions = [], credits 
     pre_cancelled_sessions: preCancelledSessions,
     credits_used: creditsUsed,
     charged_sessions: chargedSessions,
-    monthly_value: monthlyValue,
+    monthly_value: billingBaseValue,
     unit_price: unitPrice,
     total_amount: totalAmount,
     creditEligibleSessions,

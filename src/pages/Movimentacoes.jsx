@@ -1392,7 +1392,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletOpenChargesError, setWalletOpenChargesError] = useState("");
   const [walletOpenChargeGeneratedLinks, setWalletOpenChargeGeneratedLinks] = useState({});
   const [walletOpenChargeFeedback, setWalletOpenChargeFeedback] = useState({});
-  const [walletOpenChargeRenewingId, setWalletOpenChargeRenewingId] = useState("");
+  const [walletOpenChargeCopyingId, setWalletOpenChargeCopyingId] = useState("");
   const [walletOpenChargeCancellingId, setWalletOpenChargeCancellingId] = useState("");
   const [walletChargePendingCancellation, setWalletChargePendingCancellation] = useState(null);
   const [walletManualDeletingId, setWalletManualDeletingId] = useState("");
@@ -2362,7 +2362,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const openWalletOpenChargesModal = async () => {
     setWalletOpenChargeGeneratedLinks({});
     setWalletOpenChargeFeedback({});
-    setWalletOpenChargeRenewingId("");
+    setWalletOpenChargeCopyingId("");
     setWalletOpenChargeCancellingId("");
     setShowWalletOpenChargesModal(true);
     await loadWalletOpenCharges(walletOpenChargesSort);
@@ -2447,40 +2447,27 @@ export default function Movimentacoes({ walletOnly = false }) {
   };
 
   const handleCopyWalletOpenChargeLink = async (chargeId) => {
-    const url = walletOpenChargeGeneratedLinks[chargeId];
-    if (!url) return;
-
-    const copied = await copyTextToClipboard(url);
-    setWalletOpenChargeFeedback((current) => ({
-      ...current,
-      [chargeId]: {
-        type: copied ? "success" : "error",
-        message: copied
-          ? "Link copiado."
-          : "Não foi possível copiar automaticamente. Pressione e segure o endereço para copiá-lo.",
-      },
-    }));
-  };
-
-  const handleRenewWalletChargeLink = async (chargeId) => {
     if (!chargeId || !currentUser?.empresa_id) return;
 
-    setWalletOpenChargeRenewingId(chargeId);
+    setWalletOpenChargeCopyingId(chargeId);
     setWalletOpenChargeFeedback((current) => {
       const next = { ...current };
       delete next[chargeId];
       return next;
     });
     try {
-      const result = await bancoInter({
-        action: "renewWalletChargePublicLink",
-        empresa_id: currentUser.empresa_id,
-        carteira_cobranca_id: chargeId,
-        public_base_url: typeof window !== "undefined" ? window.location.origin : "",
-      });
-      const publicUrl = String(result?.public_url || "").trim();
+      let publicUrl = String(walletOpenChargeGeneratedLinks[chargeId] || "").trim();
       if (!publicUrl) {
-        throw new Error("O novo link não foi retornado pela emissão.");
+        const result = await bancoInter({
+          action: "getWalletChargePublicLink",
+          empresa_id: currentUser.empresa_id,
+          carteira_cobranca_id: chargeId,
+          public_base_url: typeof window !== "undefined" ? window.location.origin : "",
+        });
+        publicUrl = String(result?.public_url || "").trim();
+      }
+      if (!publicUrl) {
+        throw new Error("O link da cobrança não foi retornado.");
       }
 
       setWalletOpenChargeGeneratedLinks((current) => ({ ...current, [chargeId]: publicUrl }));
@@ -2488,10 +2475,10 @@ export default function Movimentacoes({ walletOnly = false }) {
       setWalletOpenChargeFeedback((current) => ({
         ...current,
         [chargeId]: {
-          type: copied ? "success" : "info",
+          type: copied ? "success" : "error",
           message: copied
-            ? "Novo link gerado e copiado."
-            : "Novo link gerado. Use o botão Copiar link abaixo.",
+            ? "Link copiado."
+            : "Não foi possível copiar automaticamente. Pressione e segure o endereço para copiá-lo.",
         },
       }));
     } catch (error) {
@@ -2499,11 +2486,11 @@ export default function Movimentacoes({ walletOnly = false }) {
         ...current,
         [chargeId]: {
           type: "error",
-          message: error?.message || "Não foi possível gerar um novo link.",
+          message: error?.message || "Não foi possível copiar o link.",
         },
       }));
     } finally {
-      setWalletOpenChargeRenewingId("");
+      setWalletOpenChargeCopyingId("");
     }
   };
 
@@ -4445,7 +4432,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                     </div>
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-bold text-slate-950">Boleto bancário</span>
-                      <span className="mt-0.5 block text-xs leading-5 text-slate-500">Código de barras, linha digitável e Pix copia e cola.</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-slate-500">Linha digitável e Pix copia e cola.</span>
                     </span>
                     {walletChargeForm.metodo === "boleto_bancario" ? <CheckCircle2 className="h-5 w-5 shrink-0 text-blue-600" /> : null}
                   </button>
@@ -4671,7 +4658,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                     const duePresentation = getWalletChargeDuePresentation(charge.data_vencimento);
                     const generatedLink = walletOpenChargeGeneratedLinks[charge.id] || "";
                     const linkFeedback = walletOpenChargeFeedback[charge.id] || null;
-                    const isRenewingLink = walletOpenChargeRenewingId === charge.id;
+                    const isCopyingLink = walletOpenChargeCopyingId === charge.id;
                     const isCancelling = walletOpenChargeCancellingId === charge.id;
                     return (
                       <article key={charge.id} className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition hover:border-blue-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.07)] sm:p-5">
@@ -4718,24 +4705,11 @@ export default function Movimentacoes({ walletOnly = false }) {
                             </div>
 
                             {generatedLink ? (
-                              <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-blue-200 bg-blue-50/70 p-3 sm:flex-row sm:items-center">
+                              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50/70 p-3">
                                 <div className="min-w-0 flex-1">
                                   <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-700">Link seguro pronto</p>
                                   <p className="mt-1 truncate text-[11px] text-blue-900" title={generatedLink}>{generatedLink}</p>
                                 </div>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="h-9 w-full shrink-0 rounded-full bg-blue-600 px-4 text-xs text-white hover:bg-blue-700 sm:w-auto"
-                                  onClick={() => handleCopyWalletOpenChargeLink(charge.id)}
-                                >
-                                  {linkFeedback?.type === "success" ? (
-                                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                                  ) : (
-                                    <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />
-                                  )}
-                                  Copiar link
-                                </Button>
                               </div>
                             ) : null}
 
@@ -4753,7 +4727,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                             ) : null}
 
                             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                              <p className="text-[10px] leading-relaxed text-slate-400">Gerar um novo link invalida o endereço compartilhado anteriormente.</p>
+                              <p className="text-[10px] leading-relaxed text-slate-400">O endereço permanece o mesmo enquanto a cobrança estiver ativa.</p>
                               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                                 <Button
                                   type="button"
@@ -4761,7 +4735,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                                   size="sm"
                                   className="h-9 w-full shrink-0 rounded-full border-red-200 bg-white px-4 text-xs text-red-700 hover:bg-red-50 hover:text-red-800 sm:w-auto"
                                   onClick={() => handleCancelWalletCharge(charge)}
-                                  disabled={isCancelling || isRenewingLink}
+                                  disabled={isCancelling || isCopyingLink}
                                 >
                                   {isCancelling ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}
                                   {isCancelling ? "Cancelando..." : charge.metodo === "pix" ? "Cancelar cobrança Pix" : "Cancelar boleto"}
@@ -4771,15 +4745,15 @@ export default function Movimentacoes({ walletOnly = false }) {
                                   variant="outline"
                                   size="sm"
                                   className="h-9 w-full shrink-0 rounded-full border-slate-300 bg-white px-4 text-xs text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 sm:w-auto"
-                                  onClick={() => handleRenewWalletChargeLink(charge.id)}
-                                  disabled={isRenewingLink || isCancelling}
+                                  onClick={() => handleCopyWalletOpenChargeLink(charge.id)}
+                                  disabled={isCopyingLink || isCancelling}
                                 >
-                                  {isRenewingLink ? (
+                                  {isCopyingLink ? (
                                     <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                                   ) : (
-                                    <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                                    <ClipboardCopy className="mr-1.5 h-3.5 w-3.5" />
                                   )}
-                                  {isRenewingLink ? "Gerando..." : generatedLink ? "Gerar outro link" : "Gerar novo link"}
+                                  {isCopyingLink ? "Copiando..." : "Copiar link"}
                                 </Button>
                               </div>
                             </div>

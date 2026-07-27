@@ -31,6 +31,8 @@ create table if not exists public.carteira_cobranca (
   credited_wallet_movement_id text null,
   creditado_em timestamptz null,
   public_token_hash text not null,
+  public_token_ciphertext text null,
+  public_token_iv text null,
   public_token_expires_at timestamptz not null,
   created_by_user_id text null,
   metadata jsonb not null default '{}'::jsonb,
@@ -49,6 +51,10 @@ create table if not exists public.carteira_cobranca (
   constraint uq_carteira_cobranca_public_token_hash
     unique (public_token_hash)
 );
+
+alter table public.carteira_cobranca
+  add column if not exists public_token_ciphertext text,
+  add column if not exists public_token_iv text;
 
 create index if not exists idx_carteira_cobranca_wallet_open
   on public.carteira_cobranca (empresa_id, carteira_id, status, data_vencimento asc, created_date desc);
@@ -84,3 +90,5 @@ revoke all on table public.carteira_cobranca from anon, authenticated;
 
 comment on table public.carteira_cobranca is
   'External payment requests for a financial wallet. Public access uses an opaque token hash through the Banco Inter Edge Function.';
+comment on column public.carteira_cobranca.public_token_ciphertext is
+  'Token publico criptografado para permitir copiar sempre o mesmo link sem rotaciona-lo.';

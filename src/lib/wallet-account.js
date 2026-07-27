@@ -27,6 +27,6 @@ export async function ensureWalletAccountForFinancialProfile(carteira, empresaId
     carteira_id: carteira.id,
     saldo_atual: 0,
     lock_version: 0,
-    status: "ativa",
+    ativo: true,
   });
 }

@@ -2591,18 +2591,7 @@ export default function OrcamentosHistoricoPanel({
                   </div>
 
                   {shouldShowBudgetChargeDetails ? (
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Código de barras</Label>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                          {activeBudgetBoleto?.codigo_barras || "Disponível após a emissão do boleto."}
-                        </div>
-                        <Button variant="outline" size="sm" onClick={() => copyPaymentValue(activeBudgetBoleto?.codigo_barras, "Código de barras")} disabled={!activeBudgetBoleto?.codigo_barras}>
-                          <Copy className="mr-2 h-4 w-4" />
-                          Copiar código de barras
-                        </Button>
-                      </div>
-
+                    <div className="max-w-2xl">
                       <div className="space-y-2">
                         <Label>Linha digitável</Label>
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">

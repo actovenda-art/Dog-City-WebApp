@@ -1037,6 +1037,14 @@ function buildRecurringPackagePayloadFromPlan(plan) {
   };
 }
 
+function getRecurringPackageInitialMonthKey(packageRecord) {
+  const packageMetadata = normalizeRecurringMetadata(packageRecord?.metadata);
+  const planMetadata = parseMetadata(packageMetadata.plan_metadata);
+  const firstCycle = parseMetadata(planMetadata.first_cycle);
+  if (Number(firstCycle.total_value || 0) <= 0) return "";
+  return getMonthKey(planMetadata.start_date || firstCycle.due_date || packageRecord?.start_date);
+}
+
 export default function PlanosConfig() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -1105,14 +1113,29 @@ export default function PlanosConfig() {
     const activePrepaidPackages = prepaidPackages.filter((item) => item.status === "ativo");
     if (!activePrepaidPackages.length) return;
 
-    const monthKeys = getAutomaticRecurringMonthKeys(new Date());
-    const packageSignature = activePrepaidPackages.map((item) => item.id).sort().join(",");
-    const storageKey = `dogcity_prepaid_month_sync:${monthKeys.join(",")}:${packageSignature}`;
+    const automaticMonthKeys = getAutomaticRecurringMonthKeys(new Date());
+    const currentMonthKey = format(new Date(), "yyyy-MM");
+    const syncTargets = activePrepaidPackages.flatMap((packageRecord) => {
+      const monthKeys = new Set(automaticMonthKeys);
+      const initialMonthKey = getRecurringPackageInitialMonthKey(packageRecord);
+      const initialBillingExists = initialMonthKey && packageBillings.some((billing) =>
+        billing.package_id === packageRecord.id && billing.billing_month === initialMonthKey
+      );
+      if (initialMonthKey && initialMonthKey <= currentMonthKey && !initialBillingExists) {
+        monthKeys.add(initialMonthKey);
+      }
+      return [...monthKeys].sort().map((monthKey) => ({ packageRecord, monthKey }));
+    });
+    const targetSignature = syncTargets
+      .map(({ packageRecord, monthKey }) => `${packageRecord.id}:${monthKey}`)
+      .sort()
+      .join(",");
+    const storageKey = `dogcity_prepaid_month_sync:${targetSignature}`;
     if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(storageKey)) return;
 
     isPrepaidSilentSyncRunningRef.current = true;
-    Promise.all(monthKeys.flatMap((monthKey) =>
-      activePrepaidPackages.map((packageRecord) => syncSinglePrepaidPackageMonth(packageRecord, monthKey)),
+    Promise.all(syncTargets.map(({ packageRecord, monthKey }) =>
+      syncSinglePrepaidPackageMonth(packageRecord, monthKey)
     ))
       .then(() => {
         if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, "1");
@@ -1124,7 +1147,7 @@ export default function PlanosConfig() {
       .finally(() => {
         isPrepaidSilentSyncRunningRef.current = false;
       });
-  }, [isLoading, prepaidPackages]);
+  }, [isLoading, packageBillings, prepaidPackages]);
 
   async function loadData({ skipSilentSync = false } = {}) {
     setIsLoading(true);
@@ -2135,8 +2158,16 @@ export default function PlanosConfig() {
     const sourceKey = `package_billing|${packageRecord.id}|${billing.billing_month}`;
     const existingCharge = receivables.find((item) => item.source_key === sourceKey);
     const packageMetadata = normalizeRecurringMetadata(packageRecord?.metadata);
+    const planMetadata = parseMetadata(packageMetadata.plan_metadata);
+    const firstCycle = parseMetadata(planMetadata.first_cycle);
+    const firstCycleMonthKey = getMonthKey(planMetadata.start_date || firstCycle.due_date);
     const dueDayValue = clientsById[packageRecord.client_id]?.vencimento_planos || "";
-    const dueDate = buildDueDateForMonth(parseDateOnly(`${billing.billing_month}-01`), Number(dueDayValue)) || parseDateOnly(`${billing.billing_month}-01`);
+    const firstCycleDueDate = billing.billing_month === firstCycleMonthKey
+      ? parseDateOnly(firstCycle.due_date)
+      : null;
+    const dueDate = firstCycleDueDate
+      || buildDueDateForMonth(parseDateOnly(`${billing.billing_month}-01`), Number(dueDayValue))
+      || parseDateOnly(`${billing.billing_month}-01`);
     const serviceMeta = getServiceMeta(packageRecord.service_id);
     const dogName = dogsById[packageRecord.pet_id]?.nome || "Cão";
     const payload = {

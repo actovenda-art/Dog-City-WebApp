@@ -614,6 +614,7 @@ export default function Perfis() {
   const importInputRef = useRef(null);
   const [importProfileTarget, setImportProfileTarget] = useState(null);
   const [dogs, setDogs] = useState([]);
+  const [deletedDogs, setDeletedDogs] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
   const [deletedResponsaveis, setDeletedResponsaveis] = useState([]);
@@ -648,8 +649,9 @@ export default function Perfis() {
     if (showLoader) setIsLoading(true);
 
     try {
-      const [dogsData, responsaveisData, carteirasData, deletedResponsaveisData, deletedCarteirasData, contasData, me] = await Promise.all([
+      const [dogsData, deletedDogsData, responsaveisData, carteirasData, deletedResponsaveisData, deletedCarteirasData, contasData, me] = await Promise.all([
         Dog.list("-created_date", 1000),
+        Dog.listDeleted("-deleted_at", 1000),
         Responsavel.list("-created_date", 1000),
         Carteira.list("-created_date", 1000),
         Responsavel.listDeleted("-deleted_at", 1000),
@@ -659,6 +661,7 @@ export default function Perfis() {
       ]);
 
       setDogs(dogsData || []);
+      setDeletedDogs(deletedDogsData || []);
       setResponsaveis(responsaveisData || []);
       setCarteiras(carteirasData || []);
       setDeletedResponsaveis(deletedResponsaveisData || []);
@@ -834,6 +837,12 @@ export default function Perfis() {
 
   const totalProfiles = dogs.length + responsaveis.length + carteiras.length;
   const deletedProfiles = useMemo(() => [
+    ...deletedDogs.map((item) => ({
+      ...item,
+      profileType: "dog",
+      profileLabel: "Cão",
+      profileName: item.nome || "Cão sem nome",
+    })),
     ...deletedResponsaveis.map((item) => ({
       ...item,
       profileType: "responsavel",
@@ -846,7 +855,7 @@ export default function Perfis() {
       profileLabel: "Responsável Financeiro",
       profileName: item.nome_razao_social || "Responsável financeiro sem nome",
     })),
-  ].sort((left, right) => new Date(right.deleted_at || 0) - new Date(left.deleted_at || 0)), [deletedResponsaveis, deletedCarteiras]);
+  ].sort((left, right) => new Date(right.deleted_at || 0) - new Date(left.deleted_at || 0)), [deletedDogs, deletedResponsaveis, deletedCarteiras]);
   const selectedResponsavelDogIds = useMemo(
     () => getLinkedDogIds(responsavelForm),
     [responsavelForm]
@@ -1269,9 +1278,11 @@ export default function Perfis() {
     setDeleteProfileTarget({
       type,
       id: profile.id,
-      name: type === "responsavel"
-        ? profile.nome_completo || "Responsável"
-        : profile.nome_razao_social || "Responsável Financeiro",
+      name: type === "dog"
+        ? profile.nome || "Cão"
+        : type === "responsavel"
+          ? profile.nome_completo || "Responsável"
+          : profile.nome_razao_social || "Responsável Financeiro",
     });
   };
 
@@ -1280,11 +1291,15 @@ export default function Perfis() {
     setIsManagingProfile(true);
 
     try {
+      const isDog = deleteProfileTarget.type === "dog";
       const isResponsavel = deleteProfileTarget.type === "responsavel";
-      const entity = isResponsavel ? Responsavel : Carteira;
+      const entity = isDog ? Dog : isResponsavel ? Responsavel : Carteira;
       const deletedProfile = await entity.delete(deleteProfileTarget.id);
 
-      if (isResponsavel) {
+      if (isDog) {
+        setDogs((current) => current.filter((item) => item.id !== deleteProfileTarget.id));
+        setDeletedDogs((current) => [deletedProfile, ...current.filter((item) => item.id !== deletedProfile.id)]);
+      } else if (isResponsavel) {
         setResponsaveis((current) => current.filter((item) => item.id !== deleteProfileTarget.id));
         setDeletedResponsaveis((current) => [deletedProfile, ...current.filter((item) => item.id !== deletedProfile.id)]);
         closeResponsavelDetails();
@@ -1317,11 +1332,15 @@ export default function Perfis() {
     setIsManagingProfile(true);
 
     try {
+      const isDog = profile.profileType === "dog";
       const isResponsavel = profile.profileType === "responsavel";
-      const entity = isResponsavel ? Responsavel : Carteira;
+      const entity = isDog ? Dog : isResponsavel ? Responsavel : Carteira;
       const restoredProfile = await entity.restore(profile.id);
 
-      if (isResponsavel) {
+      if (isDog) {
+        setDeletedDogs((current) => current.filter((item) => item.id !== profile.id));
+        setDogs((current) => [restoredProfile, ...current.filter((item) => item.id !== profile.id)]);
+      } else if (isResponsavel) {
         setDeletedResponsaveis((current) => current.filter((item) => item.id !== profile.id));
         setResponsaveis((current) => [restoredProfile, ...current.filter((item) => item.id !== profile.id)]);
       } else {

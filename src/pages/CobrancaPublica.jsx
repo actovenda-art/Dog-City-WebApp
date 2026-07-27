@@ -230,8 +230,7 @@ export default function CobrancaPublica() {
                     <Landmark className="h-4 w-4 text-blue-700" />
                     <p className="text-sm font-semibold">Boleto bancário</p>
                   </div>
-                  <p className="mt-2 text-xs leading-5 text-slate-600">Use o código de barras, a linha digitável ou baixe o boleto para pagar no seu banco.</p>
-                  <CopyableValue label="Código de barras" value={charge?.boleto?.codigo_barras} onCopy={handleCopy} />
+                  <p className="mt-2 text-xs leading-5 text-slate-600">Use a linha digitável ou baixe o boleto para pagar no seu banco.</p>
                   <CopyableValue label="Linha digitável" value={charge?.boleto?.linha_digitavel} onCopy={handleCopy} />
                   <Button type="button" variant="outline" className="mt-3 border-blue-200 bg-white" onClick={handleDownload} disabled={isDownloading}>
                     <Download className="mr-2 h-4 w-4" />

@@ -638,6 +638,8 @@ const defaultEntities = {};
     ? { softDelete: true, documentField: 'cpf', entityLabel: 'Responsável' }
     : name === 'Carteira' || name === 'Client'
       ? { softDelete: true, documentField: 'cpf_cnpj', entityLabel: 'Responsável Financeiro' }
+      : name === 'Dog'
+        ? { softDelete: true, entityLabel: 'Cão' }
       : {};
   defaultEntities[name] = createMockEntity(name, {
     unitScoped: UNIT_SCOPED_ENTITIES.has(name),
@@ -2371,20 +2373,27 @@ const mockFunctions = {
       return { ok: true, charges };
     }
 
-    if (payload?.action === 'renewWalletChargePublicLink') {
+    if (payload?.action === 'getWalletChargePublicLink' || payload?.action === 'renewWalletChargePublicLink') {
       const chargeId = String(payload?.carteira_cobranca_id || '').trim();
       const rows = readStorage('CarteiraCobranca');
       const index = rows.findIndex((row) => row?.id === chargeId);
       if (index < 0) throw new Error('Cobranca da carteira nao localizada.');
-      if (rows[index]?.status !== 'emitido') throw new Error('Somente cobrancas em aberto podem receber um novo link.');
-      const publicToken = `${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
-      rows[index] = {
-        ...rows[index],
-        public_token_hash: `mock_${publicToken.slice(0, 24)}`,
-        metadata: { ...(rows[index]?.metadata || {}), mock_public_token: publicToken },
-        updated_date: new Date().toISOString(),
-      };
-      writeStorage('CarteiraCobranca', rows);
+      if (rows[index]?.status !== 'emitido') throw new Error('Somente cobrancas em aberto possuem link de pagamento ativo.');
+      let publicToken = String(rows[index]?.metadata?.mock_public_token || '').trim();
+      if (!publicToken) {
+        publicToken = `${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
+        rows[index] = {
+          ...rows[index],
+          public_token_hash: `mock_${publicToken.slice(0, 24)}`,
+          metadata: {
+            ...(rows[index]?.metadata || {}),
+            mock_public_token: publicToken,
+            stable_public_link_migrated_at: new Date().toISOString(),
+          },
+          updated_date: new Date().toISOString(),
+        };
+        writeStorage('CarteiraCobranca', rows);
+      }
       return {
         ok: true,
         charge: buildMockWalletChargeResponse(rows[index]),
@@ -6020,6 +6029,8 @@ if (USE_SUPABASE_BACKEND) {
       ? { softDelete: true, documentField: 'cpf', entityLabel: 'Responsável' }
       : entityName === 'Carteira' || entityName === 'Client'
         ? { softDelete: true, documentField: 'cpf_cnpj', entityLabel: 'Responsável Financeiro' }
+        : entityName === 'Dog'
+          ? { softDelete: true, entityLabel: 'Cão' }
         : {};
     supabaseEntities[entityName] = createSupabaseEntity(table, {
       unitScoped: UNIT_SCOPED_ENTITIES.has(entityName),

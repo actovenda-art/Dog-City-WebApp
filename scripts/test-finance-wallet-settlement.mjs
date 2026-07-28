@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { buildWalletChronologicalSettlement } from "../src/lib/finance-wallet-settlement.js";
+import {
+  buildWalletChronologicalSettlement,
+  buildWalletSettlementFinancialStatus,
+} from "../src/lib/finance-wallet-settlement.js";
 
 function debit(id, amount, appointmentDate) {
   return { id, amount, appointmentDate, paymentStatus: "pending" };
@@ -47,5 +50,27 @@ const fifoResult = buildWalletChronologicalSettlement({
 assert.equal(fifoResult.paidDebitCount, 0);
 assert.equal(fifoResult.pendingDebitCount, 2);
 assert.equal(fifoResult.availableBalance, 10);
+
+const regularWithSettledOverdue = buildWalletSettlementFinancialStatus({
+  debitRows: [
+    { id: "settled-overdue", amount: 125, dueDate: "2026-05-15", paymentStatus: "paid" },
+    { id: "future-pending", amount: 80, dueDate: "2026-08-10", paymentStatus: "pending" },
+  ],
+  referenceDate: new Date("2026-07-28T12:00:00"),
+});
+assert.equal(regularWithSettledOverdue.isIrregular, false);
+assert.equal(regularWithSettledOverdue.label, "Regular");
+assert.equal(regularWithSettledOverdue.overdueCount, 0);
+
+const irregularWithOpenOverdue = buildWalletSettlementFinancialStatus({
+  debitRows: [
+    { id: "open-overdue", amount: 125, dueDate: "2026-07-20", paymentStatus: "pending" },
+    { id: "settled-overdue", amount: 80, dueDate: "2026-06-20", paymentStatus: "paid" },
+  ],
+  referenceDate: new Date("2026-07-28T12:00:00"),
+});
+assert.equal(irregularWithOpenOverdue.isIrregular, true);
+assert.equal(irregularWithOpenOverdue.overdueCount, 1);
+assert.equal(irregularWithOpenOverdue.overdueTotal, 125);
 
 console.log("Finance wallet chronological settlement tests passed.");

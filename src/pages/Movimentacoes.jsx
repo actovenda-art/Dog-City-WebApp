@@ -103,7 +103,10 @@ import FinancialOperationalAlert from "@/components/finance/FinancialOperational
 import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
 import { getAppointmentDateKey } from "@/lib/attendance";
-import { buildWalletChronologicalSettlement } from "@/lib/finance-wallet-settlement";
+import {
+  buildWalletChronologicalSettlement,
+  buildWalletSettlementFinancialStatus,
+} from "@/lib/finance-wallet-settlement";
 
 const EMPTY_FORM = {
   data_hora_transacao: "",
@@ -1236,7 +1239,7 @@ function buildWalletAdminAccounts(accounts = [], carteiras = [], dogs = [], rece
       .map((account) => [account.carteira_id, account]),
   );
   const dogsById = new Map((dogs || []).map((dog) => [dog?.id, dog]));
-  const financialStatusMap = buildFinancialOperationalStatusMap(receivables);
+  const financialStatusMap = buildFinancialOperationalStatusMap(receivables, 0);
 
   const buildVisibleWallet = (carteira) => {
     const account = accountsByCarteiraId.get(carteira?.id) || null;
@@ -1354,6 +1357,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletRecentMovements, setWalletRecentMovements] = useState([]);
   const [walletOperationalHistory, setWalletOperationalHistory] = useState([]);
   const [walletReceivables, setWalletReceivables] = useState([]);
+  const [walletSettlementStatusByWalletId, setWalletSettlementStatusByWalletId] = useState({});
   const [walletOperationalContext, setWalletOperationalContext] = useState({
     appointments: [],
     services: [],
@@ -1850,9 +1854,18 @@ export default function Movimentacoes({ walletOnly = false }) {
   ) || selectedWalletAccount;
   const filteredWalletAccounts = useMemo(() => {
     const normalizedSearch = String(walletListSearchTerm || "").trim().toLowerCase();
-    if (!normalizedSearch) return walletAccounts;
+    const accountsWithSettledStatus = walletAccounts.map((account) => {
+      const settledStatus = walletSettlementStatusByWalletId[account?.carteira_id];
+      if (!settledStatus) return account;
+      return {
+        ...account,
+        financial_status_label: settledStatus.label,
+        financial_status_tone: settledStatus.tone,
+      };
+    });
+    if (!normalizedSearch) return accountsWithSettledStatus;
 
-    return walletAccounts.filter((account) => {
+    return accountsWithSettledStatus.filter((account) => {
       const searchable = [
         account?.carteira_nome,
         account?.carteira_codigo,
@@ -1865,7 +1878,7 @@ export default function Movimentacoes({ walletOnly = false }) {
 
       return searchable.includes(normalizedSearch);
     });
-  }, [walletAccounts, walletListSearchTerm]);
+  }, [walletAccounts, walletListSearchTerm, walletSettlementStatusByWalletId]);
 
   useEffect(() => {
     if (!currentUser?.empresa_id) return;
@@ -2016,14 +2029,6 @@ export default function Movimentacoes({ walletOnly = false }) {
     selectedWalletAccount && (walletDetailLoading || walletLoading || walletHistoryLoading),
   );
   const selectedWalletAudit = walletAuditRows.find((item) => item.carteira_conta_id === selectedWalletRuntimeAccountId) || null;
-  const walletFinancialStatusMap = useMemo(
-    () => buildFinancialOperationalStatusMap(walletReceivables),
-    [walletReceivables],
-  );
-  const selectedWalletFinancialStatus = useMemo(
-    () => getFinancialOperationalStatus(walletFinancialStatusMap, selectedWalletAccount?.carteira_id || null),
-    [selectedWalletAccount?.carteira_id, walletFinancialStatusMap],
-  );
   const canIssueWalletCharges = canWriteFinancialOperations(currentUser);
   const complementExistingLinkTargetId = editingItem?.tipo === "entrada"
     ? resolveLinkedWalletId(editingItem, walletAccounts)
@@ -2082,6 +2087,25 @@ export default function Movimentacoes({ walletOnly = false }) {
       walletOperationalContext.budgetPayments,
     ],
   );
+  const selectedWalletFinancialStatus = useMemo(
+    () => buildWalletSettlementFinancialStatus({
+      debitRows: walletStatementRows?.debitRows || [],
+      carteiraId: selectedWalletAccount?.carteira_id || null,
+    }),
+    [selectedWalletAccount?.carteira_id, walletStatementRows?.debitRows],
+  );
+  useEffect(() => {
+    const walletId = selectedWalletAccount?.carteira_id;
+    if (!walletId || walletDetailContentLoading) return;
+    setWalletSettlementStatusByWalletId((current) => ({
+      ...current,
+      [walletId]: selectedWalletFinancialStatus,
+    }));
+  }, [
+    selectedWalletAccount?.carteira_id,
+    selectedWalletFinancialStatus,
+    walletDetailContentLoading,
+  ]);
   const walletStatementSummary = useMemo(() => {
     const rows = Array.isArray(walletStatementRows?.rows) ? walletStatementRows.rows : [];
     const latestDate = rows[0]?.primaryDate || null;
@@ -3304,7 +3328,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 transition group-hover:border-blue-200 group-hover:bg-blue-100">
                                 <Wallet className="h-4 w-4" />
                               </span>
-                              <p className="truncate text-[15px] font-semibold tracking-tight text-slate-950">{account.carteira_nome}</p>
+                              <p className="truncate font-brand text-[15px] tracking-tight text-slate-950">{account.carteira_nome}</p>
                             </div>
                             <div className="min-w-0">
                               <p className="text-sm font-medium text-slate-700">
@@ -3353,7 +3377,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                               </span>
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 items-start justify-between gap-2">
-                                  <p className="truncate text-[15px] font-semibold tracking-tight text-slate-950">{account.carteira_nome}</p>
+                                  <p className="truncate font-brand text-[15px] tracking-tight text-slate-950">{account.carteira_nome}</p>
                                   <Badge
                                     variant="outline"
                                     className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0 text-[10px] font-semibold ${account.financial_status_tone === "irregular"

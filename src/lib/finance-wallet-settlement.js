@@ -106,3 +106,50 @@ export function buildWalletChronologicalSettlement({
     pendingDebitCount,
   };
 }
+
+export function buildWalletSettlementFinancialStatus({
+  debitRows = [],
+  referenceDate = new Date(),
+  carteiraId = null,
+} = {}) {
+  const reference = referenceDate instanceof Date
+    ? new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate())
+    : new Date(`${String(referenceDate || "").slice(0, 10)}T00:00:00`);
+  const referenceTimestamp = Number.isNaN(reference.getTime()) ? Date.now() : reference.getTime();
+  const pendingRows = (debitRows || []).filter((row) => row?.paymentStatus !== "paid");
+  const overdueRows = pendingRows.filter((row) => {
+    const dueTimestamp = getDateTimestamp(row?.dueDate, Number.POSITIVE_INFINITY);
+    return dueTimestamp < referenceTimestamp;
+  });
+  const overdueTotal = roundAmount(
+    overdueRows.reduce((sum, row) => sum + Number(row?.amount || 0), 0),
+  );
+  const openTotal = roundAmount(
+    pendingRows.reduce((sum, row) => sum + Number(row?.amount || 0), 0),
+  );
+  const overdueDays = overdueRows.reduce((largestDelay, row) => {
+    const dueTimestamp = getDateTimestamp(row?.dueDate, referenceTimestamp);
+    return Math.max(largestDelay, Math.floor((referenceTimestamp - dueTimestamp) / 86400000));
+  }, 0);
+  const isIrregular = overdueRows.length > 0;
+
+  return {
+    carteiraId,
+    label: isIrregular ? "Irregular" : "Regular",
+    tone: isIrregular ? "irregular" : "regular",
+    isIrregular,
+    overdueCount: overdueRows.length,
+    overdueDays,
+    overdueTotal,
+    openCount: pendingRows.length,
+    openTotal,
+    helper: isIrregular
+      ? `${overdueRows.length} pendência(s) vencida(s) ainda não quitada(s).`
+      : pendingRows.length > 0
+        ? "Há débitos em aberto, mas nenhuma pendência vencida."
+        : "Sem pendências financeiras em aberto.",
+    message: isIrregular
+      ? "Este Responsável Financeiro precisa regularizar os débitos. Entre em contato com nosso WhatsApp financeiro."
+      : null,
+  };
+}

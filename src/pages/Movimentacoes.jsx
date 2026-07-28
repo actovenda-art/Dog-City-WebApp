@@ -3403,7 +3403,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                       </Button>
                       <div className="min-w-0">
                         <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-blue-600 sm:text-[10px]">Carteira do responsável financeiro</p>
-                        <h1 className="mt-0.5 truncate font-brand text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">
+                        <h1 className="mt-0.5 truncate font-brand text-xl tracking-tight text-slate-950 sm:text-2xl">
                           {selectedWalletAccount.carteira_nome}
                         </h1>
                       </div>

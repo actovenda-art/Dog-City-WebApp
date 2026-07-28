@@ -17,6 +17,7 @@ import {
   AppConfig,
   Appointment,
   Carteira,
+  CarteiraMovimento,
   ContaReceber,
   CobrancaFinanceira,
   Dog,
@@ -1278,6 +1279,66 @@ function buildWalletAdminAccounts(accounts = [], carteiras = [], dogs = [], rece
     );
 }
 
+function buildWalletSettlementStatusIndex({
+  accounts = [],
+  movements = [],
+  appointments = [],
+  services = [],
+  obligations = [],
+  charges = [],
+  accountsReceivable = [],
+  dogs = [],
+  budgets = [],
+  recurringPackages = [],
+  transactions = [],
+  budgetPayments = [],
+} = {}) {
+  const movementsByAccountId = new Map();
+
+  (movements || []).forEach((movement) => {
+    const accountId = movement?.carteira_conta_id;
+    if (!accountId) return;
+    const accountMovements = movementsByAccountId.get(accountId) || [];
+    accountMovements.push({
+      ...movement,
+      movimento_id: movement?.movimento_id || movement?.id || null,
+    });
+    movementsByAccountId.set(accountId, accountMovements);
+  });
+
+  return Object.fromEntries(
+    (accounts || [])
+      .filter((account) => account?.carteira_id)
+      .map((account) => {
+        const statement = buildWalletStatementRows({
+          walletId: account.carteira_id,
+          walletAccountId: account.carteira_conta_id || null,
+          walletAvailableBalance: Number(account.saldo_atual || 0),
+          walletDefaultDueDay: account.carteira_vencimento_padrao || null,
+          movements: movementsByAccountId.get(account.carteira_conta_id) || [],
+          transactions,
+          appointments,
+          services,
+          obligations,
+          charges,
+          accountsReceivable,
+          dogs,
+          budgets,
+          recurringPackages,
+          budgetPayments,
+        });
+
+        return [
+          account.carteira_id,
+          buildWalletSettlementFinancialStatus({
+            debitRows: statement.debitRows,
+            carteiraId: account.carteira_id,
+          }),
+        ];
+      }),
+  );
+}
+
 function getPayableRemainingAmount(payable) {
   const total = Number(payable?.valor || 0) + Number(payable?.juros_multa || 0);
   return Math.max(Math.round((total - Number(payable?.valor_quitado || 0)) * 100) / 100, 0);
@@ -1646,6 +1707,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       setWalletAccounts([]);
       setWalletAuditRows([]);
       setWalletRecentMovements([]);
+      setWalletSettlementStatusByWalletId({});
       setWalletOperationalContext({
         appointments: [],
         services: [],
@@ -1672,11 +1734,27 @@ export default function Movimentacoes({ walletOnly = false }) {
         setWalletAccounts([]);
         setWalletAuditRows([]);
         setWalletRecentMovements([]);
+        setWalletSettlementStatusByWalletId({});
         setSelectedWalletAccountId("");
         return;
       }
 
-      const [accounts, auditRows, carteiras, dogs, receivables] = await Promise.all([
+      const [
+        accounts,
+        auditRows,
+        carteiras,
+        dogs,
+        receivables,
+        movements,
+        appointments,
+        services,
+        obligations,
+        charges,
+        budgets,
+        recurringPackages,
+        transactions,
+        budgetPayments,
+      ] = await Promise.all([
         financeWalletAdminReadAccounts({ empresa_id: userProfile.empresa_id }),
         nextFlags.balanceReadEnabled
           ? financeWalletAdminAuditAccounts({ empresa_id: userProfile.empresa_id })
@@ -1684,6 +1762,15 @@ export default function Movimentacoes({ walletOnly = false }) {
         readEntityCollection(Carteira, { sort: "nome_razao_social", pageSize: 500, maxRows: 2000 }),
         readEntityCollection(Dog, { sort: "nome", pageSize: 500, maxRows: 2000 }),
         readEntityCollection(ContaReceber, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
+        readEntityCollection(CarteiraMovimento, { sort: "-created_date", pageSize: 500, maxRows: 10000 }),
+        readEntityCollection(Appointment, { sort: "-updated_date", pageSize: 500, maxRows: 5000 }),
+        readEntityCollection(ServiceProvided, { sort: "-updated_date", pageSize: 500, maxRows: 5000 }),
+        readEntityCollection(ObrigacaoFinanceira, { sort: "-updated_date", pageSize: 500, maxRows: 5000 }),
+        readEntityCollection(CobrancaFinanceira, { sort: "-updated_date", pageSize: 500, maxRows: 5000 }),
+        readEntityCollection(Orcamento, { sort: "-updated_date", pageSize: 500, maxRows: 5000 }),
+        readEntityCollection(RecurringPackage, { sort: "-updated_date", pageSize: 500, maxRows: 5000 }),
+        readEntityCollection(ExtratoBancario, { sort: "-updated_date", pageSize: 500, maxRows: 10000 }),
+        readEntityCollection(OrcamentoPagamento, { sort: "-updated_date", pageSize: 500, maxRows: 5000 }),
       ]);
 
       const normalizedAccounts = buildWalletAdminAccounts(
@@ -1694,6 +1781,20 @@ export default function Movimentacoes({ walletOnly = false }) {
       );
       setWalletAccounts(normalizedAccounts);
       setWalletAuditRows(Array.isArray(auditRows) ? auditRows : []);
+      setWalletSettlementStatusByWalletId(buildWalletSettlementStatusIndex({
+        accounts: normalizedAccounts,
+        movements: Array.isArray(movements) ? movements : [],
+        appointments: Array.isArray(appointments) ? appointments : [],
+        services: Array.isArray(services) ? services : [],
+        obligations: Array.isArray(obligations) ? obligations : [],
+        charges: Array.isArray(charges) ? charges : [],
+        accountsReceivable: Array.isArray(receivables) ? receivables : [],
+        dogs: Array.isArray(dogs) ? dogs : [],
+        budgets: Array.isArray(budgets) ? budgets : [],
+        recurringPackages: Array.isArray(recurringPackages) ? recurringPackages : [],
+        transactions: Array.isArray(transactions) ? transactions : [],
+        budgetPayments: Array.isArray(budgetPayments) ? budgetPayments : [],
+      }));
 
       const nextSelectedWallet = normalizedAccounts.find((item) => item.carteira_selection_id === preferredWalletAccountId)
         || (!walletOnly ? normalizedAccounts[0] : null);
@@ -1717,6 +1818,7 @@ export default function Movimentacoes({ walletOnly = false }) {
       setWalletAccounts([]);
       setWalletAuditRows([]);
       setWalletRecentMovements([]);
+      setWalletSettlementStatusByWalletId({});
       setSelectedWalletAccountId("");
     } finally {
       setWalletLoading(false);

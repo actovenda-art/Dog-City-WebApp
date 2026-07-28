@@ -3430,7 +3430,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 transition group-hover:border-blue-200 group-hover:bg-blue-100">
                                 <Wallet className="h-4 w-4" />
                               </span>
-                              <p className="truncate font-brand text-[15px] tracking-tight text-slate-950">{account.carteira_nome}</p>
+                              <p className="truncate text-[15px] tracking-tight text-slate-950">{account.carteira_nome}</p>
                             </div>
                             <div className="min-w-0">
                               <p className="text-sm font-medium text-slate-700">
@@ -3479,7 +3479,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                               </span>
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 items-start justify-between gap-2">
-                                  <p className="truncate font-brand text-[15px] tracking-tight text-slate-950">{account.carteira_nome}</p>
+                                  <p className="truncate text-[15px] tracking-tight text-slate-950">{account.carteira_nome}</p>
                                   <Badge
                                     variant="outline"
                                     className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0 text-[10px] font-semibold ${account.financial_status_tone === "irregular"

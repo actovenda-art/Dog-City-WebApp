@@ -1711,7 +1711,7 @@ export default function Orcamentos() {
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600 sm:text-xs">
               Comercial / Orçamentos
             </p>
-            <h1 className="font-brand text-2xl font-bold leading-tight tracking-tight text-slate-950 sm:text-4xl">Orçamentos</h1>
+            <h1 className="font-brand text-2xl leading-tight tracking-tight text-slate-950 sm:text-4xl">Orçamentos</h1>
             <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500 sm:text-[15px]">
               Crie propostas, acompanhe aprovações e consulte o histórico comercial da unidade em uma única visão.
             </p>

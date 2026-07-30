@@ -13,9 +13,12 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import DogColorMultiSelect, { DOG_COAT_OPTIONS } from "@/components/common/DogColorMultiSelect";
+import PrivacyAcknowledgement from "@/components/legal/PrivacyAcknowledgement";
+import LegalLinks from "@/components/legal/LegalLinks";
 import { isValidCpfChecksum, normalizeCpfDigits, validateCpfWithGov } from "@/lib/cpf-validation";
 import { createEmptyDogMeal } from "@/lib/dog-form-utils";
 import { formatDisplayName, isCompletePersonName, sanitizeDisplayNameInput } from "@/lib/name-format";
+import { PRIVACY_NOTICE_VERSION, TERMS_VERSION } from "@/lib/privacy-preferences";
 import {
   NO_INFORMATION_VALUE,
   validateDogCare,
@@ -492,6 +495,7 @@ export default function CadastroClientePublico() {
   const [financeiroForm, setFinanceiroForm] = useState(EMPTY_FINANCEIRO);
   const [fieldTouched, setFieldTouched] = useState({});
   const [validationScope, setValidationScope] = useState("");
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const registrationMode = useMemo(() => getRegistrationMode(context?.link), [context?.link]);
   const visibleStepDefinitions = useMemo(() => getVisibleStepDefinitions(registrationMode), [registrationMode]);
   const currentStepDefinition = visibleStepDefinitions[currentStep] || visibleStepDefinitions[0] || STEP_DEFINITIONS[0];
@@ -934,6 +938,11 @@ export default function CadastroClientePublico() {
   }
 
   async function handleSubmit() {
+    if (!privacyAccepted) {
+      setErrorMessage("Leia e confirme o Aviso de Privacidade e os Termos de Uso para enviar o cadastro.");
+      return;
+    }
+
     if (visibleStepDefinitions.some((step) => step.id === "responsavel")) {
       setValidationScope("responsavel");
       const responsavelError = validateResponsavel(responsavelForm);
@@ -1003,6 +1012,13 @@ export default function CadastroClientePublico() {
             nome_razao_social: formatDisplayName(financeiroForm.nome_razao_social),
             contato_orcamentos_nome: formatDisplayName(financeiroForm.contato_orcamentos_nome),
             usar_dados_responsavel: financeiroIgualResponsavel,
+          },
+          privacy_consent: {
+            accepted: true,
+            privacy_notice_version: PRIVACY_NOTICE_VERSION,
+            terms_version: TERMS_VERSION,
+            accepted_at: new Date().toISOString(),
+            source: "cadastro_cliente_publico",
           },
         },
       });
@@ -1931,6 +1947,7 @@ export default function CadastroClientePublico() {
               </p>
             </CardContent>
           </Card>
+          <LegalLinks className="mt-5" compact />
         </div>
       </div>
     );
@@ -1949,6 +1966,7 @@ export default function CadastroClientePublico() {
               </p>
             </CardContent>
           </Card>
+          <LegalLinks className="mt-5" compact />
         </div>
       </div>
     );
@@ -2015,6 +2033,14 @@ export default function CadastroClientePublico() {
               </div>
             ) : null}
 
+            {!shouldShowContinueButton ? (
+              <PrivacyAcknowledgement
+                checked={privacyAccepted}
+                onCheckedChange={setPrivacyAccepted}
+                id="client-privacy-acknowledgement"
+              />
+            ) : null}
+
             <div className="flex flex-col gap-2.5 rounded-[22px] border border-slate-200 bg-white/90 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:rounded-[24px] sm:p-4">
               <div className="text-[13px] leading-snug text-slate-500 sm:text-sm">
                 {currentStepDefinition?.id === "caes"
@@ -2047,6 +2073,7 @@ export default function CadastroClientePublico() {
                 )}
               </div>
             </div>
+            <LegalLinks className="pb-2" compact />
           </div>
         </div>
       </div>

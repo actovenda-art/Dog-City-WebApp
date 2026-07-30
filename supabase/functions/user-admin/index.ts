@@ -7,6 +7,9 @@ const corsHeaders = {
 };
 
 const DEFAULT_BOOTSTRAP_PIN = "654321";
+const INVALID_LOGIN_MESSAGE = "Usu\u00e1rio ou senha inv\u00e1lidos.";
+const LOGIN_RETRY_MESSAGE = "Muitas tentativas de acesso. Aguarde alguns segundos e tente novamente.";
+const LOGIN_UNAVAILABLE_MESSAGE = "N\u00e3o foi poss\u00edvel entrar agora. Tente novamente.";
 const COMMERCIAL_NOTIFICATION_PERMISSIONS = [
   "orcamentos:*",
   "orcamentos:read",
@@ -120,6 +123,116 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function loginFailureResponse(status = 401) {
+  return jsonResponse({
+    success: false,
+    message: INVALID_LOGIN_MESSAGE,
+  }, status);
+}
+
+function loginRateLimitResponse(retryAfterSeconds: number) {
+  return jsonResponse({
+    success: false,
+    code: "rate_limited",
+    message: LOGIN_RETRY_MESSAGE,
+    retry_after_seconds: Math.max(1, Math.ceil(Number(retryAfterSeconds) || 30)),
+  }, 429);
+}
+
+function loginUnavailableResponse() {
+  return jsonResponse({
+    success: false,
+    message: LOGIN_UNAVAILABLE_MESSAGE,
+  }, 503);
+}
+
+function getClientIp(request: Request) {
+  const forwardedFor = request.headers.get("x-forwarded-for") || "";
+  return (
+    request.headers.get("cf-connecting-ip")
+    || forwardedFor.split(",")[0]?.trim()
+    || request.headers.get("x-real-ip")
+    || "unknown"
+  ).slice(0, 128);
+}
+
+async function hashLoginIdentity(value: string) {
+  const normalized = value.trim().toLowerCase() || "unknown";
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(normalized),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function beginLoginAttempt(request: Request, email: string) {
+  const identityHash = await hashLoginIdentity(email);
+  const ipAddress = getClientIp(request);
+  const userAgent = (request.headers.get("user-agent") || "").slice(0, 500) || null;
+  const { data, error } = await admin.rpc("security_auth_login_begin", {
+    p_identity_hash: identityHash,
+    p_ip_address: ipAddress,
+    p_user_agent: userAgent,
+  });
+
+  if (error) {
+    throw new Error("Login audit unavailable", { cause: error });
+  }
+
+  const gate = Array.isArray(data) ? data[0] : data;
+  return {
+    attemptId: sanitizeText(gate?.attempt_id),
+    allowed: gate?.allowed === true,
+    retryAfterSeconds: Math.max(0, Number(gate?.retry_after_seconds) || 0),
+    ipAddress,
+  };
+}
+
+async function finishLoginAttempt({
+  attemptId,
+  success,
+  userId = null,
+  failureCode = null,
+}: {
+  attemptId: string;
+  success: boolean;
+  userId?: string | null;
+  failureCode?: string | null;
+}) {
+  if (!attemptId) return;
+  const { error } = await admin.rpc("security_auth_login_finish", {
+    p_attempt_id: attemptId,
+    p_success: success,
+    p_user_id: userId,
+    p_failure_code: failureCode,
+  });
+  if (error) {
+    throw new Error("Login audit completion failed", { cause: error });
+  }
+}
+
+function logLoginAttempt({
+  attemptId,
+  ipAddress,
+  success,
+  resultCode,
+}: {
+  attemptId: string;
+  ipAddress: string;
+  success: boolean;
+  resultCode: string;
+}) {
+  console.info("auth_login_attempt", {
+    attempt_id: attemptId || null,
+    ip_address: ipAddress || "unknown",
+    occurred_at: new Date().toISOString(),
+    success,
+    result_code: resultCode,
   });
 }
 
@@ -1685,83 +1798,165 @@ async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) 
   });
 }
 
-async function handlePinLogin(payload: Record<string, unknown>) {
+async function handlePinLogin(request: Request, payload: Record<string, unknown>) {
   const email = sanitizeText(payload.email).toLowerCase();
   const submittedPin = normalizePin(payload.pin);
   const selectedDigits = normalizeSelectedDigits(payload.selected_digits);
-  const selectedPairs = normalizeSelectedPairs(payload.selected_pairs);
-
-  if (!email) {
-    return jsonResponse({ error: "Email obrigatorio." }, 400);
-  }
-
-  if (submittedPin.length !== 6 && selectedDigits.length !== 6 && selectedPairs.length !== 6) {
-    return jsonResponse({ error: "Informe os 6 digitos do PIN." }, 400);
-  }
-
-  let appUser = await loadAppUserByEmail(email);
-  let invite: Record<string, any> | null = null;
-
-  if (!appUser) {
-    invite = await loadPendingInviteByEmail(email);
-    if (invite) {
-      return jsonResponse({
-        error: "Este convite ainda precisa ser concluido pelo link recebido antes do primeiro acesso.",
-      }, 409);
-    }
-  }
-
-  if (!appUser) {
-    return jsonResponse({ error: "Email nao localizado no cadastro." }, 404);
-  }
-
-  if (appUser?.active === false) {
-    return jsonResponse({ error: "Este acesso foi bloqueado. Fale com a administracao." }, 403);
-  }
-
-  let authUser = await getAuthUserById(appUser.id);
-
-  if (!authUser) {
-    if (appUser?.onboarding_status === "pendente") {
-      return jsonResponse({
-        error: "Este convite ainda precisa ser concluido pelo link recebido antes do primeiro acesso.",
-      }, 409);
-    }
-
-    return jsonResponse({
-      error: "Este usuario ainda nao teve o PIN provisionado no acesso direto. Na Gestao de Usuarios, use 'Exigir PIN dos usuarios atuais' novamente.",
-    }, 409);
-  }
-
-  const candidates = submittedPin.length === 6
-    ? [submittedPin]
+  const candidate = submittedPin.length === 6
+    ? submittedPin
     : selectedDigits.length === 6
-      ? [selectedDigits.join("")]
-      : buildPinCandidates(selectedPairs);
+      ? selectedDigits.join("")
+      : "";
+  const credentialShapeIsValid = Boolean(email) && candidate.length === 6;
+  let gate: Awaited<ReturnType<typeof beginLoginAttempt>>;
 
-  for (const candidate of candidates) {
-    const result = await signInWithPassword(email, candidate);
-    if (!result.ok || !result?.payload?.access_token || !result?.payload?.user?.id) {
-      continue;
-    }
-
-    const updatedUser = await touchPinVerification(result.payload.user.id).catch(() => appUser);
-
-    return jsonResponse({
-      ok: true,
-      session: {
-        access_token: result.payload.access_token,
-        refresh_token: result.payload.refresh_token,
-        expires_in: result.payload.expires_in,
-        expires_at: result.payload.expires_at,
-        token_type: result.payload.token_type,
-        user: result.payload.user,
-      },
-      user: updatedUser || appUser || null,
+  try {
+    gate = await beginLoginAttempt(request, email || "missing");
+  } catch (error) {
+    console.error("auth_login_audit_unavailable", {
+      occurred_at: new Date().toISOString(),
+      ip_address: getClientIp(request),
+      error: error instanceof Error ? error.message : "unknown",
     });
+    return loginUnavailableResponse();
   }
 
-  return jsonResponse({ error: "PIN invalido para este email." }, 401);
+  if (!gate.allowed) {
+    logLoginAttempt({
+      attemptId: gate.attemptId,
+      ipAddress: gate.ipAddress,
+      success: false,
+      resultCode: "rate_limited",
+    });
+    return loginRateLimitResponse(gate.retryAfterSeconds);
+  }
+
+  const finishAttemptSafely = async ({
+    success,
+    userId = null,
+    failureCode,
+  }: {
+    success: boolean;
+    userId?: string | null;
+    failureCode: string;
+  }) => {
+    try {
+      await finishLoginAttempt({
+        attemptId: gate.attemptId,
+        success,
+        userId,
+        failureCode,
+      });
+    } catch (error) {
+      console.error("auth_login_audit_completion_error", {
+        attempt_id: gate.attemptId,
+        occurred_at: new Date().toISOString(),
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
+
+    logLoginAttempt({
+      attemptId: gate.attemptId,
+      ipAddress: gate.ipAddress,
+      success,
+      resultCode: success ? "success" : failureCode,
+    });
+  };
+
+  // Always perform exactly one password verification, including malformed input,
+  // so the response does not reveal whether the email exists through timing.
+  const signInResult = await signInWithPassword(
+    credentialShapeIsValid ? email : "invalid-login@invalid.local",
+    credentialShapeIsValid ? candidate : "000000",
+  ).catch((error) => {
+    console.error("auth_login_provider_request_error", {
+      attempt_id: gate.attemptId,
+      occurred_at: new Date().toISOString(),
+      error: error instanceof Error ? error.message : "unknown",
+    });
+    return null;
+  });
+
+  if (!signInResult) {
+    await finishAttemptSafely({ success: false, failureCode: "provider_unavailable" });
+    return loginUnavailableResponse();
+  }
+
+  if (!signInResult.ok || !signInResult?.payload?.access_token || !signInResult?.payload?.user?.id) {
+    if (signInResult.status === 429) {
+      await finishAttemptSafely({ success: false, failureCode: "provider_rate_limited" });
+      return loginRateLimitResponse(30);
+    }
+
+    if (signInResult.status >= 500) {
+      console.error("auth_login_provider_error", {
+        attempt_id: gate.attemptId,
+        occurred_at: new Date().toISOString(),
+        status: signInResult.status,
+      });
+      await finishAttemptSafely({ success: false, failureCode: "provider_error" });
+      return loginUnavailableResponse();
+    }
+
+    await finishAttemptSafely({ success: false, failureCode: "invalid_credentials" });
+    return loginFailureResponse(401);
+  }
+
+  let appUser: AppUserRow | null = null;
+  try {
+    appUser = await loadAppUserByEmail(email);
+  } catch (error) {
+    console.error("auth_login_profile_lookup_error", {
+      attempt_id: gate.attemptId,
+      occurred_at: new Date().toISOString(),
+      error: error instanceof Error ? error.message : "unknown",
+    });
+    await finishAttemptSafely({ success: false, failureCode: "profile_unavailable" });
+    return loginUnavailableResponse();
+  }
+
+  const authenticatedUserId = sanitizeText(signInResult.payload.user.id);
+  const accessIsValid = Boolean(
+    credentialShapeIsValid
+    && appUser?.id
+    && appUser.id === authenticatedUserId
+    && appUser.active !== false
+    && appUser.onboarding_status !== "pendente",
+  );
+
+  if (!accessIsValid) {
+    await finishAttemptSafely({ success: false, failureCode: "access_denied" });
+    return loginFailureResponse(401);
+  }
+
+  const updatedUser = await touchPinVerification(authenticatedUserId).catch((error) => {
+    console.error("auth_login_verification_touch_error", {
+      attempt_id: gate.attemptId,
+      occurred_at: new Date().toISOString(),
+      error: error instanceof Error ? error.message : "unknown",
+    });
+    return appUser;
+  });
+
+  await finishAttemptSafely({
+    success: true,
+    userId: authenticatedUserId,
+    failureCode: "success",
+  });
+
+  return jsonResponse({
+    success: true,
+    ok: true,
+    session: {
+      access_token: signInResult.payload.access_token,
+      refresh_token: signInResult.payload.refresh_token,
+      expires_in: signInResult.payload.expires_in,
+      expires_at: signInResult.payload.expires_at,
+      token_type: signInResult.payload.token_type,
+      user: signInResult.payload.user,
+    },
+    user: updatedUser || appUser,
+  });
 }
 
 async function handleVerifyPin(request: Request, payload: Record<string, unknown>) {
@@ -1989,7 +2184,7 @@ Deno.serve(async (request) => {
     }
 
     if (action === "pin_login") {
-      return await handlePinLogin(payload || {});
+      return await handlePinLogin(request, payload || {});
     }
 
     if (action === "verify_pin") {
@@ -1998,8 +2193,13 @@ Deno.serve(async (request) => {
 
     return jsonResponse({ error: "Acao invalida." }, 400);
   } catch (error) {
+    console.error("user_admin_unhandled_error", {
+      occurred_at: new Date().toISOString(),
+      error: error instanceof Error ? error.message : "unknown",
+    });
     return jsonResponse({
-      error: error instanceof Error ? error.message : String(error),
+      success: false,
+      message: "N\u00e3o foi poss\u00edvel concluir a solicita\u00e7\u00e3o.",
     }, 500);
   }
 });

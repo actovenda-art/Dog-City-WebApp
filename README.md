@@ -88,6 +88,8 @@ Variaveis usadas hoje:
 | `VITE_SUPABASE_PRIVATE_BUCKET` | nao | bucket privado; padrao `private-files` |
 | `VITE_EMAIL_WEBHOOK_URL` | nao | endpoint para disparo de email; se vazio usa `${VITE_SUPABASE_URL}/functions/v1/send-email` |
 | `VITE_SITE_URL` | nao | URL absoluta usada em callbacks de autenticacao |
+| `VITE_PRIVACY_CONTROLLER_NAME` | sim em producao | nome publico do controlador exibido nos documentos de privacidade |
+| `VITE_PRIVACY_CONTACT_EMAIL` | sim em producao | canal monitorado para solicitacoes de titulares |
 | `VITE_MOCK_QA_ROLE` | nao | override de perfil para QA no mock local |
 | `VITE_FORCE_LOCAL_MOCK` | nao | usa o backend mock somente quando definido explicitamente como `true` |
 
@@ -96,6 +98,23 @@ Observacoes:
 - O `README_DEPLOY.md` continua util para deploy: [README_DEPLOY.md](./README_DEPLOY.md)
 - O setup base do Supabase esta em [SUPABASE_SETUP_GUIDE.md](./SUPABASE_SETUP_GUIDE.md)
 - Se precisar alterar o `.env.local`, trate a mudanca como mudanca de configuracao compartilhada do time, porque o arquivo e versionado
+
+## Privacidade, termos e cookies
+
+As paginas publicas ficam disponiveis em:
+
+- `/privacidade`
+- `/termos`
+- `/cookies`
+
+Os cadastros publicos validam a ciencia no frontend e novamente nas Edge Functions. Antes de publicar essa versao:
+
+1. aplique `supabase/supabase-schema-privacy-consent.sql`;
+2. implante `client-registration` e `monitor-registration`;
+3. configure o nome do controlador e um email de privacidade real;
+4. revise os textos com o responsavel juridico ou encarregado da operacao.
+
+Detalhes tecnicos e pendencias de governanca estao em [`docs/lgpd-hardening.md`](./docs/lgpd-hardening.md).
 
 ## Mock local e override de QA
 

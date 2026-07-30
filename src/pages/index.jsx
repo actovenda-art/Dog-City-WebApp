@@ -52,6 +52,10 @@ import ConfigurarIntegracoes from "./ConfigurarIntegracoes";
 import AdministracaoSistema from "./AdministracaoSistema";
 import VisualizadorImagem from "./VisualizadorImagem";
 import GoogleReviewRedirect from "./GoogleReviewRedirect";
+import Privacidade from "./Privacidade";
+import TermosUso from "./TermosUso";
+import Cookies from "./Cookies";
+import CookieConsent from "@/components/legal/CookieConsent";
 
 const PAGES = {
   Login,
@@ -60,6 +64,9 @@ const PAGES = {
   CadastroClientePublico,
   CadastroMonitorPublico,
   CobrancaPublica,
+  Privacidade,
+  TermosUso,
+  Cookies,
   DefinirPin,
   ValidarPin,
   Dev_Dashboard,
@@ -90,8 +97,8 @@ const PAGES = {
   VisualizadorImagem,
 };
 
-const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "CobrancaPublica", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
-const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "CobrancaPublica", "VisualizadorImagem"]);
+const STANDALONE_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "CobrancaPublica", "Privacidade", "TermosUso", "Cookies", "DefinirPin", "ValidarPin", "VisualizadorImagem"]);
+const PUBLIC_PAGES = new Set(["Login", "AuthCallback", "CompletarCadastro", "CadastroClientePublico", "CadastroMonitorPublico", "CobrancaPublica", "Privacidade", "TermosUso", "Cookies", "VisualizadorImagem"]);
 
 function FullScreenAuthLoader() {
   return <LoadingScreen />;
@@ -355,6 +362,10 @@ function PagesContent() {
         <Route path={`${createPageUrl("CobrancaPublica")}/:token`} element={<StandalonePage pageName="CobrancaPublica" />} />
       ) : null}
 
+      {["Privacidade", "TermosUso", "Cookies"].map((pageName) => (
+        <Route key={`legal-${pageName}`} path={createPageUrl(pageName)} element={<StandalonePage pageName={pageName} />} />
+      ))}
+
       {PUBLIC_PAGES.has("VisualizadorImagem") ? (
         <Route path={createPageUrl("VisualizadorImagem")} element={<StandalonePage pageName="VisualizadorImagem" />} />
       ) : null}
@@ -413,6 +424,7 @@ export default function Pages() {
   return (
     <Router>
       <PagesContent />
+      <CookieConsent />
     </Router>
   );
 }

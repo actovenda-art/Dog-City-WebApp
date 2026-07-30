@@ -21,6 +21,9 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
   },
 });
 
+const PRIVACY_NOTICE_VERSION = "2026-07-30";
+const TERMS_VERSION = "2026-07-30";
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -36,6 +39,45 @@ function sanitizeText(value: unknown) {
 function nullableText(value: unknown) {
   const normalized = sanitizeText(value);
   return normalized || null;
+}
+
+function validatePrivacyConsent(value: unknown, requiresSensitiveConsent: boolean) {
+  const consent = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  if (
+    consent.accepted !== true
+    || sanitizeText(consent.privacy_notice_version) !== PRIVACY_NOTICE_VERSION
+    || sanitizeText(consent.terms_version) !== TERMS_VERSION
+  ) {
+    return false;
+  }
+  return !requiresSensitiveConsent || consent.sensitive_data_accepted === true;
+}
+
+async function recordPrivacyConsent({
+  empresaId,
+  providerId,
+  consent,
+}: {
+  empresaId: string;
+  providerId: string;
+  consent: Record<string, unknown>;
+}) {
+  const { error } = await admin.from("privacy_consent_record").insert({
+    empresa_id: empresaId,
+    subject_type: "employee_registration",
+    subject_id: providerId,
+    source: "cadastro_funcionario_publico",
+    privacy_notice_version: PRIVACY_NOTICE_VERSION,
+    terms_version: TERMS_VERSION,
+    accepted: true,
+    sensitive_data_accepted: consent.sensitive_data_accepted === true ? true : null,
+    accepted_at: new Date().toISOString(),
+    metadata: {
+      declared_at: nullableText(consent.accepted_at),
+    },
+  });
+
+  if (error) throw error;
 }
 
 function generateSignatureCode() {
@@ -357,6 +399,16 @@ Deno.serve(async (request) => {
     }
 
     const profile = body.profile || {};
+    const privacyConsent = body.privacy_consent || {};
+    const requiresSensitiveConsent = normalizeBoolean(profile.health_issue) || normalizeBoolean(profile.controlled_medication);
+    if (!validatePrivacyConsent(privacyConsent, requiresSensitiveConsent)) {
+      return jsonResponse({
+        ok: false,
+        error: requiresSensitiveConsent
+          ? "Confirme o Aviso de Privacidade, os Termos de Uso e a autorização para dados de saúde."
+          : "Confirme o Aviso de Privacidade e os Termos de Uso para concluir o cadastro.",
+      }, 400);
+    }
     const cpf = normalizeCpf(profile.cpf);
 
     if (!sanitizeText(profile.nome)) {
@@ -427,6 +479,12 @@ Deno.serve(async (request) => {
       .single();
 
     if (updateError) throw updateError;
+
+    await recordPrivacyConsent({
+      empresaId: updated.empresa_id || provider.empresa_id,
+      providerId: updated.id,
+      consent: privacyConsent,
+    });
 
     await createRegistrationCompletedNotifications({
       empresaId: updated.empresa_id || provider.empresa_id,

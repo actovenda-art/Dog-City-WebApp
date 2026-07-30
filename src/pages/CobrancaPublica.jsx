@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { bancoInter } from "@/api/functions";
 import PixQrCode from "@/components/finance/PixQrCode";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import LegalLinks from "@/components/legal/LegalLinks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ClipboardCopy, Download, Landmark, LockKeyhole, QrCode, XCircle } from "lucide-react";
@@ -156,6 +157,7 @@ export default function CobrancaPublica() {
           <XCircle className="mx-auto mt-5 h-9 w-9 text-red-500" />
           <h1 className="mt-3 text-xl font-bold text-slate-950">Cobrança indisponível</h1>
           <p className="mt-2 text-sm leading-6 text-slate-600">{errorMessage || "Este link não está disponível."}</p>
+          <LegalLinks className="mt-5" compact />
         </section>
       </main>
     );
@@ -262,6 +264,10 @@ export default function CobrancaPublica() {
             <LockKeyhole className="h-3.5 w-3.5" />
             Link protegido para esta cobrança
           </div>
+          <p className="text-center text-[11px] leading-5 text-slate-500">
+            Os dados desta página são usados para apresentar, processar e conciliar esta cobrança.
+          </p>
+          <LegalLinks compact />
         </div>
       </section>
     </main>

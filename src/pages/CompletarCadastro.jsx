@@ -6,6 +6,8 @@ import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import { getSafeNextPathFromSearch, isSameAppLocation } from "@/lib/auth-navigation";
 import { normalizePin, validatePin } from "@/lib/pin-auth";
 import { Button } from "@/components/ui/button";
+import PrivacyAcknowledgement from "@/components/legal/PrivacyAcknowledgement";
+import LegalLinks from "@/components/legal/LegalLinks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,6 +85,7 @@ export default function CompletarCadastro() {
   const [isUploading, setIsUploading] = useState(false);
   const [addressLoading, setAddressLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
 
   const isInviteFlow = !!token && !currentUser;
 
@@ -253,6 +256,10 @@ export default function CompletarCadastro() {
 
   function handleContinueToPin(event) {
     event.preventDefault();
+    if (!privacyAccepted) {
+      setErrorMessage("Leia e confirme o Aviso de Privacidade e os Termos de Uso para continuar.");
+      return;
+    }
     const validationError = validateRegistrationForm(form);
 
     if (validationError) {
@@ -265,6 +272,10 @@ export default function CompletarCadastro() {
   }
 
   async function handleAuthenticatedSubmit() {
+    if (!privacyAccepted) {
+      setErrorMessage("Leia e confirme o Aviso de Privacidade e os Termos de Uso para continuar.");
+      return;
+    }
     const validationError = validateRegistrationForm(form);
     if (validationError) {
       setErrorMessage(validationError);
@@ -583,6 +594,12 @@ export default function CompletarCadastro() {
                   </div>
                 </div>
 
+                <PrivacyAcknowledgement
+                  checked={privacyAccepted}
+                  onCheckedChange={setPrivacyAccepted}
+                  id="onboarding-privacy-acknowledgement"
+                />
+
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between sm:items-center pt-2">
                   <div className="flex items-center gap-2 text-sm text-slate-500">
                     <UserRound className="w-4 h-4" />
@@ -651,6 +668,7 @@ export default function CompletarCadastro() {
                 </div>
               </form>
             )}
+            <LegalLinks className="mt-6 border-t border-slate-100 pt-4" compact />
           </CardContent>
         </Card>
       </div>

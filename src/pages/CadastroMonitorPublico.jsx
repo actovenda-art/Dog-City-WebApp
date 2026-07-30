@@ -11,7 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
+import PrivacyAcknowledgement from "@/components/legal/PrivacyAcknowledgement";
+import LegalLinks from "@/components/legal/LegalLinks";
 import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
+import { PRIVACY_NOTICE_VERSION, TERMS_VERSION } from "@/lib/privacy-preferences";
 import { CheckCircle2, LoaderCircle, Upload, UserRound } from "lucide-react";
 
 const EMPTY_FORM = {
@@ -111,6 +114,8 @@ export default function CadastroMonitorPublico() {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [success, setSuccess] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [sensitiveDataAccepted, setSensitiveDataAccepted] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -161,9 +166,18 @@ export default function CadastroMonitorPublico() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    const hasSensitiveData = form.health_issue || form.controlled_medication;
     const validationError = validateForm(form, files);
     if (validationError) {
       setErrorMessage(validationError);
+      return;
+    }
+    if (!privacyAccepted) {
+      setErrorMessage("Leia e confirme o Aviso de Privacidade e os Termos de Uso para enviar o cadastro.");
+      return;
+    }
+    if (hasSensitiveData && !sensitiveDataAccepted) {
+      setErrorMessage("Confirme a autorização para tratar as informações de saúde fornecidas.");
       return;
     }
 
@@ -189,6 +203,14 @@ export default function CadastroMonitorPublico() {
           cep: form.cep.replace(/\D/g, ""),
         },
         attachments,
+        privacy_consent: {
+          accepted: true,
+          sensitive_data_accepted: hasSensitiveData ? sensitiveDataAccepted : null,
+          privacy_notice_version: PRIVACY_NOTICE_VERSION,
+          terms_version: TERMS_VERSION,
+          accepted_at: new Date().toISOString(),
+          source: "cadastro_funcionario_publico",
+        },
       });
 
       setSuccess(true);
@@ -212,6 +234,7 @@ export default function CadastroMonitorPublico() {
             <p className="mt-2 text-slate-600">As informações do funcionário foram salvas com sucesso.</p>
           </CardContent>
         </Card>
+        <LegalLinks className="mt-5" compact />
       </div>
     );
   }
@@ -386,6 +409,22 @@ export default function CadastroMonitorPublico() {
                 </div>
               </div>
 
+              <div className="space-y-3">
+                <PrivacyAcknowledgement
+                  checked={privacyAccepted}
+                  onCheckedChange={setPrivacyAccepted}
+                  id="employee-privacy-acknowledgement"
+                />
+                {form.health_issue || form.controlled_medication ? (
+                  <PrivacyAcknowledgement
+                    checked={sensitiveDataAccepted}
+                    onCheckedChange={setSensitiveDataAccepted}
+                    id="employee-sensitive-data-consent"
+                    sensitive
+                  />
+                ) : null}
+              </div>
+
               <div className="flex justify-end">
                 <Button type="submit" disabled={isSaving} className="w-full bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
                   {isSaving ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
@@ -393,6 +432,7 @@ export default function CadastroMonitorPublico() {
                 </Button>
               </div>
             </form>
+            <LegalLinks className="mt-6 border-t border-slate-100 pt-4" compact />
           </CardContent>
         </Card>
       </div>

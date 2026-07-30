@@ -68,6 +68,9 @@ const SUPABASE_PRIVATE_BUCKET = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 
 const DEFAULT_EMAIL_WEBHOOK_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/send-email` : '';
 const MIN_INTER_CHARGE_AMOUNT = 2.5;
 const MOCK_QA_ROLE_STORAGE_KEY = `${STORAGE_PREFIX}mock_qa_role`;
+const INVALID_LOGIN_MESSAGE = 'Usuário ou senha inválidos.';
+const LOGIN_RETRY_MESSAGE = 'Muitas tentativas de acesso. Aguarde alguns segundos e tente novamente.';
+const LOGIN_UNAVAILABLE_MESSAGE = 'Não foi possível entrar agora. Tente novamente.';
 const UNIT_SCOPED_ENTITIES = new Set([
   'Dog',
   'Checkin',
@@ -6152,18 +6155,25 @@ if (USE_SUPABASE_BACKEND) {
       });
       if (error) {
         let details = '';
+        let errorPayload = null;
+        let responseStatus = Number(error?.context?.status || 0) || null;
         try {
           if (error.context) {
             const cloned = error.context.clone ? error.context.clone() : error.context;
-            const errorPayload = await cloned.json();
-            details = errorPayload?.details || errorPayload?.error || '';
+            responseStatus = Number(cloned?.status || responseStatus || 0) || null;
+            errorPayload = await cloned.json();
+            details = errorPayload?.message || errorPayload?.details || errorPayload?.error || '';
           }
         } catch {
           details = '';
         }
         const baseMessage = details || error.message || 'Falha na administração de usuários.';
         const shouldHintDeploy = /edge function|failed to send a request|non-2xx|not found/i.test(baseMessage);
-        throw new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function user-admin no Supabase.` : baseMessage);
+        const wrappedError = new Error(shouldHintDeploy ? `${baseMessage}. Implante a Edge Function user-admin no Supabase.` : baseMessage);
+        wrappedError.status = responseStatus;
+        wrappedError.code = errorPayload?.code || null;
+        wrappedError.retryAfterSeconds = Number(errorPayload?.retry_after_seconds || 0) || null;
+        throw wrappedError;
       }
       return data;
     },
@@ -7088,26 +7098,57 @@ if (USE_SUPABASE_BACKEND) {
       return data;
     },
     signInWithPin: async ({ email, selectedPairs, selectedDigits, pin } = {}) => {
-      const result = await supabaseFunctions.userAdmin({
-        action: 'pin_login',
-        email,
-        selected_pairs: selectedPairs,
-        selected_digits: selectedDigits,
-        pin,
-        device_id: getOrCreateDeviceId(),
-      });
+      let result;
+      try {
+        result = await supabaseFunctions.userAdmin({
+          action: 'pin_login',
+          email,
+          selected_pairs: selectedPairs,
+          selected_digits: selectedDigits,
+          pin,
+          device_id: getOrCreateDeviceId(),
+        });
+      } catch (error) {
+        if (error?.status === 429 || error?.code === 'rate_limited') {
+          const rateLimitError = new Error(LOGIN_RETRY_MESSAGE);
+          rateLimitError.status = 429;
+          rateLimitError.code = 'rate_limited';
+          rateLimitError.retryAfterSeconds = Number(error?.retryAfterSeconds || 30);
+          throw rateLimitError;
+        }
+
+        if (!error?.status || error.status >= 500 || isLikelyNetworkError(error)) {
+          const unavailableError = new Error(LOGIN_UNAVAILABLE_MESSAGE);
+          unavailableError.status = Number(error?.status || 503);
+          unavailableError.code = 'login_unavailable';
+          throw unavailableError;
+        }
+
+        const invalidCredentialsError = new Error(INVALID_LOGIN_MESSAGE);
+        invalidCredentialsError.status = 401;
+        invalidCredentialsError.code = 'invalid_credentials';
+        throw invalidCredentialsError;
+      }
 
       const accessToken = result?.session?.access_token;
       const refreshToken = result?.session?.refresh_token;
       if (!accessToken || !refreshToken) {
-        throw new Error('A autenticação por PIN não retornou uma sessão válida.');
+        const unavailableError = new Error(LOGIN_UNAVAILABLE_MESSAGE);
+        unavailableError.status = 503;
+        unavailableError.code = 'login_unavailable';
+        throw unavailableError;
       }
 
       const { error } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
       });
-      if (error) throw error;
+      if (error) {
+        const unavailableError = new Error(LOGIN_UNAVAILABLE_MESSAGE);
+        unavailableError.status = 503;
+        unavailableError.code = 'login_unavailable';
+        throw unavailableError;
+      }
 
       const authUser = await getAuthenticatedUser();
       const mergedUser = authUser ? await syncUserProfile(authUser) : (result?.user || null);

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import { User } from "@/api/entities";
@@ -59,10 +59,9 @@ export default function AuthCallback() {
             navigate(nextPath, { replace: true });
           }
         }
-      } catch (error) {
-        console.error("Erro ao concluir login Google:", error);
+      } catch {
         if (isMounted) {
-          setErrorMessage(error?.message || "Não foi possível concluir o login com Google.");
+          setErrorMessage("Não foi possível concluir o login. Tente novamente.");
         }
       }
     }
@@ -72,7 +71,7 @@ export default function AuthCallback() {
     return () => {
       isMounted = false;
     };
-  }, [location.hash, location.pathname, location.search, navigate, nextPath]);
+  }, [inviteToken, location.hash, location.pathname, location.search, navigate, nextPath]);
 
   if (!errorMessage) {
     return <LoadingScreen />;

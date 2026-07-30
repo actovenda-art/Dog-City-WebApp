@@ -30,6 +30,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import NotificationBell from "@/components/layout/NotificationBell";
+import LegalLinks from "@/components/legal/LegalLinks";
 import { hasPageAccess, isOperationalProfile } from "@/lib/access-control";
 import { isPageBlockedInMergedMode } from "@/lib/unit-page-policy";
 import {
@@ -531,6 +532,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
         {renderMenuSections()}
 
         {currentUser ? renderAccessPanel() : null}
+        <LegalLinks className="px-4 pb-3 pt-2" compact />
       </aside>
 
       <div className="fixed left-0 right-0 top-0 z-50 border-b border-gray-200 bg-white md:hidden">
@@ -568,6 +570,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
           <div className="fixed bottom-0 left-0 right-0 top-16 overflow-y-auto bg-white" onClick={(event) => event.stopPropagation()}>
             {renderMenuSections({ mobile: true })}
             {currentUser ? renderAccessPanel({ mobile: true }) : null}
+            <LegalLinks className="px-5 py-5" compact />
           </div>
         </div>
       ) : null}

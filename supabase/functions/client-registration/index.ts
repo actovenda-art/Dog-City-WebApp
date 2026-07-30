@@ -20,6 +20,9 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
   },
 });
 
+const PRIVACY_NOTICE_VERSION = "2026-07-30";
+const TERMS_VERSION = "2026-07-30";
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -30,6 +33,41 @@ function jsonResponse(body: unknown, status = 200) {
 function sanitizeText(value: unknown) {
   if (value === null || value === undefined) return "";
   return String(value).trim();
+}
+
+function validatePrivacyConsent(value: unknown) {
+  const consent = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return consent.accepted === true
+    && sanitizeText(consent.privacy_notice_version) === PRIVACY_NOTICE_VERSION
+    && sanitizeText(consent.terms_version) === TERMS_VERSION;
+}
+
+async function recordPrivacyConsent({
+  empresaId,
+  subjectId,
+  consent,
+}: {
+  empresaId: string;
+  subjectId: string;
+  consent: Record<string, unknown>;
+}) {
+  const { error } = await admin.from("privacy_consent_record").insert({
+    empresa_id: empresaId,
+    subject_type: "client_registration",
+    subject_id: subjectId,
+    source: "cadastro_cliente_publico",
+    privacy_notice_version: PRIVACY_NOTICE_VERSION,
+    terms_version: TERMS_VERSION,
+    accepted: true,
+    sensitive_data_accepted: null,
+    accepted_at: new Date().toISOString(),
+    metadata: {
+      registration_link_id: subjectId,
+      declared_at: nullableText(consent.accepted_at),
+    },
+  });
+
+  if (error) throw error;
 }
 
 function normalizeCpf(value: unknown) {
@@ -1039,6 +1077,10 @@ async function handleSubmit(payload: Record<string, unknown>) {
     }
 
     const rawFormPayload = (payload?.payload || {}) as Record<string, unknown>;
+    const privacyConsent = (rawFormPayload.privacy_consent || {}) as Record<string, unknown>;
+    if (!validatePrivacyConsent(privacyConsent)) {
+      return jsonResponse({ error: "Confirme o Aviso de Privacidade e os Termos de Uso para concluir o cadastro." }, 400);
+    }
     const rawResponsavel = (rawFormPayload.responsavel || {}) as Record<string, unknown>;
     const responsavel = { ...rawResponsavel };
     delete responsavel.login_portal;
@@ -1230,6 +1272,12 @@ async function handleSubmit(payload: Record<string, unknown>) {
 
       carteiraId = carteiraRow.id;
     }
+
+    await recordPrivacyConsent({
+      empresaId: link.empresa_id,
+      subjectId: link.id,
+      consent: privacyConsent,
+    });
 
     const { error: updateError } = await admin
       .from("client_registration_link")

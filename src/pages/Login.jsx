@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { User } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
@@ -9,9 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import PinPairPad from "@/components/auth/PinPairPad";
+import LegalLinks from "@/components/legal/LegalLinks";
 import { AlertTriangle, LoaderCircle, LogIn, Mail, ShieldCheck } from "lucide-react";
 
 const APP_SITE_URL = import.meta.env.VITE_SITE_URL;
+const INVALID_LOGIN_MESSAGE = "Usuário ou senha inválidos. Tente novamente.";
+const LOGIN_RETRY_MESSAGE = "Muitas tentativas de acesso. Aguarde alguns segundos e tente novamente.";
+const LOGIN_UNAVAILABLE_MESSAGE = "Não foi possível entrar agora. Tente novamente.";
 
 function GoogleIcon() {
   return (
@@ -34,8 +38,18 @@ export default function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState(0);
 
   const normalizedPin = normalizePin(pin);
+  const loginTemporarilyBlocked = retryAfterSeconds > 0;
+
+  useEffect(() => {
+    if (retryAfterSeconds <= 0) return undefined;
+    const timeoutId = window.setTimeout(() => {
+      setRetryAfterSeconds((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearTimeout(timeoutId);
+  }, [retryAfterSeconds]);
 
   const handleSelectDigit = (digit) => {
     setPin((current) => normalizePin(`${current}${digit}`));
@@ -63,9 +77,8 @@ export default function Login() {
         redirectTo: `${(APP_SITE_URL || window.location.origin).replace(/\/+$/, "")}${createPageUrl("AuthCallback")}`,
         nextPath,
       });
-    } catch (error) {
-      console.error("Erro ao iniciar login Google:", error);
-      setErrorMessage(error?.message || "Não foi possível iniciar o login com Google.");
+    } catch {
+      setErrorMessage(LOGIN_UNAVAILABLE_MESSAGE);
       setIsGoogleSubmitting(false);
     }
   };
@@ -73,13 +86,14 @@ export default function Login() {
   const handlePinLogin = async (event) => {
     event.preventDefault();
 
-    if (!email.trim()) {
-      setErrorMessage("Informe o email para continuar.");
+    if (loginTemporarilyBlocked) {
+      setErrorMessage(`${LOGIN_RETRY_MESSAGE} (${retryAfterSeconds}s)`);
       return;
     }
 
-    if (normalizedPin.length !== 6) {
-      setErrorMessage("Informe os 6 dígitos do PIN.");
+    if (!email.trim() || normalizedPin.length !== 6) {
+      setErrorMessage(INVALID_LOGIN_MESSAGE);
+      setPin("");
       return;
     }
 
@@ -114,8 +128,15 @@ export default function Login() {
 
       navigate(nextPath, { replace: true });
     } catch (error) {
-      console.error("Erro ao autenticar com PIN:", error);
-      setErrorMessage(error?.message || "Não foi possível autenticar com email e PIN.");
+      if (error?.status === 429 || error?.code === "rate_limited") {
+        const nextRetryAfter = Math.max(1, Number(error?.retryAfterSeconds || 30));
+        setRetryAfterSeconds(nextRetryAfter);
+        setErrorMessage(`${LOGIN_RETRY_MESSAGE} (${nextRetryAfter}s)`);
+      } else if (error?.code === "login_unavailable" || !error?.status || error.status >= 500) {
+        setErrorMessage(LOGIN_UNAVAILABLE_MESSAGE);
+      } else {
+        setErrorMessage(INVALID_LOGIN_MESSAGE);
+      }
       setIsSubmitting(false);
       setPin("");
     }
@@ -181,7 +202,7 @@ export default function Login() {
                 </p>
               </div>
 
-              <form onSubmit={handlePinLogin} className="mt-5 space-y-4">
+              <form onSubmit={handlePinLogin} noValidate className="mt-5 space-y-4">
             {wasRecovered && (
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-relaxed text-blue-700">
                 Encontramos um estado antigo de sessão neste navegador e limpamos o acesso local para recuperar o login. Entre novamente para continuar.
@@ -202,6 +223,7 @@ export default function Login() {
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
+                  disabled={isSubmitting || isGoogleSubmitting || loginTemporarilyBlocked}
                   className="h-11 rounded-xl border-slate-200 bg-white pl-9 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus-visible:ring-blue-500"
                   placeholder="email@dogcitybrasil.com.br"
                   autoComplete="username"
@@ -219,7 +241,7 @@ export default function Login() {
                 onInputDigit={handleSelectDigit}
                 onBackspace={handleBackspace}
                 onClear={handleClear}
-                disabled={isSubmitting || isGoogleSubmitting}
+                disabled={isSubmitting || isGoogleSubmitting || loginTemporarilyBlocked}
                 variant="light"
               />
             </div>
@@ -233,9 +255,13 @@ export default function Login() {
               </div>
             )}
 
-            <Button type="submit" disabled={isSubmitting || isGoogleSubmitting} className="h-11 w-full rounded-xl bg-blue-600 font-semibold text-white shadow-sm hover:bg-blue-700">
+            <Button type="submit" disabled={isSubmitting || isGoogleSubmitting || loginTemporarilyBlocked} className="h-11 w-full rounded-xl bg-blue-600 font-semibold text-white shadow-sm hover:bg-blue-700">
               {isSubmitting ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
-              {isSubmitting ? "Entrando..." : "Entrar com email e PIN"}
+              {isSubmitting
+                ? "Entrando..."
+                : loginTemporarilyBlocked
+                  ? `Aguarde ${retryAfterSeconds}s`
+                  : "Entrar com email e PIN"}
             </Button>
 
             <div className="relative py-1">
@@ -264,6 +290,10 @@ export default function Login() {
               </div>
             )}
               </form>
+              <p className="mt-5 text-center text-[11px] leading-5 text-slate-500">
+                Ao entrar, você declara estar autorizado a usar o sistema e aceita os termos aplicáveis.
+              </p>
+              <LegalLinks className="mt-2" compact />
             </CardContent>
           </Card>
         </main>

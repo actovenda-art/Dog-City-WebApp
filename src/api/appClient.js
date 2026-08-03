@@ -2669,6 +2669,20 @@ const mockFunctions = {
 
     if (action === 'create_link') {
       const token = payload?.token || makeId();
+      const metadata = {
+        ...(payload?.metadata || {}),
+        registration_mode: payload?.registration_mode || payload?.metadata?.registration_mode || 'full',
+      };
+      if (metadata.registration_mode === 'linked') {
+        metadata.existing_responsavel_id = payload?.responsavel_id || null;
+        metadata.existing_carteira_id = payload?.carteira_id || null;
+        metadata.linked_registration = {
+          create_dogs: payload?.create_dog === true,
+          create_responsavel: payload?.create_responsavel === true,
+          create_financeiro: payload?.create_financeiro === true,
+          existing_dog_ids: Array.isArray(payload?.existing_dog_ids) ? payload.existing_dog_ids : [],
+        };
+      }
       const row = {
         id: makeId(),
         token,
@@ -2676,7 +2690,7 @@ const mockFunctions = {
         responsavel_nome: payload?.responsavel_nome || '',
         responsavel_email: payload?.responsavel_email || '',
         status: 'pendente',
-        metadata: payload?.metadata || {},
+        metadata,
         created_date: new Date().toISOString(),
         updated_date: new Date().toISOString(),
       };

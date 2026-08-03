@@ -2537,12 +2537,20 @@ function buildPaymentIdentifierSet(source: Record<string, unknown>) {
   const metadata = asRecord(source.metadata_financeira);
   return new Set([
     source.referencia,
+    source.txid,
+    source.txId,
     rawData.codigoSolicitacao,
     rawDetails.codigoSolicitacao,
     rawData.txid,
+    rawData.txId,
     rawDetails.txid,
+    rawDetails.txId,
+    rawData.endToEndId,
+    rawDetails.endToEndId,
     metadata.codigo_solicitacao,
     metadata.txid,
+    metadata.end_to_end_id,
+    metadata.provider_transaction_id,
   ].map((value) => sanitizeText(value)).filter(Boolean));
 }
 
@@ -3138,6 +3146,19 @@ async function normalizeTransactions(
     const transactionId = sourceId || `api_synthetic_${fallbackKey}`;
     const counterpartyBank = inferCounterpartyBank(transaction, normalizedType);
     const reference = inferReference(transaction, transactionId);
+    const rawDetails = asRecord(transaction.detalhes);
+    const txid = sanitizeText(firstDefined(
+      transaction.txid,
+      transaction.txId,
+      rawDetails.txid,
+      rawDetails.txId,
+    )) || null;
+    const endToEndId = sanitizeText(firstDefined(
+      transaction.endToEndId,
+      transaction.endToEnd,
+      rawDetails.endToEndId,
+      rawDetails.endToEnd,
+    )) || null;
     const notes = sanitizeText(firstDefined(
       transaction.observacoes,
       transaction.complemento,
@@ -3173,6 +3194,8 @@ async function normalizeTransactions(
         raw_description: rawDescription,
         counterparty_code: parsedDescription.counterpartyCode,
         direction_label: normalizedType === "saida" ? "Debitado" : "Creditado",
+        txid,
+        end_to_end_id: endToEndId,
       },
       conciliado: false,
       status: "importado",

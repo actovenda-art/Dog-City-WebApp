@@ -628,10 +628,36 @@ function getLinkMetadata(link: Record<string, unknown>) {
 
 function getRegistrationMode(metadata: Record<string, unknown>) {
   const mode = sanitizeText(metadata.registration_mode);
-  if (mode === "dog_only" || mode === "dog_and_financeiro") {
+  if (mode === "dog_only" || mode === "dog_and_financeiro" || mode === "linked") {
     return mode;
   }
   return "full";
+}
+
+function getRegistrationPlan(metadata: Record<string, unknown>) {
+  const mode = getRegistrationMode(metadata);
+  if (mode === "linked") {
+    const linked = metadata.linked_registration && typeof metadata.linked_registration === "object"
+      ? metadata.linked_registration as Record<string, unknown>
+      : {};
+    return {
+      mode,
+      createDogs: linked.create_dogs === true,
+      createResponsavel: linked.create_responsavel === true,
+      createFinanceiro: linked.create_financeiro === true,
+      existingDogIds: Array.isArray(linked.existing_dog_ids)
+        ? [...new Set(linked.existing_dog_ids.map((item) => sanitizeText(item)).filter(Boolean))]
+        : [],
+    };
+  }
+
+  return {
+    mode,
+    createDogs: true,
+    createResponsavel: mode === "full",
+    createFinanceiro: mode === "full" || mode === "dog_and_financeiro",
+    existingDogIds: [] as string[],
+  };
 }
 
 function getLinkedDogIds(record: Record<string, unknown>) {
@@ -682,6 +708,24 @@ async function loadCarteiraById(carteiraId: string, empresaId: string) {
   }
 
   return data;
+}
+
+async function loadDogsByIds(dogIds: string[], empresaId: string) {
+  const uniqueDogIds = [...new Set(dogIds.map((item) => sanitizeText(item)).filter(Boolean))];
+  if (!uniqueDogIds.length) return [];
+
+  const { data, error } = await admin
+    .from("dogs")
+    .select("id, empresa_id, nome, raca, cores_pelagem")
+    .eq("empresa_id", empresaId)
+    .is("deleted_at", null)
+    .in("id", uniqueDogIds);
+
+  if (error || (data || []).length !== uniqueDogIds.length) {
+    throw new Error("Não foi possível localizar todos os cães selecionados para este link.");
+  }
+
+  return data || [];
 }
 
 async function appendDogsToExistingRecord(table: "responsavel" | "carteira", recordId: string, empresaId: string, dogIds: string[]) {
@@ -856,25 +900,28 @@ async function loadEmpresaSummary(empresaId: string) {
   return data || null;
 }
 
-function validatePayload(payload: Record<string, unknown>, registrationMode = "full") {
+function validatePayload(
+  payload: Record<string, unknown>,
+  plan: ReturnType<typeof getRegistrationPlan>,
+) {
   const responsavel = (payload?.responsavel || {}) as Record<string, unknown>;
   const financeiro = (payload?.financeiro || {}) as Record<string, unknown>;
   const caes = Array.isArray(payload?.caes) ? payload.caes as Record<string, unknown>[] : [];
 
-  if (registrationMode === "full" && (!sanitizeText(responsavel.nome_completo) || !sanitizeText(responsavel.cpf) || !sanitizeText(responsavel.celular) || !sanitizeText(responsavel.email))) {
+  if (plan.createResponsavel && (!sanitizeText(responsavel.nome_completo) || !sanitizeText(responsavel.cpf) || !sanitizeText(responsavel.celular) || !sanitizeText(responsavel.email))) {
     throw new Error("Preencha nome, CPF, celular e email do responsavel.");
   }
 
-  if (caes.length === 0) {
+  if (plan.createDogs && caes.length === 0) {
     throw new Error("Informe ao menos um cao.");
   }
 
-  if (caes.some((cao) => !sanitizeText(cao.nome) || !sanitizeText(cao.raca))) {
+  if (plan.createDogs && caes.some((cao) => !sanitizeText(cao.nome) || !sanitizeText(cao.raca))) {
     throw new Error("Cada cao precisa ter ao menos nome e raca.");
   }
-  caes.forEach(validateDogOperationalFields);
+  if (plan.createDogs) caes.forEach(validateDogOperationalFields);
 
-  if ((registrationMode === "full" || registrationMode === "dog_and_financeiro") && (!sanitizeText(financeiro.nome_razao_social) || !sanitizeText(financeiro.cpf_cnpj) || !sanitizeText(financeiro.celular) || !sanitizeText(financeiro.email))) {
+  if (plan.createFinanceiro && (!sanitizeText(financeiro.nome_razao_social) || !sanitizeText(financeiro.cpf_cnpj) || !sanitizeText(financeiro.celular) || !sanitizeText(financeiro.email))) {
     throw new Error("Preencha os dados principais do responsavel financeiro.");
   }
 }
@@ -899,7 +946,75 @@ async function handleCreateLink(request: Request, payload: Record<string, unknow
     let responsavelNome = nullableText(payload.responsavel_nome);
     let responsavelEmail = nullableText(payload.responsavel_email)?.toLowerCase() || null;
 
-    if (registrationMode === "dog_only" || registrationMode === "dog_and_financeiro") {
+    if (registrationMode === "linked") {
+      const responsavelId = sanitizeText(payload.responsavel_id);
+      const carteiraId = sanitizeText(payload.carteira_id);
+      const existingDogIds = Array.isArray(payload.existing_dog_ids)
+        ? [...new Set(payload.existing_dog_ids.map((item) => sanitizeText(item)).filter(Boolean))]
+        : [];
+      const createDogs = payload.create_dog === true;
+      const createResponsavel = payload.create_responsavel === true;
+      const createFinanceiro = payload.create_financeiro === true;
+
+      if (!responsavelId && !createResponsavel) {
+        return jsonResponse({ error: "Selecione ou cadastre um responsável para completar o vínculo." }, 400);
+      }
+      if (!carteiraId && !createFinanceiro) {
+        return jsonResponse({ error: "Selecione ou cadastre um responsável financeiro para completar o vínculo." }, 400);
+      }
+      if (!existingDogIds.length && !createDogs) {
+        return jsonResponse({ error: "Selecione ou cadastre ao menos um cão para completar o vínculo." }, 400);
+      }
+      if (!createDogs && !createResponsavel && !createFinanceiro) {
+        return jsonResponse({ error: "Os vínculos selecionados já estão completos. Escolha um novo cadastro para gerar o link." }, 400);
+      }
+
+      const selectedDogs = await loadDogsByIds(existingDogIds, empresaId);
+      const existingResponsavel = responsavelId ? await loadResponsavelById(responsavelId, empresaId) : null;
+      const existingCarteira = carteiraId ? await loadCarteiraById(carteiraId, empresaId) : null;
+
+      responsavelNome = nullableText(existingResponsavel?.nome_completo)
+        || nullableText(existingCarteira?.nome_razao_social);
+      responsavelEmail = nullableText(existingResponsavel?.email)?.toLowerCase()
+        || nullableText(existingCarteira?.email)?.toLowerCase()
+        || null;
+      metadata.registration_mode = "linked";
+      metadata.existing_responsavel_id = existingResponsavel?.id || null;
+      metadata.existing_carteira_id = existingCarteira?.id || null;
+      metadata.linked_registration = {
+        create_dogs: createDogs,
+        create_responsavel: createResponsavel,
+        create_financeiro: createFinanceiro,
+        existing_dog_ids: selectedDogs.map((dog) => dog.id),
+      };
+      metadata.prefill = {
+        responsavel: existingResponsavel ? {
+          nome_completo: existingResponsavel.nome_completo || "",
+          como_gostaria_de_ser_chamado: existingResponsavel.como_gostaria_de_ser_chamado || "",
+          cpf: existingResponsavel.cpf || "",
+          celular: existingResponsavel.celular || "",
+          celular_alternativo: existingResponsavel.celular_alternativo || "",
+          email: existingResponsavel.email || "",
+        } : {},
+        financeiro: existingCarteira ? {
+          nome_razao_social: existingCarteira.nome_razao_social || "",
+          cpf_cnpj: existingCarteira.cpf_cnpj || "",
+          celular: existingCarteira.celular || "",
+          email: existingCarteira.email || "",
+          cep: existingCarteira.cep || "",
+          number: existingCarteira.numero_residencia || "",
+          street: existingCarteira.street || "",
+          neighborhood: existingCarteira.neighborhood || "",
+          city: existingCarteira.city || "",
+          state: existingCarteira.state || "",
+          vencimento_planos: existingCarteira.vencimento_planos || "",
+          contato_orcamentos_nome: (existingCarteira.contato_orcamentos as Record<string, unknown> | null)?.nome || "",
+          contato_orcamentos_celular: (existingCarteira.contato_orcamentos as Record<string, unknown> | null)?.celular || "",
+          contato_orcamentos_email: (existingCarteira.contato_orcamentos as Record<string, unknown> | null)?.email || "",
+        } : {},
+        caes_existentes: selectedDogs,
+      };
+    } else if (registrationMode === "dog_only" || registrationMode === "dog_and_financeiro") {
       const responsavelId = sanitizeText(payload.responsavel_id);
       if (!responsavelId) {
         return jsonResponse({ error: "Selecione o responsável para gerar este link." }, 400);
@@ -1092,13 +1207,16 @@ async function handleSubmit(payload: Record<string, unknown>) {
     };
     const metadata = getLinkMetadata(link as Record<string, unknown>);
     const registrationMode = getRegistrationMode(metadata);
-    validatePayload(formPayload, registrationMode);
+    const registrationPlan = getRegistrationPlan(metadata);
+    validatePayload(formPayload, registrationPlan);
 
     const financeiro = (formPayload.financeiro || {}) as Record<string, unknown>;
-    const caes = Array.isArray(formPayload.caes) ? formPayload.caes as Record<string, unknown>[] : [];
+    const caes = registrationPlan.createDogs && Array.isArray(formPayload.caes)
+      ? formPayload.caes as Record<string, unknown>[]
+      : [];
     const now = new Date().toISOString();
 
-    if (registrationMode === "full") {
+    if (registrationPlan.createResponsavel) {
       await ensureProfileCpfAvailable(
         "responsavel",
         "cpf",
@@ -1108,7 +1226,7 @@ async function handleSubmit(payload: Record<string, unknown>) {
       );
     }
 
-    if (registrationMode !== "dog_only") {
+    if (registrationPlan.createFinanceiro) {
       await ensureProfileCpfAvailable(
         "carteira",
         "cpf_cnpj",
@@ -1173,10 +1291,15 @@ async function handleSubmit(payload: Record<string, unknown>) {
       createdDogIds.push(dogRow.id);
     }
 
-    const dogSlots = buildDogSlots(createdDogIds);
+    const existingDogRows = await loadDogsByIds(registrationPlan.existingDogIds, link.empresa_id);
+    const allLinkedDogIds = [...new Set([
+      ...existingDogRows.map((dog) => sanitizeText(dog.id)),
+      ...createdDogIds,
+    ].filter(Boolean))];
+    const dogSlots = buildDogSlots(allLinkedDogIds);
     let responsavelId = sanitizeText(metadata.existing_responsavel_id);
 
-    if (registrationMode === "full") {
+    if (registrationPlan.createResponsavel) {
       const responsavelInsertPayload = {
         empresa_id: link.empresa_id,
         nome_completo: formatDisplayName(responsavel.nome_completo),
@@ -1221,7 +1344,7 @@ async function handleSubmit(payload: Record<string, unknown>) {
         return jsonResponse({ error: "Este link nao possui um responsavel existente vinculado." }, 400);
       }
 
-      await appendDogsToExistingRecord("responsavel", responsavelId, link.empresa_id, createdDogIds);
+      await appendDogsToExistingRecord("responsavel", responsavelId, link.empresa_id, allLinkedDogIds);
     }
 
     const contatoOrcamentos = {
@@ -1232,12 +1355,12 @@ async function handleSubmit(payload: Record<string, unknown>) {
 
     let carteiraId = sanitizeText(metadata.existing_carteira_id);
 
-    if (registrationMode === "dog_only") {
+    if (!registrationPlan.createFinanceiro) {
       if (!carteiraId) {
         return jsonResponse({ error: "Este link nao possui um responsavel financeiro existente vinculado." }, 400);
       }
 
-      await appendDogsToExistingRecord("carteira", carteiraId, link.empresa_id, createdDogIds);
+      await appendDogsToExistingRecord("carteira", carteiraId, link.empresa_id, allLinkedDogIds);
     } else {
       const { data: carteiraRow, error: carteiraError } = await admin
         .from("carteira")
@@ -1285,7 +1408,7 @@ async function handleSubmit(payload: Record<string, unknown>) {
         status: "concluido",
         responsavel_id: responsavelId,
         carteira_id: carteiraId,
-        dog_ids: createdDogIds,
+        dog_ids: allLinkedDogIds,
         submitted_payload: formPayload,
         completed_at: now,
         updated_date: now,
@@ -1296,13 +1419,16 @@ async function handleSubmit(payload: Record<string, unknown>) {
       return jsonResponse({ error: withSchemaHint(updateError, "O cadastro foi salvo, mas nao foi possivel finalizar o link.") }, 500);
     }
 
-    const dogNames = caes.map((cao) => formatDisplayName(cao.nome)).filter(Boolean);
+    const dogNames = [...new Set([
+      ...existingDogRows.map((dog) => formatDisplayName(dog.nome)),
+      ...caes.map((cao) => formatDisplayName(cao.nome)),
+    ].filter(Boolean))];
     const prefill = (metadata.prefill || {}) as Record<string, unknown>;
     const prefillResponsavel = (prefill.responsavel || {}) as Record<string, unknown>;
-    const responsavelName = registrationMode === "full"
+    const responsavelName = registrationPlan.createResponsavel
       ? formatDisplayName(responsavel.nome_completo)
       : formatDisplayName(prefillResponsavel.nome_completo || responsavel.nome_completo);
-    const firstDogId = createdDogIds[0] || null;
+    const firstDogId = allLinkedDogIds[0] || null;
 
     await createRegistrationCompletedNotifications({
       empresaId: link.empresa_id,
@@ -1314,7 +1440,7 @@ async function handleSubmit(payload: Record<string, unknown>) {
         registration_mode: registrationMode,
         responsavel_id: responsavelId,
         carteira_id: carteiraId,
-        dog_ids: createdDogIds,
+        dog_ids: allLinkedDogIds,
         responsavel_nome: responsavelName,
         dog_names: dogNames,
         action_label: firstDogId ? "Ver cão" : "Ver responsável",
@@ -1325,7 +1451,7 @@ async function handleSubmit(payload: Record<string, unknown>) {
       ok: true,
       responsavel_id: responsavelId,
       carteira_id: carteiraId,
-      dog_ids: createdDogIds,
+      dog_ids: allLinkedDogIds,
     });
   } catch (error) {
     return jsonResponse(

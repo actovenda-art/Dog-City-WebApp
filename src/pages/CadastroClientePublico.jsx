@@ -111,24 +111,32 @@ const OPTIONAL_TEXT = "opcional";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WEIGHT_REGEX = /^\d+(?:[.,]\d{1,2})?$/;
 
-function getRegistrationMode(link) {
+function getRegistrationPlan(link) {
   const mode = String(link?.metadata?.registration_mode || "").trim();
-  if (mode === "dog_only" || mode === "dog_and_financeiro") {
-    return mode;
+  if (mode === "linked") {
+    const linked = link?.metadata?.linked_registration || {};
+    return {
+      mode,
+      createDogs: linked.create_dogs === true,
+      createResponsavel: linked.create_responsavel === true,
+      createFinanceiro: linked.create_financeiro === true,
+    };
   }
-  return "full";
+
+  return {
+    mode: mode === "dog_only" || mode === "dog_and_financeiro" ? mode : "full",
+    createDogs: true,
+    createResponsavel: mode !== "dog_only" && mode !== "dog_and_financeiro",
+    createFinanceiro: mode !== "dog_only",
+  };
 }
 
-function getVisibleStepDefinitions(mode) {
-  if (mode === "dog_only") {
-    return STEP_DEFINITIONS.filter((step) => step.id === "caes");
-  }
-
-  if (mode === "dog_and_financeiro") {
-    return STEP_DEFINITIONS.filter((step) => step.id === "caes" || step.id === "financeiro");
-  }
-
-  return STEP_DEFINITIONS;
+function getVisibleStepDefinitions(plan) {
+  return STEP_DEFINITIONS.filter((step) => (
+    (step.id === "responsavel" && plan.createResponsavel)
+    || (step.id === "caes" && plan.createDogs)
+    || (step.id === "financeiro" && plan.createFinanceiro)
+  ));
 }
 
 const EMPTY_RESPONSAVEL = {
@@ -496,8 +504,8 @@ export default function CadastroClientePublico() {
   const [fieldTouched, setFieldTouched] = useState({});
   const [validationScope, setValidationScope] = useState("");
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
-  const registrationMode = useMemo(() => getRegistrationMode(context?.link), [context?.link]);
-  const visibleStepDefinitions = useMemo(() => getVisibleStepDefinitions(registrationMode), [registrationMode]);
+  const registrationPlan = useMemo(() => getRegistrationPlan(context?.link), [context?.link]);
+  const visibleStepDefinitions = useMemo(() => getVisibleStepDefinitions(registrationPlan), [registrationPlan]);
   const currentStepDefinition = visibleStepDefinitions[currentStep] || visibleStepDefinitions[0] || STEP_DEFINITIONS[0];
   const activeDogSectionIndex = useMemo(
     () => Math.max(DOG_SECTION_DEFINITIONS.findIndex((section) => section.id === activeDogSection), 0),
@@ -1002,11 +1010,13 @@ export default function CadastroClientePublico() {
             nome_completo: formatDisplayName(responsavelForm.nome_completo),
             como_gostaria_de_ser_chamado: formatDisplayName(responsavelForm.como_gostaria_de_ser_chamado),
           },
-          caes: caesForm.map((dog) => ({
-            ...dog,
-            nome: formatDisplayName(dog.nome),
-            apelido: formatDisplayName(dog.apelido),
-          })),
+          caes: registrationPlan.createDogs
+            ? caesForm.map((dog) => ({
+              ...dog,
+              nome: formatDisplayName(dog.nome),
+              apelido: formatDisplayName(dog.apelido),
+            }))
+            : [],
           financeiro: {
             ...financeiroForm,
             nome_razao_social: formatDisplayName(financeiroForm.nome_razao_social),

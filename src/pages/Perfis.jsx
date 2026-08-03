@@ -45,11 +45,14 @@ import {
   Pencil,
   RotateCcw,
   Save,
+  Search,
   ShieldCheck,
   Trash2,
   Upload,
+  UserRound,
   Users,
   Wallet,
+  X,
 } from "lucide-react";
 import FinancialOperationalAlert from "@/components/finance/FinancialOperationalAlert";
 import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
@@ -94,9 +97,11 @@ const EMPTY_CARTEIRA_FORM = {
 const EMPTY_LINK_DIALOG_STATE = {
   open: false,
   responsavelId: "",
-  mode: "dog_only",
   carteiraId: "",
+  selectedDogIds: [],
   search: "",
+  confirmationOpen: false,
+  createDog: false,
   generatedLink: "",
   feedback: null,
 };
@@ -356,6 +361,11 @@ function formatCep(value) {
     .replace(/\D/g, "")
     .replace(/(\d{5})(\d)/, "$1-$2")
     .slice(0, 9);
+}
+
+function formatDogColors(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).join(", ");
+  return String(value || "").trim();
 }
 
 function ProfileCountCard({ title, value, icon: Icon, colorClass, borderClass }) {
@@ -872,6 +882,12 @@ export default function Perfis() {
     () => carteirasView.find((item) => item.id === linkDialog.carteiraId) || null,
     [carteirasView, linkDialog.carteiraId]
   );
+  const selectedLinkDogs = useMemo(
+    () => linkDialog.selectedDogIds
+      .map((dogId) => dogsView.find((item) => item.id === dogId))
+      .filter(Boolean),
+    [dogsView, linkDialog.selectedDogIds]
+  );
   const viewingResponsavel = useMemo(
     () => responsaveisView.find((item) => item.id === viewingResponsavelId) || null,
     [responsaveisView, viewingResponsavelId]
@@ -889,32 +905,33 @@ export default function Perfis() {
     () => getFinancialOperationalStatus(carteiraFinancialStatusMap, viewingCarteira?.id || null),
     [carteiraFinancialStatusMap, viewingCarteira?.id],
   );
-  const availableCarteirasForLink = useMemo(() => {
-    const linkedDogIds = new Set(selectedLinkResponsavel?.linkedDogIds || []);
+  const linkSearchResults = useMemo(() => {
     const normalizedSearch = normalizeSearchValue(linkDialog.search);
-    const filtered = carteirasView.filter((carteira) => {
-      if (!normalizedSearch) return true;
-      return matchesSearch(
-        [
-          carteira.nome_razao_social,
-          carteira.cpf_cnpj,
-          carteira.celular,
-          carteira.email,
-          ...carteira.linkedDogNames,
-        ],
-        normalizedSearch
-      );
-    });
+    const filterBySearch = (values) => !normalizedSearch || matchesSearch(values, normalizedSearch);
 
-    return filtered.sort((left, right) => {
-      const leftIsRelated = left.linkedDogIds.some((dogId) => linkedDogIds.has(dogId));
-      const rightIsRelated = right.linkedDogIds.some((dogId) => linkedDogIds.has(dogId));
-      if (leftIsRelated === rightIsRelated) {
-        return String(left.nome_razao_social || "").localeCompare(String(right.nome_razao_social || ""));
-      }
-      return leftIsRelated ? -1 : 1;
-    });
-  }, [carteirasView, selectedLinkResponsavel, linkDialog.search]);
+    return {
+      dogs: dogsView.filter((dog) => filterBySearch([
+        dog.nome,
+        dog.raca,
+        dog.cores_pelagem,
+      ])),
+      responsaveis: responsaveisView.filter((responsavel) => filterBySearch([
+        responsavel.nome_completo,
+        responsavel.cpf,
+      ])),
+      carteiras: carteirasView.filter((carteira) => filterBySearch([
+        carteira.nome_razao_social,
+        carteira.cpf_cnpj,
+      ])),
+    };
+  }, [dogsView, responsaveisView, carteirasView, linkDialog.search]);
+  const hasLinkSelection = Boolean(
+    linkDialog.selectedDogIds.length || linkDialog.responsavelId || linkDialog.carteiraId
+  );
+  const missingLinkProfileLabels = useMemo(() => [
+    !selectedLinkResponsavel ? "responsável" : null,
+    !selectedLinkCarteira ? "responsável financeiro" : null,
+  ].filter(Boolean), [selectedLinkResponsavel, selectedLinkCarteira]);
 
   const resetEditorFeedback = () => {
     setEditorFeedback(null);
@@ -1231,14 +1248,51 @@ export default function Perfis() {
     setIsGeneratingLink(false);
   };
 
-  const openLinkDialog = (responsavelId, mode) => {
+  const openLinkDialog = () => {
     setPageFeedback(null);
     setLinkDialog({
       ...EMPTY_LINK_DIALOG_STATE,
       open: true,
-      responsavelId,
-      mode,
     });
+  };
+
+  const toggleLinkDog = (dogId) => {
+    setLinkDialog((current) => ({
+      ...current,
+      selectedDogIds: current.selectedDogIds.includes(dogId)
+        ? current.selectedDogIds.filter((item) => item !== dogId)
+        : [...current.selectedDogIds, dogId],
+      generatedLink: "",
+      feedback: null,
+    }));
+  };
+
+  const selectLinkResponsavel = (responsavelId) => {
+    setLinkDialog((current) => ({
+      ...current,
+      responsavelId: current.responsavelId === responsavelId ? "" : responsavelId,
+      generatedLink: "",
+      feedback: null,
+    }));
+  };
+
+  const selectLinkCarteira = (carteiraId) => {
+    setLinkDialog((current) => ({
+      ...current,
+      carteiraId: current.carteiraId === carteiraId ? "" : carteiraId,
+      generatedLink: "",
+      feedback: null,
+    }));
+  };
+
+  const openLinkConfirmation = () => {
+    if (!hasLinkSelection) return;
+    setLinkDialog((current) => ({
+      ...current,
+      confirmationOpen: true,
+      createDog: current.selectedDogIds.length === 0,
+      feedback: null,
+    }));
   };
 
   const closeResponsavelEditor = () => {
@@ -1633,25 +1687,17 @@ export default function Perfis() {
   };
 
   const handleGenerateCadastroLink = async () => {
-    if (!selectedLinkResponsavel) {
-      setLinkDialog((current) => ({
-        ...current,
-        feedback: {
-          tone: "error",
-          title: "Responsável não encontrado",
-          message: "Selecione novamente o responsável para gerar o link.",
-        },
-      }));
-      return;
-    }
+    const createResponsavel = !selectedLinkResponsavel;
+    const createFinanceiro = !selectedLinkCarteira;
+    const createDog = linkDialog.createDog;
 
-    if (linkDialog.mode === "dog_only" && !selectedLinkCarteira) {
+    if (!createResponsavel && !createFinanceiro && !createDog) {
       setLinkDialog((current) => ({
         ...current,
         feedback: {
           tone: "error",
-          title: "Selecione o responsável financeiro",
-          message: "Para cadastrar apenas o cão, escolha o responsável financeiro que ficará vinculado.",
+          title: "Escolha o que será cadastrado",
+          message: "Os vínculos selecionados já estão completos. Marque a opção para cadastrar outro cão.",
         },
       }));
       return;
@@ -1662,24 +1708,30 @@ export default function Perfis() {
     try {
       const result = await clientRegistration({
         action: "create_link",
-        empresa_id: selectedLinkResponsavel.empresa_id || selectedLinkCarteira?.empresa_id || null,
-        registration_mode: linkDialog.mode,
-        responsavel_id: selectedLinkResponsavel.id,
-        carteira_id: linkDialog.mode === "dog_only" ? selectedLinkCarteira?.id || null : null,
+        empresa_id: selectedLinkResponsavel?.empresa_id
+          || selectedLinkCarteira?.empresa_id
+          || selectedLinkDogs[0]?.empresa_id
+          || currentUser?.empresa_id
+          || null,
+        registration_mode: "linked",
+        responsavel_id: selectedLinkResponsavel?.id || null,
+        carteira_id: selectedLinkCarteira?.id || null,
+        existing_dog_ids: linkDialog.selectedDogIds,
+        create_dog: createDog,
+        create_responsavel: createResponsavel,
+        create_financeiro: createFinanceiro,
       });
 
       const nextLink = buildClientRegistrationLink(result?.link?.token);
 
       setLinkDialog((current) => ({
         ...current,
+        confirmationOpen: false,
         generatedLink: nextLink,
         feedback: {
           tone: "success",
           title: "Link gerado com sucesso",
-          message:
-            current.mode === "dog_only"
-              ? "O link foi preparado para cadastrar apenas o novo cão, usando o responsável e o financeiro já vinculados."
-              : "O link foi preparado para cadastrar um novo cão e um novo responsável financeiro com o responsável já vinculado.",
+          message: "O cadastro solicitará somente os perfis escolhidos e manterá todos os vínculos selecionados.",
         },
       }));
     } catch (error) {
@@ -1740,7 +1792,7 @@ export default function Perfis() {
             </p>
           </div>
 
-          <div className="grid w-full grid-cols-2 gap-2 lg:w-auto lg:shrink-0">
+          <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto lg:shrink-0">
             <Button
               variant="outline"
               onClick={() => setDeletedProfilesOpen(true)}
@@ -1748,6 +1800,14 @@ export default function Perfis() {
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Perfis excluídos{deletedProfiles.length ? ` (${deletedProfiles.length})` : ""}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={openLinkDialog}
+              className="h-10 rounded-full border-blue-200 bg-blue-50 px-3 text-xs text-blue-700 shadow-sm hover:bg-blue-100 sm:px-4 sm:text-sm"
+            >
+              <Link2 className="mr-2 h-4 w-4" />
+              Link com vínculo
             </Button>
             <Link to={createPageUrl("Cadastro")}>
               <Button className="h-10 w-full rounded-full bg-blue-600 px-3 text-xs text-white shadow-sm hover:bg-blue-700 sm:px-4 sm:text-sm">
@@ -2082,28 +2142,6 @@ export default function Perfis() {
                   >
                     <Upload className="mr-2 h-4 w-4" />
                     Importar perfil
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="justify-start border-violet-200 text-violet-700 hover:bg-violet-50"
-                    onClick={() => {
-                      closeResponsavelDetails();
-                      openLinkDialog(viewingResponsavel.id, "dog_only");
-                    }}
-                  >
-                    <Link2 className="mr-2 h-4 w-4" />
-                    Link: apenas cão
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="justify-start border-violet-200 text-violet-700 hover:bg-violet-50"
-                    onClick={() => {
-                      closeResponsavelDetails();
-                      openLinkDialog(viewingResponsavel.id, "dog_and_financeiro");
-                    }}
-                  >
-                    <Wallet className="mr-2 h-4 w-4" />
-                    Link: cão + financeiro
                   </Button>
                   <Button
                     className="justify-start sm:col-span-2 xl:col-span-1"
@@ -2650,169 +2688,250 @@ export default function Perfis() {
       </Dialog>
 
       <Dialog open={linkDialog.open} onOpenChange={(open) => !open && closeLinkDialog()}>
-        <DialogContent className="max-h-[92vh] w-[96vw] max-w-3xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {linkDialog.mode === "dog_only"
-                ? "Gerar link para cadastrar apenas o cão"
-                : "Gerar link para cadastrar cão e responsável financeiro"}
-            </DialogTitle>
-            <DialogDescription>
-              {linkDialog.mode === "dog_only"
-                ? "Esse link abrirá o cadastro já com o responsável preenchido. Antes de gerar, escolha qual responsável financeiro ficará vinculado ao novo cão."
-                : "Esse link abrirá o cadastro com o responsável já preenchido, permitindo incluir o novo cão e um novo responsável financeiro na mesma jornada."}
-            </DialogDescription>
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-4xl overflow-y-auto p-0">
+          <DialogHeader className="border-b border-slate-100 px-5 py-5 pr-14 sm:px-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <DialogTitle>Link com vínculo</DialogTitle>
+                <DialogDescription className="mt-1.5 max-w-2xl">
+                  Selecione cães, um responsável e um responsável financeiro. O link solicitará somente os cadastros que ainda faltarem.
+                </DialogDescription>
+              </div>
+              <Button
+                type="button"
+                onClick={linkDialog.generatedLink ? handleCopyGeneratedLink : openLinkConfirmation}
+                disabled={!linkDialog.generatedLink && !hasLinkSelection}
+                className={`shrink-0 rounded-full px-4 ${
+                  linkDialog.generatedLink || hasLinkSelection
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    : "bg-slate-200 text-slate-500"
+                }`}
+              >
+                {linkDialog.generatedLink ? <Copy className="mr-2 h-4 w-4" /> : <Link2 className="mr-2 h-4 w-4" />}
+                {linkDialog.generatedLink ? "Copiar link" : "Gerar link"}
+              </Button>
+            </div>
           </DialogHeader>
 
-          <div className="space-y-5">
+          <div className="space-y-5 px-5 py-5 sm:px-6">
             <FeedbackBanner feedback={linkDialog.feedback} />
 
-            <div className="rounded-3xl border border-violet-100 bg-violet-50/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">
-                Responsável do link
-              </p>
-              <div className="mt-2">
-                <p className="text-base font-semibold text-gray-900">
-                  {selectedLinkResponsavel?.nome_completo || "Responsável não encontrado"}
-                </p>
-                <div className="mt-1 space-y-1 text-sm text-gray-600">
-                  <p>{maskSensitiveValue(selectedLinkResponsavel?.cpf || "", maskCpfCnpj, canRevealSensitiveData) || "CPF não informado"}</p>
-                  <p>{maskSensitiveValue(selectedLinkResponsavel?.email || "", maskEmail, canRevealSensitiveData) || "Email não informado"}</p>
-                </div>
-              </div>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={linkDialog.search}
+                onChange={(event) => setLinkDialog((current) => ({
+                  ...current,
+                  search: event.target.value,
+                  generatedLink: "",
+                  feedback: null,
+                }))}
+                placeholder="Buscar por nome do cão, responsável, financeiro ou CPF..."
+                className="h-11 rounded-2xl border-slate-200 bg-slate-50 pl-11"
+              />
             </div>
 
-            {linkDialog.mode === "dog_only" ? (
-              <div className="space-y-4 rounded-3xl border border-orange-100 bg-orange-50/70 p-4">
-                <div>
-                  <Label>Nome do responsável financeiro</Label>
-                  <Input
-                    value={linkDialog.search}
-                    onChange={(event) =>
-                      setLinkDialog((current) => ({
-                        ...current,
-                        search: event.target.value,
-                        generatedLink: "",
-                        feedback: null,
-                      }))
-                    }
-                    placeholder="Busque por nome, CPF/CNPJ, email ou celular..."
-                  />
-                  <p className="mt-2 text-xs text-gray-500">
-                    Esse vínculo já seguirá preenchido quando a pessoa abrir o link.
-                  </p>
-                </div>
-
-                <div className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-orange-100 bg-white p-2">
-                  {availableCarteirasForLink.length > 0 ? (
-                    availableCarteirasForLink.map((carteira) => {
-                      const isSelected = carteira.id === linkDialog.carteiraId;
-                      const linkedDogNames = getDogDisplayNames(carteira.linkedDogIds, dogMap);
-
-                      return (
-                        <button
-                          key={carteira.id}
-                          type="button"
-                          onClick={() =>
-                            setLinkDialog((current) => ({
-                              ...current,
-                              carteiraId: carteira.id,
-                              generatedLink: "",
-                              feedback: null,
-                            }))
-                          }
-                          className={`w-full rounded-2xl border p-4 text-left transition ${
-                            isSelected
-                              ? "border-orange-300 bg-orange-50 shadow-sm"
-                              : "border-transparent bg-gray-50 hover:border-orange-200 hover:bg-orange-50/60"
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-gray-900">
-                                {carteira.nome_razao_social || "Sem nome"}
-                              </p>
-                              <div className="mt-1 space-y-1 text-xs text-gray-600">
-                                <p>{maskSensitiveValue(carteira.cpf_cnpj || "", maskCpfCnpj, canRevealSensitiveData) || "CPF/CNPJ não informado"}</p>
-                                <p className="truncate">{maskSensitiveValue(carteira.email || "", maskEmail, canRevealSensitiveData) || "Email não informado"}</p>
-                                <p>{maskSensitiveValue(carteira.celular || "", maskPhone, canRevealSensitiveData) || "Celular não informado"}</p>
-                              </div>
-                            </div>
-                            {isSelected ? (
-                              <Badge className="bg-orange-500 text-white">Selecionado</Badge>
-                            ) : null}
-                          </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {linkedDogNames.length > 0 ? (
-                              linkedDogNames.map((dogName) => (
-                                <Badge
-                                  key={`${carteira.id}-${dogName}`}
-                                  className="border border-orange-200 bg-orange-50 text-orange-700"
-                                >
-                                  {dogName}
-                                </Badge>
-                              ))
-                            ) : (
-                              <Badge className="bg-gray-100 text-gray-600">
-                                Ainda sem cães vinculados
-                              </Badge>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-orange-200 bg-orange-50/60 p-4 text-sm text-orange-800">
-                      Nenhum responsável financeiro foi encontrado com esse filtro.
-                    </div>
-                  )}
-                </div>
+            {hasLinkSelection ? (
+              <div className="flex flex-wrap gap-2 rounded-2xl border border-blue-100 bg-blue-50/70 p-3">
+                {selectedLinkDogs.map((dog) => (
+                  <Badge key={dog.id} className="gap-1.5 border border-blue-200 bg-white py-1.5 text-blue-700">
+                    <DogIcon className="h-3.5 w-3.5" />
+                    {dog.nome}
+                    <button type="button" onClick={() => toggleLinkDog(dog.id)} aria-label={`Remover ${dog.nome}`}>
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </Badge>
+                ))}
+                {selectedLinkResponsavel ? (
+                  <Badge className="gap-1.5 border border-violet-200 bg-white py-1.5 text-violet-700">
+                    <UserRound className="h-3.5 w-3.5" />
+                    {selectedLinkResponsavel.nome_completo}
+                    <button type="button" onClick={() => selectLinkResponsavel(selectedLinkResponsavel.id)} aria-label="Remover responsável">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </Badge>
+                ) : null}
+                {selectedLinkCarteira ? (
+                  <Badge className="gap-1.5 border border-orange-200 bg-white py-1.5 text-orange-700">
+                    <Wallet className="h-3.5 w-3.5" />
+                    {selectedLinkCarteira.nome_razao_social}
+                    <button type="button" onClick={() => selectLinkCarteira(selectedLinkCarteira.id)} aria-label="Remover responsável financeiro">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </Badge>
+                ) : null}
               </div>
             ) : null}
 
+            <div className="grid max-h-[52vh] gap-4 overflow-y-auto pr-1 lg:grid-cols-3">
+              <section className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">Cães</p>
+                {linkSearchResults.dogs.slice(0, 30).map((dog) => {
+                  const isSelected = linkDialog.selectedDogIds.includes(dog.id);
+                  const details = [dog.raca, formatDogColors(dog.cores_pelagem)].filter(Boolean).join(" · ");
+                  return (
+                    <button
+                      key={dog.id}
+                      type="button"
+                      onClick={() => toggleLinkDog(dog.id)}
+                      className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/40"}`}
+                    >
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isSelected ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-600"}`}>
+                        {isSelected ? <Check className="h-4 w-4" /> : <DogIcon className="h-4 w-4" />}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-slate-900">{dog.nome || "Cão sem nome"}</span>
+                        <span className="block truncate text-xs text-slate-500">{details || "Raça e cores não informadas"}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+                {!linkSearchResults.dogs.length ? <p className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-500">Nenhum cão encontrado.</p> : null}
+              </section>
+
+              <section className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-violet-600">Responsável</p>
+                {linkSearchResults.responsaveis.slice(0, 30).map((responsavel) => {
+                  const isSelected = linkDialog.responsavelId === responsavel.id;
+                  return (
+                    <button
+                      key={responsavel.id}
+                      type="button"
+                      onClick={() => selectLinkResponsavel(responsavel.id)}
+                      className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? "border-violet-300 bg-violet-50" : "border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50/40"}`}
+                    >
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isSelected ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-600"}`}>
+                        {isSelected ? <Check className="h-4 w-4" /> : <UserRound className="h-4 w-4" />}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-slate-900">{responsavel.nome_completo || "Responsável sem nome"}</span>
+                        <span className="block truncate text-xs text-slate-500">{maskSensitiveValue(responsavel.cpf || "", maskCpfCnpj, canRevealSensitiveData) || "CPF não informado"}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+                {!linkSearchResults.responsaveis.length ? <p className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-500">Nenhum responsável encontrado.</p> : null}
+              </section>
+
+              <section className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-orange-600">Responsável financeiro</p>
+                {linkSearchResults.carteiras.slice(0, 30).map((carteira) => {
+                  const isSelected = linkDialog.carteiraId === carteira.id;
+                  return (
+                    <button
+                      key={carteira.id}
+                      type="button"
+                      onClick={() => selectLinkCarteira(carteira.id)}
+                      className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? "border-orange-300 bg-orange-50" : "border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/40"}`}
+                    >
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isSelected ? "bg-orange-500 text-white" : "bg-orange-50 text-orange-600"}`}>
+                        {isSelected ? <Check className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-slate-900">{carteira.nome_razao_social || "Responsável financeiro sem nome"}</span>
+                        <span className="block truncate text-xs text-slate-500">{maskSensitiveValue(carteira.cpf_cnpj || "", maskCpfCnpj, canRevealSensitiveData) || "CPF/CNPJ não informado"}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+                {!linkSearchResults.carteiras.length ? <p className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-500">Nenhum responsável financeiro encontrado.</p> : null}
+              </section>
+            </div>
+
             {linkDialog.generatedLink ? (
-              <div className="space-y-3 rounded-3xl border border-emerald-100 bg-emerald-50/60 p-4">
+              <div className="space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                 <Label>Link gerado</Label>
-                <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <Input readOnly value={linkDialog.generatedLink} className="font-mono text-xs" />
-                  <Button
-                    type="button"
-                    onClick={handleCopyGeneratedLink}
-                    className="bg-emerald-600 text-white hover:bg-emerald-700"
-                  >
-                    <Copy className="mr-2 h-4 w-4" />
-                    Copiar
+                  <Button type="button" onClick={handleCopyGeneratedLink} className="bg-emerald-600 text-white hover:bg-emerald-700">
+                    <Copy className="mr-2 h-4 w-4" /> Copiar
                   </Button>
                 </div>
               </div>
             ) : null}
           </div>
 
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={closeLinkDialog} disabled={isGeneratingLink} className="w-full sm:w-auto">
-              {linkDialog.generatedLink ? "Fechar" : "Cancelar"}
+          <DialogFooter className="border-t border-slate-100 px-5 py-4 sm:px-6">
+            <Button variant="outline" onClick={closeLinkDialog} disabled={isGeneratingLink}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={linkDialog.confirmationOpen}
+        onOpenChange={(open) => setLinkDialog((current) => ({ ...current, confirmationOpen: open }))}
+      >
+        <DialogContent className="w-[94vw] max-w-lg rounded-[28px] p-0">
+          <DialogHeader className="border-b border-slate-100 px-5 py-5 pr-12">
+            <DialogTitle>Confirmar conteúdo do cadastro</DialogTitle>
+            <DialogDescription>
+              Confira quais informações a pessoa deverá preencher ao abrir o link.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 px-5 py-5">
+            <button
+              type="button"
+              onClick={() => setLinkDialog((current) => ({ ...current, createDog: !current.createDog, feedback: null }))}
+              className={`flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition ${
+                linkDialog.createDog ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-slate-50 text-slate-600"
+              }`}
+            >
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${linkDialog.createDog ? "bg-blue-600 text-white" : "bg-white text-slate-400"}`}>
+                <DogIcon className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-slate-900">
+                  {linkDialog.selectedDogIds.length ? "Deseja cadastrar outro cão?" : "Deseja cadastrar um cão?"}
+                </span>
+                <span className="mt-1 block text-xs text-slate-500">
+                  {linkDialog.createDog ? "O formulário incluirá a ficha completa do cão." : "Nenhum novo cão será solicitado neste link."}
+                </span>
+              </span>
+              <span className={`h-5 w-9 rounded-full p-0.5 ${linkDialog.createDog ? "bg-blue-600" : "bg-slate-300"}`}>
+                <span className={`block h-4 w-4 rounded-full bg-white transition ${linkDialog.createDog ? "translate-x-4" : ""}`} />
+              </span>
+            </button>
+
+            <div className={`flex w-full items-center gap-4 rounded-2xl border p-4 ${
+              missingLinkProfileLabels.length ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-slate-50"
+            }`}>
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${missingLinkProfileLabels.length ? "bg-blue-600 text-white" : "bg-white text-slate-400"}`}>
+                {missingLinkProfileLabels.length === 1 && missingLinkProfileLabels[0] === "responsável" ? <UserRound className="h-5 w-5" /> : <Wallet className="h-5 w-5" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-slate-900">
+                  {missingLinkProfileLabels.length === 2
+                    ? "Deseja cadastrar um responsável e um responsável financeiro?"
+                    : missingLinkProfileLabels.length === 1
+                      ? `Deseja cadastrar um ${missingLinkProfileLabels[0]}?`
+                      : "Responsável e financeiro já selecionados"}
+                </span>
+                <span className="mt-1 block text-xs text-slate-500">
+                  {missingLinkProfileLabels.length ? "Esta etapa é necessária para completar os vínculos escolhidos." : "O link manterá os dois perfis existentes."}
+                </span>
+              </span>
+              {missingLinkProfileLabels.length ? <Check className="h-5 w-5 text-blue-600" /> : null}
+            </div>
+
+            <FeedbackBanner feedback={linkDialog.feedback} />
+          </div>
+
+          <DialogFooter className="gap-2 border-t border-slate-100 px-5 py-4">
+            <Button
+              variant="outline"
+              onClick={() => setLinkDialog((current) => ({ ...current, confirmationOpen: false, feedback: null }))}
+              disabled={isGeneratingLink}
+            >
+              Voltar
             </Button>
             <Button
-              onClick={linkDialog.generatedLink ? handleCopyGeneratedLink : handleGenerateCadastroLink}
-              disabled={isGeneratingLink || (!linkDialog.generatedLink && !selectedLinkResponsavel)}
-              className="w-full bg-violet-600 text-white hover:bg-violet-700 sm:w-auto"
+              onClick={handleGenerateCadastroLink}
+              disabled={isGeneratingLink || (!linkDialog.createDog && missingLinkProfileLabels.length === 0)}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
             >
-              {isGeneratingLink ? (
-                <>
-                  <Save className="mr-2 h-4 w-4 animate-pulse" />
-                  Gerando...
-                </>
-              ) : linkDialog.generatedLink ? (
-                <>
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copiar link
-                </>
-              ) : (
-                <>
-                  <Link2 className="mr-2 h-4 w-4" />
-                  Gerar link
-                </>
-              )}
+              {isGeneratingLink ? <Save className="mr-2 h-4 w-4 animate-pulse" /> : <Link2 className="mr-2 h-4 w-4" />}
+              {isGeneratingLink ? "Gerando..." : "Gerar link"}
             </Button>
           </DialogFooter>
         </DialogContent>

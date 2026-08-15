@@ -1594,6 +1594,7 @@ export default function Perfis() {
     if (!editingCarteiraId) return;
 
     setEditorFeedback(null);
+    const originalCarteira = carteiras.find((item) => item.id === editingCarteiraId);
     const formattedName = formatDisplayName(carteiraForm.nome_razao_social);
 
     if (!formattedName || !carteiraForm.cpf_cnpj || !carteiraForm.celular) {
@@ -1669,10 +1670,14 @@ export default function Perfis() {
       );
 
       closeCarteiraEditor();
+      const dueDayChanged = String(originalCarteira?.vencimento_planos || '')
+        !== String(payload.vencimento_planos || '');
       setPageFeedback({
         tone: "success",
         title: "Carteira atualizada",
-        message: "Os dados e vínculos da carteira foram salvos com sucesso.",
+        message: dueDayChanged
+          ? "O novo vencimento foi aplicado aos valores em aberto e aos próximos ciclos. Valores já quitados mantiveram o vencimento original."
+          : "Os dados e vínculos da carteira foram salvos com sucesso.",
       });
     } catch (error) {
       console.error("Erro ao atualizar carteira:", error);

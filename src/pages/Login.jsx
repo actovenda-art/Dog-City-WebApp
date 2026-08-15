@@ -32,6 +32,7 @@ export default function Login() {
   const nextPath = useMemo(() => getSafeNextPathFromSearch(location.search), [location.search]);
   const isBlocked = useMemo(() => new URLSearchParams(location.search).get("blocked") === "1", [location.search]);
   const wasRecovered = useMemo(() => new URLSearchParams(location.search).get("recovered") === "1", [location.search]);
+  const expiredByInactivity = useMemo(() => new URLSearchParams(location.search).get("reason") === "inactivity", [location.search]);
   const inviteToken = useMemo(() => new URLSearchParams(location.search).get("invite"), [location.search]);
   const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
@@ -206,6 +207,12 @@ export default function Login() {
             {wasRecovered && (
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-relaxed text-blue-700">
                 Encontramos um estado antigo de sessão neste navegador e limpamos o acesso local para recuperar o login. Entre novamente para continuar.
+              </div>
+            )}
+
+            {expiredByInactivity && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-700">
+                Sua sessão foi encerrada após 15 minutos sem atividade. Entre novamente para continuar.
               </div>
             )}
 

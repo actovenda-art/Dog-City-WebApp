@@ -355,7 +355,7 @@ async function uploadAttachment({
 
 async function findProviderByToken(token: string) {
   const { data, error } = await admin
-    .from("serviceproviders")
+    .from("prestador_servico")
     .select("*")
     .eq("registration_token", token)
     .maybeSingle();
@@ -417,7 +417,7 @@ Deno.serve(async (request) => {
 
     if (cpf) {
       const { data: duplicated, error: duplicateError } = await admin
-        .from("serviceproviders")
+        .from("prestador_servico")
         .select("id, cpf")
         .eq("empresa_id", provider.empresa_id)
         .neq("id", provider.id)
@@ -472,7 +472,7 @@ Deno.serve(async (request) => {
     };
 
     const { data: updated, error: updateError } = await admin
-      .from("serviceproviders")
+      .from("prestador_servico")
       .update(updatePayload)
       .eq("id", provider.id)
       .select("*")

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import LoadingScreen from "@/components/layout/LoadingScreen";
-import { addDays, addMonths, addWeeks, differenceInCalendarDays, endOfMonth, format, getDay, isSameDay, isSameMonth, isWeekend, nextDay, parseISO, startOfMonth } from "date-fns";
+import { addDays, addMonths, addWeeks, differenceInCalendarDays, endOfMonth, format, getDay, isSameDay, isSameMonth, nextDay, parseISO, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Bath,
@@ -63,6 +63,7 @@ import {
   normalizeMetadata as normalizeRecurringMetadata,
   resolveRecurringPackageIdsForPlanGroup,
   resolvePackageSessionUnitPrice,
+  resolveFirstRecurringPlanDueDate,
 } from "@/lib/recurring-packages";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Badge } from "@/components/ui/badge";
@@ -685,17 +686,6 @@ function buildDueDateForMonth(referenceDate, dueDay) {
   return normalizeDate(new Date(year, month, Math.min(Math.max(parsedDueDay, 1), lastDayOfMonth)));
 }
 
-function getNextBusinessDay(referenceDate) {
-  let nextDate = normalizeDate(referenceDate);
-  if (!nextDate) return null;
-
-  do {
-    nextDate = normalizeDate(addDays(nextDate, 1));
-  } while (nextDate && isWeekend(nextDate));
-
-  return nextDate;
-}
-
 function normalizeDateKeyList(values) {
   return [...new Set((Array.isArray(values) ? values : [])
     .map((item) => formatDateOnly(parseDateOnly(item)))
@@ -846,10 +836,7 @@ function buildFirstBillingPreview({
 
   if (!startDate || !Number.isFinite(parsedDueDay)) return null;
 
-  const dueDateThisMonth = buildDueDateForMonth(startDate, parsedDueDay);
-  const firstDueDate = dueDateThisMonth && startDate.getTime() <= dueDateThisMonth.getTime()
-    ?dueDateThisMonth
-    : getNextBusinessDay(startDate);
+  const firstDueDate = parseDateOnly(resolveFirstRecurringPlanDueDate(startDateValue, parsedDueDay));
 
   if (!firstDueDate) return null;
 
@@ -1004,6 +991,7 @@ function buildRecurringPackagePayloadFromPlan(plan) {
     : selectedWeekdays;
 
   return {
+    plan_config_id: plan?.id || null,
     empresa_id: plan?.empresa_id || null,
     client_id: plan?.client_id || plan?.carteira_id || null,
     pet_id: plan?.dog_id || null,
@@ -1028,6 +1016,7 @@ function buildRecurringPackagePayloadFromPlan(plan) {
     metadata: {
       plan_config_id: plan?.id,
       package_group_key: metadata.package_group_key || plan?.id,
+      due_day: Number(plan?.due_day || plan?.renovacao_dia || 0) || null,
       client_name: plan?.client_name || "",
       plan_metadata: metadata,
       plan_monthly_value: monthlyValue,
@@ -1043,6 +1032,19 @@ function getRecurringPackageInitialMonthKey(packageRecord) {
   const firstCycle = parseMetadata(planMetadata.first_cycle);
   if (Number(firstCycle.total_value || 0) <= 0) return "";
   return getMonthKey(planMetadata.start_date || firstCycle.due_date || packageRecord?.start_date);
+}
+
+function getRecurringPackageGenerationDay(packageRecord, plans = []) {
+  const packageMetadata = normalizeRecurringMetadata(packageRecord?.metadata);
+  const linkedPlan = plans.find((plan) => plan?.id === (packageRecord?.plan_config_id || packageMetadata.plan_config_id));
+  const dueDay = Number.parseInt(String(
+    packageMetadata.due_day
+    || linkedPlan?.due_day
+    || linkedPlan?.renovacao_dia
+    || "",
+  ), 10);
+
+  return Number.isInteger(dueDay) && dueDay >= 1 && dueDay <= 31 ? dueDay : 25;
 }
 
 export default function PlanosConfig() {
@@ -1113,10 +1115,12 @@ export default function PlanosConfig() {
     const activePrepaidPackages = prepaidPackages.filter((item) => item.status === "ativo");
     if (!activePrepaidPackages.length) return;
 
-    const automaticMonthKeys = getAutomaticRecurringMonthKeys(new Date());
     const currentMonthKey = format(new Date(), "yyyy-MM");
     const syncTargets = activePrepaidPackages.flatMap((packageRecord) => {
-      const monthKeys = new Set(automaticMonthKeys);
+      const generationDay = packageRecord.service_id === "day_care"
+        ? getRecurringPackageGenerationDay(packageRecord, plans)
+        : 25;
+      const monthKeys = new Set(getAutomaticRecurringMonthKeys(new Date(), generationDay));
       const initialMonthKey = getRecurringPackageInitialMonthKey(packageRecord);
       const initialBillingExists = initialMonthKey && packageBillings.some((billing) =>
         billing.package_id === packageRecord.id && billing.billing_month === initialMonthKey
@@ -1147,7 +1151,7 @@ export default function PlanosConfig() {
       .finally(() => {
         isPrepaidSilentSyncRunningRef.current = false;
       });
-  }, [isLoading, packageBillings, prepaidPackages]);
+  }, [isLoading, packageBillings, plans, prepaidPackages]);
 
   async function loadData({ skipSilentSync = false } = {}) {
     setIsLoading(true);
@@ -2034,7 +2038,8 @@ export default function PlanosConfig() {
 
       const existingPackage = prepaidPackages.find((item) => {
         const metadata = normalizeRecurringMetadata(item.metadata);
-        return metadata.plan_config_id === plan.id
+        return item?.plan_config_id === plan.id
+          || metadata.plan_config_id === plan.id
           || (
             metadata.package_group_key === payload.metadata.package_group_key
             && item.pet_id === payload.pet_id
@@ -2055,7 +2060,10 @@ export default function PlanosConfig() {
   }
 
   async function cancelRecurringPackageForPlan(plan) {
-    const existingPackage = prepaidPackages.find((item) => normalizeRecurringMetadata(item.metadata).plan_config_id === plan.id);
+    const existingPackage = prepaidPackages.find((item) => (
+      item?.plan_config_id === plan.id
+      || normalizeRecurringMetadata(item.metadata).plan_config_id === plan.id
+    ));
     if (!existingPackage?.id) return;
     await RecurringPackage.update(existingPackage.id, {
       status: "cancelado",
@@ -3466,7 +3474,7 @@ export default function PlanosConfig() {
               <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
                 <p className="text-sm font-semibold text-blue-900">Renovação automática</p>
                 <p className="mt-2 text-sm text-blue-800">
-                  Após o primeiro mês, no dia 25 do mês anterior o sistema gera os agendamentos do próximo ciclo e cria a cobrança para o vencimento da carteira vinculada ao responsável financeiro.
+                  Após o primeiro mês, no vencimento do ciclo atual o sistema gera os agendamentos do mês seguinte e cria a cobrança para o vencimento da carteira vinculada ao responsável financeiro.
                 </p>
                 <p className="mt-2 text-sm text-blue-800">
                   Neste plano, o vencimento segue para {detailItem.dueDay ? `o dia ${detailItem.dueDay}` : "a configuração da carteira"} e cada agendamento continua vinculado ao código do pacote.
@@ -3907,9 +3915,12 @@ export default function PlanosConfig() {
                       </p>
                       <p className="mt-2 text-xs text-blue-700">
                         {firstBillingPreview?.firstDueDate
-                          ?parseDateOnly(formData.start_date) && buildDueDateForMonth(parseDateOnly(formData.start_date), dueDay)?.getTime() >= parseDateOnly(formData.start_date)?.getTime()
-                            ?"Como o início está antes do vencimento, o primeiro ciclo vence na data cadastrada."
-                            : "Como o início está depois do vencimento, o primeiro ciclo vence no próximo dia útil."
+                          ? differenceInCalendarDays(
+                              buildDueDateForMonth(parseDateOnly(formData.start_date), dueDay),
+                              parseDateOnly(formData.start_date),
+                            ) >= 2
+                            ? "Como existe ao menos um dia inteiro de intervalo, o primeiro ciclo mantém o vencimento cadastrado."
+                            : "Para garantir um dia inteiro de intervalo, o primeiro ciclo vence dois dias após a contratação."
                           : "O cálculo considera a data de início e o vencimento do responsável financeiro."}
                       </p>
                     </div>

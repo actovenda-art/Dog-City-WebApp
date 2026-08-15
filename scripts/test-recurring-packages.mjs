@@ -9,8 +9,45 @@ import {
   getPackageMonthlyValue,
   isRecordLinkedToRecurringPlanGroup,
   mergeRecurringPlanAppointments,
+  resolveFirstRecurringPlanDueDate,
   resolveRecurringPackageIdsForPlanGroup,
 } from "../src/lib/recurring-packages.js";
+
+assert.equal(
+  resolveFirstRecurringPlanDueDate("2026-06-11", 20),
+  "2026-06-20",
+  "Contratacao com intervalo suficiente deve manter o vencimento padrao",
+);
+assert.equal(
+  resolveFirstRecurringPlanDueDate("2026-06-18", 20),
+  "2026-06-20",
+  "Dois dias de diferenca devem preservar um dia inteiro de intervalo",
+);
+assert.equal(
+  resolveFirstRecurringPlanDueDate("2026-06-19", 20),
+  "2026-06-21",
+  "Contratacao na vespera deve adiar o vencimento para dois dias depois",
+);
+assert.equal(
+  resolveFirstRecurringPlanDueDate("2026-06-20", 20),
+  "2026-06-22",
+  "Contratacao no vencimento deve vencer dois dias depois",
+);
+assert.equal(
+  resolveFirstRecurringPlanDueDate("2026-06-21", 20),
+  "2026-06-23",
+  "Contratacao posterior ao vencimento deve vencer dois dias depois",
+);
+assert.equal(
+  resolveFirstRecurringPlanDueDate("2026-01-31", 20),
+  "2026-02-02",
+  "A carencia de dois dias deve atravessar corretamente a virada do mes",
+);
+assert.equal(
+  resolveFirstRecurringPlanDueDate("2026-04-30", 31),
+  "2026-05-02",
+  "Vencimento limitado ao ultimo dia ainda deve respeitar o intervalo minimo",
+);
 
 const packageRecord = {
   id: "pkg_banho_duque",
@@ -232,14 +269,41 @@ assert.equal(midMonthBilling.unit_price, 106.25, "O valor proporcional deve ser 
 assert.equal(midMonthBilling.total_amount, 318.75, "O primeiro mes parcial deve cobrar somente 3/4 do plano");
 
 assert.deepEqual(
-  getAutomaticRecurringMonthKeys(new Date(2026, 6, 24, 12, 0, 0)),
+  getAutomaticRecurringMonthKeys(new Date(2026, 6, 4, 12, 0, 0), 5),
   ["2026-07"],
-  "Antes do dia 25, a sincronizacao automatica deve garantir somente o mes atual",
+  "Antes do vencimento, a sincronizacao automatica deve garantir somente o mes atual",
 );
 assert.deepEqual(
-  getAutomaticRecurringMonthKeys(new Date(2026, 6, 25, 12, 0, 0)),
+  getAutomaticRecurringMonthKeys(new Date(2026, 6, 5, 12, 0, 0), 5),
   ["2026-07", "2026-08"],
-  "No dia 25, a sincronizacao automatica deve antecipar o proximo mes",
+  "No vencimento de julho, a sincronizacao automatica deve gerar agosto",
+);
+const augustDayCareSessions = generateMonthlySessions({
+  packages: [{
+    id: "pkg_daycare_due_5",
+    empresa_id: "dogcity",
+    client_id: "cliente_daycare",
+    pet_id: "loki",
+    service_id: "day_care",
+    weekday: 3,
+    weekdays: [3],
+    frequency: "semanal",
+    price_per_session: 100,
+    start_date: "2026-07-01",
+    status: "ativo",
+  }],
+  existingSessions: [],
+  month: "2026-08",
+}).sessionsToCreate;
+assert.deepEqual(
+  augustDayCareSessions.map((session) => session.scheduled_date),
+  ["2026-08-05", "2026-08-12", "2026-08-19", "2026-08-26"],
+  "O gatilho de 05/07 deve materializar os agendamentos de Day Care de agosto",
+);
+assert.deepEqual(
+  getAutomaticRecurringMonthKeys(new Date(2026, 1, 28, 12, 0, 0), 31),
+  ["2026-02", "2026-03"],
+  "Vencimento inexistente no mes deve gerar o proximo ciclo no ultimo dia disponivel",
 );
 
 const recurringPackages = [{

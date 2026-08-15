@@ -618,7 +618,7 @@ async function loadMovementRowsPaginated<T extends Record<string, unknown>>(
   while (rows.length < rowLimit) {
     const to = Math.min(from + batchSize - 1, rowLimit - 1);
     const { data, error } = await supabase
-      .from("extratobancario")
+      .from("extrato_bancario")
       .select(columns)
       .eq("empresa_id", empresaId)
       .order("data_movimento", { ascending: false })
@@ -2599,7 +2599,7 @@ async function ensurePaymentExtratoTransaction(row: Record<string, unknown>, pay
   if (!empresaId || !context.paymentId || context.amount <= 0) return null;
 
   const { data: paymentRows, error: paymentRowsError } = await supabase
-    .from("extratobancario")
+    .from("extrato_bancario")
     .select("*")
     .eq("empresa_id", empresaId)
     .contains("metadata_financeira", {
@@ -2612,7 +2612,7 @@ async function ensurePaymentExtratoTransaction(row: Record<string, unknown>, pay
   let targetRow = Array.isArray(paymentRows) && paymentRows.length === 1 ? paymentRows[0] : null;
   if (!targetRow) {
     const { data: candidates, error: candidateError } = await supabase
-      .from("extratobancario")
+      .from("extrato_bancario")
       .select("*")
       .eq("empresa_id", empresaId)
       .eq("tipo", "entrada")
@@ -2631,7 +2631,7 @@ async function ensurePaymentExtratoTransaction(row: Record<string, unknown>, pay
   const reference = context.txid || context.codigoSolicitacao || sanitizeText(targetRow?.referencia) || context.canonicalId;
   const now = new Date().toISOString();
   const { data: savedTransaction, error: saveError } = await supabase
-    .from("extratobancario")
+    .from("extrato_bancario")
     .upsert([{
       id: sanitizeText(targetRow?.id) || context.canonicalId,
       empresa_id: empresaId,
@@ -3472,7 +3472,7 @@ async function persistTransactions(
   ));
   for (const dateChunk of chunkArray(reconciliationDates, 100)) {
     const { data, error } = await supabase
-      .from("extratobancario")
+      .from("extrato_bancario")
       .select("id, data, data_movimento, data_hora_transacao, tipo, valor, descricao, nome_contraparte, referencia, carteira_nome, observacoes, rateio, raw_data, metadata_financeira, conciliado, status")
       .eq("empresa_id", empresaId)
       .in("source_provider", ["banco_inter", "banco_inter_charge"])
@@ -3495,7 +3495,7 @@ async function persistTransactions(
   if (historicalRows.length) {
     for (const transactionIdChunk of chunkArray(historicalRows.map((row) => row.id), 100)) {
       const { data, error } = await supabase
-        .from("extratobancario")
+        .from("extrato_bancario")
         .select("id")
         .eq("empresa_id", empresaId)
         .in("source_provider", ["banco_inter", "banco_inter_charge"])
@@ -3514,7 +3514,7 @@ async function persistTransactions(
 
   for (const row of historicalRowsToUpdate) {
     const { error } = await supabase
-      .from("extratobancario")
+      .from("extrato_bancario")
       .update(row)
       .eq("empresa_id", empresaId)
       .eq("id", row.id);
@@ -3524,7 +3524,7 @@ async function persistTransactions(
   let refreshedTodayCount = 0;
   if (refreshToday) {
     const { data: existingTodayRows, error: existingTodayError } = await supabase
-      .from("extratobancario")
+      .from("extrato_bancario")
       .select("id, carteira_nome, observacoes, rateio, metadata_financeira, conciliado, status")
       .eq("empresa_id", empresaId)
       .in("source_provider", ["banco_inter", "banco_inter_charge"])
@@ -3542,7 +3542,7 @@ async function persistTransactions(
     for (const chunk of chunkArray(mergedTodayRows, 100)) {
       if (!chunk.length) continue;
       const { error } = await supabase
-        .from("extratobancario")
+        .from("extrato_bancario")
         .upsert(chunk, { onConflict: "id" });
 
       if (error) throw error;
@@ -3554,7 +3554,7 @@ async function persistTransactions(
   for (const chunk of chunkArray(historicalRowsToInsert, 100)) {
     if (!chunk.length) continue;
     const { error } = await supabase
-      .from("extratobancario")
+      .from("extrato_bancario")
       .insert(chunk);
 
     if (error) throw error;
@@ -3843,7 +3843,7 @@ async function persistCsvTransactions(
 
   if (replaceExistingCsv) {
     const { error: deleteExistingError } = await supabase
-      .from("extratobancario")
+      .from("extrato_bancario")
       .delete()
       .eq("empresa_id", empresaId)
       .eq("source_provider", "banco_inter_csv");
@@ -3857,7 +3857,7 @@ async function persistCsvTransactions(
   if (!replaceExistingCsv) {
     for (const transactionIdChunk of chunkArray(uniqueRows.map((row) => row.id), 100)) {
       const { data, error } = await supabase
-        .from("extratobancario")
+        .from("extrato_bancario")
         .select("id")
         .eq("empresa_id", empresaId)
         .eq("source_provider", "banco_inter_csv")
@@ -3874,7 +3874,7 @@ async function persistCsvTransactions(
 
   for (const chunk of chunkArray(rowsToInsert, 500)) {
     if (!chunk.length) continue;
-    const { error } = await supabase.from("extratobancario").insert(chunk);
+    const { error } = await supabase.from("extrato_bancario").insert(chunk);
     if (error) throw error;
   }
 
@@ -5022,7 +5022,7 @@ async function loadTransactionReceiptForConfig(
   }
 
   let query = supabase
-    .from("extratobancario")
+    .from("extrato_bancario")
     .select("*")
     .eq("empresa_id", empresaId)
     .limit(1);
@@ -5132,7 +5132,7 @@ async function loadTransactionReceiptForConfig(
         ? movement.metadata_financeira as Record<string, unknown>
         : {};
       const { error: enrichmentError } = await supabase
-        .from("extratobancario")
+        .from("extrato_bancario")
         .update({
           raw_data: enrichedRawData,
           referencia: providerReference || movement.referencia || null,

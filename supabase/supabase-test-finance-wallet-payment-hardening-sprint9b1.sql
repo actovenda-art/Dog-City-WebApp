@@ -36,6 +36,12 @@ declare
   v_execucoes_success integer := 0;
   v_reversoes_success integer := 0;
 begin
+  update public.app_config
+  set value = jsonb_build_object('enabled', false),
+      updated_date = now()
+  where key = 'finance.payment_v2_write_enabled'
+    and empresa_id = v_empresa_id;
+
   select cc.id
     into v_seed_carteira_conta_id
   from public.carteira_conta cc

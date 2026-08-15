@@ -43,6 +43,43 @@ export function formatDateKey(value) {
   ].join("-");
 }
 
+export function resolveFirstRecurringPlanDueDate(startDateValue, dueDayValue) {
+  const startDate = parseDateKey(startDateValue);
+  const dueDay = Number.parseInt(String(dueDayValue || ""), 10);
+  if (!startDate || !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return "";
+
+  const lastDayOfStartMonth = new Date(
+    startDate.getFullYear(),
+    startDate.getMonth() + 1,
+    0,
+    12,
+    0,
+    0,
+    0,
+  ).getDate();
+  const standardDueDate = new Date(
+    startDate.getFullYear(),
+    startDate.getMonth(),
+    Math.min(dueDay, lastDayOfStartMonth),
+    12,
+    0,
+    0,
+    0,
+  );
+
+  const calendarDayDifference = Math.round(
+    (standardDueDate.getTime() - startDate.getTime()) / 86400000,
+  );
+
+  if (calendarDayDifference >= 2) {
+    return formatDateKey(standardDueDate);
+  }
+
+  const minimumIntervalDueDate = new Date(startDate);
+  minimumIntervalDueDate.setDate(minimumIntervalDueDate.getDate() + 2);
+  return formatDateKey(minimumIntervalDueDate);
+}
+
 export function getMonthKey(value) {
   const date = parseDateKey(value);
   if (!date) return "";
@@ -62,7 +99,21 @@ export function getAutomaticRecurringMonthKeys(referenceDate = new Date(), gener
   if (!reference) return [];
 
   const currentMonthKey = buildMonthKey(reference.getMonth() + 1, reference.getFullYear());
-  if (reference.getDate() < generationDay) return [currentMonthKey];
+  const parsedGenerationDay = Number.parseInt(String(generationDay || ""), 10);
+  const lastDayOfReferenceMonth = new Date(
+    reference.getFullYear(),
+    reference.getMonth() + 1,
+    0,
+    12,
+    0,
+    0,
+    0,
+  ).getDate();
+  const effectiveGenerationDay = Number.isInteger(parsedGenerationDay)
+    ? Math.min(Math.max(parsedGenerationDay, 1), lastDayOfReferenceMonth)
+    : 25;
+
+  if (reference.getDate() < effectiveGenerationDay) return [currentMonthKey];
 
   const nextMonth = new Date(reference.getFullYear(), reference.getMonth() + 1, 1, 12, 0, 0, 0);
   return [currentMonthKey, buildMonthKey(nextMonth.getMonth() + 1, nextMonth.getFullYear())];
@@ -222,7 +273,7 @@ export function resolveRecurringPackageIdsForPlanGroup({ packages = [], planIds 
   return (packages || [])
     .filter((packageRecord) => {
       const metadata = normalizeMetadata(packageRecord?.metadata);
-      const planConfigId = String(metadata.plan_config_id || "").trim();
+      const planConfigId = String(packageRecord?.plan_config_id || metadata.plan_config_id || "").trim();
       const recordGroupKey = String(metadata.package_group_key || "").trim();
       return (planConfigId && planIdSet.has(planConfigId))
         || (normalizedGroupKey && recordGroupKey === normalizedGroupKey);
@@ -241,7 +292,7 @@ export function isRecordLinkedToRecurringPlanGroup(record, {
   const metadata = normalizeMetadata(record.metadata);
   const planIdSet = normalizeIdSet(planIds);
   const packageIdSet = normalizeIdSet(recurringPackageIds);
-  const recordPlanId = String(metadata.plan_id || metadata.plan_config_id || "").trim();
+  const recordPlanId = String(record?.plan_config_id || metadata.plan_id || metadata.plan_config_id || "").trim();
   const recordGroupKey = String(metadata.package_group_key || "").trim();
   const recordPackageId = getRecurringRecordPackageId(record);
 

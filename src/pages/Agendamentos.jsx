@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import LoadingScreen from "@/components/layout/LoadingScreen";
-import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, User } from "@/api/entities";
+import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, Responsavel } from "@/api/entities";
 import {
   buildDogOwnerIndex,
   buildReceivablePayload,
@@ -17,7 +17,6 @@ import {
   getServiceLabel,
 } from "@/lib/attendance";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
-import { isOperationalProfile } from "@/lib/access-control";
 import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 import { cn } from "@/lib/utils";
 import { createPageUrl } from "@/utils";
@@ -34,7 +33,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import {
   Calendar,
@@ -45,10 +45,10 @@ import {
   ClipboardList,
   Clock3,
   Home,
-  LoaderCircle,
+  ListFilter,
   MoreHorizontal,
   PawPrint,
-  RefreshCw,
+  Search,
   Scissors,
   TriangleAlert,
   Users,
@@ -90,7 +90,7 @@ const SERVICE_BUCKETS = [
     icon: Scissors,
     iconClassName: "bg-amber-100 text-amber-600",
     progressClassName: "bg-amber-500",
-    serviceTypes: ["banho", "tosa"],
+    serviceTypes: ["banho", "tosa", "banho_tosa"],
   },
   {
     id: "diversos",
@@ -148,7 +148,22 @@ const STATUS_STYLES = {
   },
 };
 
-const MAIN_SERVICE_FILTERS = ["all", ...SERVICE_BUCKETS.map((service) => service.id)];
+const STATUS_FILTER_OPTIONS = [
+  { id: "chegando", label: "Chegando", stateKeys: ["upcoming", "late", "attention"] },
+  { id: "presente", label: "Presente", stateKeys: ["arrived", "completed"] },
+  { id: "faltou", label: "Faltou", stateKeys: ["no_show"] },
+];
+
+const SERVICE_FILTER_OPTIONS = [
+  { id: "day_care", label: "Day Care" },
+  { id: "banho", label: "Banho" },
+  { id: "tosa", label: "Tosa" },
+  { id: "hospedagem", label: "Hospedagem" },
+  { id: "transporte", label: "Transporte" },
+  { id: "diversos", label: "Diversos" },
+];
+
+const STATUS_FILTER_BY_ID = Object.fromEntries(STATUS_FILTER_OPTIONS.map((option) => [option.id, option]));
 
 function getTodayKey() {
   const now = new Date();
@@ -180,6 +195,25 @@ function formatLongDate(value) {
   return parsed
     ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(parsed)
     : "-";
+}
+
+function normalizeSearchValue(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function getAppointmentServiceFilterIds(appointment) {
+  const serviceType = String(appointment?.service_type || "").toLowerCase();
+  if (["day_care", "adaptacao"].includes(serviceType)) return ["day_care"];
+  if (["hospedagem", "pernoite"].includes(serviceType)) return ["hospedagem"];
+  if (serviceType === "transporte") return ["transporte"];
+  if (serviceType === "banho_tosa") return ["banho", "tosa"];
+  if (serviceType === "banho") return ["banho"];
+  if (serviceType === "tosa") return ["tosa"];
+  return ["diversos"];
 }
 
 function formatTime(value) {
@@ -231,7 +265,7 @@ function getServiceBucketId(serviceType) {
   if (["day_care", "adaptacao"].includes(serviceType)) return "day_care";
   if (["hospedagem", "pernoite"].includes(serviceType)) return "hospedagem";
   if (serviceType === "transporte") return "transporte";
-  if (["banho", "tosa"].includes(serviceType)) return "banho";
+  if (["banho", "tosa", "banho_tosa"].includes(serviceType)) return "banho";
   return "diversos";
 }
 
@@ -400,13 +434,110 @@ function getAppointmentOperationalState(appointment, record) {
 
 function formatDateControlLabel(dateKey) {
   if (!dateKey) return "Hoje";
-  const date = new Date(`${dateKey}T12:00:00`);
   const isToday = dateKey === getTodayKey();
   const dateLabel = formatLongDate(`${dateKey}T12:00:00`);
   return isToday ? `Hoje • ${dateLabel}` : dateLabel;
 }
 
-function SummaryCard({ icon: Icon, label, value, helper, iconClassName, valueClassName }) {
+function AppointmentSearchFilters({
+  searchTerm,
+  onSearchChange,
+  filterDate,
+  onDateChange,
+  selectedDayKey,
+  statusFilters,
+  serviceFilters,
+  onToggleStatus,
+  onToggleService,
+  onClearFilters,
+}) {
+  const activeFilterCount = statusFilters.length + serviceFilters.length;
+
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_46px] gap-2 sm:grid-cols-[minmax(260px,1fr)_210px_46px]">
+      <div className="relative col-span-2 sm:col-span-1">
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Input
+          value={searchTerm}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Buscar dono, cão ou monitor"
+          aria-label="Buscar agendamentos por dono, cão ou monitor"
+          className="h-11 rounded-xl border-slate-200 bg-white pl-10 pr-3 text-sm shadow-sm"
+        />
+      </div>
+
+      <DatePickerInput
+        value={filterDate}
+        onChange={onDateChange}
+        placeholder={formatDateControlLabel(selectedDayKey)}
+        className="h-11 rounded-xl border-slate-200 bg-white px-3 text-sm font-semibold shadow-sm"
+      />
+
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className={cn(
+              "relative h-11 w-11 rounded-xl border-slate-200 bg-white text-slate-600 shadow-sm",
+              activeFilterCount > 0 && "border-blue-300 bg-blue-50 text-blue-700",
+            )}
+            aria-label={`Abrir filtros${activeFilterCount ? `, ${activeFilterCount} selecionado(s)` : ""}`}
+          >
+            <ListFilter className="h-4 w-4" />
+            {activeFilterCount > 0 ? (
+              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white">
+                {activeFilterCount}
+              </span>
+            ) : null}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-[min(320px,calc(100vw-24px))] rounded-2xl border-slate-200 p-0 shadow-xl">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-950">Filtrar agendamentos</p>
+              <p className="mt-0.5 text-xs text-slate-500">Selecione uma ou mais opções.</p>
+            </div>
+            {activeFilterCount > 0 ? (
+              <button type="button" onClick={onClearFilters} className="text-xs font-semibold text-blue-600 hover:text-blue-700">
+                Limpar
+              </button>
+            ) : null}
+          </div>
+
+          <div className="space-y-5 p-4">
+            <fieldset>
+              <legend className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Status</legend>
+              <div className="space-y-1.5">
+                {STATUS_FILTER_OPTIONS.map((option) => (
+                  <label key={option.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <Checkbox checked={statusFilters.includes(option.id)} onCheckedChange={() => onToggleStatus(option.id)} />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Serviço</legend>
+              <div className="grid grid-cols-2 gap-1.5">
+                {SERVICE_FILTER_OPTIONS.map((option) => (
+                  <label key={option.id} className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <Checkbox checked={serviceFilters.includes(option.id)} onCheckedChange={() => onToggleService(option.id)} />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+function SummaryCard({ icon: Icon, label, value, iconClassName, valueClassName }) {
   return (
     <Card className="rounded-[16px] border border-slate-200 shadow-sm">
       <CardContent className="p-3.5">
@@ -424,27 +555,6 @@ function SummaryCard({ icon: Icon, label, value, helper, iconClassName, valueCla
   );
 }
 
-function StatusPill({ icon: Icon, label, value, active, onClick, tone }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition",
-        active ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
-      )}
-    >
-      <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg", tone)}>
-        <Icon className="h-4 w-4" />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[13px] font-semibold">{label}</span>
-        <span className="block text-[13px] font-bold">{value}</span>
-      </span>
-    </button>
-  );
-}
-
 function AppointmentStatusBadge({ stateKey, label }) {
   const style = STATUS_STYLES[stateKey] || STATUS_STYLES.upcoming;
   return (
@@ -454,7 +564,7 @@ function AppointmentStatusBadge({ stateKey, label }) {
   );
 }
 
-function MobileSummaryCard({ icon: Icon, label, value, helper, iconClassName, valueClassName }) {
+function MobileSummaryCard({ icon: Icon, label, value, iconClassName, valueClassName }) {
   return (
     <Card className="rounded-[14px] border border-slate-200 shadow-sm">
       <CardContent className="p-1.5">
@@ -468,14 +578,6 @@ function MobileSummaryCard({ icon: Icon, label, value, helper, iconClassName, va
       </CardContent>
     </Card>
   );
-}
-
-function getMobileTopViewKey(topTab, statusView) {
-  if (topTab === "pendencias_comerciais") return "pendencias";
-  if (topTab === "nao_compareceram") return "nao_compareceram";
-  if (topTab === "presentes_agora" || (topTab === "operacao" && statusView === "arrived")) return "presentes";
-  if (topTab === "operacao" && statusView === "upcoming") return "previstos";
-  return "operacao";
 }
 
 function getAppointmentThumbnail(row) {
@@ -601,21 +703,18 @@ export default function Agendamentos() {
   const reviewAppointmentId = searchParams.get("review");
   const absenceReviewAppointmentId = searchParams.get("absenceReview");
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [orcamentos, setOrcamentos] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [carteiras, setCarteiras] = useState([]);
+  const [responsaveis, setResponsaveis] = useState([]);
   const [contasReceber, setContasReceber] = useState([]);
   const [checkins, setCheckins] = useState([]);
   const [filterDate, setFilterDate] = useState(getTodayKey());
-  const [topTab, setTopTab] = useState(
-    reviewAppointmentId ? "pendencias_comerciais" : absenceReviewAppointmentId ? "nao_compareceram" : "operacao",
-  );
-  const [statusView, setStatusView] = useState("all");
-  const [serviceView, setServiceView] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilters, setStatusFilters] = useState([]);
+  const [serviceFilters, setServiceFilters] = useState([]);
   const [packageDialogOpen, setPackageDialogOpen] = useState(false);
   const [avulsoActionsDialogOpen, setAvulsoActionsDialogOpen] = useState(false);
   const [recordsDialogOpen, setRecordsDialogOpen] = useState(false);
@@ -629,7 +728,7 @@ export default function Agendamentos() {
     [orcamentos],
   );
   const ownerByDogId = useMemo(() => {
-    const baseIndex = buildDogOwnerIndex(carteiras, []);
+    const baseIndex = buildDogOwnerIndex(carteiras, responsaveis);
     const dogKeys = [1, 2, 3, 4, 5, 6, 7, 8].map((index) => `dog_id_${index}`);
     const mergedIndex = { ...baseIndex };
     const carteirasById = Object.fromEntries((carteiras || []).map((carteira) => [carteira?.id, carteira]));
@@ -664,7 +763,7 @@ export default function Agendamentos() {
     });
 
     return mergedIndex;
-  }, [carteiras, dogs]);
+  }, [carteiras, dogs, responsaveis]);
   const financialStatusMap = useMemo(() => buildFinancialOperationalStatusMap(contasReceber), [contasReceber]);
   const visibleAppointments = useMemo(
     () => filterAppointmentsByApprovedOrcamentos(appointments, orcamentosById).sort(compareAppointments),
@@ -673,48 +772,46 @@ export default function Agendamentos() {
   const appointmentRecordByAppointmentId = useMemo(() => buildAppointmentRecordIndex(checkins), [checkins]);
 
   async function loadData(silent = false) {
-    if (silent) {
-      setIsRefreshing(true);
-    } else {
+    if (!silent) {
       setIsLoading(true);
     }
 
     try {
-      const [me, appointmentRows, orcamentoRows, dogRows, carteiraRows, checkinRows, contaRows] = await Promise.all([
-        User.me(),
+      const [appointmentRows, orcamentoRows, dogRows, carteiraRows, responsavelRows, checkinRows, contaRows] = await Promise.all([
         Appointment.listAll("-created_date", 1000, 5000),
         Orcamento.list("-created_date", 500),
         Dog.list("-created_date", 1000),
         Carteira.list("-created_date", 500),
+        Responsavel.list("-created_date", 1000),
         Checkin.listAll("-created_date", 1000, 5000),
         ContaReceber.listAll ? ContaReceber.listAll("-created_date", 1000, 10000) : ContaReceber.list("-created_date", 5000),
       ]);
-      setCurrentUser(me || null);
       setAppointments(appointmentRows || []);
       setOrcamentos(orcamentoRows || []);
       setDogs((dogRows || []).filter((dog) => dog.ativo !== false));
       setCarteiras((carteiraRows || []).filter((item) => item.ativo !== false));
+      setResponsaveis((responsavelRows || []).filter((item) => item.ativo !== false));
       setCheckins(checkinRows || []);
       setContasReceber(contaRows || []);
     } catch (error) {
       console.error("Erro ao carregar agendamentos:", error);
     } finally {
       setIsLoading(false);
-      setIsRefreshing(false);
     }
   }
-
-  const shouldHideOperationalAlerts = useMemo(() => isOperationalProfile(currentUser), [currentUser]);
 
   useEffect(() => {
     loadData();
   }, []);
 
   useEffect(() => {
-    if (shouldHideOperationalAlerts && topTab === "pendencias_comerciais") {
-      setTopTab("operacao");
-    }
-  }, [shouldHideOperationalAlerts, topTab]);
+    const highlightedAppointmentId = reviewAppointmentId || absenceReviewAppointmentId;
+    if (!highlightedAppointmentId) return;
+
+    const highlightedAppointment = visibleAppointments.find((appointment) => appointment.id === highlightedAppointmentId);
+    const highlightedDate = getAppointmentDateKey(highlightedAppointment);
+    if (highlightedDate) setFilterDate(highlightedDate);
+  }, [absenceReviewAppointmentId, reviewAppointmentId, visibleAppointments]);
 
   const selectedAppointmentRecord = useMemo(() => {
     if (!selectedAppointment) return null;
@@ -728,19 +825,6 @@ export default function Agendamentos() {
 
     return matchingRecords[0] || null;
   }, [appointmentRecordByAppointmentId, checkins, selectedAppointment]);
-
-  const pendingCommercialAppointments = useMemo(() => {
-    return visibleAppointments.filter((appointment) => {
-      const meta = getAppointmentMeta(appointment);
-      return appointment.source_type === "manual_registrador" && (
-        appointment.charge_type === "pendente_comercial" || meta.commercial_review_pending
-      );
-    });
-  }, [visibleAppointments]);
-
-  const pendingAbsenceAppointments = useMemo(() => {
-    return visibleAppointments.filter((appointment) => getAppointmentMeta(appointment).absence_review_pending);
-  }, [visibleAppointments]);
 
   const appointmentPresentationRows = useMemo(() => {
     return visibleAppointments.map((appointment) => {
@@ -759,9 +843,18 @@ export default function Agendamentos() {
       const scheduleTime = getAppointmentTimeValue(appointment, "entrada");
       const checkinTime = record?.checkin_datetime || record?.data_checkin || null;
       const checkoutTime = record?.checkout_datetime || record?.data_checkout || null;
+      const monitorNames = [
+        record?.checkin_monitor_nome,
+        record?.checkout_monitor_nome,
+        record?.monitor_nome,
+        record?.responsavel_nome,
+        meta?.manual_monitor_nome,
+        meta?.monitor_nome,
+      ];
 
       return {
         appointment,
+        record,
         dog,
         owner,
         meta,
@@ -776,6 +869,17 @@ export default function Agendamentos() {
         secondaryLabel: getAppointmentSecondaryLabel(appointment, dog),
         ownerDisplayName,
         ownerLine: formatOwnerAppointmentLine(ownerDisplayName, appointment),
+        searchValue: normalizeSearchValue([
+          dog?.nome,
+          dog?.raca,
+          ownerDisplayName,
+          formatOwnerAppointmentLine(ownerDisplayName, appointment),
+          appointment?.owner_nome,
+          meta?.responsavel_nome,
+          meta?.client_name,
+          ...monitorNames,
+        ].filter(Boolean).join(" ")),
+        serviceFilterIds: getAppointmentServiceFilterIds(appointment),
         sourceLabel: getAppointmentDetailLabel(appointment),
         checkinTime,
         checkoutTime,
@@ -807,76 +911,28 @@ export default function Agendamentos() {
     };
   }, [dailyRows]);
 
-  const serviceSummary = useMemo(() => {
-    return SERVICE_BUCKETS.map((bucket) => {
-      const bucketRows = dailyRows.filter((row) => row.bucket.id === bucket.id);
-      const total = bucketRows.length;
-      const arrived = bucketRows.filter((row) => row.state.key === "arrived").length;
-      const late = bucketRows.filter((row) => ["late", "attention"].includes(row.state.key)).length;
-      const upcoming = bucketRows.filter((row) => row.state.key === "upcoming").length;
-      const noShow = bucketRows.filter((row) => row.state.key === "no_show").length;
-      const rate = total > 0 ? Math.round((arrived / total) * 100) : 0;
-
-      return {
-        ...bucket,
-        total,
-        arrived,
-        late,
-        upcoming,
-        noShow,
-        rate,
-      };
-    });
-  }, [dailyRows]);
-
-  const lateRows = useMemo(() => {
-    return dailyRows.filter((row) => ["late", "attention"].includes(row.state.key));
-  }, [dailyRows]);
-
-  const baseRows = useMemo(() => {
-    if (topTab === "presentes_agora") {
-      return dailyRows.filter((row) => row.state.key === "arrived");
-    }
-
-    if (topTab === "nao_compareceram") {
-      return appointmentPresentationRows.filter((row) => row.state.key === "no_show" || row.hasAbsenceReviewPending);
-    }
-
-    if (topTab === "pendencias_comerciais") {
-      return appointmentPresentationRows.filter((row) => row.hasCommercialPending);
-    }
-
-    return dailyRows;
-  }, [appointmentPresentationRows, dailyRows, topTab]);
-
+  const normalizedSearchTerm = useMemo(() => normalizeSearchValue(searchTerm), [searchTerm]);
   const filteredMainRows = useMemo(() => {
-    return baseRows
-      .filter((row) => (serviceView === "all" ? true : row.bucket.id === serviceView))
-      .filter((row) => {
-        if (topTab !== "operacao" || statusView === "all") return true;
-        if (statusView === "late") return ["late", "attention"].includes(row.state.key);
-        return row.state.key === statusView;
-      })
+    const acceptedStateKeys = new Set(
+      statusFilters.flatMap((filterId) => STATUS_FILTER_BY_ID[filterId]?.stateKeys || []),
+    );
+
+    return dailyRows
+      .filter((row) => !normalizedSearchTerm || row.searchValue.includes(normalizedSearchTerm))
+      .filter((row) => statusFilters.length === 0 || acceptedStateKeys.has(row.state.key))
+      .filter((row) => (
+        serviceFilters.length === 0
+        || row.serviceFilterIds.some((filterId) => serviceFilters.includes(filterId))
+      ))
       .sort((left, right) => {
         const leftDate = left.appointmentDateKey || "";
         const rightDate = right.appointmentDateKey || "";
         if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
         return left.sortTime.localeCompare(right.sortTime);
       });
-  }, [baseRows, serviceView, statusView, topTab]);
+  }, [dailyRows, normalizedSearchTerm, serviceFilters, statusFilters]);
 
   const highlightAppointmentId = reviewAppointmentId || absenceReviewAppointmentId || null;
-  const mobileTopView = useMemo(() => getMobileTopViewKey(topTab, statusView), [statusView, topTab]);
-  const mobileTopTabs = useMemo(
-    () => [
-      { key: "operacao", label: "Operação", icon: ClipboardList, toneClassName: "text-blue-600" },
-      { key: "presentes", label: "Presentes Agora", icon: PawPrint, toneClassName: "text-emerald-600" },
-      { key: "previstos", label: "Previstos", icon: Calendar, toneClassName: "text-amber-500" },
-      { key: "nao_compareceram", label: "Nao Compareceram", icon: TriangleAlert, toneClassName: "text-rose-600" },
-      { key: "pendencias", label: "Pendencias", icon: CalendarClock, toneClassName: "text-amber-500" },
-    ],
-    [],
-  );
   const mobileSummaryCards = useMemo(
     () => [
       {
@@ -928,33 +984,21 @@ export default function Agendamentos() {
     [dailyStats],
   );
 
-  function applyMobileTopView(nextView) {
-    if (nextView === "presentes") {
-      setTopTab("operacao");
-      setStatusView("arrived");
-      return;
-    }
+  function toggleStatusFilter(filterId) {
+    setStatusFilters((current) => (
+      current.includes(filterId) ? current.filter((item) => item !== filterId) : [...current, filterId]
+    ));
+  }
 
-    if (nextView === "previstos") {
-      setTopTab("operacao");
-      setStatusView("upcoming");
-      return;
-    }
+  function toggleServiceFilter(filterId) {
+    setServiceFilters((current) => (
+      current.includes(filterId) ? current.filter((item) => item !== filterId) : [...current, filterId]
+    ));
+  }
 
-    if (nextView === "nao_compareceram") {
-      setTopTab("nao_compareceram");
-      setStatusView("all");
-      return;
-    }
-
-    if (nextView === "pendencias") {
-      setTopTab("pendencias_comerciais");
-      setStatusView("all");
-      return;
-    }
-
-    setTopTab("operacao");
-    setStatusView("all");
+  function clearAppointmentFilters() {
+    setStatusFilters([]);
+    setServiceFilters([]);
   }
 
   function handleMobilePrimaryAction(row) {
@@ -1107,74 +1151,25 @@ export default function Agendamentos() {
   return (
     <div className="min-h-screen bg-[#f6f8fc] p-3 lg:p-4">
       <div className="space-y-6 lg:hidden">
-        <div className="-mx-3 overflow-x-auto border-b border-slate-200 bg-white/90 px-3 pb-3 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="flex min-w-max items-center gap-3">
-            {mobileTopTabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = mobileTopView === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => applyMobileTopView(tab.key)}
-                  className={cn(
-                    "flex shrink-0 items-center gap-1 border-b-2 pb-3 pt-1 text-[12px] font-semibold tracking-tight transition",
-                    isActive ? "border-blue-600 text-blue-600" : "border-transparent text-slate-600",
-                  )}
-                >
-                  <Icon className={cn("h-3.5 w-3.5", isActive ? "text-blue-600" : tab.toneClassName)} />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-          <DatePickerInput
-            value={filterDate}
-            onChange={setFilterDate}
-            placeholder={formatDateControlLabel(selectedDayKey)}
-            className="h-14 rounded-2xl border-slate-200 bg-white px-4 text-[16px] font-semibold shadow-sm"
-          />
-          <Button
-            variant="outline"
-            onClick={() => loadData(true)}
-            className="h-14 rounded-2xl border-slate-200 bg-white px-5 text-[16px] font-semibold text-slate-900 shadow-sm hover:bg-white"
-          >
-            {isRefreshing ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Atualizar
-          </Button>
-        </div>
+        <AppointmentSearchFilters
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          filterDate={filterDate}
+          onDateChange={setFilterDate}
+          selectedDayKey={selectedDayKey}
+          statusFilters={statusFilters}
+          serviceFilters={serviceFilters}
+          onToggleStatus={toggleStatusFilter}
+          onToggleService={toggleServiceFilter}
+          onClearFilters={clearAppointmentFilters}
+        />
 
         <Card className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
-          <CardHeader className="space-y-3 pb-4">
-            <CardTitle className="text-[18px] font-semibold tracking-tight text-slate-950">
-              {mobileTopView === "pendencias" ? "Pendencias comerciais" : "Agendamentos do dia (todos os servicos)"}
-            </CardTitle>
-            <div className="grid grid-cols-3 gap-2">
-                {MAIN_SERVICE_FILTERS.map((filterId) => {
-                  const isActive = serviceView === filterId;
-                  const label = filterId === "all"
-                    ? "Todos"
-                    : SERVICE_BUCKETS.find((service) => service.id === filterId)?.label || filterId;
-                  return (
-                    <button
-                      key={filterId}
-                      type="button"
-                      onClick={() => setServiceView(filterId)}
-                      className={cn(
-                        "rounded-2xl border px-2.5 py-2 text-[11px] font-semibold transition",
-                        isActive
-                          ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm"
-                          : "border-slate-200 bg-slate-50 text-slate-700",
-                      )}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-            </div>
+          <CardHeader className="space-y-1 pb-4">
+            <CardTitle className="text-[18px] font-semibold tracking-tight text-slate-950">Agendamentos do dia</CardTitle>
+            <CardDescription className="text-xs">
+              {filteredMainRows.length} resultado{filteredMainRows.length === 1 ? "" : "s"} para a data selecionada.
+            </CardDescription>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="overflow-hidden rounded-[24px] border border-slate-100 bg-white">
@@ -1261,7 +1256,7 @@ export default function Agendamentos() {
                 <div className="px-4 py-12 text-center">
                   <p className="text-[16px] font-semibold text-slate-700">Nenhum agendamento encontrado neste recorte.</p>
                   <p className="mt-2 text-[14px] leading-6 text-slate-500">
-                    Ajuste a data ou os filtros para encontrar os atendimentos deste painel.
+                    Ajuste a busca, a data ou os filtros para encontrar os atendimentos.
                   </p>
                 </div>
               )}
@@ -1290,67 +1285,31 @@ export default function Agendamentos() {
 
       <div className="hidden lg:block">
       <div className="mx-auto max-w-[1200px] space-y-5">
-        <div className="flex flex-col gap-3 rounded-[24px] border border-white/80 bg-white/90 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-blue-50 text-blue-600">
-                  <Calendar className="h-6 w-6" />
-                </div>
-                <div>
-                  <h1 className="text-3xl font-bold tracking-tight text-slate-950">Agendamentos</h1>
-                  <p className="mt-1 max-w-2xl text-sm text-slate-500">
-                    Painel operacional do dia com leitura por servico, status e pendencias de check-in.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 pb-0.5">
-                {[
-                  { id: "operacao", label: "Operação", count: dailyStats.total },
-                  { id: "presentes_agora", label: "Presentes Agora", count: dailyStats.arrived },
-                  { id: "nao_compareceram", label: "Nao Compareceram", count: dailyStats.noShow },
-                  ...(!shouldHideOperationalAlerts
-                    ? [{ id: "pendencias_comerciais", label: "Pendencias Comerciais", count: pendingCommercialAppointments.length }]
-                    : []),
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setTopTab(tab.id)}
-                    className={cn(
-                      "flex items-center gap-2 border-b-2 px-1 pb-2.5 text-sm font-semibold transition",
-                      topTab === tab.id
-                        ? "border-blue-600 text-blue-600"
-                        : "border-transparent text-slate-500 hover:text-slate-700",
-                    )}
-                  >
-                    <span>{tab.label}</span>
-                    <span className="text-xs font-bold">{tab.count}</span>
-                  </button>
-                ))}
-              </div>
+        <div className="space-y-4 rounded-[24px] border border-white/80 bg-white/90 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-blue-50 text-blue-600">
+              <Calendar className="h-6 w-6" />
             </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center xl:justify-end">
-              <Button
-                variant="outline"
-                onClick={() => loadData(true)}
-                className="h-11 rounded-xl border-slate-200 px-4 text-sm font-semibold shadow-sm"
-              >
-                {isRefreshing ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                Atualizar
-              </Button>
-              <div className="min-w-[208px]">
-                <DatePickerInput
-                  value={filterDate}
-                  onChange={setFilterDate}
-                  placeholder={formatDateControlLabel(selectedDayKey)}
-                  className="h-11 rounded-xl border-slate-200 px-4 text-sm font-semibold shadow-sm"
-                />
-              </div>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-950">Agendamentos</h1>
+              <p className="mt-1 max-w-2xl text-sm text-slate-500">
+                Consulte os atendimentos do dia por responsável, cão, monitor, status ou serviço.
+              </p>
             </div>
           </div>
+
+          <AppointmentSearchFilters
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            filterDate={filterDate}
+            onDateChange={setFilterDate}
+            selectedDayKey={selectedDayKey}
+            statusFilters={statusFilters}
+            serviceFilters={serviceFilters}
+            onToggleStatus={toggleStatusFilter}
+            onToggleService={toggleServiceFilter}
+            onClearFilters={clearAppointmentFilters}
+          />
         </div>
 
         <section className="space-y-3">
@@ -1403,59 +1362,24 @@ export default function Agendamentos() {
         </section>
 
         <Card className="rounded-[24px] border border-slate-200 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
+          <CardHeader className="pb-3">
             <div>
-              <CardTitle className="text-xl text-slate-950">
-                {topTab === "pendencias_comerciais" ? "Pendencias comerciais" : "Agendamentos do dia (todos os servicos)"}
-              </CardTitle>
+              <CardTitle className="text-xl text-slate-950">Agendamentos do dia</CardTitle>
               <CardDescription className="mt-1 text-sm text-slate-500">
-                Feed operacional com status, servico e acao rapida para o dia selecionado.
+                {filteredMainRows.length} resultado{filteredMainRows.length === 1 ? "" : "s"} para a data selecionada.
               </CardDescription>
             </div>
-            <Button
-              variant="ghost"
-              className="rounded-xl px-3 text-sm font-semibold text-blue-600"
-              onClick={() => {
-                setTopTab("operacao");
-                setStatusView("all");
-                setServiceView("all");
-              }}
-            >
-              Ver todos
-            </Button>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2.5">
-              {MAIN_SERVICE_FILTERS.map((filterId) => {
-                const isActive = serviceView === filterId;
-                const label = filterId === "all"
-                  ? "Todos"
-                  : SERVICE_BUCKETS.find((service) => service.id === filterId)?.label || filterId;
-                return (
-                  <button
-                    key={filterId}
-                    type="button"
-                    onClick={() => setServiceView(filterId)}
-                    className={cn(
-                      "min-w-[108px] rounded-xl border px-3 py-2.5 text-[13px] font-semibold transition",
-                      isActive ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm" : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300",
-                    )}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-
+          <CardContent>
             <div className="overflow-x-auto rounded-[20px] border border-slate-200">
               <div className="grid grid-cols-[72px_104px_minmax(180px,1fr)_172px_184px_128px_148px] items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                <span>Horario</span>
+                <span>Horário</span>
                 <span>Status</span>
                 <span>Pet / atividade</span>
-                <span>Servico</span>
+                <span>Serviço</span>
                 <span>Detalhes</span>
                 <span>Check-in</span>
-                <span className="text-right">Acoes</span>
+                <span className="text-right">Ações</span>
               </div>
 
               <div className="divide-y divide-slate-100 bg-white">
@@ -1541,7 +1465,7 @@ export default function Agendamentos() {
                   <div className="px-4 py-10 text-center">
                     <p className="text-base font-semibold text-slate-700">Nenhum agendamento encontrado neste recorte.</p>
                     <p className="mt-2 text-sm text-slate-500">
-                      Ajuste a data ou os filtros visuais para encontrar os atendimentos deste painel.
+                      Ajuste a busca, a data ou os filtros para encontrar os atendimentos.
                     </p>
                   </div>
                 )}

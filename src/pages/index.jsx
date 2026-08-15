@@ -56,6 +56,7 @@ import Privacidade from "./Privacidade";
 import TermosUso from "./TermosUso";
 import Cookies from "./Cookies";
 import CookieConsent from "@/components/legal/CookieConsent";
+import SessionInactivityGuard from "@/components/auth/SessionInactivityGuard";
 
 const PAGES = {
   Login,
@@ -328,7 +329,9 @@ function PagesContent() {
   const privateStandalonePages = Object.keys(PAGES).filter((pageName) => STANDALONE_PAGES.has(pageName) && !PUBLIC_PAGES.has(pageName) && pageName !== "Login");
 
   return (
-    <Routes>
+    <>
+      <SessionInactivityGuard enabled={authEnabled && authReady} user={currentUser} />
+      <Routes>
       <Route path="/avaliar/:unitReference" element={<GoogleReviewRedirect />} />
       <Route path="/avaliar" element={<GoogleReviewRedirect />} />
       <Route path="/" element={<DefaultHomeRedirect authEnabled={authEnabled} authReady={authReady} currentUser={currentUser} />} />
@@ -415,8 +418,9 @@ function PagesContent() {
         );
       })}
 
-      <Route path="*" element={<DefaultHomeRedirect authEnabled={authEnabled} authReady={authReady} currentUser={currentUser} />} />
-    </Routes>
+        <Route path="*" element={<DefaultHomeRedirect authEnabled={authEnabled} authReady={authReady} currentUser={currentUser} />} />
+      </Routes>
+    </>
   );
 }
 

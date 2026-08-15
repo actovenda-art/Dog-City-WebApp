@@ -17,6 +17,7 @@ import {
   isDeviceTrustedForUser,
   markDeviceTrustedForUser,
 } from '@/lib/device-trust';
+import { clearSessionActivity } from '@/lib/session-inactivity';
 import {
   buildInternalEntityCode,
   getInternalEntityCode,
@@ -252,8 +253,10 @@ function toAppError(error, fallback = 'Erro no Supabase.') {
   const missingCarteiraColumn = isMissingColumnFor('carteira');
   const missingOrcamentoColumn = isMissingColumnFor('orcamento');
   const missingCheckinColumn = isMissingColumnFor('checkins');
-  const missingServiceProviderColumn = isMissingColumnFor('serviceproviders');
-  const missingExtratoColumn = isMissingColumnFor('extratobancario');
+  const missingServiceProviderColumn = isMissingColumnFor('prestador_servico')
+    || isMissingColumnFor('serviceproviders');
+  const missingExtratoColumn = isMissingColumnFor('extrato_bancario')
+    || isMissingColumnFor('extratobancario');
   const missingDespesaColumn = isMissingColumnFor('despesa');
   const missingReceitaColumn = isMissingColumnFor('receita');
   const missingUsersPinColumn = isMissingColumnFor('users')
@@ -346,6 +349,85 @@ function createDuplicateProfileCpfError(entityLabel) {
   const error = new Error(`Este CPF já está cadastrado para outro ${entityLabel} nesta unidade.`);
   error.code = 'PROFILE_DUPLICATE_CPF';
   return error;
+}
+
+function applyDueDayToDateKey(value, dueDay) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value || null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${match[1]}-${match[2]}-${String(Math.min(dueDay, lastDay)).padStart(2, '0')}`;
+}
+
+function isOpenMockReceivable(item) {
+  const status = String(item?.status || 'pendente').toLowerCase();
+  return !item?.data_recebimento
+    && !['pago', 'paga', 'quitado', 'quitada', 'cancelado', 'cancelada', 'estornado', 'estornada'].includes(status);
+}
+
+function propagateMockWalletDueDay(walletId, rawDueDay) {
+  const dueDay = Number.parseInt(String(rawDueDay || ''), 10);
+  if (!walletId || !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return;
+
+  const receivables = readStorage('ContaReceber').map((item) => {
+    if (item?.cliente_id !== walletId || !isOpenMockReceivable(item) || !item?.vencimento) return item;
+    const nextDueDate = applyDueDayToDateKey(item.vencimento, dueDay);
+    return {
+      ...item,
+      vencimento: nextDueDate,
+      source_key: /^plano_recorrente\|.+\|\d{4}-\d{2}-\d{2}$/.test(String(item?.source_key || ''))
+        ? String(item.source_key).replace(/\|\d{4}-\d{2}-\d{2}$/, `|${nextDueDate}`)
+        : item.source_key,
+      metadata: {
+        ...(item?.metadata || {}),
+        due_day: dueDay,
+        wallet_due_day_previous_due_date: item.vencimento,
+        wallet_due_day_updated_at: new Date().toISOString(),
+      },
+      updated_date: new Date().toISOString(),
+    };
+  });
+  writeStorage('ContaReceber', receivables);
+
+  const openStatuses = new Set(['aberta', 'parcial', 'vencida']);
+  ['ObrigacaoFinanceira', 'CobrancaFinanceira'].forEach((storageKey) => {
+    const rows = readStorage(storageKey).map((item) => {
+      if (item?.carteira_id !== walletId
+        || !openStatuses.has(String(item?.status || '').toLowerCase())
+        || Number(item?.valor_em_aberto || 0) <= 0
+        || !item?.due_date) return item;
+      return {
+        ...item,
+        due_date: applyDueDayToDateKey(item.due_date, dueDay),
+        lock_version: Number(item?.lock_version || 0) + 1,
+        metadata: {
+          ...(item?.metadata || {}),
+          wallet_due_day_previous_due_date: item.due_date,
+          wallet_due_day_updated_at: new Date().toISOString(),
+        },
+        updated_date: new Date().toISOString(),
+      };
+    });
+    writeStorage(storageKey, rows);
+  });
+
+  const plans = readStorage('PlanConfig').map((item) => {
+    const planWalletId = item?.carteira_id || item?.client_id || item?.cliente_id;
+    const status = String(item?.status || 'ativo').toLowerCase();
+    if (planWalletId !== walletId || ['cancelado', 'cancelada', 'inativo', 'inativa'].includes(status)) return item;
+    return {
+      ...item,
+      due_day: dueDay,
+      renovacao_dia: dueDay,
+      next_billing_date: applyDueDayToDateKey(item?.next_billing_date, dueDay),
+      data_vencimento: applyDueDayToDateKey(item?.data_vencimento, dueDay),
+      data_renovacao: applyDueDayToDateKey(item?.data_renovacao, dueDay),
+      updated_date: new Date().toISOString(),
+    };
+  });
+  writeStorage('PlanConfig', plans);
 }
 
 function createMockEntity(name, options = {}) {
@@ -559,6 +641,7 @@ function createMockEntity(name, options = {}) {
       const items = ensureMockEntityCodes(readStorage(name));
       const idx = items.findIndex((item) => item.id === id);
       if (idx === -1) return Promise.reject(new Error('Not found'));
+      const previousDueDay = items[idx]?.vencimento_planos;
       const nextItem = { ...items[idx], ...data, updated_date: new Date().toISOString() };
       assertUniqueProfileCpf(items, nextItem, id);
       if (hasInternalEntityCodeConfig(name)) {
@@ -571,6 +654,9 @@ function createMockEntity(name, options = {}) {
       }
       items[idx] = nextItem;
       writeStorage(name, items);
+      if (name === 'Carteira' && previousDueDay !== nextItem.vencimento_planos) {
+        propagateMockWalletDueDay(id, nextItem.vencimento_planos);
+      }
       return Promise.resolve(items[idx]);
     },
     delete: (id) => {
@@ -5564,6 +5650,7 @@ const createMockAuth = () => {
     }),
     onAuthStateChange: () => ({ unsubscribe() {} }),
     logout: async () => {
+      clearSessionActivity(currentUser.id);
       clearStoredActiveUnitId();
       return { ok: true };
     },
@@ -6016,15 +6103,15 @@ if (USE_SUPABASE_BACKEND) {
     FinanceSnapshot: 'finance_snapshot',
     FinanceSnapshotDelta: 'finance_snapshot_delta',
     AuditLog: 'audit_logs',
-    TabelaPrecos: 'tabelaprecos',
-    ServiceProvided: 'serviceprovided',
-    ServiceProvider: 'serviceproviders',
-    ServiceProviderSchedule: 'serviceprovider_schedule',
+    TabelaPrecos: 'tabela_preco',
+    ServiceProvided: 'servico_prestado',
+    ServiceProvider: 'prestador_servico',
+    ServiceProviderSchedule: 'prestador_servico_agenda',
     Replacement: 'replacement',
     Lancamento: 'lancamento',
-    ExtratoBancario: 'extratobancario',
+    ExtratoBancario: 'extrato_bancario',
     Receita: 'receita',
-    PedidoInterno: 'pedidointerno',
+    PedidoInterno: 'pedido_interno',
     Notificacao: 'notificacao',
     Checkin: 'checkins',
     IntegracaoConfig: 'integracao_config',
@@ -7322,8 +7409,10 @@ if (USE_SUPABASE_BACKEND) {
       return data?.subscription || { unsubscribe() {} };
     },
     logout: async () => {
+      const userId = supabaseAuth.currentUser?.id || null;
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      clearSessionActivity(userId);
       supabaseAuth.currentUser = null;
       clearStoredActiveUnitId();
       return { ok: true };

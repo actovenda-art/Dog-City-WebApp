@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { CentroCusto, Lancamento, User, ExtratoBancario, Despesa } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,11 +12,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
-  Plus, Search, Pencil, Trash2, DollarSign, AlertTriangle, CheckCircle, 
+  Plus, Pencil, Trash2, DollarSign, AlertTriangle, CheckCircle,
   Clock, Upload, FileText, Link2, X, ChevronDown, ChevronRight, Maximize2, Minimize2 
 } from "lucide-react";
 import { format, differenceInDays, parseISO } from "date-fns";
@@ -810,12 +809,11 @@ export default function ContasPagar() {
                   <CardContent className="p-12 text-center">
                     <CheckCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                     <p className="text-gray-500">Nenhuma conta quitada hoje</p>
-                    <p className="text-xs text-gray-400 mt-2">Contas quitadas aparecem imediatamente em "Despesas"</p>
+                    <p className="text-xs text-gray-400 mt-2">Contas quitadas aparecem imediatamente em &quot;Despesas&quot;</p>
                   </CardContent>
                 </Card>
               ) : realizadosHoje.map(l => {
                 const valorTotal = l.valor || 0;
-                const valorQuitado = l.valor_quitado || 0;
                 const isExpanded = expandedItems[l.id] || false;
 
                 return (

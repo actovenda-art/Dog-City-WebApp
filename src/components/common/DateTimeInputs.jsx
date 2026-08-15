@@ -129,11 +129,6 @@ function formatDisplayDateRange(startValue, endValue) {
   return null;
 }
 
-function formatDisplayDateTime(value) {
-  const parsed = parseDateTimeLocal(value);
-  return parsed ? format(parsed, "dd/MM/yyyy 'as' HH:mm", { locale: ptBR }) : null;
-}
-
 function buildDateTime(dateValue, timeValue) {
   const date = parseDateOnly(dateValue) || new Date();
   const { hour, minute } = parseTimeValue(timeValue);

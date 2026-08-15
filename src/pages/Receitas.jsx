@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { ArrowUpCircle, Calendar, CreditCard, Link2, Plus, Wallet } from "lucide-react";
+import { ArrowUpCircle, Calendar, CreditCard, Link2, Plus } from "lucide-react";
 import {
   dedupeOfficialImportedMovements,
   formatCurrency,

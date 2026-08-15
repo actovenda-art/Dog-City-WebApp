@@ -1,4 +1,3 @@
-import React from "react";
 
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";

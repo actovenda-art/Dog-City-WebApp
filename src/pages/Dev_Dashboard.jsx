@@ -2,9 +2,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Empresa, PerfilAcesso, User, UserProfile, UserUnitAccess } from "@/api/entities";
+import { appClient } from "@/api/appClient";
 import { SendEmail } from "@/api/integrations";
 import { createPageUrl } from "@/utils";
 import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,7 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Mail, RotateCcw, Save, Search, Settings, Shield, Trash2, UserPlus, UserX, Users } from "lucide-react";
+import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Mail, RotateCcw, Save, Settings, Shield, Trash2, UserPlus, UserX, Users } from "lucide-react";
 
 const EMPTY_INVITE = {
   full_name: "",
@@ -119,7 +121,6 @@ export default function Dev_Dashboard() {
   const [profiles, setProfiles] = useState([]);
   const [users, setUsers] = useState([]);
   const [invites, setInvites] = useState([]);
-  const [unitAccessRows, setUnitAccessRows] = useState([]);
   const [userUnitAccessMap, setUserUnitAccessMap] = useState({});
   const [setupError, setSetupError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -130,10 +131,11 @@ export default function Dev_Dashboard() {
   const [inviteForm, setInviteForm] = useState(EMPTY_INVITE);
   const [feedbackModal, setFeedbackModal] = useState(EMPTY_FEEDBACK_MODAL);
   const [hasCopiedFeedbackValue, setHasCopiedFeedbackValue] = useState(false);
+  const loadDataStable = useStableCallback(loadData);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadDataStable();
+  }, [loadDataStable]);
 
   async function loadData() {
     setIsLoading(true);
@@ -153,7 +155,6 @@ export default function Dev_Dashboard() {
       setProfiles(profileRows || []);
       setUsers(userRows || []);
       setInvites((userRows || []).filter((item) => item?.invite_sent || item?.invite_status).map(normalizeInviteUser));
-      setUnitAccessRows(accessRows || []);
       setUserUnitAccessMap(buildUnitAccessMap(accessRows || []));
 
       if (!selectedUnitId) {

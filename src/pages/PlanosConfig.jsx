@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import LoadingScreen from "@/components/layout/LoadingScreen";
-import { addDays, addMonths, addWeeks, differenceInCalendarDays, endOfMonth, format, getDay, isSameDay, isSameMonth, nextDay, parseISO, startOfMonth } from "date-fns";
+import { addDays, addMonths, differenceInCalendarDays, endOfMonth, format, getDay, isSameDay, parseISO, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import {
   Bath,
   AlertTriangle,
@@ -47,15 +48,11 @@ import {
 import {
   applyCreditsToSessions,
   buildBillingPayload,
-  buildMonthKey as buildRecurringMonthKey,
-  calculateMonthlyBilling,
   cancelSession,
   deduplicateRecurringPlanCharges,
-  formatDateKey as formatRecurringDateKey,
   generateMonthlySessions,
   getAutomaticRecurringMonthKeys,
   getAvailableCredits,
-  getMonthKey as getRecurringMonthKey,
   isRecordLinkedToRecurringPlanGroup,
   markSessionAsCompleted,
   markSessionAsNoShow,
@@ -295,11 +292,6 @@ function getMonthlyValue(plan) {
 
 function getPlanClientId(plan) {
   return plan?.client_id || plan?.carteira_id || "";
-}
-
-function getPlanStartDate(plan) {
-  const metadata = parseMetadata(plan?.metadata_gerencial);
-  return metadata.start_date || null;
 }
 
 function normalizeDogIdList(value) {
@@ -1090,10 +1082,12 @@ export default function PlanosConfig() {
   const [useSuggestedValue, setUseSuggestedValue] = useState(true);
   const isSilentSyncRunningRef = useRef(false);
   const isPrepaidSilentSyncRunningRef = useRef(false);
+  const loadDataStable = useStableCallback(loadData);
+  const syncSinglePrepaidPackageMonthStable = useStableCallback(syncSinglePrepaidPackageMonth);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadDataStable();
+  }, [loadDataStable]);
 
   useEffect(() => {
     const requestedPackageId = String(searchParams.get("packageId") || "").trim();
@@ -1139,11 +1133,11 @@ export default function PlanosConfig() {
 
     isPrepaidSilentSyncRunningRef.current = true;
     Promise.all(syncTargets.map(({ packageRecord, monthKey }) =>
-      syncSinglePrepaidPackageMonth(packageRecord, monthKey)
+      syncSinglePrepaidPackageMonthStable(packageRecord, monthKey)
     ))
       .then(() => {
         if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, "1");
-        return loadData({ skipSilentSync: true });
+        return loadDataStable({ skipSilentSync: true });
       })
       .catch((error) => {
         console.error("Erro ao gerar fichas pré-pagas automaticamente:", error);
@@ -1151,7 +1145,7 @@ export default function PlanosConfig() {
       .finally(() => {
         isPrepaidSilentSyncRunningRef.current = false;
       });
-  }, [isLoading, packageBillings, plans, prepaidPackages]);
+  }, [isLoading, loadDataStable, packageBillings, plans, prepaidPackages, syncSinglePrepaidPackageMonthStable]);
 
   async function loadData({ skipSilentSync = false } = {}) {
     setIsLoading(true);
@@ -1781,7 +1775,7 @@ export default function PlanosConfig() {
     return true;
   }
 
-  async function generateAppointments(plan, existingAppointmentKeys = null, weeksAhead = 4) {
+  async function generateAppointments(plan, existingAppointmentKeys = null) {
     const weekdays = normalizeWeekdays(plan.weekdays);
     if (!weekdays.length) return 0;
 
@@ -4741,8 +4735,6 @@ export default function PlanosConfig() {
                       <div className="mt-3 space-y-2">
                         {deletePreview.openReplacementAppointments.map((appointment) => {
                           const appointmentDate = parseDateOnly(appointment.data_referencia || appointment.data_hora_entrada?.slice?.(0, 10));
-                          const appointmentMeta = parseMetadata(appointment.metadata);
-                          const replacementDeadline = parseDateOnly(appointmentMeta.replacement_deadline || appointmentMeta.suggested_replacement_deadline);
                           return (
                             <div key={appointment.id} className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                               <span className="font-medium text-gray-900">{dogsById[appointment.dog_id]?.nome || "Cão"}</span>

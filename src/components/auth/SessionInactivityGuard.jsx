@@ -1,4 +1,3 @@
-/* eslint-disable react/prop-types */
 import { useEffect } from "react";
 import { User } from "@/api/entities";
 import { getSafeRedirectTarget } from "@/lib/auth-navigation";

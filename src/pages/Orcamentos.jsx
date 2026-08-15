@@ -543,7 +543,7 @@ function buildRecurringDogBudgetContext(dogId, recurringPackages = [], appointme
 
   const pendingBathOnlyOptions = pendingRecurringAppointments
     .filter((appointment) => RECURRING_GROOMING_MOVE_TARGET_SERVICE_IDS.has(appointment?.service_type))
-    .filter((appointment) => !Boolean(getAppointmentMeta(appointment)?.has_grooming))
+    .filter((appointment) => !getAppointmentMeta(appointment)?.has_grooming)
     .map((appointment) => buildRecurringAppointmentOption(
       appointment,
       activePackages.find((item) => item.id === appointment.recurring_package_id),

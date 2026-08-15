@@ -28,8 +28,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createPageUrl } from "@/utils";
 import {
   AlertTriangle,
-  BellRing,
-  Search,
   FileText,
   Eye,
   Trash2,
@@ -57,7 +55,6 @@ import {
   buildPricingConfig,
   calculateTosaValue,
   getAppointmentDateKey,
-  getAppointmentEndDateKey,
   getAppointmentMeta,
   getAppointmentTimeValue,
   getServiceLabel,
@@ -69,6 +66,7 @@ import { canViewSensitivePersonalData, isCommercialProfile, isManagerialProfile 
 import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 import { formatAddressParts, maskAddressParts, maskCpfCnpj, maskPhone, maskSensitiveValue } from "@/lib/privacy";
 import { normalizeLegacyUtf8Text } from "@/lib/text-encoding";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -92,10 +90,6 @@ function isBudgetExpired(orcamento, referenceDate = getLocalDateKey()) {
   return Boolean(validityDate && validityDate < referenceDate);
 }
 
-function normalizeDigits(value) {
-  return String(value || "").replace(/\D/g, "");
-}
-
 function formatTime(value) {
   return value || "-";
 }
@@ -105,10 +99,6 @@ function formatTimeRange(startTime, endTime) {
   if (startTime) return startTime;
   if (endTime) return endTime;
   return "-";
-}
-
-function formatTimeValue(value) {
-  return value ? String(value).slice(0, 5) : "";
 }
 
 function normalizeBudgetChargeStatus(status) {
@@ -137,12 +127,6 @@ function getBudgetChargeStatusLabel(status) {
   if (normalized === "baixado") return "Baixado";
   if (normalized === "expirado") return "Expirado";
   return "Emitido";
-}
-
-function combineDateTimeLocal(date, time) {
-  if (!date) return null;
-  const normalizedTime = (time || "09:00").slice(0, 5);
-  return `${date}T${normalizedTime}:00`;
 }
 
 function getCreatedTimestamp(record) {
@@ -489,95 +473,6 @@ function serializeOperationalAppointmentForPrefill(appointment) {
   };
 }
 
-function buildAppointmentEditRow(appointment) {
-  const metadata = getAppointmentMeta(appointment);
-  const snapshot = metadata.snapshot || {};
-  const sharedDogs = Array.isArray(snapshot.hosp_dormitorio_com)
-    ? snapshot.hosp_dormitorio_com
-    : [];
-
-  return {
-    id: appointment.id,
-    dog_id: appointment.dog_id || "",
-    service_type: appointment.service_type || "",
-    data_inicio: getAppointmentDateKey(appointment),
-    data_fim: getAppointmentEndDateKey(appointment),
-    hora_entrada: getAppointmentTimeValue(appointment, "entrada"),
-    hora_saida: getAppointmentTimeValue(appointment, "saida"),
-    observacoes: appointment.observacoes || "",
-    lembrete_data: metadata.lembrete_data || getAppointmentDateKey(appointment),
-    lembrete_texto: metadata.lembrete_texto || metadata.lembrete_orcamento || "",
-    lembrete_horario: metadata.lembrete_horario || metadata.lembrete_horario_orcamento || "",
-    hosp_dormitorio_compartilhado: !!snapshot.hosp_dormitorio_compartilhado,
-    hosp_dormitorio_com: sharedDogs.filter(Boolean),
-    original: appointment,
-  };
-}
-
-function buildUpdatedAppointmentPayload(row) {
-  const metadata = getAppointmentMeta(row.original);
-  const snapshot = { ...(metadata.snapshot || {}) };
-  const serviceType = row.service_type;
-  const startDate = row.data_inicio || "";
-  const endDate = serviceType === "hospedagem" ? (row.data_fim || startDate) : startDate;
-
-  if (serviceType === "hospedagem") {
-    snapshot.hosp_data_entrada = startDate;
-    snapshot.hosp_data_saida = endDate;
-    snapshot.hosp_horario_entrada = row.hora_entrada || "";
-    snapshot.hosp_horario_saida = row.hora_saida || "";
-    snapshot.hosp_dormitorio_compartilhado = !!row.hosp_dormitorio_compartilhado;
-    snapshot.hosp_dormitorio_com = row.hosp_dormitorio_com || [];
-  }
-
-  if (serviceType === "day_care") {
-    snapshot.day_care_data = startDate;
-    snapshot.day_care_horario_entrada = row.hora_entrada || "";
-    snapshot.day_care_horario_saida = row.hora_saida || "";
-  }
-
-  if (serviceType === "adaptacao") {
-    snapshot.adaptacao_data = startDate;
-    snapshot.adaptacao_horario_entrada = row.hora_entrada || "";
-    snapshot.adaptacao_horario_saida = row.hora_saida || "";
-  }
-
-  if (serviceType === "banho") {
-    snapshot.banho_data = startDate;
-    snapshot.banho_horario_inicio = row.hora_entrada || "";
-    snapshot.banho_horario_saida = row.hora_saida || "";
-  }
-
-  if (serviceType === "tosa") {
-    snapshot.tosa_data = startDate;
-    snapshot.tosa_horario_entrada = row.hora_entrada || "";
-    snapshot.tosa_horario_saida = row.hora_saida || "";
-  }
-
-  if (serviceType === "transporte") {
-    snapshot.transporte_data = startDate;
-  }
-
-  return {
-    dog_id: row.dog_id || null,
-    data_referencia: startDate || null,
-    data_hora_entrada: combineDateTimeLocal(startDate, row.hora_entrada || "09:00"),
-    data_hora_saida: row.hora_saida ? combineDateTimeLocal(endDate, row.hora_saida) : null,
-    hora_entrada: row.hora_entrada || "",
-    hora_saida: row.hora_saida || "",
-    observacoes: row.observacoes || "",
-    metadata: {
-      ...metadata,
-      snapshot,
-      lembrete_data: row.lembrete_data || "",
-      lembrete_texto: row.lembrete_texto || "",
-      lembrete_horario: row.lembrete_horario || "",
-      editado_no_orcamento: true,
-      editado_em: new Date().toISOString(),
-    },
-  };
-}
-
 function getStatusBadge(status) {
   const config = {
     rascunho: { color: "bg-gray-100 text-gray-700", icon: Clock, label: "Rascunho" },
@@ -624,9 +519,6 @@ export default function OrcamentosHistoricoPanel({
   const [isDeletingOrcamento, setIsDeletingOrcamento] = useState(false);
   const [showAppointmentsEditor, setShowAppointmentsEditor] = useState(false);
   const [editingOrcamento, setEditingOrcamento] = useState(null);
-  const [appointmentEditRows, setAppointmentEditRows] = useState([]);
-  const [isLoadingAppointmentEdits, setIsLoadingAppointmentEdits] = useState(false);
-  const [isSavingAppointmentEdits, setIsSavingAppointmentEdits] = useState(false);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
   const [budgetFinanceContext, setBudgetFinanceContext] = useState(null);
   const [budgetFinancePreview, setBudgetFinancePreview] = useState(null);
@@ -648,6 +540,7 @@ export default function OrcamentosHistoricoPanel({
   const [isIssuingBudgetPayment, setIsIssuingBudgetPayment] = useState(false);
   const [isRefreshingBudgetPayment, setIsRefreshingBudgetPayment] = useState(false);
   const [isDownloadingBudgetPayment, setIsDownloadingBudgetPayment] = useState(false);
+  const openOrcamentoDetailStable = useStableCallback(openOrcamentoDetail);
   const financialStatusMap = React.useMemo(
     () => buildFinancialOperationalStatusMap(contasReceber),
     [contasReceber],
@@ -665,8 +558,8 @@ export default function OrcamentosHistoricoPanel({
     if (!openOrcamentoId || !orcamentos.length) return;
     const matchedOrcamento = orcamentos.find((item) => item.id === openOrcamentoId);
     if (!matchedOrcamento) return;
-    openOrcamentoDetail(matchedOrcamento);
-  }, [openOrcamentoId, orcamentos]);
+    openOrcamentoDetailStable(matchedOrcamento);
+  }, [openOrcamentoId, openOrcamentoDetailStable, orcamentos]);
 
   const canAuthorizeBudgetFinancially = Boolean(
     currentUser?.is_platform_admin
@@ -1111,12 +1004,14 @@ export default function OrcamentosHistoricoPanel({
     }
   }
 
+  const syncBudgetChargeStatusStable = useStableCallback(syncBudgetChargeStatus);
+
   useEffect(() => {
     if (!paymentDialogOpen || !activeBudgetBoleto?.id || selectedBudgetExpired) return;
     const refreshKey = `${selectedOrcamento?.id || ""}:${activeBudgetBoleto.id}:${activeBudgetBoleto.updated_date || activeBudgetBoleto.created_date || ""}`;
     if (lastSilentBudgetRefreshRef.current === refreshKey) return;
     lastSilentBudgetRefreshRef.current = refreshKey;
-    syncBudgetChargeStatus({ silent: true, paymentId: activeBudgetBoleto.id });
+    syncBudgetChargeStatusStable({ silent: true, paymentId: activeBudgetBoleto.id });
   }, [
     paymentDialogOpen,
     activeBudgetBoleto?.id,
@@ -1124,6 +1019,7 @@ export default function OrcamentosHistoricoPanel({
     activeBudgetBoleto?.created_date,
     selectedOrcamento?.id,
     selectedBudgetExpired,
+    syncBudgetChargeStatusStable,
   ]);
 
   function openOrcamentoDetail(orcamento) {
@@ -1259,9 +1155,10 @@ export default function OrcamentosHistoricoPanel({
               )
             );
           } else {
-            const [pricingRows, currentUser] = await Promise.all([
+            const [pricingRows, currentUser, checkinRows] = await Promise.all([
               TabelaPrecos.list("-created_date", 1000),
               User.me(),
+              Checkin.listAll("-created_date", 1000, 10000),
             ]);
 
             const ownerByDogId = buildDogOwnerIndex(carteiras, responsaveis);
@@ -1450,7 +1347,7 @@ export default function OrcamentosHistoricoPanel({
 
               if (migratedAppointment?.id) {
                 if (existing?.id && existing.id !== migratedAppointment.id) {
-                  if (appointmentHasOperationalRecord(existing, checkins)) {
+                  if (appointmentHasOperationalRecord(existing, checkinRows || [])) {
                     throw new Error("Foram encontrados dois atendimentos operacionais para o mesmo item do orçamento substituto.");
                   }
                   await Appointment.delete(existing.id);
@@ -1776,44 +1673,6 @@ export default function OrcamentosHistoricoPanel({
     }
     setEditingOrcamento(orcamento);
     setShowAppointmentsEditor(true);
-  }
-
-  function updateAppointmentEditRow(rowId, patch) {
-    setAppointmentEditRows((currentRows) =>
-      currentRows.map((row) => row.id === rowId ? { ...row, ...patch } : row)
-    );
-  }
-
-  function toggleSharedKennelDog(rowId, dogId) {
-    setAppointmentEditRows((currentRows) =>
-      currentRows.map((row) => {
-        if (row.id !== rowId) return row;
-        const currentIds = new Set(row.hosp_dormitorio_com || []);
-        if (currentIds.has(dogId)) currentIds.delete(dogId);
-        else currentIds.add(dogId);
-        return { ...row, hosp_dormitorio_com: [...currentIds] };
-      })
-    );
-  }
-
-  async function saveAppointmentEdits() {
-    if (!appointmentEditRows.length) return;
-    setIsSavingAppointmentEdits(true);
-    try {
-      await Promise.all(
-        appointmentEditRows.map((row) => Appointment.update(row.id, buildUpdatedAppointmentPayload(row)))
-      );
-      await loadData();
-      await onChange?.();
-      setShowAppointmentsEditor(false);
-      setEditingOrcamento(null);
-      showFeedback("Agendamentos atualizados", "As alterações foram salvas nos agendamentos deste orçamento.", "success");
-    } catch (error) {
-      console.error("Erro ao salvar agendamentos do orçamento:", error);
-      showFeedback("Não foi possível salvar", "Revise os dados dos agendamentos e tente novamente.", "error");
-    } finally {
-      setIsSavingAppointmentEdits(false);
-    }
   }
 
   const filtered = orcamentos
@@ -2673,14 +2532,12 @@ export default function OrcamentosHistoricoPanel({
         onClose={() => {
           setShowAppointmentsEditor(false);
           setEditingOrcamento(null);
-          setAppointmentEditRows([]);
         }}
         onSaved={async (updatedOrcamento) => {
           setSelectedOrcamento(updatedOrcamento);
           setSelectedStatusDraft(updatedOrcamento?.status || "rascunho");
           setShowAppointmentsEditor(false);
           setEditingOrcamento(null);
-          setAppointmentEditRows([]);
           await loadData();
           await onChange?.();
           showFeedback("Agendamentos atualizados", "As alterações foram salvas no orçamento e nos agendamentos vinculados.", "success");

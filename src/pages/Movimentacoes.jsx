@@ -7,7 +7,6 @@ import {
   financeLinkBankEntryToWallet,
   financeLinkBankOutputToPayable,
   financeWalletAdminApplyOperation,
-  financeWalletAdminAuditAccounts,
   financeWalletAdminReadAccounts,
   financeWalletAdminReadMovements,
 } from "@/api/functions";
@@ -61,6 +60,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -100,7 +100,6 @@ import {
 import { createPageUrl } from "@/utils";
 import { FINANCE_FEATURE_FLAGS, getFinanceFeatureFlagValue } from "@/lib/finance-feature-flags";
 import { canWriteFinancialOperations, isCommercialProfile, isManagerialProfile } from "@/lib/access-control";
-import FinancialOperationalAlert from "@/components/finance/FinancialOperationalAlert";
 import { buildFinancialOperationalStatusMap, getFinancialOperationalStatus } from "@/lib/finance-operational-status";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
 import { getAppointmentDateKey } from "@/lib/attendance";
@@ -1199,17 +1198,6 @@ StatCard.propTypes = {
   isBlurred: PropTypes.bool,
 };
 
-function getOperationalBadgeClass(tone) {
-  if (tone === "reversal") return "border-red-200 bg-red-50 text-red-700";
-  if (tone === "payment") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  return "border-slate-200 bg-slate-50 text-slate-600";
-}
-
-function getOperationalStatusClass(tone) {
-  if (tone === "irregular") return "border-red-200 bg-red-50 text-red-700";
-  return "border-emerald-200 bg-emerald-50 text-emerald-700";
-}
-
 function getWalletTimelineDotClass(row) {
   if (row?.sourceKind === "transaction") return "bg-emerald-500";
   if (row?.sourceKind === "reversal") return "bg-red-500";
@@ -1414,10 +1402,8 @@ export default function Movimentacoes({ walletOnly = false }) {
     paymentV2ReversalEnabled: false,
   });
   const [walletAccounts, setWalletAccounts] = useState([]);
-  const [walletAuditRows, setWalletAuditRows] = useState([]);
   const [walletRecentMovements, setWalletRecentMovements] = useState([]);
   const [walletOperationalHistory, setWalletOperationalHistory] = useState([]);
-  const [walletReceivables, setWalletReceivables] = useState([]);
   const [walletSettlementStatusByWalletId, setWalletSettlementStatusByWalletId] = useState({});
   const [walletOperationalContext, setWalletOperationalContext] = useState({
     appointments: [],
@@ -1576,6 +1562,8 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
   };
 
+  const loadDataStable = useStableCallback(loadData);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -1589,14 +1577,14 @@ export default function Movimentacoes({ walletOnly = false }) {
         setCurrentUser(me || null);
         if (!walletOnly) {
           applyCachedSnapshot(me?.empresa_id || null);
-          await loadData(me || null);
+          await loadDataStable(me || null);
         }
       } catch (error) {
         console.warn("Não foi possível carregar o usuário atual:", error);
         if (isMounted) {
           if (!walletOnly) {
             applyCachedSnapshot();
-            await loadData(null);
+            await loadDataStable(null);
           }
         }
       } finally {
@@ -1611,7 +1599,7 @@ export default function Movimentacoes({ walletOnly = false }) {
     return () => {
       isMounted = false;
     };
-  }, [walletOnly]);
+  }, [loadDataStable, walletOnly]);
 
   useEffect(() => {
     if (walletOnly) return;
@@ -1705,7 +1693,6 @@ export default function Movimentacoes({ walletOnly = false }) {
     if (!userProfile?.empresa_id) {
       setWalletFlagsLoaded(true);
       setWalletAccounts([]);
-      setWalletAuditRows([]);
       setWalletRecentMovements([]);
       setWalletSettlementStatusByWalletId({});
       setWalletOperationalContext({
@@ -1732,7 +1719,6 @@ export default function Movimentacoes({ walletOnly = false }) {
 
       if (!walletReadEnabled) {
         setWalletAccounts([]);
-        setWalletAuditRows([]);
         setWalletRecentMovements([]);
         setWalletSettlementStatusByWalletId({});
         setSelectedWalletAccountId("");
@@ -1741,7 +1727,6 @@ export default function Movimentacoes({ walletOnly = false }) {
 
       const [
         accounts,
-        auditRows,
         carteiras,
         dogs,
         receivables,
@@ -1756,9 +1741,6 @@ export default function Movimentacoes({ walletOnly = false }) {
         budgetPayments,
       ] = await Promise.all([
         financeWalletAdminReadAccounts({ empresa_id: userProfile.empresa_id }),
-        nextFlags.balanceReadEnabled
-          ? financeWalletAdminAuditAccounts({ empresa_id: userProfile.empresa_id })
-          : Promise.resolve([]),
         readEntityCollection(Carteira, { sort: "nome_razao_social", pageSize: 500, maxRows: 2000 }),
         readEntityCollection(Dog, { sort: "nome", pageSize: 500, maxRows: 2000 }),
         readEntityCollection(ContaReceber, { sort: "-updated_date", pageSize: 500, maxRows: 2000 }),
@@ -1780,7 +1762,6 @@ export default function Movimentacoes({ walletOnly = false }) {
         Array.isArray(receivables) ? receivables : [],
       );
       setWalletAccounts(normalizedAccounts);
-      setWalletAuditRows(Array.isArray(auditRows) ? auditRows : []);
       setWalletSettlementStatusByWalletId(buildWalletSettlementStatusIndex({
         accounts: normalizedAccounts,
         movements: Array.isArray(movements) ? movements : [],
@@ -1816,7 +1797,6 @@ export default function Movimentacoes({ walletOnly = false }) {
     } catch (error) {
       console.warn("Não foi possível carregar a leitura administrativa da carteira:", error);
       setWalletAccounts([]);
-      setWalletAuditRows([]);
       setWalletRecentMovements([]);
       setWalletSettlementStatusByWalletId({});
       setSelectedWalletAccountId("");
@@ -1911,7 +1891,6 @@ export default function Movimentacoes({ walletOnly = false }) {
       });
 
       if (isCurrentRequest()) {
-        setWalletReceivables(Array.isArray(accountsReceivable) ? accountsReceivable : []);
         setWalletOperationalContext({
           appointments: Array.isArray(appointments) ? appointments : [],
           services: Array.isArray(services) ? services : [],
@@ -1929,7 +1908,6 @@ export default function Movimentacoes({ walletOnly = false }) {
     } catch (error) {
       console.warn("Não foi possível carregar a trilha operacional do Payment/Estorno V2:", error);
       if (isCurrentRequest()) {
-        setWalletReceivables([]);
         setWalletOperationalContext({
           appointments: [],
           services: [],
@@ -1982,10 +1960,14 @@ export default function Movimentacoes({ walletOnly = false }) {
     });
   }, [walletAccounts, walletListSearchTerm, walletSettlementStatusByWalletId]);
 
+  const loadWalletAdminDataStable = useStableCallback(loadWalletAdminData);
+  const loadWalletMovementsStable = useStableCallback(loadWalletMovements);
+  const loadWalletOperationalHistoryStable = useStableCallback(loadWalletOperationalHistory);
+
   useEffect(() => {
     if (!currentUser?.empresa_id) return;
-    loadWalletAdminData(currentUser);
-  }, [currentUser?.empresa_id]);
+    loadWalletAdminDataStable(currentUser);
+  }, [currentUser, loadWalletAdminDataStable]);
 
   useEffect(() => {
     const walletId = selectedWalletAccount?.carteira_id || "";
@@ -1997,7 +1979,6 @@ export default function Movimentacoes({ walletOnly = false }) {
       setWalletLoading(false);
       setWalletHistoryLoading(false);
       setWalletRecentMovements([]);
-      setWalletReceivables([]);
       setWalletOperationalContext({
         appointments: [],
         services: [],
@@ -2019,8 +2000,8 @@ export default function Movimentacoes({ walletOnly = false }) {
     setWalletDetailLoading(true);
 
     Promise.all([
-      loadWalletMovements(selectedWalletRuntimeAccountId, currentUser, { requestId }),
-      loadWalletOperationalHistory({
+      loadWalletMovementsStable(selectedWalletRuntimeAccountId, currentUser, { requestId }),
+      loadWalletOperationalHistoryStable({
         walletAccountId: selectedWalletRuntimeAccountId,
         walletId,
       }, currentUser, { requestId }),
@@ -2036,7 +2017,9 @@ export default function Movimentacoes({ walletOnly = false }) {
       }
     };
   }, [
-    currentUser?.empresa_id,
+    currentUser,
+    loadWalletMovementsStable,
+    loadWalletOperationalHistoryStable,
     selectedWalletRuntimeAccountId,
     selectedWalletAccount?.carteira_id,
     walletFlags.movementsEnabled,
@@ -2130,7 +2113,6 @@ export default function Movimentacoes({ walletOnly = false }) {
   const walletDetailContentLoading = Boolean(
     selectedWalletAccount && (walletDetailLoading || walletLoading || walletHistoryLoading),
   );
-  const selectedWalletAudit = walletAuditRows.find((item) => item.carteira_conta_id === selectedWalletRuntimeAccountId) || null;
   const canIssueWalletCharges = canWriteFinancialOperations(currentUser);
   const complementExistingLinkTargetId = editingItem?.tipo === "entrada"
     ? resolveLinkedWalletId(editingItem, walletAccounts)
@@ -2663,16 +2645,6 @@ export default function Movimentacoes({ walletOnly = false }) {
     }
   };
 
-  const openWalletReversalModal = (options = {}) => {
-    setWalletActionMessage(null);
-    setWalletReversalForm({
-      ...EMPTY_WALLET_REVERSAL_FORM,
-      carteira_conta_id: options.carteira_conta_id || selectedWalletRuntimeAccountId || "",
-      reversao_tipo: options.reversao_tipo || "servico",
-    });
-    setShowWalletReversalModal(true);
-  };
-
   const handleWalletReversalAttachmentUpload = async (file) => {
     if (!file) return;
 
@@ -2738,32 +2710,6 @@ export default function Movimentacoes({ walletOnly = false }) {
       cobranca_financeira_id: option?.cobranca_financeira_id || "",
       conta_receber_id: option?.conta_receber_id || "",
     }));
-  };
-
-  const handleWalletReconcile = async () => {
-    if (!selectedWalletRuntimeAccountId || !currentUser?.empresa_id) return;
-    setWalletLoading(true);
-    setWalletActionMessage(null);
-    try {
-      const result = await financeWalletReconcileAccount({
-        carteira_conta_id: selectedWalletRuntimeAccountId,
-        usuario_id: currentUser?.id || null,
-      });
-      await loadWalletAdminData(currentUser, selectedWalletAccountId);
-      setWalletActionMessage({
-        type: result?.out_status === "ok" ? "success" : "warning",
-        message: result?.out_status === "ok"
-          ? "Reconciliação concluída sem divergência."
-          : "Reconciliação registrada com divergência. Nenhuma correção automática foi aplicada.",
-      });
-    } catch (error) {
-      setWalletActionMessage({
-        type: "error",
-        message: error?.message || "Não foi possível reconciliar a carteira selecionada.",
-      });
-    } finally {
-      setWalletLoading(false);
-    }
   };
 
   const handleWalletOperationSave = async () => {

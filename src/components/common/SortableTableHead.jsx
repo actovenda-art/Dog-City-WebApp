@@ -1,4 +1,3 @@
-import React from "react";
 import { TableHead } from "@/components/ui/table";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 

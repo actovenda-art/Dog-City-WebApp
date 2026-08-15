@@ -41,7 +41,6 @@ import {
   CalendarClock,
   Car,
   CheckCircle2,
-  ChevronRight,
   ClipboardList,
   Clock3,
   Home,
@@ -454,7 +453,7 @@ function AppointmentSearchFilters({
   const activeFilterCount = statusFilters.length + serviceFilters.length;
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_46px] gap-2 sm:grid-cols-[minmax(260px,1fr)_210px_46px]">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_42px] gap-2 sm:grid-cols-[minmax(220px,1fr)_190px_42px]">
       <div className="relative col-span-2 sm:col-span-1">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <Input
@@ -462,7 +461,7 @@ function AppointmentSearchFilters({
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Buscar dono, cão ou monitor"
           aria-label="Buscar agendamentos por dono, cão ou monitor"
-          className="h-11 rounded-xl border-slate-200 bg-white pl-10 pr-3 text-sm shadow-sm"
+          className="h-10 rounded-xl border-slate-200 bg-white pl-10 pr-3 text-[13px] shadow-sm"
         />
       </div>
 
@@ -470,7 +469,7 @@ function AppointmentSearchFilters({
         value={filterDate}
         onChange={onDateChange}
         placeholder={formatDateControlLabel(selectedDayKey)}
-        className="h-11 rounded-xl border-slate-200 bg-white px-3 text-sm font-semibold shadow-sm"
+        className="h-10 min-w-0 rounded-xl border-slate-200 bg-white px-3 text-[13px] font-semibold shadow-sm"
       />
 
       <Popover>
@@ -480,7 +479,7 @@ function AppointmentSearchFilters({
             variant="outline"
             size="icon"
             className={cn(
-              "relative h-11 w-11 rounded-xl border-slate-200 bg-white text-slate-600 shadow-sm",
+              "relative h-10 w-10 rounded-xl border-slate-200 bg-white text-slate-600 shadow-sm",
               activeFilterCount > 0 && "border-blue-300 bg-blue-50 text-blue-700",
             )}
             aria-label={`Abrir filtros${activeFilterCount ? `, ${activeFilterCount} selecionado(s)` : ""}`}
@@ -539,16 +538,14 @@ function AppointmentSearchFilters({
 
 function SummaryCard({ icon: Icon, label, value, iconClassName, valueClassName }) {
   return (
-    <Card className="rounded-[16px] border border-slate-200 shadow-sm">
-      <CardContent className="p-3.5">
-        <div className="flex items-start justify-between gap-4">
-          <div className={cn("flex h-7 w-7 items-center justify-center rounded-lg", iconClassName)}>
-            <Icon className="h-3 w-3" />
-          </div>
+    <Card className="min-w-0 rounded-[16px] border border-slate-200 shadow-sm">
+      <CardContent className="flex items-center gap-3 p-3">
+        <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]", iconClassName)}>
+          <Icon className="h-3.5 w-3.5" />
         </div>
-        <div className="mt-2.5 space-y-0.5">
-          <p className="text-[11px] font-semibold text-slate-900">{label}</p>
-          <p className={cn("text-[28px] font-bold tracking-tight", valueClassName)}>{value}</p>
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-semibold text-slate-700">{label}</p>
+          <p className={cn("text-[24px] font-bold leading-none tracking-tight", valueClassName)}>{value}</p>
         </div>
       </CardContent>
     </Card>
@@ -566,14 +563,14 @@ function AppointmentStatusBadge({ stateKey, label }) {
 
 function MobileSummaryCard({ icon: Icon, label, value, iconClassName, valueClassName }) {
   return (
-    <Card className="rounded-[14px] border border-slate-200 shadow-sm">
-      <CardContent className="p-1.5">
-        <div className={cn("flex h-5 w-5 items-center justify-center rounded-md", iconClassName)}>
-          <Icon className="h-2.5 w-2.5" />
+    <Card className="min-w-0 rounded-[12px] border border-slate-200 shadow-sm">
+      <CardContent className="min-h-[72px] p-1.5">
+        <div className={cn("flex h-[18px] w-[18px] items-center justify-center rounded-md", iconClassName)}>
+          <Icon className="h-2 w-2" />
         </div>
-        <div className="mt-1.5 space-y-0.5">
-          <p className="text-[8px] font-semibold leading-3 text-slate-950">{label}</p>
-          <p className={cn("text-[14px] font-bold tracking-tight", valueClassName)}>{value}</p>
+        <div className="mt-1.5 min-w-0 space-y-0.5">
+          <p className="break-words text-[7px] font-semibold leading-[9px] text-slate-800">{label}</p>
+          <p className={cn("text-[13px] font-bold leading-none tracking-tight", valueClassName)}>{value}</p>
         </div>
       </CardContent>
     </Card>
@@ -1149,8 +1146,8 @@ export default function Agendamentos() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f6f8fc] p-3 lg:p-4">
-      <div className="space-y-6 lg:hidden">
+    <div className="min-h-screen min-w-0 overflow-x-hidden bg-[#f6f8fc] p-2.5 sm:p-3 xl:p-4">
+      <div className="space-y-4 xl:hidden">
         <AppointmentSearchFilters
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
@@ -1164,15 +1161,15 @@ export default function Agendamentos() {
           onClearFilters={clearAppointmentFilters}
         />
 
-        <Card className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
-          <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-[18px] font-semibold tracking-tight text-slate-950">Agendamentos do dia</CardTitle>
+        <Card className="min-w-0 rounded-[22px] border border-slate-200 bg-white shadow-sm">
+          <CardHeader className="space-y-0.5 p-3 pb-2.5 sm:p-4 sm:pb-3">
+            <CardTitle className="text-[16px] font-semibold tracking-tight text-slate-950 sm:text-[18px]">Agendamentos do dia</CardTitle>
             <CardDescription className="text-xs">
               {filteredMainRows.length} resultado{filteredMainRows.length === 1 ? "" : "s"} para a data selecionada.
             </CardDescription>
           </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <div className="overflow-hidden rounded-[24px] border border-slate-100 bg-white">
+          <CardContent className="px-2.5 pb-2.5 sm:px-4 sm:pb-4">
+            <div className="min-w-0 overflow-hidden rounded-[18px] border border-slate-100 bg-white sm:rounded-[22px]">
               {filteredMainRows.length > 0 ? (
                 <div className="divide-y divide-slate-100">
                   {filteredMainRows.map((row) => {
@@ -1186,76 +1183,66 @@ export default function Agendamentos() {
                     return (
                       <div
                         key={row.appointment.id}
-                        className={cn("flex items-center gap-2 px-2 py-3", isHighlighted && "bg-amber-50/80")}
+                        className={cn(
+                          "grid min-w-0 grid-cols-[34px_40px_minmax(0,1fr)_30px] items-start gap-x-2 gap-y-1.5 px-2.5 py-2.5",
+                          isHighlighted && "bg-amber-50/80",
+                        )}
                       >
-                        <div className="w-8 shrink-0">
-                          <p className="text-[13px] font-semibold tracking-tight text-slate-950">{row.scheduleTime || "--:--"}</p>
-                          <p className={cn("mt-1 text-[10px] font-semibold", actionMeta.shortLabelClassName)}>{actionMeta.shortLabel}</p>
+                        <div className="row-span-2 min-w-0 pt-0.5">
+                          <p className="text-[12px] font-semibold tracking-tight text-slate-950">{row.scheduleTime || "--:--"}</p>
+                          <p className={cn("mt-0.5 text-[8px] font-semibold leading-3", actionMeta.shortLabelClassName)}>{actionMeta.shortLabel}</p>
                         </div>
 
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-slate-100 bg-slate-50">
+                        <div className="row-span-2 flex h-10 w-10 items-center justify-center overflow-hidden rounded-[11px] border border-slate-100 bg-slate-50">
                           {thumbnail.kind === "image" ? (
                             <img src={thumbnail.src} alt={thumbnail.alt} className="h-full w-full object-cover" />
                           ) : thumbnail.kind === "dog" ? (
                             <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-amber-100 via-amber-50 to-emerald-50 text-amber-700">
-                              <PawPrint className="h-4.5 w-4.5" />
+                              <PawPrint className="h-4 w-4" />
                             </div>
                           ) : (
                             <div className="flex h-full w-full items-center justify-center bg-white text-slate-500">
-                              <thumbnail.icon className="h-5 w-5" />
+                              <thumbnail.icon className="h-4 w-4" />
                             </div>
                           )}
                         </div>
 
-                        <div className="min-w-0 flex-1">
-                          <div className="min-w-0">
-                            <p className="truncate text-[12px] font-semibold leading-4 text-slate-950">{row.primaryLabel}</p>
-                            <p className="mt-0.5 truncate text-[11px] text-slate-500">{row.secondaryLabel}</p>
-                          </div>
-
-                          <div className="mt-1.5 flex items-start justify-between gap-1">
-                            <div className="min-w-0 flex items-center gap-1.5">
-                              <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-xl", bucket.iconClassName)}>
-                                <BucketIcon className="h-2.5 w-2.5" />
-                              </span>
-                              <div className="min-w-0">
-                                <p className="truncate text-[11px] font-semibold leading-4 text-slate-950">{row.serviceLine.title}</p>
-                                <p className="truncate text-[10px] text-slate-500">{row.serviceLine.subtitle}</p>
-                              </div>
-                            </div>
-
-                            <p className={cn("max-w-[58px] whitespace-pre-line text-right text-[10px] font-medium leading-4", actionMeta.actionTextClassName)}>
-                              {actionMeta.actionText}
-                            </p>
-                          </div>
+                        <div className="min-w-0 pt-0.5">
+                          <p className="truncate text-[11px] font-semibold leading-4 text-slate-950">{row.primaryLabel}</p>
+                          <p className="truncate text-[9px] leading-3 text-slate-500">{row.secondaryLabel}</p>
                         </div>
 
-                        <div className="flex shrink-0 items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleMobilePrimaryAction(row)}
-                            className={cn("flex h-7 w-7 items-center justify-center rounded-full border transition", actionMeta.actionToneClassName)}
-                            aria-label="Abrir ação principal do agendamento"
-                          >
-                            <ActionIcon className="h-2.5 w-2.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMobilePrimaryAction(row)}
-                            className="flex h-7 w-4 items-center justify-center text-slate-500"
-                            aria-label="Abrir detalhes do agendamento"
-                          >
-                            <ChevronRight className="h-3 w-3" />
-                          </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMobilePrimaryAction(row)}
+                          className={cn("flex h-[30px] w-[30px] items-center justify-center rounded-full border transition", actionMeta.actionToneClassName)}
+                          aria-label="Abrir ação principal do agendamento"
+                        >
+                          <ActionIcon className="h-3 w-3" />
+                        </button>
+
+                        <div className="col-span-2 col-start-3 flex min-w-0 items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded-lg", bucket.iconClassName)}>
+                              <BucketIcon className="h-2.5 w-2.5" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate text-[10px] font-semibold leading-3 text-slate-800">{row.serviceLine.title}</p>
+                              <p className="truncate text-[8px] leading-3 text-slate-500">{row.serviceLine.subtitle}</p>
+                            </div>
+                          </div>
+                          <p className={cn("max-w-[72px] shrink-0 whitespace-pre-line text-right text-[8px] font-medium leading-3", actionMeta.actionTextClassName)}>
+                            {actionMeta.actionText}
+                          </p>
                         </div>
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="px-4 py-12 text-center">
-                  <p className="text-[16px] font-semibold text-slate-700">Nenhum agendamento encontrado neste recorte.</p>
-                  <p className="mt-2 text-[14px] leading-6 text-slate-500">
+                <div className="px-4 py-8 text-center sm:py-10">
+                  <p className="text-[14px] font-semibold text-slate-700">Nenhum agendamento encontrado neste recorte.</p>
+                  <p className="mx-auto mt-1.5 max-w-xs text-[12px] leading-5 text-slate-500">
                     Ajuste a busca, a data ou os filtros para encontrar os atendimentos.
                   </p>
                 </div>
@@ -1264,9 +1251,9 @@ export default function Agendamentos() {
           </CardContent>
         </Card>
 
-        <section className="space-y-3">
-          <h2 className="text-[18px] font-semibold tracking-tight text-slate-950">Resumo geral do dia</h2>
-          <div className="grid grid-cols-5 gap-1">
+        <section className="min-w-0 space-y-2">
+          <h2 className="text-[16px] font-semibold tracking-tight text-slate-950 sm:text-[18px]">Resumo geral do dia</h2>
+          <div className="grid min-w-0 grid-cols-5 gap-1">
               {mobileSummaryCards.map((card) => (
                 <MobileSummaryCard
                   key={card.key}
@@ -1283,16 +1270,16 @@ export default function Agendamentos() {
 
       </div>
 
-      <div className="hidden lg:block">
-      <div className="mx-auto max-w-[1200px] space-y-5">
-        <div className="space-y-4 rounded-[24px] border border-white/80 bg-white/90 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur">
+      <div className="hidden min-w-0 xl:block">
+      <div className="mx-auto w-full min-w-0 max-w-[1200px] space-y-4">
+        <div className="space-y-3 rounded-[22px] border border-white/80 bg-white/90 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-blue-50 text-blue-600">
-              <Calendar className="h-6 w-6" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-blue-50 text-blue-600">
+              <Calendar className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-slate-950">Agendamentos</h1>
-              <p className="mt-1 max-w-2xl text-sm text-slate-500">
+              <h1 className="text-[26px] font-bold leading-none tracking-tight text-slate-950">Agendamentos</h1>
+              <p className="mt-1 max-w-2xl text-[13px] text-slate-500">
                 Consulte os atendimentos do dia por responsável, cão, monitor, status ou serviço.
               </p>
             </div>
@@ -1317,7 +1304,7 @@ export default function Agendamentos() {
             <h2 className="text-xl font-semibold text-slate-950">Resumo geral do dia</h2>
           </div>
 
-          <div className="grid gap-3 xl:grid-cols-5">
+          <div className="grid grid-cols-5 gap-2.5">
             <SummaryCard
               icon={Users}
               label="Total previsto"
@@ -1361,8 +1348,8 @@ export default function Agendamentos() {
           </div>
         </section>
 
-        <Card className="rounded-[24px] border border-slate-200 shadow-sm">
-          <CardHeader className="pb-3">
+        <Card className="min-w-0 rounded-[22px] border border-slate-200 shadow-sm">
+          <CardHeader className="p-4 pb-3">
             <div>
               <CardTitle className="text-xl text-slate-950">Agendamentos do dia</CardTitle>
               <CardDescription className="mt-1 text-sm text-slate-500">
@@ -1370,9 +1357,9 @@ export default function Agendamentos() {
               </CardDescription>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto rounded-[20px] border border-slate-200">
-              <div className="grid grid-cols-[72px_104px_minmax(180px,1fr)_172px_184px_128px_148px] items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+          <CardContent className="min-w-0 px-4 pb-4">
+            <div className="min-w-0 overflow-hidden rounded-[18px] border border-slate-200">
+              <div className="grid grid-cols-[58px_88px_minmax(130px,1.15fr)_minmax(116px,.9fr)_minmax(120px,1fr)_108px_126px] items-center gap-2.5 border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                 <span>Horário</span>
                 <span>Status</span>
                 <span>Pet / atividade</span>
@@ -1396,16 +1383,15 @@ export default function Agendamentos() {
                       <div
                         key={row.appointment.id}
                         className={cn(
-                          "grid grid-cols-[72px_104px_minmax(180px,1fr)_172px_184px_128px_148px] items-center gap-3 px-4 py-4 transition hover:bg-slate-50",
+                          "grid grid-cols-[58px_88px_minmax(130px,1.15fr)_minmax(116px,.9fr)_minmax(120px,1fr)_108px_126px] items-center gap-2.5 px-3 py-3 transition hover:bg-slate-50",
                           isHighlighted && "bg-amber-50/80",
                         )}
                       >
                         <div>
-                          <p className="text-base font-semibold text-slate-950">{row.scheduleTime || "--:--"}</p>
-                          <p className="mt-1 text-xs text-slate-500">{formatLongDate(`${row.appointmentDateKey}T12:00:00`)}</p>
+                          <p className="text-sm font-semibold text-slate-950">{row.scheduleTime || "--:--"}</p>
                         </div>
 
-                        <div className="flex flex-col gap-2">
+                        <div className="flex min-w-0 flex-col items-start gap-1.5">
                           <AppointmentStatusBadge stateKey={row.state.key} label={row.state.label} />
                           {row.hasCommercialPending ? (
                             <span className="text-xs font-semibold text-amber-600">Pendente comercial</span>
@@ -1415,9 +1401,9 @@ export default function Agendamentos() {
                           ) : null}
                         </div>
 
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
-                            <PawPrint className="h-5 w-5" />
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-slate-100 text-slate-500">
+                            <PawPrint className="h-4 w-4" />
                           </div>
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-slate-950">{row.primaryLabel}</p>
@@ -1425,9 +1411,9 @@ export default function Agendamentos() {
                           </div>
                         </div>
 
-                        <div className="flex min-w-0 items-center gap-3">
-                          <span className={cn("flex h-10 w-10 items-center justify-center rounded-xl", bucket.iconClassName)}>
-                            <Icon className="h-4 w-4" />
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]", bucket.iconClassName)}>
+                            <Icon className="h-3.5 w-3.5" />
                           </span>
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-slate-950">{row.serviceLine.title}</p>

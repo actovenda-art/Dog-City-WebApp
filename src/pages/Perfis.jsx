@@ -13,7 +13,7 @@ import { maskCpfCnpj, maskEmail, maskPhone, maskSensitiveValue } from "@/lib/pri
 import { ensureWalletAccountForFinancialProfile } from "@/lib/wallet-account";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,54 +106,6 @@ const EMPTY_LINK_DIALOG_STATE = {
   feedback: null,
 };
 
-const DOG_EXPORTABLE_FIELDS = [
-  "codigo",
-  "nome",
-  "apelido",
-  "nascimento",
-  "sexo",
-  "raca",
-  "porte",
-  "peso",
-  "pelagem",
-  "cores_pelagem",
-  "castrado",
-  "foto_url",
-  "foto_carteirinha_vacina_url",
-  "data_revacinacao_1",
-  "nome_vacina_revacinacao_1",
-  "data_revacinacao_2",
-  "nome_vacina_revacinacao_2",
-  "data_revacinacao_3",
-  "nome_vacina_revacinacao_3",
-  "alergias",
-  "restricoes_cuidados",
-  "observacoes_gerais",
-  "veterinario_responsavel",
-  "veterinario_horario_atendimento",
-  "veterinario_telefone",
-  "veterinario_clinica_telefone",
-  "veterinario_endereco",
-  "alimentacao_marca_racao",
-  "alimentacao_sabor",
-  "alimentacao_tipo",
-  "refeicao_1_qnt",
-  "refeicao_1_horario",
-  "refeicao_1_obs",
-  "refeicao_2_qnt",
-  "refeicao_2_horario",
-  "refeicao_2_obs",
-  "refeicao_3_qnt",
-  "refeicao_3_horario",
-  "refeicao_3_obs",
-  "refeicao_4_qnt",
-  "refeicao_4_horario",
-  "refeicao_4_obs",
-  "medicamentos_continuos",
-  "autorizacao_uso_imagem",
-  "ativo",
-];
-
 const RESPONSAVEL_EXPORTABLE_FIELDS = [
   "codigo",
   "nome_completo",
@@ -236,47 +188,6 @@ function normalizeImportAction(value) {
   return "upsert";
 }
 
-function buildProfileExportBundle({ dogs, responsaveis }) {
-  return {
-    tipo: "dogcity-perfis",
-    versao: 1,
-    exportado_em: new Date().toISOString(),
-    instrucoes: {
-      formato: "Use acao=upsert para incluir/atualizar e acao=delete para remover.",
-      identificacao_caes: "O app usa id ou referencia_interna para localizar o cão.",
-      identificacao_responsaveis: "O app usa id ou CPF para localizar o responsável.",
-      vinculos_responsaveis: "Use dog_refs com as referências internas dos cães exportados.",
-    },
-    caes: (dogs || []).map((dog) => ({
-      acao: "upsert",
-      id: dog.id,
-      referencia_interna: getInternalEntityReference(dog),
-      ...pickFields(dog, DOG_EXPORTABLE_FIELDS),
-    })),
-    responsaveis: (responsaveis || []).map((responsavel) => ({
-      acao: "upsert",
-      id: responsavel.id,
-      ...pickFields(responsavel, RESPONSAVEL_EXPORTABLE_FIELDS),
-      dog_refs: getLinkedDogIds(responsavel).map((dogId) => getInternalEntityReference(dogs.find((dog) => dog.id === dogId) || { id: dogId })),
-    })),
-  };
-}
-
-function normalizeImportedDogs(payload) {
-  const source = Array.isArray(payload?.caes)
-    ? payload.caes
-    : Array.isArray(payload?.dogs)
-      ? payload.dogs
-      : [];
-
-  return source.map((item) => ({
-    acao: normalizeImportAction(item?.acao || item?.action),
-    id: String(item?.id || "").trim(),
-    referencia_interna: String(item?.referencia_interna || item?.codigo || "").trim(),
-    data: pickFields(item, DOG_EXPORTABLE_FIELDS),
-  }));
-}
-
 function normalizeImportedResponsaveis(payload) {
   const source = Array.isArray(payload?.responsaveis)
     ? payload.responsaveis
@@ -291,19 +202,6 @@ function normalizeImportedResponsaveis(payload) {
     dogRefs: Array.isArray(item?.dog_refs) ? item.dog_refs.map((value) => String(value || "").trim()).filter(Boolean) : [],
     data: pickFields(item, RESPONSAVEL_EXPORTABLE_FIELDS),
   }));
-}
-
-function buildSingleDogExport(dog) {
-  return {
-    tipo: "dogcity-perfil",
-    entidade: "cao",
-    versao: 1,
-    exportado_em: new Date().toISOString(),
-    acao: "upsert",
-    id: dog.id,
-    referencia_interna: getInternalEntityReference(dog),
-    ...pickFields(dog, DOG_EXPORTABLE_FIELDS),
-  };
 }
 
 function buildSingleResponsavelExport(responsavel, dogs) {
@@ -952,17 +850,6 @@ export default function Perfis() {
     URL.revokeObjectURL(url);
   };
 
-  const handleExportProfiles = () => {
-    const payload = buildProfileExportBundle({ dogs, responsaveis });
-    const dateLabel = new Date().toISOString().slice(0, 10);
-    downloadJsonFile(`perfis-caes-responsaveis-${dateLabel}.json`, payload);
-    setPageFeedback({
-      tone: "success",
-      title: "Arquivo exportado",
-      message: "Os dados de cães e responsáveis foram exportados em JSON para edição e reimportação.",
-    });
-  };
-
   const handleExportResponsavelProfile = (responsavel) => {
     if (!responsavel) return;
     const profileName = normalizeSearchValue(responsavel.nome_completo || "responsavel").replace(/\s+/g, "-") || "responsavel";
@@ -972,25 +859,6 @@ export default function Perfis() {
       title: "Perfil exportado",
       message: `Os dados de ${responsavel.nome_completo || "este responsável"} foram exportados em JSON.`,
     });
-  };
-
-  const removeDogLinksFromEntities = async (dogId, responsaveisBase, carteirasBase) => {
-    const relatedResponsaveis = (responsaveisBase || []).filter((item) => getLinkedDogIds(item).includes(dogId));
-    const relatedCarteiras = (carteirasBase || []).filter((item) => getLinkedDogIds(item).includes(dogId));
-
-    for (const responsavel of relatedResponsaveis) {
-      const linkedIds = getLinkedDogIds(responsavel).filter((linkedDogId) => linkedDogId !== dogId);
-      await Responsavel.update(responsavel.id, buildDogRelationPayload(linkedIds));
-    }
-
-    for (const carteira of relatedCarteiras) {
-      const linkedIds = getLinkedDogIds(carteira).filter((linkedDogId) => linkedDogId !== dogId);
-      await Carteira.update(carteira.id, buildDogRelationPayload(linkedIds));
-    }
-  };
-
-  const openImportPicker = () => {
-    importInputRef.current?.click();
   };
 
   const openProfileImportPicker = (target) => {
@@ -1091,149 +959,6 @@ export default function Perfis() {
       });
     } finally {
       setImportProfileTarget(null);
-      setIsSaving(false);
-    }
-  };
-
-  const handleImportProfilesFile = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-
-    setIsSaving(true);
-    setPageFeedback(null);
-
-    try {
-      const rawText = await file.text();
-      const parsed = JSON.parse(rawText);
-      const importedDogs = normalizeImportedDogs(parsed);
-      const importedResponsaveis = normalizeImportedResponsaveis(parsed);
-
-      if (!importedDogs.length && !importedResponsaveis.length) {
-        throw new Error("Nenhum cão ou responsável válido foi encontrado no arquivo.");
-      }
-
-      let workingDogs = [...dogs];
-      let workingResponsaveis = [...responsaveis];
-      let workingCarteiras = [...carteiras];
-      let dogsCreated = 0;
-      let dogsUpdated = 0;
-      let dogsDeleted = 0;
-      let responsaveisCreated = 0;
-      let responsaveisUpdated = 0;
-      let responsaveisDeleted = 0;
-
-      for (const importedDog of importedDogs) {
-        const existingDog =
-          workingDogs.find((item) => item.id === importedDog.id)
-          || findEntityByReference(workingDogs, importedDog.referencia_interna);
-
-        if (importedDog.acao === "delete") {
-          if (!existingDog?.id) continue;
-          await removeDogLinksFromEntities(existingDog.id, workingResponsaveis, workingCarteiras);
-          await Dog.delete(existingDog.id);
-          workingDogs = workingDogs.filter((item) => item.id !== existingDog.id);
-          workingResponsaveis = workingResponsaveis.map((item) => ({
-            ...item,
-            ...buildDogRelationPayload(getLinkedDogIds(item).filter((dogId) => dogId !== existingDog.id)),
-          }));
-          workingCarteiras = workingCarteiras.map((item) => ({
-            ...item,
-            ...buildDogRelationPayload(getLinkedDogIds(item).filter((dogId) => dogId !== existingDog.id)),
-          }));
-          dogsDeleted += 1;
-          continue;
-        }
-
-        const dogPayload = {
-          ...importedDog.data,
-          empresa_id: existingDog?.empresa_id || currentUser?.empresa_id || null,
-        };
-
-        if (existingDog?.id) {
-          const updatedDog = await Dog.update(existingDog.id, dogPayload);
-          workingDogs = workingDogs.map((item) =>
-            item.id === existingDog.id ? { ...item, ...dogPayload, ...(updatedDog || {}) } : item,
-          );
-          dogsUpdated += 1;
-        } else {
-          const createdDog = await Dog.create(dogPayload);
-          if (createdDog) {
-            workingDogs = [...workingDogs, createdDog];
-          }
-          dogsCreated += 1;
-        }
-      }
-
-      for (const importedResponsavel of importedResponsaveis) {
-        const normalizedCpf = String(importedResponsavel.cpf || "").replace(/\D/g, "");
-        const existingResponsavel =
-          workingResponsaveis.find((item) => item.id === importedResponsavel.id)
-          || workingResponsaveis.find((item) => String(item.cpf || "").replace(/\D/g, "") === normalizedCpf);
-
-        if (importedResponsavel.acao === "delete") {
-          if (!existingResponsavel?.id) continue;
-          await Responsavel.delete(existingResponsavel.id);
-          workingResponsaveis = workingResponsaveis.filter((item) => item.id !== existingResponsavel.id);
-          responsaveisDeleted += 1;
-          continue;
-        }
-
-        const resolvedDogIds = importedResponsavel.dogRefs
-          .map((reference) => findEntityByReference(workingDogs, reference)?.id || "")
-          .filter(Boolean)
-          .slice(0, RELATION_SLOTS.length);
-
-        const responsavelPayload = {
-          ...importedResponsavel.data,
-          empresa_id: existingResponsavel?.empresa_id || currentUser?.empresa_id || null,
-          nome_completo: formatDisplayName(importedResponsavel.data.nome_completo || ""),
-          como_gostaria_de_ser_chamado: optional(formatDisplayName(importedResponsavel.data.como_gostaria_de_ser_chamado || "")),
-          cpf: optional(String(importedResponsavel.data.cpf || "").trim()),
-          celular: optional(String(importedResponsavel.data.celular || "").trim()),
-          celular_alternativo: optional(String(importedResponsavel.data.celular_alternativo || "").trim()),
-          email: optional(String(importedResponsavel.data.email || "").trim()),
-          ...buildDogRelationPayload(resolvedDogIds),
-        };
-
-        if (existingResponsavel?.id) {
-          const updatedResponsavel = await Responsavel.update(existingResponsavel.id, responsavelPayload);
-          workingResponsaveis = workingResponsaveis.map((item) =>
-            item.id === existingResponsavel.id
-              ? { ...item, ...responsavelPayload, ...(updatedResponsavel || {}) }
-              : item,
-          );
-          responsaveisUpdated += 1;
-        } else {
-          const createdResponsavel = await Responsavel.create(responsavelPayload);
-          if (createdResponsavel) {
-            workingResponsaveis = [...workingResponsaveis, createdResponsavel];
-          }
-          responsaveisCreated += 1;
-        }
-      }
-
-      await loadData({ showLoader: false });
-      setPageFeedback({
-        tone: "success",
-        title: "Importação concluída",
-        message: [
-          dogsCreated ? `${dogsCreated} cão(ães) criado(s)` : null,
-          dogsUpdated ? `${dogsUpdated} cão(ães) atualizado(s)` : null,
-          dogsDeleted ? `${dogsDeleted} cão(ães) removido(s)` : null,
-          responsaveisCreated ? `${responsaveisCreated} responsável(is) criado(s)` : null,
-          responsaveisUpdated ? `${responsaveisUpdated} responsável(is) atualizado(s)` : null,
-          responsaveisDeleted ? `${responsaveisDeleted} responsável(is) removido(s)` : null,
-        ].filter(Boolean).join(" · "),
-      });
-    } catch (error) {
-      console.error("Erro ao importar perfis:", error);
-      setPageFeedback({
-        tone: "error",
-        title: "Não foi possível importar os perfis",
-        message: error?.message || "Revise o arquivo e tente novamente.",
-      });
-    } finally {
       setIsSaving(false);
     }
   };

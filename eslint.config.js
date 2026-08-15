@@ -28,11 +28,28 @@ export default [
       ...react.configs.recommended.rules,
       ...react.configs['jsx-runtime'].rules,
       ...reactHooks.configs.recommended.rules,
+      // The project uses runtime validation at domain boundaries instead of
+      // duplicating every JavaScript component contract with PropTypes.
+      'react/prop-types': 'off',
+      'no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        caughtErrors: 'none',
+        ignoreRestSiblings: true,
+        varsIgnorePattern: '^React$',
+      }],
       'react/jsx-no-target-blank': 'off',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },
       ],
+    },
+  },
+  {
+    // Base UI modules intentionally co-locate shadcn variants/hooks with their
+    // components; those exports are stable and are not application modules.
+    files: ['src/components/ui/**/*.{js,jsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
     },
   },
 ]

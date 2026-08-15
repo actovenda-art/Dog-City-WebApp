@@ -6,7 +6,7 @@ import { Replacement } from "@/api/entities";
 import { Dog } from "@/api/entities";
 import { Orcamento } from "@/api/entities";
 import { User } from "@/api/entities";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +20,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
 import {
-  Plus, Clipboard, Search, Pencil, Trash2, Link2, CheckCircle
+  Plus, Clipboard, Search, Pencil, Trash2
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";

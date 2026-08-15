@@ -5,14 +5,13 @@ import { User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Plus, Pencil, Trash2, Clock, CheckCircle, XCircle, Pause, FileText, Upload, GripVertical, Calendar, Tag
+  Plus, Pencil, Trash2, Clock, CheckCircle, XCircle, Pause, FileText, Upload, GripVertical, Calendar
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -46,7 +45,6 @@ const CATEGORIAS = {
 
 export default function PedidosInternos() {
   const [pedidos, setPedidos] = useState([]);
-  const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -65,13 +63,11 @@ export default function PedidosInternos() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [pedidosData, usersData, me] = await Promise.all([
+      const [pedidosData, me] = await Promise.all([
         PedidoInterno.list("-created_date", 500),
-        User.list("-created_date", 500),
         User.me()
       ]);
       setPedidos(pedidosData);
-      setUsers(usersData);
       setCurrentUser(me);
     } catch (error) { console.error("Erro:", error); }
     setIsLoading(false);

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { PlanConfig as Plano } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Dog } from "@/api/entities";
-import { Carteira } from "@/api/entities";
 import { Schedule } from "@/api/entities/Schedule";
 import { Checkin } from "@/api/entities";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Plus, Search, Pencil, Trash2, CreditCard, AlertTriangle, CheckCircle, XCircle, Dog as DogIcon, Calendar, Filter
+  Plus, Pencil, Trash2, CreditCard, AlertTriangle, CheckCircle, XCircle, Dog as DogIcon, Calendar, Filter
 } from "lucide-react";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { format, isPast, differenceInDays } from "date-fns";
@@ -30,7 +29,6 @@ export default function Planos() {
   const { logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [planos, setPlanos] = useState([]);
   const [dogs, setDogs] = useState([]);
-  const [carteiras, setCarteiras] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [checkins, setCheckins] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,16 +51,14 @@ export default function Planos() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [planosData, dogsData, carteirasData, schedulesData, checkinsData] = await Promise.all([
+      const [planosData, dogsData, schedulesData, checkinsData] = await Promise.all([
         Plano.list("-created_date", 500),
         Dog.list("-created_date", 500),
-        Carteira.list("-created_date", 500),
         Schedule.list("-data_hora_entrada", 2000),
         Checkin.filter({ tipo: "pet" }, "-checkin_datetime", 2000)
       ]);
       setPlanos(planosData);
       setDogs(dogsData.filter(d => d.ativo !== false));
-      setCarteiras(carteirasData.filter(c => c.ativo !== false));
       setSchedules(schedulesData);
       setCheckins(checkinsData);
     } catch (error) { console.error("Erro:", error); }
@@ -128,13 +124,7 @@ export default function Planos() {
     await loadData();
   };
 
-  const formatCurrency = (v) => v ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : "-";
   const formatDate = (d) => d ? format(new Date(d), "dd/MM/yyyy", { locale: ptBR }) : "-";
-
-  const getDogName = (id) => {
-    const dog = dogs.find(d => d.id === id);
-    return dog ? dog.nome : "-";
-  };
 
   const getDogById = (id) => dogs.find(d => d.id === id);
 

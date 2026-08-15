@@ -6,7 +6,6 @@ import { Dog } from "@/api/entities";
 import { Client } from "@/api/entities";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
@@ -14,7 +13,6 @@ import PageSubTabs from "@/components/common/PageSubTabs";
 import {
   Calendar as CalendarIcon,
   Home,
-  Droplet,
   Scissors,
   Car,
   RefreshCw,
@@ -25,7 +23,6 @@ import {
   DollarSign,
   MessageSquare,
   Clock,
-  ArrowUpDown,
   Filter
 } from "lucide-react";
 import { Tabs, TabsContent } from "@/components/ui/tabs";

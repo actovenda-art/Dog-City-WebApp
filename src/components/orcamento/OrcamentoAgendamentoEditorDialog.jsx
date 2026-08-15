@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { format, differenceInDays } from "date-fns";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import { ptBR } from "date-fns/locale";
 import { Appointment, Checkin, Orcamento } from "@/api/entities";
 import { Badge } from "@/components/ui/badge";
@@ -676,11 +677,12 @@ export default function OrcamentoAgendamentoEditorDialog({
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [groupDraft, setGroupDraft] = useState(null);
   const [currentStep, setCurrentStep] = useState("responsaveis");
+  const loadEditorStable = useStableCallback(loadEditor);
 
   useEffect(() => {
     if (!open || !orcamento?.id) return;
-    loadEditor();
-  }, [open, orcamento?.id]);
+    loadEditorStable();
+  }, [loadEditorStable, open, orcamento?.id]);
 
   const selectedGroup = useMemo(
     () => groups.find((group) => group.id === selectedGroupId) || null,

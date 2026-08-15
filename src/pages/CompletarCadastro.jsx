@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { DatePickerInput } from "@/components/common/DateTimeInputs";
 import { createPageUrl, openImageViewer } from "@/utils";
 import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import { AlertTriangle, KeyRound, Upload, UserRound } from "lucide-react";
 
 const EMPTY_FORM = {
@@ -88,10 +89,11 @@ export default function CompletarCadastro() {
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
 
   const isInviteFlow = !!token && !currentUser;
+  const loadContextStable = useStableCallback(loadContext);
 
   useEffect(() => {
-    loadContext();
-  }, [token]);
+    loadContextStable();
+  }, [loadContextStable, token]);
 
   useEffect(() => {
     const cepDigits = form.cep.replace(/\D/g, "");

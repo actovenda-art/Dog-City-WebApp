@@ -16,6 +16,7 @@ import {
 import { Appointment, Notificacao } from "@/api/entities";
 import { getAppointmentMeta, getManualAppointmentClassificationMessage } from "@/lib/attendance";
 import { getNotificationDepartment } from "@/lib/access-control";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import { createPageUrl } from "@/utils";
 
 const PENDING_TYPES = new Set([
@@ -409,7 +410,7 @@ function isPendingStillActiveForContext(notification, appointmentsById = {}) {
   return false;
 }
 
-function NotificationSection({ title, items, onOpenItem, pendingContextLoaded }) {
+function NotificationSection({ title, items, onOpenItem }) {
   if (items.length === 0) return null;
 
   return (
@@ -505,17 +506,6 @@ export default function NotificationBell({ userId, user = null }) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  useEffect(() => {
-    if (!userId || pendingContextLoaded || hasLoadedPendingContext) return;
-    if (!notifications.some((notification) => isPendingNotification(notification))) {
-      setPendingContextLoaded(true);
-      setHasLoadedPendingContext(true);
-      return;
-    }
-
-    loadPendingContext();
-  }, [hasLoadedPendingContext, notifications, pendingContextLoaded, userId]);
 
   const pruneResolvedPendingNotifications = async (sourceNotifications, appointmentMap) => {
     const stalePending = (sourceNotifications || []).filter((notification) =>
@@ -613,27 +603,41 @@ export default function NotificationBell({ userId, user = null }) {
     }
   };
 
+  const loadPendingContextStable = useStableCallback(loadPendingContext);
+  const loadNotificationsStable = useStableCallback(loadNotifications);
+
+  useEffect(() => {
+    if (!userId || pendingContextLoaded || hasLoadedPendingContext) return;
+    if (!notifications.some((notification) => isPendingNotification(notification))) {
+      setPendingContextLoaded(true);
+      setHasLoadedPendingContext(true);
+      return;
+    }
+
+    loadPendingContextStable();
+  }, [hasLoadedPendingContext, loadPendingContextStable, notifications, pendingContextLoaded, userId]);
+
   useEffect(() => {
     if (userId) {
-      loadNotifications({ resetPendingContext: true });
+      loadNotificationsStable({ resetPendingContext: true });
     }
-  }, [userId]);
+  }, [loadNotificationsStable, userId]);
 
   useEffect(() => {
     if (!userId) return undefined;
 
     const handleFocusRefresh = () => {
-      loadNotifications({ resetPendingContext: true });
+      loadNotificationsStable({ resetPendingContext: true });
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        loadNotifications({ resetPendingContext: true });
+        loadNotificationsStable({ resetPendingContext: true });
       }
     };
 
     const timer = window.setInterval(() => {
-      loadNotifications({ resetPendingContext: true });
+      loadNotificationsStable({ resetPendingContext: true });
     }, NOTIFICATION_REFRESH_INTERVAL_MS);
 
     window.addEventListener("focus", handleFocusRefresh);
@@ -644,13 +648,13 @@ export default function NotificationBell({ userId, user = null }) {
       window.removeEventListener("focus", handleFocusRefresh);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [userId]);
+  }, [loadNotificationsStable, userId]);
 
   useEffect(() => {
     if (isOpen && userId) {
-      loadNotifications({ resetPendingContext: true });
+      loadNotificationsStable({ resetPendingContext: true });
     }
-  }, [isOpen, userId]);
+  }, [isOpen, loadNotificationsStable, userId]);
 
   const notificationsWithDisplay = useMemo(
     () =>
@@ -800,13 +804,11 @@ export default function NotificationBell({ userId, user = null }) {
                     title="Pendências do departamento"
                     items={activePendingNotifications}
                     onOpenItem={handleOpenItem}
-                    pendingContextLoaded={pendingContextLoaded}
                   />
                   <NotificationSection
                     title="Avisos do departamento"
                     items={visibleNoticeNotifications}
                     onOpenItem={handleOpenItem}
-                    pendingContextLoaded={pendingContextLoaded}
                   />
                 </>
               )}

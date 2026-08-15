@@ -31,6 +31,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import NotificationBell from "@/components/layout/NotificationBell";
 import LegalLinks from "@/components/legal/LegalLinks";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import { hasPageAccess, isOperationalProfile } from "@/lib/access-control";
 import { isPageBlockedInMergedMode } from "@/lib/unit-page-policy";
 import {
@@ -79,10 +80,6 @@ export default function Layout({ children, currentPageName, initialUser = null }
     if (isOperationalUser && section === "operacional") return;
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
-
-  useEffect(() => {
-    loadUser();
-  }, [initialUser?.id]);
 
   useEffect(() => {
     if (!initialUser) return;
@@ -174,6 +171,12 @@ export default function Layout({ children, currentPageName, initialUser = null }
     setIsLoading(false);
   };
 
+  const loadUserStable = useStableCallback(loadUser);
+
+  useEffect(() => {
+    loadUserStable();
+  }, [initialUser?.id, loadUserStable]);
+
   const handleLogout = async () => {
     await User.logout();
     window.location.reload();
@@ -210,7 +213,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
   );
   const userNickname = getUserNickname(currentUser);
 
-  const menuSections = [
+  const menuSections = useMemo(() => [
     {
       id: "operacional",
       title: "Operacional",
@@ -272,7 +275,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
         },
       ],
     },
-  ];
+  ], [isUnitUnionActive]);
 
   const visibleMenuSections = useMemo(
     () => menuSections
@@ -289,7 +292,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
           })),
       }))
       .filter((section) => section.items.length > 0),
-    [currentUser, isOperationalUser, isUnitUnionActive],
+    [currentUser, isOperationalUser, menuSections],
   );
 
   useEffect(() => {
@@ -305,7 +308,7 @@ export default function Layout({ children, currentPageName, initialUser = null }
     if (activeSection) {
       setExpandedSections((prev) => ({ ...prev, [activeSection.id]: true }));
     }
-  }, [currentPageName, isOperationalUser]);
+  }, [currentPageName, isOperationalUser, menuSections]);
 
   const renderAccessPanel = ({ mobile = false } = {}) => (
     <div className={mobile ? "border-t border-gray-200 p-4" : "border-t border-gray-200 p-4"}>

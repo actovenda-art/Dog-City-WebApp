@@ -12,11 +12,11 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import { ACTIVE_UNIT_EVENT, getStoredUnitSelection, setStoredUnitSelection } from "@/lib/unit-context";
 import {
   AlertCircle,
   Building2,
-  Calendar,
   CheckCircle,
   Download,
   Edit2,
@@ -254,10 +254,6 @@ export default function ConfigurarIntegracoes() {
   const [unitSelection, setUnitSelectionState] = useState(() => getStoredUnitSelection());
 
   useEffect(() => {
-    loadConfig();
-  }, []);
-
-  useEffect(() => {
     const needsLiveRefresh = whatsappConnections.some((slot) => WHATSAPP_QR_STATUSES.includes(normalizeWhatsappStatus(slot.status)));
     if (!needsLiveRefresh) return undefined;
 
@@ -306,6 +302,12 @@ export default function ConfigurarIntegracoes() {
       setIsLoading(false);
     }
   };
+
+  const loadConfigStable = useStableCallback(loadConfig);
+
+  useEffect(() => {
+    loadConfigStable();
+  }, [loadConfigStable]);
 
   const refreshWhatsappConnections = async (baseConnectionsOverride = null) => {
     try {

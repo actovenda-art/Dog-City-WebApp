@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,29 +10,13 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DOG_COLOR_OPTIONS,
+  parseSelectedDogColors,
+  serializeSelectedDogColors,
+} from "@/lib/dog-profile-options";
 import { cn } from "@/lib/utils";
 import { Check, ChevronsUpDown, X } from "lucide-react";
-
-export const DOG_COAT_OPTIONS = ["Curto", "Médio", "Longo"];
-
-export const DOG_COLOR_OPTIONS = [
-  "Amarelo",
-  "Beje",
-  "Preto",
-  "Marrom",
-  "Branco",
-  "Laranja",
-  "Cobre",
-  "Dourado",
-  "Ouro Claro",
-  "Palha",
-  "Creme",
-  "Cinza",
-  "Prata",
-  "Cinza azulado",
-  "Azul acinzentado",
-  "Chocolate Diluido",
-];
 
 function normalizeColorToken(value) {
   return String(value || "")
@@ -40,26 +24,6 @@ function normalizeColorToken(value) {
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
-}
-
-export function parseSelectedDogColors(value) {
-  if (Array.isArray(value)) {
-    return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))];
-  }
-
-  const rawValue = String(value || "").trim();
-  if (!rawValue) return [];
-
-  return [...new Set(
-    rawValue
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean)
-  )];
-}
-
-export function serializeSelectedDogColors(colors) {
-  return parseSelectedDogColors(colors).join(", ");
 }
 
 export function DogColorMultiSelect({

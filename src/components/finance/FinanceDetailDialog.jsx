@@ -30,7 +30,6 @@ export default function FinanceDetailDialog({
   mode,
   onSave,
   isSaving = false,
-  costCenters = [],
 }) {
   const normalizedMovement = useMemo(() => normalizeMovement(movement || {}), [movement]);
   const [formData, setFormData] = useState({

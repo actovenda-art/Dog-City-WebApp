@@ -2012,12 +2012,6 @@ function buildMockBudgetChargePix(codigoSolicitacao) {
   return `00020101021226760014BR.GOV.BCB.PIX2554mock.pix.dogcity/${codigoSolicitacao}5204000053039865802BR5920DOG CITY BRASIL6009SAO PAULO62070503***6304ABCD`;
 }
 
-function getMockBudgetPaymentRows(orcamentoId) {
-  return readStorage('OrcamentoPagamento')
-    .filter((item) => !orcamentoId || item?.orcamento_id === orcamentoId)
-    .sort((left, right) => new Date(right?.created_date || 0).getTime() - new Date(left?.created_date || 0).getTime());
-}
-
 function buildMockBudgetPaymentResponse(row = {}) {
   return {
     ok: true,

@@ -12,7 +12,9 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
-import DogColorMultiSelect, { DOG_COAT_OPTIONS } from "@/components/common/DogColorMultiSelect";
+import DogColorMultiSelect from "@/components/common/DogColorMultiSelect";
+import { DOG_COAT_OPTIONS } from "@/lib/dog-profile-options";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import PrivacyAcknowledgement from "@/components/legal/PrivacyAcknowledgement";
 import LegalLinks from "@/components/legal/LegalLinks";
 import { isValidCpfChecksum, normalizeCpfDigits, validateCpfWithGov } from "@/lib/cpf-validation";
@@ -726,9 +728,11 @@ export default function CadastroClientePublico() {
     });
   }
 
+  const loadContextStable = useStableCallback(loadContext);
+
   useEffect(() => {
-    loadContext();
-  }, [token]);
+    loadContextStable();
+  }, [loadContextStable, token]);
 
   useEffect(() => {
     setCurrentStep((current) => Math.min(current, Math.max(visibleStepDefinitions.length - 1, 0)));

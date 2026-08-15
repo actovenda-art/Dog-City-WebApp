@@ -38,8 +38,9 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, DateTimePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { BellRing, Building2, CalendarClock, Camera, CheckCircle2, Clock3, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, RefreshCcw, Search, ShieldCheck, UserRound, UtensilsCrossed, X } from "lucide-react";
+import { BellRing, Building2, CalendarClock, Camera, CheckCircle2, Clock3, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, RefreshCcw, ShieldCheck, UserRound, UtensilsCrossed, X } from "lucide-react";
 import { isCommercialProfile, isManagerialProfile, isOperationalProfile } from "@/lib/access-control";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 
 const TODAY_KEY = new Date().toISOString().slice(0, 10);
 
@@ -603,10 +604,6 @@ export default function Registrador() {
     [appointments, orcamentosById]
   );
   const profilesById = useMemo(() => Object.fromEntries(profiles.map((profile) => [profile.id, profile])), [profiles]);
-  const currentUserAccess = useMemo(
-    () => hydrateUserAccessProfile(currentUser || {}, profilesById),
-    [currentUser, profilesById]
-  );
   const serviceProvidersById = useMemo(
     () => Object.fromEntries(serviceProviders.map((provider) => [provider.id, provider])),
     [serviceProviders]
@@ -642,7 +639,6 @@ export default function Registrador() {
   const reminderTimeValue = selectedAppointmentRequiresReminderDateTime
     ? getReminderTimePart(activeReminderDraft?.notificar_em)
     : (activeReminderDraft?.horario || "");
-  const reminderHasDraft = hasReminderDraftContent(activeReminderDraft);
   const reminderPreviewDate = selectedAppointmentRequiresReminderDateTime
     ? formatDateLabel(reminderDateValue)
     : formatDateLabel((checkinForm.checkin_datetime || "").slice(0, 10) || selectedDate || TODAY_KEY);
@@ -767,10 +763,12 @@ export default function Registrador() {
       return !dayAppointments.some((appointment) => appointment.dog_id === dog.id);
     });
   }, [canAddManualAppointment, dayAppointments, dogs, matchingDogIds, searchTerm]);
+  const loadDataStable = useStableCallback(loadData);
+  const syncCommercialAlertsStable = useStableCallback(syncCommercialAlerts);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadDataStable();
+  }, [loadDataStable]);
 
   useEffect(() => {
     if (requestedDate) {
@@ -780,8 +778,8 @@ export default function Registrador() {
 
   useEffect(() => {
     if (isLoading || !users.length || (!visibleAppointments.length && !checkins.length)) return;
-    syncCommercialAlerts();
-  }, [checkins, isLoading, users, visibleAppointments]);
+    syncCommercialAlertsStable();
+  }, [checkins, isLoading, syncCommercialAlertsStable, users, visibleAppointments]);
 
   async function loadData() {
     setIsLoading(true);
@@ -1156,7 +1154,6 @@ export default function Registrador() {
 
       const dogReference = dog ? getInternalEntityReference(dog) : appointment.dog_id;
       const dogProfileLink = `${createPageUrl("PerfilCao")}?id=${encodeURIComponent(dogReference)}`;
-      const registradorLink = `${createPageUrl("Registrador")}?date=${encodeURIComponent(overnightDate)}&appointmentId=${encodeURIComponent(appointment.id)}`;
       await notifyCommercialUsers({
         appointment: createdOvernightAppointment,
         dog,
@@ -1771,7 +1768,7 @@ export default function Registrador() {
     setIsSaving(false);
   }
 
-  async function notifyCommercialUsers({ appointment, dog, tipo, titulo, mensagem, link, payload = {} }) {
+  async function notifyCommercialUsers({ appointment, dog: _dog, tipo, titulo, mensagem, link, payload = {} }) {
     const owner = ownerByDogId[appointment?.dog_id] || {};
     const commercialUsers = users.filter((user) => {
       if (user.active === false) return false;
@@ -1846,7 +1843,7 @@ export default function Registrador() {
     }
   }
 
-  async function notifySectorUsers({ sector, appointment, dog, tipo, titulo, mensagem, link, payload = {} }) {
+  async function notifySectorUsers({ sector, appointment, dog: _dog, tipo, titulo, mensagem, link, payload = {} }) {
     const owner = ownerByDogId[appointment?.dog_id] || {};
     const recipients = users.filter((user) => {
       if (user.active === false) return false;
@@ -2731,7 +2728,7 @@ export default function Registrador() {
 
               {selectedAppointment?.service_type === "adaptacao" && getAppointmentTimeValue(selectedAppointment, "saida") && (
                 <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-                  Esta adaptação foi planejada para terminar à s <strong>{getAppointmentTimeValue(selectedAppointment, "saida")}</strong>.
+                  Esta adaptação foi planejada para terminar às <strong>{getAppointmentTimeValue(selectedAppointment, "saida")}</strong>.
                 </div>
               )}
 

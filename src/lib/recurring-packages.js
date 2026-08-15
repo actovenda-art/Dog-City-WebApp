@@ -1,5 +1,4 @@
 const PRE_CANCELLED_STATUSES = new Set(["cancelada_com_credito", "cancelada_sem_credito"]);
-const CONSUMED_STATUSES = new Set(["realizada", "falta_cobrada", "cancelada_sem_credito"]);
 const CREDITABLE_UNUSED_STATUSES = new Set(["prevista", "agendada", "vencida_nao_utilizada"]);
 const MONTHLY_WEEK_RULES = new Set(["ultima_semana_mes", "primeira_semana", "segunda_semana", "quarta_semana"]);
 const DAY_IN_MS = 24 * 60 * 60 * 1000;

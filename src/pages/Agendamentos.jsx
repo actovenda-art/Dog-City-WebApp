@@ -103,44 +103,23 @@ const SERVICE_BUCKETS = [
 ];
 
 const STATUS_STYLES = {
-  arrived: {
-    label: "Já chegaram",
-    badgeLabel: "Chegou",
+  arriving: {
+    label: "Chegando",
+    badgeLabel: "Chegando",
+    valueClassName: "text-blue-600",
+    containerClassName: "border-blue-200 bg-blue-50 text-blue-700",
+    subtleClassName: "bg-blue-50 text-blue-700 ring-1 ring-blue-200",
+  },
+  present: {
+    label: "Presente",
+    badgeLabel: "Presente",
     valueClassName: "text-emerald-600",
     containerClassName: "border-emerald-200 bg-emerald-50 text-emerald-700",
     subtleClassName: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
   },
-  late: {
-    label: "Atrasados",
-    badgeLabel: "Atrasado",
-    valueClassName: "text-amber-600",
-    containerClassName: "border-amber-200 bg-amber-50 text-amber-700",
-    subtleClassName: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
-  },
-  upcoming: {
-    label: "Previstos",
-    badgeLabel: "Previsto",
-    valueClassName: "text-violet-600",
-    containerClassName: "border-violet-200 bg-violet-50 text-violet-700",
-    subtleClassName: "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
-  },
-  no_show: {
-    label: "Não compareceram",
-    badgeLabel: "Não compareceu",
-    valueClassName: "text-rose-600",
-    containerClassName: "border-rose-200 bg-rose-50 text-rose-700",
-    subtleClassName: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
-  },
-  completed: {
-    label: "Realizados",
-    badgeLabel: "Realizado",
-    valueClassName: "text-slate-700",
-    containerClassName: "border-slate-200 bg-slate-50 text-slate-700",
-    subtleClassName: "bg-slate-50 text-slate-700 ring-1 ring-slate-200",
-  },
-  attention: {
-    label: "Precisa de atencao",
-    badgeLabel: "Verificar falta",
+  absent: {
+    label: "Faltou",
+    badgeLabel: "Faltou",
     valueClassName: "text-rose-600",
     containerClassName: "border-rose-200 bg-rose-50 text-rose-700",
     subtleClassName: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
@@ -148,9 +127,9 @@ const STATUS_STYLES = {
 };
 
 const STATUS_FILTER_OPTIONS = [
-  { id: "chegando", label: "Chegando", stateKeys: ["upcoming", "late", "attention"] },
-  { id: "presente", label: "Presente", stateKeys: ["arrived", "completed"] },
-  { id: "faltou", label: "Faltou", stateKeys: ["no_show"] },
+  { id: "chegando", label: "Chegando", stateKeys: ["arriving"] },
+  { id: "presente", label: "Presente", stateKeys: ["present"] },
+  { id: "faltou", label: "Faltou", stateKeys: ["absent"] },
 ];
 
 const SERVICE_FILTER_OPTIONS = [
@@ -273,13 +252,6 @@ function getServiceBucketConfig(appointment) {
   return SERVICE_BUCKETS.find((bucket) => bucket.id === bucketId) || SERVICE_BUCKETS[SERVICE_BUCKETS.length - 1];
 }
 
-function getScheduleTimestamp(appointment) {
-  const dateKey = getAppointmentDateKey(appointment);
-  if (!dateKey) return null;
-  const timeValue = getAppointmentTimeValue(appointment, "entrada") || "09:00";
-  return new Date(`${dateKey}T${timeValue}:00`);
-}
-
 function getLatestRecordTimestamp(record) {
   return (
     record?.checkout_datetime ||
@@ -387,48 +359,20 @@ function getAppointmentServiceLine(appointment) {
 
 function getAppointmentOperationalState(appointment, record) {
   const meta = getAppointmentMeta(appointment);
-  const todayKey = getTodayKey();
-  const appointmentDateKey = getAppointmentDateKey(appointment);
-  const scheduleTimestamp = getScheduleTimestamp(appointment);
-  const now = new Date();
   const hasCheckin = Boolean(record?.checkin_datetime || record?.data_checkin) || appointment?.status === "presente";
   const hasCheckout = Boolean(record?.checkout_datetime || record?.data_checkout) || appointment?.status === "finalizado";
   const isNoShowConfirmed = appointment?.status === "faltou" || Boolean(meta.absence_confirmed_at);
   const needsAbsenceReview = Boolean(meta.absence_review_pending);
 
   if (isNoShowConfirmed) {
-    return { key: "no_show", label: STATUS_STYLES.no_show.badgeLabel, needsAbsenceReview };
+    return { key: "absent", label: STATUS_STYLES.absent.badgeLabel, needsAbsenceReview };
   }
 
-  if (hasCheckout) {
-    return { key: "completed", label: STATUS_STYLES.completed.badgeLabel, needsAbsenceReview };
+  if (hasCheckin || hasCheckout) {
+    return { key: "present", label: STATUS_STYLES.present.badgeLabel, needsAbsenceReview };
   }
 
-  if (hasCheckin) {
-    return { key: "arrived", label: STATUS_STYLES.arrived.badgeLabel, needsAbsenceReview };
-  }
-
-  if (appointmentDateKey && appointmentDateKey < todayKey) {
-    return {
-      key: needsAbsenceReview ? "attention" : "late",
-      label: needsAbsenceReview ? STATUS_STYLES.attention.badgeLabel : STATUS_STYLES.late.badgeLabel,
-      needsAbsenceReview,
-    };
-  }
-
-  if (appointmentDateKey === todayKey && scheduleTimestamp && scheduleTimestamp <= now) {
-    return {
-      key: needsAbsenceReview ? "attention" : "late",
-      label: needsAbsenceReview ? STATUS_STYLES.attention.badgeLabel : STATUS_STYLES.late.badgeLabel,
-      needsAbsenceReview,
-    };
-  }
-
-  if (needsAbsenceReview) {
-    return { key: "attention", label: STATUS_STYLES.attention.badgeLabel, needsAbsenceReview };
-  }
-
-  return { key: "upcoming", label: STATUS_STYLES.upcoming.badgeLabel, needsAbsenceReview };
+  return { key: "arriving", label: STATUS_STYLES.arriving.badgeLabel, needsAbsenceReview };
 }
 
 function formatDateControlLabel(dateKey) {
@@ -553,7 +497,7 @@ function SummaryCard({ icon: Icon, label, value, iconClassName, valueClassName }
 }
 
 function AppointmentStatusBadge({ stateKey, label }) {
-  const style = STATUS_STYLES[stateKey] || STATUS_STYLES.upcoming;
+  const style = STATUS_STYLES[stateKey] || STATUS_STYLES.arriving;
   return (
     <span className={cn("inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold", style.subtleClassName)}>
       {label}
@@ -595,9 +539,9 @@ function getAppointmentThumbnail(row) {
 }
 
 function getMobileOperationalMeta(row) {
-  if (row.state.key === "arrived" || row.state.key === "completed") {
+  if (row.state.key === "present") {
     return {
-      shortLabel: "Chegou",
+      shortLabel: "Presente",
       actionText: row.checkinTime ? formatTime(row.checkinTime) : "Concluído",
       actionTextClassName: "text-emerald-600",
       actionToneClassName: "border-emerald-100 bg-emerald-50 text-emerald-600",
@@ -605,20 +549,10 @@ function getMobileOperationalMeta(row) {
     };
   }
 
-  if (row.state.key === "late" || row.state.key === "attention") {
+  if (row.state.key === "absent") {
     return {
-      shortLabel: "Atrasado",
-      actionText: "Aguardando\ncheck-in",
-      actionTextClassName: "text-amber-600",
-      actionToneClassName: "border-amber-100 bg-amber-50 text-amber-600",
-      actionIcon: Clock3,
-    };
-  }
-
-  if (row.state.key === "no_show") {
-    return {
-      shortLabel: "Não veio",
-      actionText: "Sem\ncheck-in",
+      shortLabel: "Faltou",
+      actionText: "Falta confirmada",
       actionTextClassName: "text-rose-600",
       actionToneClassName: "border-rose-100 bg-rose-50 text-rose-600",
       actionIcon: TriangleAlert,
@@ -627,10 +561,10 @@ function getMobileOperationalMeta(row) {
 
   const expectedLabel = row.bucket.id === "diversos" ? "Horário\nprevisto" : "Check-in\nprevisto";
   return {
-    shortLabel: "Previsto",
+    shortLabel: "Chegando",
     actionText: `${expectedLabel}: ${row.scheduleTime || "--:--"}`,
-    actionTextClassName: "text-slate-500",
-    actionToneClassName: "border-slate-200 bg-white text-slate-500",
+    actionTextClassName: "text-blue-600",
+    actionToneClassName: "border-blue-100 bg-blue-50 text-blue-600",
     actionIcon: Calendar,
   };
 }
@@ -641,7 +575,7 @@ function ResponsiveAppointmentCard({ row, isHighlighted, onPrimaryAction }) {
   const actionMeta = getMobileOperationalMeta(row);
   const ActionIcon = actionMeta.actionIcon;
   const thumbnail = getAppointmentThumbnail(row);
-  const statusStyle = STATUS_STYLES[row.state.key] || STATUS_STYLES.upcoming;
+  const statusStyle = STATUS_STYLES[row.state.key] || STATUS_STYLES.arriving;
   const operationalText = String(actionMeta.actionText || "").replace(/\s*\n\s*/g, " ");
 
   return (
@@ -731,9 +665,9 @@ function ResponsiveAppointmentCard({ row, isHighlighted, onPrimaryAction }) {
 
 function AppointmentActions({ appointment, state, isSaving, onOpenRegistrador, onOpenRecords, onOpenOrcamento, onOpenPackageDialog, onCreateOrcamento, onMarkAbsence }) {
   const primaryAction =
-    state.key === "late" || state.key === "attention" || state.key === "upcoming"
+    state.key === "arriving"
       ? {
-          label: state.key === "attention" ? "Resolver agora" : "Registrar check-in",
+          label: "Registrar check-in",
           onClick: () => onOpenRegistrador(appointment),
         }
       : appointment?.orcamento_id
@@ -984,17 +918,15 @@ export default function Agendamentos() {
   }, [appointmentPresentationRows, selectedDayKey]);
 
   const dailyStats = useMemo(() => {
-    const arrived = dailyRows.filter((row) => row.state.key === "arrived").length;
-    const late = dailyRows.filter((row) => ["late", "attention"].includes(row.state.key)).length;
-    const upcoming = dailyRows.filter((row) => row.state.key === "upcoming").length;
-    const noShow = dailyRows.filter((row) => row.state.key === "no_show").length;
+    const arriving = dailyRows.filter((row) => row.state.key === "arriving").length;
+    const present = dailyRows.filter((row) => row.state.key === "present").length;
+    const absent = dailyRows.filter((row) => row.state.key === "absent").length;
 
     return {
       total: dailyRows.length,
-      arrived,
-      late,
-      upcoming,
-      noShow,
+      arriving,
+      present,
+      absent,
     };
   }, [dailyRows]);
 
@@ -1025,45 +957,36 @@ export default function Agendamentos() {
       {
         key: "total",
         icon: Users,
-        label: "Total previsto",
+        label: "Total do dia",
         value: dailyStats.total,
         helper: `${dailyStats.total} agendamento${dailyStats.total === 1 ? "" : "s"}`,
         iconClassName: "bg-blue-50 text-blue-600",
         valueClassName: "text-blue-600",
       },
       {
-        key: "arrived",
+        key: "arriving",
+        icon: CalendarClock,
+        label: "Chegando",
+        value: dailyStats.arriving,
+        helper: "não estão aqui",
+        iconClassName: "bg-blue-50 text-blue-600",
+        valueClassName: "text-blue-600",
+      },
+      {
+        key: "present",
         icon: PawPrint,
-        label: "Presentes agora",
-        value: dailyStats.arrived,
-        helper: "ja chegaram",
+        label: "Presente",
+        value: dailyStats.present,
+        helper: "estão aqui",
         iconClassName: "bg-emerald-50 text-emerald-600",
         valueClassName: "text-emerald-600",
       },
       {
-        key: "upcoming",
-        icon: Calendar,
-        label: "Previstos",
-        value: dailyStats.upcoming,
-        helper: "ainda podem chegar",
-        iconClassName: "bg-amber-50 text-amber-500",
-        valueClassName: "text-amber-500",
-      },
-      {
-        key: "late",
-        icon: Clock3,
-        label: "Atrasados",
-        value: dailyStats.late,
-        helper: "aguardando check-in",
-        iconClassName: "bg-orange-50 text-orange-500",
-        valueClassName: "text-orange-500",
-      },
-      {
-        key: "no_show",
+        key: "absent",
         icon: TriangleAlert,
-        label: "Não compareceram",
-        value: dailyStats.noShow,
-        helper: "sem check-in",
+        label: "Faltou",
+        value: dailyStats.absent,
+        helper: "falta confirmada",
         iconClassName: "bg-rose-50 text-rose-600",
         valueClassName: "text-rose-600",
       },
@@ -1094,7 +1017,7 @@ export default function Agendamentos() {
       return;
     }
 
-    if (["late", "attention", "upcoming"].includes(row.state.key)) {
+    if (row.state.key === "arriving") {
       openRegistradorForAppointment(row.appointment);
       return;
     }
@@ -1289,7 +1212,7 @@ export default function Agendamentos() {
 
         <section className="min-w-0 space-y-2">
           <h2 className="text-[16px] font-semibold tracking-tight text-slate-950 sm:text-[18px]">Resumo geral do dia</h2>
-          <div className="grid min-w-0 grid-cols-5 gap-1">
+          <div className="grid min-w-0 grid-cols-4 gap-1.5">
               {mobileSummaryCards.map((card) => (
                 <MobileSummaryCard
                   key={card.key}
@@ -1340,44 +1263,36 @@ export default function Agendamentos() {
             <h2 className="text-xl font-semibold text-slate-950">Resumo geral do dia</h2>
           </div>
 
-          <div className="grid grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-4 gap-2.5">
             <SummaryCard
               icon={Users}
-              label="Total previsto"
+              label="Total do dia"
               value={dailyStats.total}
               helper={`${dailyStats.total} agendamento${dailyStats.total === 1 ? "" : "s"}`}
               iconClassName="bg-blue-50 text-blue-600"
               valueClassName="text-blue-600"
             />
             <SummaryCard
+              icon={CalendarClock}
+              label="Chegando"
+              value={dailyStats.arriving}
+              helper="Não estão aqui"
+              iconClassName="bg-blue-50 text-blue-600"
+              valueClassName="text-blue-600"
+            />
+            <SummaryCard
               icon={CheckCircle2}
-              label="Já chegaram"
-              value={dailyStats.arrived}
-              helper={dailyStats.total > 0 ? `${Math.round((dailyStats.arrived / dailyStats.total) * 100)}% do previsto` : "Sem chegadas registradas"}
+              label="Presente"
+              value={dailyStats.present}
+              helper="Estão aqui"
               iconClassName="bg-emerald-50 text-emerald-600"
               valueClassName="text-emerald-600"
             />
             <SummaryCard
-              icon={Clock3}
-              label="Atrasados"
-              value={dailyStats.late}
-              helper="Aguardando check-in"
-              iconClassName="bg-amber-50 text-amber-600"
-              valueClassName="text-amber-600"
-            />
-            <SummaryCard
-              icon={CalendarClock}
-              label="Previstos"
-              value={dailyStats.upcoming}
-              helper="Ainda nao chegaram"
-              iconClassName="bg-violet-50 text-violet-600"
-              valueClassName="text-violet-600"
-            />
-            <SummaryCard
               icon={TriangleAlert}
-              label="Não compareceram"
-              value={dailyStats.noShow}
-              helper="Sem check-in"
+              label="Faltou"
+              value={dailyStats.absent}
+              helper="Falta confirmada pelo comercial"
               iconClassName="bg-rose-50 text-rose-600"
               valueClassName="text-rose-600"
             />
@@ -1413,7 +1328,7 @@ export default function Agendamentos() {
                     const isHighlighted = highlightAppointmentId === row.appointment.id;
                     const recordSummary = row.checkinTime
                       ? `Check-in: ${formatTime(row.checkinTime)}`
-                      : `Previsto: ${row.scheduleTime || "--:--"}`;
+                      : `Horário: ${row.scheduleTime || "--:--"}`;
 
                     return (
                       <div

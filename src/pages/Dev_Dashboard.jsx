@@ -6,6 +6,7 @@ import { appClient } from "@/api/appClient";
 import { SendEmail } from "@/api/integrations";
 import { createPageUrl } from "@/utils";
 import { formatDisplayName, sanitizeDisplayNameInput } from "@/lib/name-format";
+import { normalizePin, validatePin } from "@/lib/pin-auth";
 import { useStableCallback } from "@/hooks/use-stable-callback";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Mail, RotateCcw, Save, Settings, Shield, Trash2, UserPlus, UserX, Users } from "lucide-react";
+import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Eye, EyeOff, KeyRound, Mail, RotateCcw, Save, Settings, Shield, Trash2, UserPlus, UserX, Users } from "lucide-react";
 
 const EMPTY_INVITE = {
   full_name: "",
@@ -33,6 +34,15 @@ const EMPTY_FEEDBACK_MODAL = {
   fieldLabel: "",
   fieldValue: "",
   note: "",
+};
+
+const EMPTY_PASSWORD_RESET = {
+  open: false,
+  user: null,
+  temporaryPin: "",
+  showPin: false,
+  error: "",
+  completed: false,
 };
 
 function formatApiError(error, fallbackMessage) {
@@ -131,6 +141,8 @@ export default function Dev_Dashboard() {
   const [inviteForm, setInviteForm] = useState(EMPTY_INVITE);
   const [feedbackModal, setFeedbackModal] = useState(EMPTY_FEEDBACK_MODAL);
   const [hasCopiedFeedbackValue, setHasCopiedFeedbackValue] = useState(false);
+  const [passwordReset, setPasswordReset] = useState(EMPTY_PASSWORD_RESET);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const loadDataStable = useStableCallback(loadData);
 
   useEffect(() => {
@@ -575,6 +587,57 @@ export default function Dev_Dashboard() {
     return <LoadingScreen />;
   }
 
+  function openPasswordReset(user) {
+    setPasswordReset({
+      ...EMPTY_PASSWORD_RESET,
+      open: true,
+      user,
+    });
+  }
+
+  function closePasswordReset() {
+    if (isResettingPassword) return;
+    setPasswordReset(EMPTY_PASSWORD_RESET);
+  }
+
+  async function handleResetUserPassword() {
+    const temporaryPin = normalizePin(passwordReset.temporaryPin);
+    const validationError = validatePin(temporaryPin);
+
+    if (validationError) {
+      setPasswordReset((current) => ({ ...current, error: validationError }));
+      return;
+    }
+
+    setIsResettingPassword(true);
+    setPasswordReset((current) => ({ ...current, error: "" }));
+
+    try {
+      await User.resetManagedUserPassword?.({
+        userId: passwordReset.user?.id,
+        temporaryPin,
+      });
+      patchUserState(passwordReset.user?.id, {
+        pin_required_reset: true,
+        pin_bootstrap_status: "pronto",
+      });
+      setPasswordReset((current) => ({
+        ...current,
+        temporaryPin: "",
+        showPin: false,
+        completed: true,
+      }));
+    } catch (error) {
+      console.error("Erro ao redefinir senha do usuário:", error);
+      setPasswordReset((current) => ({
+        ...current,
+        error: formatApiError(error, "Não foi possível redefinir a senha do usuário."),
+      }));
+    } finally {
+      setIsResettingPassword(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -869,6 +932,12 @@ export default function Dev_Dashboard() {
                     )}
 
                     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                      {user.active !== false && user.onboarding_status !== "pendente" && (
+                        <Button variant="outline" onClick={() => openPasswordReset(user)} disabled={isSaving || isResettingPassword} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
+                          <KeyRound className="w-4 h-4 mr-2" />
+                          Redefinir senha
+                        </Button>
+                      )}
                       <Button variant="outline" onClick={() => handleSaveUserAccess(user)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
                         <Save className="w-4 h-4 mr-2" />
                         Salvar acesso
@@ -993,6 +1062,99 @@ export default function Dev_Dashboard() {
               {isSaving ? "Enviando..." : "Enviar convite"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={passwordReset.open}
+        onOpenChange={(open) => {
+          if (!open) closePasswordReset();
+        }}
+      >
+        <DialogContent className="w-[94vw] max-w-[480px] overflow-hidden rounded-3xl border border-slate-200 bg-white p-0 shadow-2xl">
+          <div className="border-b border-slate-100 bg-gradient-to-br from-slate-50 to-blue-50 px-5 py-5 sm:px-7 sm:py-6">
+            <DialogHeader className="space-y-2 text-left">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-200">
+                <KeyRound className="h-5 w-5" />
+              </div>
+              <DialogTitle className="text-xl font-semibold text-slate-950 sm:text-2xl">
+                {passwordReset.completed ? "Senha redefinida" : "Redefinir senha de acesso"}
+              </DialogTitle>
+              <DialogDescription className="text-sm leading-6 text-slate-600">
+                {passwordReset.completed
+                  ? `${passwordReset.user?.full_name || passwordReset.user?.email} deverá criar uma nova senha no próximo login.`
+                  : `Defina uma senha provisória para ${passwordReset.user?.full_name || passwordReset.user?.email}.`}
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          {passwordReset.completed ? (
+            <div className="space-y-5 px-5 py-6 sm:px-7">
+              <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-800">
+                <CircleCheckBig className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                <p>A senha provisória já pode ser usada. Depois da autenticação, o acesso será direcionado automaticamente para a definição da senha definitiva.</p>
+              </div>
+              <Button type="button" onClick={closePasswordReset} className="h-11 w-full rounded-xl bg-slate-900 text-white hover:bg-slate-800">
+                Concluir
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-5 px-5 py-6 sm:px-7">
+              <div>
+                <Label htmlFor="temporary-password">Senha provisória</Label>
+                <div className="relative mt-2">
+                  <Input
+                    id="temporary-password"
+                    type={passwordReset.showPin ? "text" : "password"}
+                    inputMode="numeric"
+                    autoComplete="new-password"
+                    value={passwordReset.temporaryPin}
+                    onChange={(event) => setPasswordReset((current) => ({
+                      ...current,
+                      temporaryPin: normalizePin(event.target.value),
+                      error: "",
+                    }))}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleResetUserPassword();
+                      }
+                    }}
+                    className="h-12 rounded-xl border-slate-300 pr-12 text-center text-lg tracking-[0.35em]"
+                    placeholder="000000"
+                    maxLength={6}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPasswordReset((current) => ({ ...current, showPin: !current.showPin }))}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                    aria-label={passwordReset.showPin ? "Ocultar senha provisória" : "Mostrar senha provisória"}
+                  >
+                    {passwordReset.showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-500">Use 6 números. A senha não pode ser sequencial.</p>
+              </div>
+
+              {passwordReset.error && (
+                <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="whitespace-pre-line">{passwordReset.error}</span>
+                </div>
+              )}
+
+              <DialogFooter className="gap-2 sm:gap-2">
+                <Button type="button" variant="outline" onClick={closePasswordReset} disabled={isResettingPassword} className="h-11 w-full rounded-xl sm:w-auto">
+                  Cancelar
+                </Button>
+                <Button type="button" onClick={handleResetUserPassword} disabled={isResettingPassword || passwordReset.temporaryPin.length !== 6} className="h-11 w-full rounded-xl bg-blue-600 text-white hover:bg-blue-700 sm:w-auto">
+                  {isResettingPassword ? <RotateCcw className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+                  {isResettingPassword ? "Redefinindo..." : "Redefinir"}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

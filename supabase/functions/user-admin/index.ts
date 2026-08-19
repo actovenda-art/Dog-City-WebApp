@@ -68,7 +68,10 @@ type AppUserRow = {
   company_role?: string | null;
   is_platform_admin?: boolean | null;
   active?: boolean | null;
+  pin_required_reset?: boolean | null;
   pin_bootstrap_status?: string | null;
+  pin_updated_at?: string | null;
+  pin_last_verified_at?: string | null;
   onboarding_status?: string | null;
   invite_sent?: boolean | null;
   invite_accepted?: boolean | null;
@@ -1519,6 +1522,113 @@ async function handleSetPin(request: Request, payload: Record<string, unknown>) 
   });
 }
 
+async function handleResetUserPassword(request: Request, payload: Record<string, unknown>) {
+  const ctx = await getRequestContext(request);
+  const userId = sanitizeText(payload.user_id);
+  const temporaryPin = normalizePin(payload.temporary_pin);
+
+  if (!userId) {
+    return jsonResponse({ error: "Usuario obrigatorio para redefinir a senha." }, 400);
+  }
+
+  const validationError = validatePin(temporaryPin);
+  if (validationError) {
+    return jsonResponse({ error: validationError }, 400);
+  }
+
+  const targetUser = await loadTargetUser(userId);
+  const targetAccessRows = await loadTargetUserAccessRows(userId);
+  const targetUnitIds = [...new Set([
+    targetUser.empresa_id || "",
+    ...targetAccessRows
+      .filter((row) => row.ativo !== false)
+      .map((row) => row.empresa_id),
+  ].filter(Boolean))];
+
+  if (!canManageUsers(ctx, targetUnitIds, targetUser.is_platform_admin === true)) {
+    return jsonResponse({ error: "Sem permissao para redefinir a senha deste usuario." }, 403);
+  }
+
+  if (targetUser.active === false) {
+    return jsonResponse({ error: "Reative o acesso antes de redefinir a senha." }, 409);
+  }
+
+  if (targetUser.onboarding_status === "pendente") {
+    return jsonResponse({ error: "O usuario ainda precisa concluir o convite de acesso." }, 409);
+  }
+
+  if (!sanitizeText(targetUser.email)) {
+    return jsonResponse({ error: "O usuario nao possui email de acesso cadastrado." }, 409);
+  }
+
+  const now = new Date().toISOString();
+  const previousPinState = {
+    pin_required_reset: targetUser.pin_required_reset ?? false,
+    pin_bootstrap_status: targetUser.pin_bootstrap_status ?? null,
+    pin_updated_at: targetUser.pin_updated_at ?? null,
+    pin_last_verified_at: targetUser.pin_last_verified_at ?? null,
+  };
+
+  const { data: updatedUser, error: profileError } = await admin
+    .from("users")
+    .update({
+      pin_required_reset: true,
+      pin_bootstrap_status: "pronto",
+      pin_updated_at: null,
+      pin_last_verified_at: null,
+      updated_date: now,
+    })
+    .eq("id", userId)
+    .select("*")
+    .maybeSingle();
+
+  if (profileError || !updatedUser) {
+    return jsonResponse({ error: profileError?.message || "Nao foi possivel preparar a redefinicao de senha." }, 500);
+  }
+
+  try {
+    await ensureBootstrapAuthUser(targetUser, temporaryPin);
+  } catch (error) {
+    const { error: rollbackError } = await admin
+      .from("users")
+      .update({
+        ...previousPinState,
+        updated_date: new Date().toISOString(),
+      })
+      .eq("id", userId);
+
+    if (rollbackError) {
+      console.error("auth_admin_password_reset_rollback_error", {
+        actor_user_id: ctx.authUser?.id || null,
+        target_user_id: userId,
+        occurred_at: new Date().toISOString(),
+        error: rollbackError.message || "unknown",
+      });
+    }
+
+    console.error("auth_admin_password_reset_error", {
+      actor_user_id: ctx.authUser?.id || null,
+      target_user_id: userId,
+      occurred_at: new Date().toISOString(),
+      error: error instanceof Error ? error.message : "unknown",
+    });
+    return jsonResponse({ error: "Nao foi possivel redefinir a senha deste usuario." }, 500);
+  }
+
+  console.info("auth_admin_password_reset", {
+    actor_user_id: ctx.authUser?.id || null,
+    target_user_id: userId,
+    occurred_at: now,
+    success: true,
+  });
+
+  return jsonResponse({
+    ok: true,
+    user: updatedUser,
+    requires_password_change: true,
+  });
+}
+
 async function handleGetInviteContext(payload: Record<string, unknown>) {
   const token = sanitizeText(payload.token);
   if (!token) {
@@ -2169,6 +2279,10 @@ Deno.serve(async (request) => {
 
     if (action === "bootstrap_default_pins") {
       return await handleBootstrapDefaultPins(request, payload || {});
+    }
+
+    if (action === "reset_user_password") {
+      return await handleResetUserPassword(request, payload || {});
     }
 
     if (action === "set_pin") {

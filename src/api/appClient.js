@@ -54,6 +54,7 @@ import {
 } from '@/lib/finance-observability';
 import { isValidCpfChecksum } from '@/lib/cpf-validation';
 import { validateDogOperationalProfile } from '@/lib/dog-profile-validation';
+import { normalizePin as normalizeAccessPin, validatePin as validateAccessPin } from '@/lib/pin-auth';
 
 const STORAGE_PREFIX = 'local_app_client_';
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -5637,6 +5638,23 @@ const createMockAuth = () => {
       failed: 0,
       results: [{ user_id: currentUser.id, email: currentUser.email, status: 'ok' }],
     }),
+    resetManagedUserPassword: async ({ userId, temporaryPin } = {}) => {
+      if (!userId) throw new Error('Usuário obrigatório para redefinir a senha.');
+      const normalizedPin = normalizeAccessPin(temporaryPin);
+      const validationError = validateAccessPin(normalizedPin);
+      if (validationError) throw new Error(validationError);
+      if (userId === currentUser.id) {
+        currentUser.pin_required_reset = true;
+        currentUser.pin_bootstrap_status = 'pronto';
+        currentUser.pin_updated_at = null;
+        currentUser.pin_last_verified_at = null;
+      }
+      return {
+        ok: true,
+        user: { id: userId, pin_required_reset: true, pin_bootstrap_status: 'pronto' },
+        requires_password_change: true,
+      };
+    },
     saveManagedUserAccess: async (payload = {}) => ({
       ok: true,
       user: { ...payload, id: payload?.user_id || currentUser.id },
@@ -7376,6 +7394,13 @@ if (USE_SUPABASE_BACKEND) {
         action: 'bootstrap_default_pins',
         user_id: userId,
         default_pin: defaultPin,
+      });
+    },
+    resetManagedUserPassword: async ({ userId, temporaryPin } = {}) => {
+      return supabaseFunctions.userAdmin({
+        action: 'reset_user_password',
+        user_id: userId,
+        temporary_pin: temporaryPin,
       });
     },
     saveManagedUserAccess: async (payload = {}) => {

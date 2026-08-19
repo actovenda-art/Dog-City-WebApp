@@ -138,6 +138,7 @@ export default function Dev_Dashboard() {
   const [userUnitAccessMap, setUserUnitAccessMap] = useState({});
   const [setupError, setSetupError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [selectedUnitId, setSelectedUnitId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -730,7 +731,17 @@ export default function Dev_Dashboard() {
             <SearchFiltersToolbar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
+              onSearchFocus={() => setIsSearchExpanded(true)}
+              onSearchBlur={() => setIsSearchExpanded(false)}
+              onSearchKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.currentTarget.blur();
+                }
+              }}
               searchPlaceholder="Buscar por nome, email ou unidade..."
+              className="flex-row items-center justify-between gap-2.5"
+              searchClassName="transition-all duration-200 ease-out"
+              filtersClassName={isSearchExpanded ? "hidden" : "shrink-0"}
               hasActiveFilters={Boolean(searchTerm || (selectedUnitId && selectedUnitId !== defaultSelectedUnitId))}
               onClear={() => {
                 setSearchTerm("");

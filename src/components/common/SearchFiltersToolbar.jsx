@@ -24,8 +24,10 @@ function FilterChip({
         <button
           type="button"
           className={cn(
-            "flex h-9 items-center overflow-hidden rounded-full border shadow-sm transition-all duration-200 ease-out sm:h-11",
-            open ? "w-[148px] px-3 sm:w-[168px] sm:px-4" : "w-9 justify-center px-0 sm:w-11",
+            "h-9 overflow-hidden rounded-full border shadow-sm transition-all duration-200 ease-out sm:h-11",
+            open
+              ? "flex w-[148px] items-center px-3 sm:w-[168px] sm:px-4"
+              : "grid w-9 place-items-center p-0 sm:w-11",
             open
               ? "border-blue-200 bg-blue-50 text-blue-700"
               : active
@@ -34,7 +36,7 @@ function FilterChip({
             buttonClassName,
           )}
         >
-          <Icon className={cn("h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4", iconClassName)} />
+          <Icon className={cn("block h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4", iconClassName)} />
           <span
             className={cn(
               "overflow-hidden whitespace-nowrap pl-1.5 text-[12px] font-medium transition-all duration-200 sm:pl-2 sm:text-sm",
@@ -68,6 +70,9 @@ export default function SearchFiltersToolbar({
   searchClassName,
   searchInputClassName,
   searchIconClassName,
+  onSearchFocus,
+  onSearchBlur,
+  onSearchKeyDown,
   filtersClassName,
   filterButtonClassName,
   filterLabelClassName,
@@ -81,6 +86,9 @@ export default function SearchFiltersToolbar({
         <Input
           value={searchTerm}
           onChange={(event) => onSearchChange?.(event.target.value)}
+          onFocus={onSearchFocus}
+          onBlur={onSearchBlur}
+          onKeyDown={onSearchKeyDown}
           placeholder={searchPlaceholder}
           className={cn("h-9 rounded-full border-gray-200 bg-white pl-9 pr-3 text-[13px] shadow-sm sm:h-11 sm:pl-11 sm:pr-4 sm:text-sm", searchInputClassName)}
         />

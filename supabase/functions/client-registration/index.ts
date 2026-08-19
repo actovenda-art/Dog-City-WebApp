@@ -164,7 +164,7 @@ function isCommercialRecipient(user: Record<string, unknown>, profile: Record<st
 }
 
 function isManagerialRecipient(user: Record<string, unknown>, profile: Record<string, unknown> | null, permissions: string[]) {
-  if (user?.is_platform_admin === true || user?.company_role === "platform_admin") return true;
+  if (user?.is_platform_admin === true) return true;
 
   const hasManagerialPermission = permissions.some((permission) =>
     MANAGERIAL_NOTIFICATION_PERMISSIONS.some((required) => permissionMatches(permission, required))

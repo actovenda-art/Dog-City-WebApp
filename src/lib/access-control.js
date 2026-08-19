@@ -80,7 +80,7 @@ const MANAGERIAL_PERMISSION_REQUIREMENTS = [
 ];
 
 export function isOperationalProfile(user) {
-  if (!user || user.is_platform_admin || user.company_role === "platform_admin") {
+  if (!user || user.is_platform_admin === true) {
     return false;
   }
 
@@ -123,7 +123,7 @@ export function isOperationalProfile(user) {
 
 export function isCommercialProfile(user) {
   if (!user) return false;
-  if (user.is_platform_admin || user.company_role === "platform_admin") {
+  if (user.is_platform_admin === true) {
     return false;
   }
 
@@ -152,7 +152,7 @@ export function isCommercialProfile(user) {
 
 export function isManagerialProfile(user) {
   if (!user) return false;
-  if (user.is_platform_admin || user.company_role === "platform_admin") {
+  if (user.is_platform_admin === true) {
     return true;
   }
 
@@ -192,7 +192,7 @@ export function isManagerialProfile(user) {
 
 export function canWriteFinancialOperations(user) {
   if (!user) return false;
-  if (user.is_platform_admin || user.company_role === "platform_admin") return true;
+  if (user.is_platform_admin === true) return true;
 
   const grantedPermissions = normalizePermissions(
     user.access_profile_permissions || user.accessProfilePermissions || []
@@ -230,7 +230,7 @@ export function getNotificationDepartment(user) {
 
 export function getDefaultHomePage(user) {
   if (!user) return "Perfis";
-  if (user.is_platform_admin || user.company_role === "platform_admin") return "Cockpit";
+  if (user.is_platform_admin === true) return "Cockpit";
   if (isManagerialProfile(user)) return "Cockpit";
   if (isCommercialProfile(user)) return "Orcamentos";
   if (isOperationalProfile(user)) return "Registrador";
@@ -239,7 +239,7 @@ export function getDefaultHomePage(user) {
 
 export function canViewSensitivePersonalData(user) {
   if (!user) return false;
-  if (user.is_platform_admin || user.company_role === "platform_admin") return true;
+  if (user.is_platform_admin === true) return true;
   return isManagerialProfile(user);
 }
 
@@ -249,7 +249,7 @@ export function getPageAccessRequirements(pageName) {
 
 export function hasPageAccess(user, pageName) {
   if (!user) return true;
-  if (user.is_platform_admin || user.company_role === "platform_admin") return true;
+  if (user.is_platform_admin === true) return true;
 
   const requirements = getPageAccessRequirements(pageName);
   if (requirements.length === 0) return true;

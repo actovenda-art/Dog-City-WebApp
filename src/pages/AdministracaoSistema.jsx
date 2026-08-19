@@ -523,7 +523,7 @@ export default function AdministracaoSistema() {
   );
 
   const isPlatformAdministrator = Boolean(
-    currentUser?.is_platform_admin || currentUser?.company_role === "platform_admin"
+    currentUser?.is_platform_admin === true
   );
   const canViewUnits = isPlatformAdministrator || hasPermission(currentUser, "empresa:read");
   const canManageUnits = isPlatformAdministrator || hasPermission(currentUser, "empresa:update");
@@ -630,8 +630,7 @@ export default function AdministracaoSistema() {
 
   function canGrantProfilePermission(permissionId) {
     return Boolean(
-      currentUser?.is_platform_admin
-      || currentUser?.company_role === "platform_admin"
+      currentUser?.is_platform_admin === true
       || hasPermission(currentUser, permissionId)
     );
   }
@@ -1831,7 +1830,7 @@ export default function AdministracaoSistema() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="empresa">Unidade</SelectItem>
-                          {(currentUser?.is_platform_admin || currentUser?.company_role === "platform_admin") ? (
+                          {currentUser?.is_platform_admin === true ? (
                             <SelectItem value="plataforma">Administração central</SelectItem>
                           ) : null}
                         </SelectContent>

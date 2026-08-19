@@ -5691,18 +5691,8 @@ if (USE_SUPABASE_BACKEND) {
 
   let cachedDefaultUnitId = '';
 
-  async function resolveAllowedUnitIds(authUser, profile) {
-    const unitAccessRows = await findUserUnitAccess(authUser);
-    const explicitUnitIds = unitAccessRows
-      .filter((item) => item?.ativo !== false)
-      .map((item) => item.empresa_id)
-      .filter(Boolean);
-
-    if (explicitUnitIds.length > 0) {
-      return [...new Set(explicitUnitIds)];
-    }
-
-    if (profile?.is_platform_admin) {
+  async function resolveAllowedUnitIds(authUser, profile, providedUnitAccessRows = null) {
+    if (profile?.is_platform_admin === true) {
       try {
         const { data, error } = await supabase.from('empresa').select('id').order('created_date', { ascending: true }).limit(500);
         if (!error) {
@@ -5713,15 +5703,29 @@ if (USE_SUPABASE_BACKEND) {
       }
     }
 
+    const unitAccessRows = Array.isArray(providedUnitAccessRows)
+      ? providedUnitAccessRows
+      : await findUserUnitAccess(authUser);
+    const explicitUnitIds = unitAccessRows
+      .filter((item) => item?.ativo !== false)
+      .map((item) => item.empresa_id)
+      .filter(Boolean);
+
+    if (explicitUnitIds.length > 0) {
+      return [...new Set(explicitUnitIds)];
+    }
+
     return profile?.empresa_id ? [profile.empresa_id] : [];
   }
 
-  async function resolveScopedUnitId(preferredUnitId = '') {
-    const authUser = await getAuthenticatedUser();
+  async function resolveScopedUnitId(preferredUnitId = '', providedContext = {}) {
+    const authUser = providedContext.authUser || await getAuthenticatedUser();
     if (!authUser) return preferredUnitId || '';
 
-    const profile = await findUserProfile(authUser);
-    const allowedUnitIds = await resolveAllowedUnitIds(authUser, profile);
+    const profile = providedContext.profile || await findUserProfile(authUser);
+    const allowedUnitIds = Array.isArray(providedContext.allowedUnitIds)
+      ? providedContext.allowedUnitIds
+      : await resolveAllowedUnitIds(authUser, profile, providedContext.unitAccessRows);
 
     const storedSelection = getStoredSelectedUnitIds().filter((unitId) => allowedUnitIds.includes(unitId));
     const storedUnitId = getStoredActiveUnitId();
@@ -7164,9 +7168,21 @@ if (USE_SUPABASE_BACKEND) {
 
       const profile = await findUserProfile(authUser);
       const mergedUser = profile ? { ...authUser, ...profile } : authUser;
-      const accessProfile = await findAccessProfile(mergedUser?.access_profile_id);
-      const allowedUnitIds = await resolveAllowedUnitIds(authUser, mergedUser);
-      const activeUnitId = await resolveScopedUnitId(getStoredActiveUnitId() || mergedUser?.empresa_id || '');
+      const unitAccessRows = await findUserUnitAccess(authUser);
+      const allowedUnitIds = await resolveAllowedUnitIds(authUser, mergedUser, unitAccessRows);
+      const activeUnitId = await resolveScopedUnitId(
+        getStoredActiveUnitId() || mergedUser?.empresa_id || '',
+        { authUser, profile: mergedUser, allowedUnitIds, unitAccessRows },
+      );
+      const activeUnitAccess = mergedUser?.is_platform_admin === true
+        ? null
+        : unitAccessRows.find((item) => item?.empresa_id === activeUnitId && item?.ativo !== false) || null;
+      const assignedAccessProfileId = mergedUser?.access_profile_id || null;
+      const effectiveAccessProfileId = activeUnitAccess?.access_profile_id || assignedAccessProfileId;
+      const accessProfile = await findAccessProfile(effectiveAccessProfileId);
+      const effectiveCompanyRole = mergedUser?.is_platform_admin === true
+        ? 'platform_admin'
+        : activeUnitAccess?.papel || (mergedUser?.company_role === 'platform_admin' ? 'company_user' : mergedUser?.company_role || 'company_user');
       const selectedUnitIds = getStoredSelectedUnitIds().filter((unitId) => allowedUnitIds.includes(unitId));
       const normalizedSelectedUnitIds = selectedUnitIds.length > 0
         ? [...new Set([activeUnitId, ...selectedUnitIds].filter(Boolean))]
@@ -7180,12 +7196,16 @@ if (USE_SUPABASE_BACKEND) {
       const sessionUser = {
         ...mergedUser,
         assigned_empresa_id: mergedUser?.empresa_id || null,
+        assigned_access_profile_id: assignedAccessProfileId,
+        assigned_company_role: mergedUser?.company_role || null,
         allowed_unit_ids: allowedUnitIds,
         active_unit_id: activeUnitId || mergedUser?.empresa_id || null,
         selected_unit_ids: normalizedSelectedUnitIds,
+        access_profile_id: effectiveAccessProfileId,
         access_profile_code: accessProfile?.codigo || null,
         access_profile_name: accessProfile?.nome || null,
-        access_profile_permissions: Array.isArray(accessProfile?.permissoes) ? accessProfile.permissoes : [],
+        access_profile_permissions: accessProfile?.ativo !== false && Array.isArray(accessProfile?.permissoes) ? accessProfile.permissoes : [],
+        company_role: effectiveCompanyRole,
         unit_selection_mode: normalizedSelectedUnitIds.length > 1 ? 'merged' : 'single',
         empresa_id: activeUnitId || mergedUser?.empresa_id || null,
       };

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   getResourcePermissionLevel,
+  hasPermission,
   normalizeKnownPermissions,
   permissionMatches,
   setResourcePermissionLevel,
@@ -48,5 +49,8 @@ assert.equal(hasPageAccess(userWith("agenda:read"), "Registrador"), false);
 assert.equal(hasPageAccess(userWith("agenda:update"), "Registrador"), true);
 assert.equal(hasPageAccess(userWith("usuarios:read"), "AdministracaoSistema"), true);
 assert.equal(hasPageAccess({ is_platform_admin: true }, "Backup"), true);
+assert.equal(hasPageAccess({ company_role: "platform_admin", is_platform_admin: false }, "Backup"), false);
+assert.equal(hasPermission({ company_role: "platform_admin", is_platform_admin: false }, "financeiro:update"), false);
+assert.equal(hasPermission({ is_platform_admin: true }, "financeiro:update"), true);
 
 console.log("Access permissions contract: ok");

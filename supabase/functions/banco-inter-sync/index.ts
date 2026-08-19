@@ -1887,7 +1887,7 @@ function hasWalletChargePermission(
   accessProfile: Record<string, unknown> | null,
   unitRole: string,
 ) {
-  if (profile.is_platform_admin === true || sanitizeText(profile.company_role) === "platform_admin") {
+  if (profile.is_platform_admin === true) {
     return true;
   }
 
@@ -1937,20 +1937,20 @@ async function requireWalletChargeStaff(request: Request, empresaId: string) {
   }
 
   let unitRole = "";
-  let hasUnitAccess = profile.is_platform_admin === true
-    || sanitizeText(profile.company_role) === "platform_admin"
-    || sanitizeText(profile.empresa_id) === normalizedEmpresaId;
-  if (!hasUnitAccess) {
-    const { data: unitAccess, error: unitAccessError } = await supabase
+  let unitAccess: Record<string, unknown> | null = null;
+  let hasUnitAccess = profile.is_platform_admin === true;
+  if (profile.is_platform_admin !== true) {
+    const { data, error: unitAccessError } = await supabase
       .from("user_unit_access")
-      .select("empresa_id, papel, ativo")
+      .select("empresa_id, access_profile_id, papel, ativo")
       .eq("user_id", profile.id)
       .eq("empresa_id", normalizedEmpresaId)
       .eq("ativo", true)
       .maybeSingle();
 
     if (unitAccessError) throw unitAccessError;
-    hasUnitAccess = Boolean(unitAccess);
+    unitAccess = data || null;
+    hasUnitAccess = sanitizeText(profile.empresa_id) === normalizedEmpresaId || Boolean(unitAccess);
     unitRole = sanitizeText(unitAccess?.papel);
   }
 
@@ -1959,7 +1959,7 @@ async function requireWalletChargeStaff(request: Request, empresaId: string) {
   }
 
   let accessProfile: Record<string, unknown> | null = null;
-  const accessProfileId = sanitizeText(profile.access_profile_id);
+  const accessProfileId = sanitizeText(unitAccess?.access_profile_id) || sanitizeText(profile.access_profile_id);
   if (accessProfileId) {
     const { data, error } = await supabase
       .from("perfil_acesso")

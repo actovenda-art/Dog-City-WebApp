@@ -389,20 +389,39 @@ async function getRequestContext(request: Request): Promise<RequestContext> {
     };
   }
 
-  let permissions: string[] = [];
-  if (profile?.access_profile_id) {
-    const { data: accessProfile } = await admin
-      .from("perfil_acesso")
-      .select("permissoes")
-      .eq("id", profile.access_profile_id)
+  const allowedUnitIds = await resolveAllowedUnitIds(authData.user.id, profile as AppUserRow | null);
+  const requestedUnitId = sanitizeText(request.headers.get("x-active-unit-id"));
+  const activeUnitId = requestedUnitId && allowedUnitIds.includes(requestedUnitId)
+    ? requestedUnitId
+    : allowedUnitIds.includes(sanitizeText(profile?.empresa_id))
+      ? sanitizeText(profile?.empresa_id)
+      : allowedUnitIds[0] || "";
+
+  let effectiveAccessProfileId = sanitizeText(profile?.access_profile_id);
+  if (profile?.is_platform_admin !== true && activeUnitId) {
+    const { data: unitAccess } = await admin
+      .from("user_unit_access")
+      .select("access_profile_id")
+      .eq("user_id", authData.user.id)
+      .eq("empresa_id", activeUnitId)
+      .eq("ativo", true)
       .maybeSingle();
 
-    if (Array.isArray(accessProfile?.permissoes)) {
+    effectiveAccessProfileId = sanitizeText(unitAccess?.access_profile_id) || effectiveAccessProfileId;
+  }
+
+  let permissions: string[] = [];
+  if (effectiveAccessProfileId) {
+    const { data: accessProfile } = await admin
+      .from("perfil_acesso")
+      .select("permissoes, ativo")
+      .eq("id", effectiveAccessProfileId)
+      .maybeSingle();
+
+    if (accessProfile?.ativo !== false && Array.isArray(accessProfile?.permissoes)) {
       permissions = accessProfile.permissoes.filter((item: unknown) => typeof item === "string");
     }
   }
-
-  const allowedUnitIds = await resolveAllowedUnitIds(authData.user.id, profile as AppUserRow | null);
 
   return {
     authUser: { id: authData.user.id, email: authData.user.email },
@@ -669,7 +688,7 @@ function isCommercialNotificationRecipient(user: Record<string, unknown>, profil
 }
 
 function isManagerialNotificationRecipient(user: Record<string, unknown>, profile: Record<string, unknown> | null, permissions: string[]) {
-  if (user?.is_platform_admin === true || user?.company_role === "platform_admin") return true;
+  if (user?.is_platform_admin === true) return true;
 
   const hasManagerialPermission = MANAGERIAL_NOTIFICATION_PERMISSIONS.some((permission) => hasPermission(permissions, permission));
   if (hasManagerialPermission) return true;
@@ -734,7 +753,7 @@ async function loadRegistrationNotificationRecipients(empresaId: string | null |
     const accessRow = accessByUserId.get(sanitizeText(user.id));
     const hasUnitAccess = normalizedEmpresaId
       ? user.is_platform_admin === true || sanitizeText(user.empresa_id) === normalizedEmpresaId || Boolean(accessRow)
-      : user.is_platform_admin === true || user.company_role === "platform_admin";
+      : user.is_platform_admin === true;
     if (!hasUnitAccess) return false;
 
     const accessProfileId = sanitizeText(accessRow?.access_profile_id) || sanitizeText(user.access_profile_id);
@@ -1092,6 +1111,27 @@ async function handleSaveUserAccess(request: Request, payload: Record<string, un
   const requestedPrimaryUnitId = sanitizeText(payload.primary_unit_id || payload.empresa_id);
   const clearAccess = payload.clear_access === true;
   const wantsPlatformAdmin = payload.is_platform_admin === true;
+  const requestedAccessProfileId = clearAccess ? "" : sanitizeText(payload.access_profile_id);
+  const requestedAccessProfile = requestedAccessProfileId
+    ? await loadAccessProfile(requestedAccessProfileId)
+    : null;
+
+  if (requestedAccessProfileId && !requestedAccessProfile) {
+    return jsonResponse({ error: "Perfil de acesso nao encontrado." }, 400);
+  }
+
+  if (requestedAccessProfile?.ativo === false) {
+    return jsonResponse({ error: "O perfil de acesso selecionado esta inativo." }, 400);
+  }
+
+  const requestedProfileScope = sanitizeText(requestedAccessProfile?.escopo) || "empresa";
+  if (wantsPlatformAdmin && (!requestedAccessProfile || requestedProfileScope !== "plataforma")) {
+    return jsonResponse({ error: "Administradores do sistema exigem um perfil de escopo central." }, 400);
+  }
+
+  if (!wantsPlatformAdmin && requestedAccessProfile && requestedProfileScope === "plataforma") {
+    return jsonResponse({ error: "Perfis de escopo central exigem o nivel ADM do Sistema Pet." }, 400);
+  }
 
   const permissionUnits = [...new Set([
     ...requestedUnitIds,
@@ -1126,10 +1166,10 @@ async function handleSaveUserAccess(request: Request, payload: Record<string, un
   const now = new Date().toISOString();
   const updatePayload = {
     empresa_id: wantsPlatformAdmin ? null : (clearAccess ? null : primaryUnitId),
-    access_profile_id: clearAccess ? null : sanitizeText(payload.access_profile_id) || null,
+    access_profile_id: requestedAccessProfileId || null,
     company_role: wantsPlatformAdmin
       ? "platform_admin"
-      : (clearAccess ? null : sanitizeText(payload.company_role) || existingUser.company_role || "company_user"),
+      : (clearAccess ? null : "company_user"),
     is_platform_admin: wantsPlatformAdmin,
     active: payload.active !== false,
     updated_date: now,
@@ -1808,7 +1848,7 @@ async function handleCompleteInviteOnboarding(payload: Record<string, unknown>) 
     active: true,
     empresa_id: invite.empresa_id || null,
     access_profile_id: invite.access_profile_id || null,
-    company_role: invite.is_platform_admin ? "platform_admin" : (invite.company_role || "company_user"),
+    company_role: invite.is_platform_admin ? "platform_admin" : "company_user",
     is_platform_admin: invite.is_platform_admin ?? false,
     invite_sent: true,
     invite_accepted: true,
@@ -2135,6 +2175,26 @@ async function handleCreateUserInvite(request: Request, payload: Record<string, 
 
   if (!isPlatformAdmin && !empresaId) {
     return jsonResponse({ error: "Selecione uma unidade para o convite." }, 400);
+  }
+
+  if (isPlatformAdmin && !ctx.profile.is_platform_admin) {
+    return jsonResponse({ error: "Somente administradores do sistema podem criar outro acesso central." }, 403);
+  }
+
+  const accessProfile = accessProfileId ? await loadAccessProfile(accessProfileId) : null;
+  if (accessProfileId && !accessProfile) {
+    return jsonResponse({ error: "Perfil de acesso nao encontrado." }, 400);
+  }
+  if (accessProfile?.ativo === false) {
+    return jsonResponse({ error: "O perfil de acesso selecionado esta inativo." }, 400);
+  }
+
+  const accessProfileScope = sanitizeText(accessProfile?.escopo) || "empresa";
+  if (isPlatformAdmin && (!accessProfile || accessProfileScope !== "plataforma")) {
+    return jsonResponse({ error: "Administradores do sistema exigem um perfil de escopo central." }, 400);
+  }
+  if (!isPlatformAdmin && accessProfile && accessProfileScope === "plataforma") {
+    return jsonResponse({ error: "Perfis de escopo central exigem o nivel ADM do Sistema Pet." }, 400);
   }
 
   if (!ctx.profile.is_platform_admin && empresaId && !ctx.allowedUnitIds.includes(empresaId)) {

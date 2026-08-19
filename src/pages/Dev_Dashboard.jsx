@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import { Empresa, PerfilAcesso, User, UserProfile, UserUnitAccess } from "@/api/entities";
 import { appClient } from "@/api/appClient";
@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Eye, EyeOff, KeyRound, Mail, RotateCcw, Save, Settings, Shield, Trash2, UserPlus, UserX, Users } from "lucide-react";
+import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Eye, EyeOff, KeyRound, Mail, RotateCcw, Save, Shield, Trash2, UserPlus, UserX, Users } from "lucide-react";
 
 const EMPTY_INVITE = {
   full_name: "",
@@ -102,6 +102,10 @@ function getAccessStatusMeta(user) {
   }
 
   return { label: "Confirmado", className: "bg-emerald-100 text-emerald-700" };
+}
+
+function isPlatformAccessProfile(profile) {
+  return profile?.escopo === "plataforma";
 }
 
 function buildUnitAccessMap(rows = []) {
@@ -205,6 +209,10 @@ export default function Dev_Dashboard() {
   }, [location.search, users]);
 
   const activeProfiles = useMemo(() => profiles.filter((profile) => profile.ativo !== false), [profiles]);
+  const platformProfiles = useMemo(
+    () => activeProfiles.filter(isPlatformAccessProfile),
+    [activeProfiles],
+  );
   const normalizedSearch = searchTerm.trim().toLowerCase();
 
   const filteredInvites = useMemo(() => {
@@ -324,6 +332,7 @@ export default function Dev_Dashboard() {
 
   async function handleSendInvite() {
     const formattedName = formatDisplayName(inviteForm.full_name);
+    const selectedProfile = activeProfiles.find((profile) => profile.id === inviteForm.access_profile_id) || null;
 
     if (!formattedName || !inviteForm.email) {
       alert("Preencha nome completo e email.");
@@ -332,6 +341,16 @@ export default function Dev_Dashboard() {
 
     if (!inviteForm.is_platform_admin && !inviteForm.empresa_id) {
       alert("Selecione a unidade ou marque o usuário como ADM do Sistema Pet.");
+      return;
+    }
+
+    if (inviteForm.is_platform_admin && !selectedProfile) {
+      alert("Selecione um perfil de acesso da administração central.");
+      return;
+    }
+
+    if (selectedProfile && isPlatformAccessProfile(selectedProfile) !== inviteForm.is_platform_admin) {
+      alert("O perfil selecionado não corresponde ao nível administrativo do convite.");
       return;
     }
 
@@ -478,6 +497,7 @@ export default function Dev_Dashboard() {
   async function handleSaveUserAccess(user) {
     setIsSaving(true);
     try {
+      const selectedProfile = activeProfiles.find((profile) => profile.id === user.access_profile_id) || null;
       const selectedUnits = user.is_platform_admin
         ? []
         : Array.from(new Set((userUnitAccessMap[user.id] || [user.empresa_id]).filter(Boolean)));
@@ -489,12 +509,24 @@ export default function Dev_Dashboard() {
         return;
       }
 
+      if (user.is_platform_admin && !selectedProfile) {
+        alert("Selecione um perfil de acesso da administração central.");
+        setIsSaving(false);
+        return;
+      }
+
+      if (selectedProfile && isPlatformAccessProfile(selectedProfile) !== !!user.is_platform_admin) {
+        alert("O perfil selecionado não corresponde ao nível administrativo do usuário.");
+        setIsSaving(false);
+        return;
+      }
+
       await User.saveManagedUserAccess?.({
         user_id: user.id,
         primary_unit_id: primaryUnitId,
         unit_ids: selectedUnits,
         access_profile_id: user.access_profile_id || null,
-        company_role: user.is_platform_admin ? "platform_admin" : (user.company_role || "company_user"),
+        company_role: user.is_platform_admin ? "platform_admin" : "company_user",
         is_platform_admin: !!user.is_platform_admin,
         active: user.active !== false,
         clear_access: false,
@@ -520,7 +552,7 @@ export default function Dev_Dashboard() {
         primary_unit_id: user.empresa_id || selectedUnits[0] || null,
         unit_ids: selectedUnits,
         access_profile_id: user.access_profile_id || null,
-        company_role: user.is_platform_admin ? "platform_admin" : (user.company_role || "company_user"),
+        company_role: user.is_platform_admin ? "platform_admin" : "company_user",
         is_platform_admin: !!user.is_platform_admin,
         active: false,
         clear_access: false,
@@ -543,7 +575,7 @@ export default function Dev_Dashboard() {
         primary_unit_id: user.empresa_id || selectedUnits[0] || null,
         unit_ids: selectedUnits,
         access_profile_id: user.access_profile_id || null,
-        company_role: user.is_platform_admin ? "platform_admin" : (user.company_role || "company_user"),
+        company_role: user.is_platform_admin ? "platform_admin" : "company_user",
         is_platform_admin: !!user.is_platform_admin,
         active: true,
         clear_access: false,
@@ -647,7 +679,7 @@ export default function Dev_Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+        <div className="flex items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="mt-1">
               <Shield className="w-6 h-6 text-blue-600" />
@@ -656,18 +688,16 @@ export default function Dev_Dashboard() {
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestão de Usuários</h1>
             </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Link to={createPageUrl("AdministracaoSistema")}>
-              <Button variant="outline">
-                <Settings className="w-4 h-4 mr-2" />
-                Abrir administração central
-              </Button>
-            </Link>
-            <Button onClick={openInviteModal} className="bg-blue-600 hover:bg-blue-700 text-white">
-              <UserPlus className="w-4 h-4 mr-2" />
-              Convidar usuário
-            </Button>
-          </div>
+          <Button
+            type="button"
+            size="icon"
+            onClick={openInviteModal}
+            aria-label="Convidar usuário"
+            title="Convidar usuário"
+            className="h-10 w-10 shrink-0 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
+          >
+            <UserPlus className="h-5 w-5" />
+          </Button>
         </div>
 
         {setupError && (
@@ -932,7 +962,18 @@ export default function Dev_Dashboard() {
                   <Label>Perfil de acesso</Label>
                   <Select
                     value={selectedManagedUser.access_profile_id || "__none__"}
-                    onValueChange={(value) => patchUserState(selectedManagedUser.id, { access_profile_id: value === "__none__" ? null : value })}
+                    onValueChange={(value) => {
+                      const nextProfileId = value === "__none__" ? null : value;
+                      const nextProfile = activeProfiles.find((profile) => profile.id === nextProfileId) || null;
+                      const nextIsPlatformAdmin = isPlatformAccessProfile(nextProfile);
+                      const fallbackUnitId = selectedManagedUserAccessUnits[0] || selectedUnitId || currentUser?.empresa_id || null;
+                      patchUserState(selectedManagedUser.id, {
+                        access_profile_id: nextProfileId,
+                        is_platform_admin: nextIsPlatformAdmin,
+                        empresa_id: nextIsPlatformAdmin ? null : (selectedManagedUser.empresa_id || fallbackUnitId),
+                        company_role: nextIsPlatformAdmin ? "platform_admin" : "company_user",
+                      });
+                    }}
                     disabled={isOwnManagedProfile}
                   >
                     <SelectTrigger className="mt-2 h-11 rounded-xl bg-white">
@@ -959,10 +1000,19 @@ export default function Dev_Dashboard() {
                     disabled={isOwnManagedProfile}
                     onCheckedChange={(checked) => {
                       const fallbackUnitId = selectedManagedUserAccessUnits[0] || selectedUnitId || currentUser?.empresa_id || null;
+                      const currentProfile = activeProfiles.find((profile) => profile.id === selectedManagedUser.access_profile_id) || null;
+                      const platformProfile = isPlatformAccessProfile(currentProfile) ? currentProfile : platformProfiles[0] || null;
+                      if (checked && !platformProfile) {
+                        alert("Nenhum perfil ativo da administração central está disponível.");
+                        return;
+                      }
                       patchUserState(selectedManagedUser.id, {
                         is_platform_admin: checked,
                         empresa_id: checked ? null : (selectedManagedUser.empresa_id || fallbackUnitId),
-                        company_role: checked ? "platform_admin" : (selectedManagedUser.company_role === "platform_admin" ? "company_user" : selectedManagedUser.company_role),
+                        access_profile_id: checked
+                          ? platformProfile.id
+                          : (isPlatformAccessProfile(currentProfile) ? null : selectedManagedUser.access_profile_id),
+                        company_role: checked ? "platform_admin" : "company_user",
                       });
                     }}
                   />
@@ -1062,11 +1112,22 @@ export default function Dev_Dashboard() {
             <div className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
               <Switch
                 checked={inviteForm.is_platform_admin}
-                onCheckedChange={(checked) => setInviteForm((current) => ({
-                  ...current,
-                  is_platform_admin: checked,
-                  empresa_id: checked ? "" : current.empresa_id || currentUser?.empresa_id || "",
-                }))}
+                onCheckedChange={(checked) => {
+                  const currentProfile = activeProfiles.find((profile) => profile.id === inviteForm.access_profile_id) || null;
+                  const platformProfile = isPlatformAccessProfile(currentProfile) ? currentProfile : platformProfiles[0] || null;
+                  if (checked && !platformProfile) {
+                    alert("Nenhum perfil ativo da administração central está disponível.");
+                    return;
+                  }
+                  setInviteForm((current) => ({
+                    ...current,
+                    is_platform_admin: checked,
+                    empresa_id: checked ? "" : current.empresa_id || currentUser?.empresa_id || "",
+                    access_profile_id: checked
+                      ? platformProfile.id
+                      : (isPlatformAccessProfile(currentProfile) ? "" : current.access_profile_id),
+                  }));
+                }}
               />
               <div>
                 <p className="text-sm font-medium text-gray-900">ADM do Sistema Pet</p>
@@ -1099,7 +1160,17 @@ export default function Dev_Dashboard() {
               <Label>Tipo de acesso</Label>
               <Select
                 value={inviteForm.access_profile_id || "__none__"}
-                onValueChange={(value) => setInviteForm((current) => ({ ...current, access_profile_id: value === "__none__" ? "" : value }))}
+                onValueChange={(value) => {
+                  const nextProfileId = value === "__none__" ? "" : value;
+                  const nextProfile = activeProfiles.find((profile) => profile.id === nextProfileId) || null;
+                  const nextIsPlatformAdmin = isPlatformAccessProfile(nextProfile);
+                  setInviteForm((current) => ({
+                    ...current,
+                    access_profile_id: nextProfileId,
+                    is_platform_admin: nextIsPlatformAdmin,
+                    empresa_id: nextIsPlatformAdmin ? "" : current.empresa_id || currentUser?.empresa_id || "",
+                  }));
+                }}
               >
                 <SelectTrigger className="mt-2">
                   <SelectValue placeholder="Selecionar perfil" />

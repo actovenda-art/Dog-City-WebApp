@@ -209,7 +209,7 @@ export function permissionMatches(granted, required) {
 }
 
 export function hasPermission(userOrPermissions, requiredPermission) {
-  if (userOrPermissions?.is_platform_admin || userOrPermissions?.company_role === "platform_admin") {
+  if (userOrPermissions?.is_platform_admin === true) {
     return true;
   }
 

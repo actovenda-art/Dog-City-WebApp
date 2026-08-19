@@ -562,8 +562,7 @@ export default function OrcamentosHistoricoPanel({
   }, [openOrcamentoId, openOrcamentoDetailStable, orcamentos]);
 
   const canAuthorizeBudgetFinancially = Boolean(
-    currentUser?.is_platform_admin
-    || currentUser?.company_role === "platform_admin"
+    currentUser?.is_platform_admin === true
     || isManagerialProfile(currentUser)
     || isCommercialProfile(currentUser),
   );

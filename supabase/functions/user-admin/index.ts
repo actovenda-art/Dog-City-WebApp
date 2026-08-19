@@ -1082,6 +1082,10 @@ async function handleSaveUserAccess(request: Request, payload: Record<string, un
     return jsonResponse({ error: "user_id obrigatorio." }, 400);
   }
 
+  if (ctx.authUser?.id === userId) {
+    return jsonResponse({ error: "Nao e permitido alterar o proprio perfil de acesso." }, 403);
+  }
+
   const existingUser = await loadTargetUser(userId);
   const existingAccessRows = await loadTargetUserAccessRows(userId);
   const requestedUnitIds = uniqueTextList(payload.unit_ids);

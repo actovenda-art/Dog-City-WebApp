@@ -143,6 +143,7 @@ export default function Dev_Dashboard() {
   const [hasCopiedFeedbackValue, setHasCopiedFeedbackValue] = useState(false);
   const [passwordReset, setPasswordReset] = useState(EMPTY_PASSWORD_RESET);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [selectedManagedUserId, setSelectedManagedUserId] = useState(null);
   const loadDataStable = useStableCallback(loadData);
 
   useEffect(() => {
@@ -232,6 +233,11 @@ export default function Dev_Dashboard() {
   const pendingInvitesCount = invites.filter((invite) => ["pendente", "aceito"].includes(invite.status || "pendente")).length;
   const confirmedUsersCount = users.filter((user) => user.active !== false && user.onboarding_status !== "pendente").length;
   const blockedUsersCount = users.filter((user) => user.active === false).length;
+  const selectedManagedUser = users.find((user) => user.id === selectedManagedUserId) || null;
+  const isOwnManagedProfile = Boolean(selectedManagedUser?.id && selectedManagedUser.id === currentUser?.id);
+  const selectedManagedUserAccessUnits = selectedManagedUser
+    ? getDraftUserAccessUnits(selectedManagedUser, userUnitAccessMap)
+    : [];
   const defaultSelectedUnitId = currentUser?.empresa_id && units.some((item) => item.id === currentUser.empresa_id)
     ? currentUser.empresa_id
     : units?.[0]?.id || "";
@@ -729,7 +735,7 @@ export default function Dev_Dashboard() {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="space-y-6">
           <Card className="bg-white border-gray-200">
             <CardHeader className="flex flex-row items-center justify-between gap-2 p-4 pb-3 sm:gap-3 sm:p-6 sm:pb-4">
               <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
@@ -807,164 +813,222 @@ export default function Dev_Dashboard() {
               </CardTitle>
               <Badge variant="outline">{filteredUsers.length} usuário(s)</Badge>
             </CardHeader>
-            <CardContent className="space-y-3 p-4 pt-0 sm:space-y-4 sm:p-6 sm:pt-0">
+            <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
               {filteredUsers.length === 0 && (
                 <div className="rounded-lg border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
                   Nenhum usuário localizado para o filtro atual.
                 </div>
               )}
 
-              {filteredUsers.map((user) => {
-                const statusMeta = getAccessStatusMeta(user);
-                const selectedAccessUnits = getDraftUserAccessUnits(user, userUnitAccessMap);
+              {filteredUsers.length > 0 && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {filteredUsers.map((user) => {
+                    const accessProfileName = profiles.find((profile) => profile.id === user.access_profile_id)?.nome || "Sem perfil de acesso";
 
-                return (
-                  <div key={user.id} className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-3 sm:space-y-4 sm:p-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900 sm:text-base">{user.full_name || user.email}</p>
-                        <p className="text-xs text-gray-600 sm:text-sm">{user.email || "Sem email cadastrado"}</p>
-                        <div className="mt-2 flex flex-wrap gap-1.5 sm:gap-2">
-                          {!user.is_platform_admin && user.empresa_id && <Badge variant="outline">{getUnitName(user.empresa_id)}</Badge>}
-                          {user.is_platform_admin && <Badge className="bg-slate-900 text-white">ADM Sistema Pet</Badge>}
-                          <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
+                    return (
+                      <button
+                        key={user.id}
+                        type="button"
+                        onClick={() => setSelectedManagedUserId(user.id)}
+                        className="group min-h-[148px] rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        aria-label={`Acessar perfil de ${user.full_name || user.email}`}
+                      >
+                        <div className="flex h-full flex-col">
+                          <p className="truncate text-base font-semibold text-slate-950">{user.full_name || user.email}</p>
+
+                          <div className="mt-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Perfil de acesso</p>
+                            <p className="mt-1 truncate text-sm font-medium text-slate-700">{accessProfileName}</p>
+                          </div>
+
+                          <div className="mt-auto flex items-end justify-between gap-3 pt-4">
+                            <div>
+                              {user.is_platform_admin && (
+                                <Badge className="bg-slate-900 text-[11px] font-semibold text-white hover:bg-slate-900">ADM Sistema Pet</Badge>
+                              )}
+                            </div>
+                            <p className="text-right text-[11px] leading-4 text-slate-500">
+                              Atualizado em<br />{formatDateTime(user.updated_date || user.created_date)}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-xs text-gray-500 sm:text-sm">
-                        Atualizado em {formatDateTime(user.updated_date || user.created_date)}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 md:gap-3">
-                      <div>
-                        <Label>Unidade</Label>
-                        <Select
-                          value={user.empresa_id || "__none__"}
-                          onValueChange={(value) => {
-                            const nextUnitId = value === "__none__" ? null : value;
-                            patchUserState(user.id, { empresa_id: nextUnitId });
-                            if (nextUnitId) {
-                              setUserUnitAccessMap((current) => ({
-                                ...current,
-                                [user.id]: Array.from(new Set([...(current[user.id] || []), nextUnitId])),
-                              }));
-                            }
-                          }}
-                          disabled={user.is_platform_admin}
-                        >
-                          <SelectTrigger className="mt-1.5 h-9 bg-white text-sm sm:mt-2 sm:h-10">
-                            <SelectValue placeholder="Selecionar unidade" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">Sem unidade</SelectItem>
-                            {units.map((unit) => (
-                              <SelectItem key={unit.id} value={unit.id}>
-                                {unit.nome_fantasia}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div>
-                        <Label>Perfil de acesso</Label>
-                        <Select
-                          value={user.access_profile_id || "__none__"}
-                          onValueChange={(value) => patchUserState(user.id, { access_profile_id: value === "__none__" ? null : value })}
-                        >
-                          <SelectTrigger className="mt-1.5 h-9 bg-white text-sm sm:mt-2 sm:h-10">
-                            <SelectValue placeholder="Selecionar perfil" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">Sem perfil</SelectItem>
-                            {activeProfiles.map((profile) => (
-                              <SelectItem key={profile.id} value={profile.id}>
-                                {profile.nome}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg border border-gray-200 bg-white p-3">
-                      <div className="flex items-center justify-between gap-2 sm:gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">ADM do Sistema Pet</p>
-                          <p className="text-xs text-gray-500">Acesso transversal para a administração central.</p>
-                        </div>
-                        <Switch
-                          checked={!!user.is_platform_admin}
-                          onCheckedChange={(checked) => {
-                            const fallbackUnitId = selectedAccessUnits[0] || selectedUnitId || currentUser?.empresa_id || null;
-                            patchUserState(user.id, {
-                              is_platform_admin: checked,
-                              empresa_id: checked ? null : (user.empresa_id || fallbackUnitId),
-                              company_role: checked ? "platform_admin" : (user.company_role === "platform_admin" ? "company_user" : user.company_role),
-                            });
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    {!user.is_platform_admin && (
-                      <div className="rounded-lg border border-gray-200 bg-white p-3">
-                        <p className="text-sm font-medium text-gray-900">Unidades com acesso</p>
-                        <p className="text-xs text-gray-500 mt-1">Usuários transversais continuam vendo uma unidade por vez, mas podem alternar entre as unidades liberadas.</p>
-                        <div className="mt-3 flex flex-wrap gap-1.5 sm:gap-2">
-                          {units.map((unit) => {
-                            const selected = selectedAccessUnits.includes(unit.id);
-                            return (
-                              <button
-                                key={unit.id}
-                                type="button"
-                                onClick={() => toggleUserUnitAccess(user.id, unit.id)}
-                                className={selected
-                                  ? "rounded-full border border-blue-500 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 sm:px-3 sm:py-1.5 sm:text-sm"
-                                  : "rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:border-gray-300 sm:px-3 sm:py-1.5 sm:text-sm"}
-                              >
-                                {unit.nome_fantasia}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
-                      {user.active !== false && user.onboarding_status !== "pendente" && (
-                        <Button variant="outline" onClick={() => openPasswordReset(user)} disabled={isSaving || isResettingPassword} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
-                          <KeyRound className="w-4 h-4 mr-2" />
-                          Redefinir senha
-                        </Button>
-                      )}
-                      <Button variant="outline" onClick={() => handleSaveUserAccess(user)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
-                        <Save className="w-4 h-4 mr-2" />
-                        Salvar acesso
-                      </Button>
-                      {user.active === false ? (
-                        <Button variant="outline" onClick={() => handleReactivateUserAccess(user)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
-                          <RotateCcw className="w-4 h-4 mr-2" />
-                          Reativar acesso
-                        </Button>
-                      ) : (
-                        <Button variant="outline" onClick={() => handleCancelUserAccess(user)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
-                          <UserX className="w-4 h-4 mr-2" />
-                          Cancelar acesso
-                        </Button>
-                      )}
-                      <Button variant="outline" onClick={() => handleDeleteUserAccess(user)} disabled={isSaving} className="h-9 w-full px-3 text-sm sm:h-10 sm:w-auto">
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Excluir acesso
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
+
+      <Dialog
+        open={Boolean(selectedManagedUser)}
+        onOpenChange={(open) => {
+          if (!open && !isSaving && !isResettingPassword) setSelectedManagedUserId(null);
+        }}
+      >
+        {selectedManagedUser && (
+          <DialogContent className="max-h-[92vh] w-[95vw] max-w-[760px] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-0 shadow-2xl">
+            <div className="border-b border-slate-100 bg-gradient-to-br from-slate-50 to-blue-50 px-5 py-5 sm:px-7 sm:py-6">
+              <DialogHeader className="space-y-2 text-left">
+                <div className="flex flex-wrap items-start justify-between gap-3 pr-8">
+                  <div>
+                    <DialogTitle className="text-xl font-semibold text-slate-950 sm:text-2xl">
+                      {selectedManagedUser.full_name || selectedManagedUser.email}
+                    </DialogTitle>
+                    <DialogDescription className="mt-1 text-sm text-slate-600">
+                      {selectedManagedUser.email || "Sem email cadastrado"}
+                    </DialogDescription>
+                  </div>
+                  <Badge className={getAccessStatusMeta(selectedManagedUser).className}>
+                    {getAccessStatusMeta(selectedManagedUser).label}
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Última atualização: {formatDateTime(selectedManagedUser.updated_date || selectedManagedUser.created_date)}
+                </p>
+              </DialogHeader>
+            </div>
+
+            <div className="space-y-5 px-5 py-6 sm:px-7">
+              {isOwnManagedProfile && (
+                <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <p>Este é o seu perfil. Por segurança, suas unidades, permissões e nível administrativo só podem ser alterados por outro usuário autorizado.</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label>Unidade</Label>
+                  <Select
+                    value={selectedManagedUser.empresa_id || "__none__"}
+                    onValueChange={(value) => {
+                      const nextUnitId = value === "__none__" ? null : value;
+                      patchUserState(selectedManagedUser.id, { empresa_id: nextUnitId });
+                      if (nextUnitId) {
+                        setUserUnitAccessMap((current) => ({
+                          ...current,
+                          [selectedManagedUser.id]: Array.from(new Set([...(current[selectedManagedUser.id] || []), nextUnitId])),
+                        }));
+                      }
+                    }}
+                    disabled={selectedManagedUser.is_platform_admin || isOwnManagedProfile}
+                  >
+                    <SelectTrigger className="mt-2 h-11 rounded-xl bg-white">
+                      <SelectValue placeholder="Selecionar unidade" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sem unidade</SelectItem>
+                      {units.map((unit) => (
+                        <SelectItem key={unit.id} value={unit.id}>{unit.nome_fantasia}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Perfil de acesso</Label>
+                  <Select
+                    value={selectedManagedUser.access_profile_id || "__none__"}
+                    onValueChange={(value) => patchUserState(selectedManagedUser.id, { access_profile_id: value === "__none__" ? null : value })}
+                    disabled={isOwnManagedProfile}
+                  >
+                    <SelectTrigger className="mt-2 h-11 rounded-xl bg-white">
+                      <SelectValue placeholder="Selecionar perfil" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sem perfil</SelectItem>
+                      {activeProfiles.map((profile) => (
+                        <SelectItem key={profile.id} value={profile.id}>{profile.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">ADM do Sistema Pet</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">Acesso transversal para a administração central.</p>
+                  </div>
+                  <Switch
+                    checked={!!selectedManagedUser.is_platform_admin}
+                    disabled={isOwnManagedProfile}
+                    onCheckedChange={(checked) => {
+                      const fallbackUnitId = selectedManagedUserAccessUnits[0] || selectedUnitId || currentUser?.empresa_id || null;
+                      patchUserState(selectedManagedUser.id, {
+                        is_platform_admin: checked,
+                        empresa_id: checked ? null : (selectedManagedUser.empresa_id || fallbackUnitId),
+                        company_role: checked ? "platform_admin" : (selectedManagedUser.company_role === "platform_admin" ? "company_user" : selectedManagedUser.company_role),
+                      });
+                    }}
+                  />
+                </div>
+              </div>
+
+              {!selectedManagedUser.is_platform_admin && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-sm font-semibold text-slate-900">Unidades com acesso</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">O usuário visualiza uma unidade por vez e pode alternar entre as unidades liberadas.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {units.map((unit) => {
+                      const isSelected = selectedManagedUserAccessUnits.includes(unit.id);
+                      return (
+                        <button
+                          key={unit.id}
+                          type="button"
+                          onClick={() => toggleUserUnitAccess(selectedManagedUser.id, unit.id)}
+                          disabled={isOwnManagedProfile}
+                          className={isSelected
+                            ? "rounded-full border border-blue-500 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            : "rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"}
+                        >
+                          {unit.nome_fantasia}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-2 border-t border-slate-100 pt-5 sm:grid-cols-2 lg:grid-cols-4">
+                {selectedManagedUser.active !== false && selectedManagedUser.onboarding_status !== "pendente" && (
+                  <Button variant="outline" onClick={() => openPasswordReset(selectedManagedUser)} disabled={isSaving || isResettingPassword} className="h-10 rounded-xl">
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    Redefinir senha
+                  </Button>
+                )}
+                {!isOwnManagedProfile && (
+                  <>
+                    <Button variant="outline" onClick={() => handleSaveUserAccess(selectedManagedUser)} disabled={isSaving} className="h-10 rounded-xl">
+                      <Save className="mr-2 h-4 w-4" />
+                      Salvar acesso
+                    </Button>
+                    {selectedManagedUser.active === false ? (
+                      <Button variant="outline" onClick={() => handleReactivateUserAccess(selectedManagedUser)} disabled={isSaving} className="h-10 rounded-xl">
+                        <RotateCcw className="mr-2 h-4 w-4" />
+                        Reativar acesso
+                      </Button>
+                    ) : (
+                      <Button variant="outline" onClick={() => handleCancelUserAccess(selectedManagedUser)} disabled={isSaving} className="h-10 rounded-xl">
+                        <UserX className="mr-2 h-4 w-4" />
+                        Cancelar acesso
+                      </Button>
+                    )}
+                    <Button variant="outline" onClick={() => handleDeleteUserAccess(selectedManagedUser)} disabled={isSaving} className="h-10 rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800">
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Excluir acesso
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
 
       <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
         <DialogContent className="w-[95vw] max-w-[640px] p-4 sm:p-6">

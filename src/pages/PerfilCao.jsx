@@ -18,12 +18,12 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   AlertTriangle,
   ArrowLeft,
+  CalendarDays,
   ClipboardList,
   Download,
   Dog as DogIcon,
   Pencil,
   Phone,
-  Syringe,
   Trash2,
   Utensils,
   Upload,
@@ -63,6 +63,10 @@ const DOG_EXPORTABLE_FIELDS = [
   "nome_vacina_revacinacao_2",
   "data_revacinacao_3",
   "nome_vacina_revacinacao_3",
+  "data_revacinacao_4",
+  "nome_vacina_revacinacao_4",
+  "data_revacinacao_5",
+  "nome_vacina_revacinacao_5",
   "alergias",
   "restricoes_cuidados",
   "observacoes_gerais",
@@ -165,7 +169,7 @@ function getAgeLabel(dateValue) {
   return `${months} ${months === 1 ? "mês" : "meses"}`;
 }
 
-function buildVaccineRows(dog) {
+function buildImportantDateRows(dog) {
   if (!dog) return [];
   const today = new Date();
 
@@ -173,6 +177,8 @@ function buildVaccineRows(dog) {
     { numero: 1, data: dog.data_revacinacao_1, nome: dog.nome_vacina_revacinacao_1 },
     { numero: 2, data: dog.data_revacinacao_2, nome: dog.nome_vacina_revacinacao_2 },
     { numero: 3, data: dog.data_revacinacao_3, nome: dog.nome_vacina_revacinacao_3 },
+    { numero: 4, data: dog.data_revacinacao_4, nome: dog.nome_vacina_revacinacao_4 },
+    { numero: 5, data: dog.data_revacinacao_5, nome: dog.nome_vacina_revacinacao_5 },
   ]
     .filter((item) => item.data || item.nome)
     .map((item) => {
@@ -295,7 +301,7 @@ export default function PerfilCao() {
     }
   }, [dogReference, loadData]);
 
-  const vaccineRows = useMemo(() => buildVaccineRows(dog), [dog]);
+  const importantDateRows = useMemo(() => buildImportantDateRows(dog), [dog]);
 
   const servicesByType = useMemo(() => {
     const grouped = {};
@@ -322,7 +328,7 @@ export default function PerfilCao() {
   }, [servicos]);
 
   const totalUsages = servicos.length;
-  const vacinasVencidas = vaccineRows.filter((item) => item.status === "vencida").length;
+  const overdueReminders = importantDateRows.filter((item) => item.status === "vencida").length;
 
   const handleOpenImage = async (path, fallbackUrl, title) => {
     const imageUrl = fallbackUrl || await resolveMediaUrl(path);
@@ -502,18 +508,18 @@ export default function PerfilCao() {
                         {dog.raca ? <Badge className="bg-blue-100 text-blue-700">{normalizeVisibleText(dog.raca)}</Badge> : null}
                         <Badge className="bg-purple-100 text-purple-700">{getAgeLabel(dog.data_nascimento)}</Badge>
                         <Badge className="bg-amber-100 text-amber-700">{faltas.length} falta(s)</Badge>
-                        <Badge className={vacinasVencidas > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}>
-                          {vacinasVencidas > 0 ? `${vacinasVencidas} vacina(s) vencida(s)` : "Vacinas em dia"}
+                        <Badge className={overdueReminders > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}>
+                          {overdueReminders > 0 ? `${overdueReminders} lembrete(s) vencido(s)` : "Lembretes em dia"}
                         </Badge>
                       </div>
                     </div>
 
                     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
-                      <Button type="button" variant="outline" onClick={handleExportDogProfile}>
+                      <Button type="button" variant="outline" onClick={handleExportDogProfile} className="hidden lg:inline-flex">
                         <Download className="mr-2 h-4 w-4" />
                         Exportar perfil
                       </Button>
-                      <Button type="button" variant="outline" onClick={handleOpenDogImport} disabled={isImportingProfile}>
+                      <Button type="button" variant="outline" onClick={handleOpenDogImport} disabled={isImportingProfile} className="hidden lg:inline-flex">
                         <Upload className="mr-2 h-4 w-4" />
                         Importar perfil
                       </Button>
@@ -546,7 +552,7 @@ export default function PerfilCao() {
             items={[
               { value: "resumo", label: "Resumo", icon: DogIcon },
               { value: "utilizacoes", label: "Utilizações", icon: ClipboardList },
-              { value: "vacinas", label: "Vacinas", icon: Syringe },
+              { value: "vacinas", label: "Datas importantes", icon: CalendarDays },
               { value: "contatos", label: "Contatos", icon: Phone },
               { value: "alimentacao", label: "Alimentação", icon: Utensils },
             ]}
@@ -594,10 +600,10 @@ export default function PerfilCao() {
                     <p className="text-xs uppercase tracking-wide text-amber-700">Faltas</p>
                     <p className="mt-2 text-2xl font-bold text-amber-900">{faltas.length}</p>
                   </div>
-                  <div className={`rounded-xl border p-4 ${vacinasVencidas > 0 ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
-                    <p className={`text-xs uppercase tracking-wide ${vacinasVencidas > 0 ? "text-red-700" : "text-emerald-700"}`}>Status vacinal</p>
-                    <p className={`mt-2 text-lg font-bold ${vacinasVencidas > 0 ? "text-red-900" : "text-emerald-900"}`}>
-                      {vacinasVencidas > 0 ? "Há vacinas vencidas" : "Vacinas em dia"}
+                  <div className={`rounded-xl border p-4 ${overdueReminders > 0 ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
+                    <p className={`text-xs uppercase tracking-wide ${overdueReminders > 0 ? "text-red-700" : "text-emerald-700"}`}>Datas importantes</p>
+                    <p className={`mt-2 text-lg font-bold ${overdueReminders > 0 ? "text-red-900" : "text-emerald-900"}`}>
+                      {overdueReminders > 0 ? "Há lembretes vencidos" : "Lembretes em dia"}
                     </p>
                   </div>
                 </CardContent>
@@ -728,21 +734,21 @@ export default function PerfilCao() {
 
               <Card className="border-gray-200 bg-white">
                 <CardHeader>
-                  <CardTitle>Status vacinal</CardTitle>
+                  <CardTitle>Lembretes do Pet</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {vaccineRows.length === 0 ? (
-                    <p className="py-8 text-center text-gray-500">Nenhuma vacina cadastrada.</p>
+                  {importantDateRows.length === 0 ? (
+                    <p className="py-8 text-center text-gray-500">Nenhuma data importante cadastrada.</p>
                   ) : (
                     <div className="space-y-3">
-                      {vaccineRows.map((item) => (
+                      {importantDateRows.map((item) => (
                         <div
                           key={`vacina-${item.numero}`}
                           className={`rounded-lg border p-4 ${item.status === "vencida" ? "border-red-200 bg-red-50" : item.status === "em_dia" ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div>
-                              <p className="font-medium text-gray-900">{item.nome || `Vacina ${item.numero}`}</p>
+                              <p className="font-medium text-gray-900">{item.nome || `Lembrete ${item.numero}`}</p>
                               <p className="text-sm text-gray-600">{formatDateValue(item.data)}</p>
                             </div>
                             <Badge className={item.status === "vencida" ? "bg-red-100 text-red-700" : item.status === "em_dia" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}>

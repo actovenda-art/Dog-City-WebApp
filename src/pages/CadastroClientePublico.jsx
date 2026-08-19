@@ -18,7 +18,13 @@ import { useStableCallback } from "@/hooks/use-stable-callback";
 import PrivacyAcknowledgement from "@/components/legal/PrivacyAcknowledgement";
 import LegalLinks from "@/components/legal/LegalLinks";
 import { isValidCpfChecksum, normalizeCpfDigits, validateCpfWithGov } from "@/lib/cpf-validation";
-import { createEmptyDogMeal } from "@/lib/dog-form-utils";
+import {
+  createEmptyDogMeal,
+  createEmptyDogReminder,
+  ensureProgressiveDogMeals,
+  ensureProgressiveDogReminders,
+  serializeDogReminders,
+} from "@/lib/dog-form-utils";
 import { formatDisplayName, isCompletePersonName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import { PRIVACY_NOTICE_VERSION, TERMS_VERSION } from "@/lib/privacy-preferences";
 import {
@@ -26,6 +32,7 @@ import {
   validateDogCare,
   validateDogNutrition,
   validateDogOperationalProfile,
+  validateDogReminders,
 } from "@/lib/dog-profile-validation";
 import {
   AlertTriangle,
@@ -199,6 +206,11 @@ function createEmptyDog() {
     nome_vacina_revacinacao_2: "",
     data_revacinacao_3: "",
     nome_vacina_revacinacao_3: "",
+    data_revacinacao_4: "",
+    nome_vacina_revacinacao_4: "",
+    data_revacinacao_5: "",
+    nome_vacina_revacinacao_5: "",
+    lembretes_importantes: [createEmptyDogReminder()],
     alimentacao_marca_racao: "",
     alimentacao_sabor: "",
     alimentacao_tipo: "",
@@ -367,7 +379,7 @@ function validateDogBasicSection(dog) {
   if (!dog?.nome || !dog?.raca || !dog?.peso || !dog?.data_nascimento || !dog?.sexo || !dog?.porte || !dog?.cores_pelagem || !dog?.pelagem) {
     return "Preencha os dados básicos obrigatórios do dog antes de seguir.";
   }
-  return "";
+  return validateDogReminders(dog);
 }
 
 function validateFinanceiro(form) {
@@ -853,17 +865,7 @@ export default function CadastroClientePublico() {
     const dog = caesForm[dogIndex] || createEmptyDog();
     const nextMeals = [...(dog.refeicoes || [createEmptyDogMeal()])];
     nextMeals[mealIndex] = { ...(nextMeals[mealIndex] || createEmptyDogMeal()), [field]: value };
-    updateDog(dogIndex, { refeicoes: nextMeals });
-  }
-
-  function addDogMeal(dogIndex) {
-    const dog = caesForm[dogIndex] || createEmptyDog();
-    const currentMeals = dog.refeicoes || [createEmptyDogMeal()];
-    if (currentMeals.length >= 4) return;
-
-    updateDog(dogIndex, {
-      refeicoes: [...currentMeals, createEmptyDogMeal()],
-    });
+    updateDog(dogIndex, { refeicoes: ensureProgressiveDogMeals(nextMeals) });
   }
 
   function removeDogMeal(dogIndex, mealIndex) {
@@ -875,7 +877,29 @@ export default function CadastroClientePublico() {
     }
 
     updateDog(dogIndex, {
-      refeicoes: currentMeals.filter((_, index) => index !== mealIndex),
+      refeicoes: ensureProgressiveDogMeals(currentMeals.filter((_, index) => index !== mealIndex)),
+    });
+  }
+
+  function updateDogReminder(dogIndex, reminderIndex, field, value) {
+    const dog = caesForm[dogIndex] || createEmptyDog();
+    const nextReminders = [...(dog.lembretes_importantes || [createEmptyDogReminder()])];
+    nextReminders[reminderIndex] = {
+      ...(nextReminders[reminderIndex] || createEmptyDogReminder()),
+      [field]: value,
+    };
+    updateDog(dogIndex, {
+      lembretes_importantes: ensureProgressiveDogReminders(nextReminders),
+    });
+  }
+
+  function removeDogReminder(dogIndex, reminderIndex) {
+    const dog = caesForm[dogIndex] || createEmptyDog();
+    const currentReminders = dog.lembretes_importantes || [createEmptyDogReminder()];
+    updateDog(dogIndex, {
+      lembretes_importantes: ensureProgressiveDogReminders(
+        currentReminders.filter((_, index) => index !== reminderIndex),
+      ),
     });
   }
 
@@ -1017,6 +1041,7 @@ export default function CadastroClientePublico() {
           caes: registrationPlan.createDogs
             ? caesForm.map((dog) => ({
               ...dog,
+              ...serializeDogReminders(dog.lembretes_importantes),
               nome: formatDisplayName(dog.nome),
               apelido: formatDisplayName(dog.apelido),
             }))
@@ -1331,60 +1356,56 @@ export default function CadastroClientePublico() {
           </div>
           <Switch checked={!!dog.castrado} onCheckedChange={(checked) => updateDog(dogIndex, { castrado: checked })} />
         </div>
-        {renderSelectField({
-          label: "1ª revacinação",
-          optional: true,
-          children: (
-            <DatePickerInput
-              value={dog.data_revacinacao_1}
-              onChange={(value) => updateDog(dogIndex, { data_revacinacao_1: value })}
-            />
-          ),
-        })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.nome_vacina_revacinacao_1`,
-          label: "Vacina da 1ª revacinação",
-          optional: true,
-          value: dog.nome_vacina_revacinacao_1,
-          onChange: (event) => updateDog(dogIndex, { nome_vacina_revacinacao_1: event.target.value }),
-          placeholder: "Ex: V10, Antirrábica",
-        })}
-        {renderSelectField({
-          label: "2ª revacinação",
-          optional: true,
-          children: (
-            <DatePickerInput
-              value={dog.data_revacinacao_2}
-              onChange={(value) => updateDog(dogIndex, { data_revacinacao_2: value })}
-            />
-          ),
-        })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.nome_vacina_revacinacao_2`,
-          label: "Vacina da 2ª revacinação",
-          optional: true,
-          value: dog.nome_vacina_revacinacao_2,
-          onChange: (event) => updateDog(dogIndex, { nome_vacina_revacinacao_2: event.target.value }),
-          placeholder: "Ex: V10, Antirrábica",
-        })}
-        {renderSelectField({
-          label: "3ª revacinação",
-          optional: true,
-          children: (
-            <DatePickerInput
-              value={dog.data_revacinacao_3}
-              onChange={(value) => updateDog(dogIndex, { data_revacinacao_3: value })}
-            />
-          ),
-        })}
-        {renderTextField({
-          fieldKey: `caes.${dogIndex}.nome_vacina_revacinacao_3`,
-          label: "Vacina da 3ª revacinação",
-          optional: true,
-          value: dog.nome_vacina_revacinacao_3,
-          onChange: (event) => updateDog(dogIndex, { nome_vacina_revacinacao_3: event.target.value }),
-          placeholder: "Ex: V10, Antirrábica",
-        })}
+        <div className="md:col-span-2 rounded-[24px] border border-slate-200 bg-slate-50/85 p-4">
+          <div className="mb-4">
+            <p className="text-sm font-semibold text-slate-900">Datas importantes do Pet</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Cadastre até cinco lembretes. Ao preencher nome e data, o próximo aparece automaticamente.
+            </p>
+          </div>
+          <div className="space-y-3">
+            {(dog.lembretes_importantes || [createEmptyDogReminder()]).map((reminder, reminderIndex) => (
+              <div key={`dog-public-reminder-${reminderIndex}`} className="rounded-[20px] border border-slate-200 bg-white/90 p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-900">{reminderIndex + 1}º lembrete</p>
+                  {reminder.nome || reminder.data ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => removeDogReminder(dogIndex, reminderIndex)}
+                      className="h-8 rounded-lg px-2.5 text-[11px] sm:h-9 sm:rounded-xl sm:px-3 sm:text-sm"
+                    >
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+                      Remover
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {renderTextField({
+                    fieldKey: `caes.${dogIndex}.lembretes.${reminderIndex}.nome`,
+                    label: "Nome do lembrete",
+                    optional: !reminder.data,
+                    value: reminder.nome || "",
+                    onChange: (event) => updateDogReminder(dogIndex, reminderIndex, "nome", event.target.value),
+                    placeholder: "Ex: V10, Antirrábica ou retorno",
+                    requiredMessage: "Informe o nome deste lembrete.",
+                  })}
+                  {renderSelectField({
+                    label: "Data do lembrete",
+                    optional: !reminder.nome,
+                    children: (
+                      <DatePickerInput
+                        value={reminder.data || ""}
+                        onChange={(value) => updateDogReminder(dogIndex, reminderIndex, "data", value)}
+                      />
+                    ),
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
         <div className="md:col-span-2">
           <div className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
             <div>
@@ -1404,10 +1425,12 @@ export default function CadastroClientePublico() {
       <div key={`meal-public-${mealIndex}`} className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-slate-900">{mealIndex + 1}ª refeição</p>
-          <Button type="button" variant="outline" size="sm" onClick={() => removeDogMeal(dogIndex, mealIndex)} className="h-8 rounded-lg px-2.5 text-[11px] sm:h-9 sm:rounded-xl sm:px-3 sm:text-sm">
-            <Trash2 className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
-            Remover
-          </Button>
+          {meal.qnt || meal.horario || meal.obs ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => removeDogMeal(dogIndex, mealIndex)} className="h-8 rounded-lg px-2.5 text-[11px] sm:h-9 sm:rounded-xl sm:px-3 sm:text-sm">
+              <Trash2 className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+              Remover
+            </Button>
+          ) : null}
         </div>
         <div className="mt-3 grid gap-4 md:grid-cols-3">
           {renderTextField({
@@ -1489,15 +1512,11 @@ export default function CadastroClientePublico() {
           </div>
         )}
         <div className="rounded-[24px] border border-slate-200 bg-slate-50/85 p-4">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">Refeições</p>
-              <p className="text-xs text-slate-500">Comece com uma linha e adicione outras quando necessário.</p>
-            </div>
-            <Button type="button" variant="outline" onClick={() => addDogMeal(dogIndex)} disabled={(dog.refeicoes || []).length >= 4} className="h-9 rounded-xl px-3 text-xs sm:h-10 sm:px-4 sm:text-sm">
-              <Plus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
-              Adicionar
-            </Button>
+          <div className="mb-4">
+            <p className="text-sm font-semibold text-slate-900">Refeições</p>
+            <p className="text-xs text-slate-500">
+              Ao preencher quantidade e horário, a próxima refeição aparece automaticamente.
+            </p>
           </div>
           <div className="space-y-3">
             {(dog.refeicoes || [createEmptyDogMeal()]).map((_, mealIndex) => renderDogMealRow(dog, dogIndex, mealIndex))}

@@ -1858,7 +1858,7 @@ export default function Perfis() {
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   <Button
                     variant="outline"
-                    className="justify-start border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                    className="hidden justify-start border-emerald-200 text-emerald-700 hover:bg-emerald-50 lg:inline-flex"
                     onClick={() => handleExportResponsavelProfile(viewingResponsavel)}
                   >
                     <Download className="mr-2 h-4 w-4" />
@@ -1866,7 +1866,7 @@ export default function Perfis() {
                   </Button>
                   <Button
                     variant="outline"
-                    className="justify-start border-violet-200 text-violet-700 hover:bg-violet-50"
+                    className="hidden justify-start border-violet-200 text-violet-700 hover:bg-violet-50 lg:inline-flex"
                     onClick={() => openProfileImportPicker({ type: "responsavel", id: viewingResponsavel.id })}
                     disabled={isSaving}
                   >

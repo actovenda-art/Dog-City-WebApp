@@ -23,7 +23,17 @@ import { DOG_COAT_OPTIONS } from "@/lib/dog-profile-options";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { isValidCpfChecksum, validateCpfWithGov } from "@/lib/cpf-validation";
-import { createEmptyDogMeal, extractDogMeals, isNaturalFoodType, serializeDogMeals } from "@/lib/dog-form-utils";
+import {
+  createEmptyDogMeal,
+  createEmptyDogReminder,
+  ensureProgressiveDogMeals,
+  ensureProgressiveDogReminders,
+  extractDogMeals,
+  extractDogReminders,
+  isNaturalFoodType,
+  serializeDogMeals,
+  serializeDogReminders,
+} from "@/lib/dog-form-utils";
 import { findEntityByReference } from "@/lib/entity-identifiers";
 import { formatDisplayName, isCompletePersonName, sanitizeDisplayNameInput } from "@/lib/name-format";
 import { cn } from "@/lib/utils";
@@ -62,6 +72,11 @@ const DOG_IMPORTABLE_FIELDS = [
   "nome_vacina_revacinacao_2",
   "data_revacinacao_3",
   "nome_vacina_revacinacao_3",
+  "data_revacinacao_4",
+  "nome_vacina_revacinacao_4",
+  "data_revacinacao_5",
+  "nome_vacina_revacinacao_5",
+  "lembretes_importantes",
   "alergias",
   "restricoes_cuidados",
   "observacoes_gerais",
@@ -379,6 +394,9 @@ export default function Cadastro() {
     data_revacinacao_1: "", nome_vacina_revacinacao_1: "",
     data_revacinacao_2: "", nome_vacina_revacinacao_2: "",
     data_revacinacao_3: "", nome_vacina_revacinacao_3: "",
+    data_revacinacao_4: "", nome_vacina_revacinacao_4: "",
+    data_revacinacao_5: "", nome_vacina_revacinacao_5: "",
+    lembretes_importantes: [createEmptyDogReminder()],
     alergias: "", restricoes_cuidados: "", observacoes_gerais: "",
     veterinario_responsavel: "", veterinario_horario_atendimento: "", veterinario_telefone: "", veterinario_clinica_telefone: "", veterinario_endereco: "",
     alimentacao_marca_racao: "", alimentacao_sabor: "", alimentacao_tipo: "", alimentacao_natural: false,
@@ -907,13 +925,7 @@ export default function Cadastro() {
         throw new Error("Nenhum perfil de cão válido foi encontrado no arquivo.");
       }
 
-      const normalizedMeals = Array.isArray(dogPayload.refeicoes) && dogPayload.refeicoes.length > 0
-        ? dogPayload.refeicoes.map((meal) => ({
-            quantidade: meal?.quantidade || meal?.qnt || "",
-            horario: meal?.horario || "",
-            observacao: meal?.observacao || meal?.obs || "",
-          }))
-        : extractDogMeals(dogPayload);
+      const normalizedMeals = extractDogMeals(dogPayload);
 
       setDogForm({
         ...emptyDog,
@@ -925,6 +937,7 @@ export default function Cadastro() {
         pelagem: normalizeDogCoat(dogPayload.pelagem),
         peso: dogPayload.peso ?? "",
         refeicoes: normalizedMeals?.length ? normalizedMeals : [createEmptyDogMeal()],
+        lembretes_importantes: extractDogReminders(dogPayload),
         medicamentos_continuos:
           Array.isArray(dogPayload.medicamentos_continuos) && dogPayload.medicamentos_continuos.length > 0
             ? dogPayload.medicamentos_continuos.map((item) => ({
@@ -1050,6 +1063,7 @@ export default function Cadastro() {
     setDogForm({
       ...emptyDog,
       refeicoes: [createEmptyDogMeal()],
+      lembretes_importantes: [createEmptyDogReminder()],
       medicamentos_continuos: [{ especificacoes: "", cuidados: "", horario: "", dose: "" }],
     });
     setSelectedResponsavelIds([]);
@@ -1077,6 +1091,7 @@ export default function Cadastro() {
       peso: targetDog.peso ?? "",
       alimentacao_natural: isNaturalFoodType(targetDog.alimentacao_tipo),
       refeicoes: extractDogMeals(targetDog),
+      lembretes_importantes: extractDogReminders(targetDog),
       medicamentos_continuos:
         Array.isArray(targetDog.medicamentos_continuos) && targetDog.medicamentos_continuos.length > 0
           ? targetDog.medicamentos_continuos.map((item) => ({
@@ -1164,17 +1179,7 @@ export default function Cadastro() {
   const updateDogMeal = (index, field, value) => {
     const nextMeals = [...(dogForm.refeicoes || [createEmptyDogMeal()])];
     nextMeals[index] = { ...(nextMeals[index] || createEmptyDogMeal()), [field]: value };
-    setDogForm({ ...dogForm, refeicoes: nextMeals });
-  };
-
-  const addDogMeal = () => {
-    const currentMeals = dogForm.refeicoes || [createEmptyDogMeal()];
-    if (currentMeals.length >= 4) return;
-
-    setDogForm({
-      ...dogForm,
-      refeicoes: [...currentMeals, createEmptyDogMeal()],
-    });
+    setDogForm({ ...dogForm, refeicoes: ensureProgressiveDogMeals(nextMeals) });
   };
 
   const removeDogMeal = (index) => {
@@ -1189,7 +1194,29 @@ export default function Cadastro() {
 
     setDogForm({
       ...dogForm,
-      refeicoes: currentMeals.filter((_, mealIndex) => mealIndex !== index),
+      refeicoes: ensureProgressiveDogMeals(currentMeals.filter((_, mealIndex) => mealIndex !== index)),
+    });
+  };
+
+  const updateDogReminder = (index, field, value) => {
+    const nextReminders = [...(dogForm.lembretes_importantes || [createEmptyDogReminder()])];
+    nextReminders[index] = {
+      ...(nextReminders[index] || createEmptyDogReminder()),
+      [field]: value,
+    };
+    setDogForm({
+      ...dogForm,
+      lembretes_importantes: ensureProgressiveDogReminders(nextReminders),
+    });
+  };
+
+  const removeDogReminder = (index) => {
+    const currentReminders = dogForm.lembretes_importantes || [createEmptyDogReminder()];
+    setDogForm({
+      ...dogForm,
+      lembretes_importantes: ensureProgressiveDogReminders(
+        currentReminders.filter((_, reminderIndex) => reminderIndex !== index),
+      ),
     });
   };
 
@@ -1283,6 +1310,7 @@ export default function Cadastro() {
     setIsSaving(true);
     try {
       const mealPayload = serializeDogMeals(dogForm.refeicoes);
+      const reminderPayload = serializeDogReminders(dogForm.lembretes_importantes);
       const payload = {
         empresa_id: currentUser?.empresa_id || null,
         nome: formatDisplayName(dogForm.nome),
@@ -1297,12 +1325,16 @@ export default function Cadastro() {
         castrado: !!dogForm.castrado,
         foto_url: optional(dogForm.foto_url),
         foto_carteirinha_vacina_url: serializeVaccineCardImages(dogForm.foto_carteirinha_vacina_url),
-        data_revacinacao_1: optional(dogForm.data_revacinacao_1),
-        nome_vacina_revacinacao_1: optional(dogForm.nome_vacina_revacinacao_1),
-        data_revacinacao_2: optional(dogForm.data_revacinacao_2),
-        nome_vacina_revacinacao_2: optional(dogForm.nome_vacina_revacinacao_2),
-        data_revacinacao_3: optional(dogForm.data_revacinacao_3),
-        nome_vacina_revacinacao_3: optional(dogForm.nome_vacina_revacinacao_3),
+        data_revacinacao_1: optional(reminderPayload.data_revacinacao_1),
+        nome_vacina_revacinacao_1: optional(reminderPayload.nome_vacina_revacinacao_1),
+        data_revacinacao_2: optional(reminderPayload.data_revacinacao_2),
+        nome_vacina_revacinacao_2: optional(reminderPayload.nome_vacina_revacinacao_2),
+        data_revacinacao_3: optional(reminderPayload.data_revacinacao_3),
+        nome_vacina_revacinacao_3: optional(reminderPayload.nome_vacina_revacinacao_3),
+        data_revacinacao_4: optional(reminderPayload.data_revacinacao_4),
+        nome_vacina_revacinacao_4: optional(reminderPayload.nome_vacina_revacinacao_4),
+        data_revacinacao_5: optional(reminderPayload.data_revacinacao_5),
+        nome_vacina_revacinacao_5: optional(reminderPayload.nome_vacina_revacinacao_5),
         alergias: optional(dogForm.alergias),
         restricoes_cuidados: optional(dogForm.restricoes_cuidados),
         observacoes_gerais: optional(dogForm.observacoes_gerais),
@@ -1850,7 +1882,7 @@ export default function Cadastro() {
                     type="button"
                     variant="outline"
                     onClick={() => dogImportInputRef.current?.click()}
-                    className="h-9 rounded-xl border-blue-200 px-3 text-xs text-blue-700 hover:bg-blue-50 sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm"
+                    className="hidden h-9 rounded-xl border-blue-200 px-3 text-xs text-blue-700 hover:bg-blue-50 sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm lg:inline-flex"
                   >
                     <Upload className="mr-2 h-4 w-4" />
                     Importar perfil
@@ -2111,57 +2143,48 @@ export default function Cadastro() {
                       </div>
                     ) : null}
                   </div>
-                  {renderDateField({
-                    fieldKey: "dog.data_revacinacao_1",
-                    label: "1ª revacinação",
-                    value: dogForm.data_revacinacao_1,
-                    onChange: (value) => setDogForm({ ...dogForm, data_revacinacao_1: value }),
-                    placeholder: "Selecione a data",
-                    optional: true,
-                  })}
-                  {renderDateField({
-                    fieldKey: "dog.data_revacinacao_2",
-                    label: "2ª revacinação",
-                    value: dogForm.data_revacinacao_2,
-                    onChange: (value) => setDogForm({ ...dogForm, data_revacinacao_2: value }),
-                    placeholder: "Selecione a data",
-                    optional: true,
-                  })}
-                  {renderDateField({
-                    fieldKey: "dog.data_revacinacao_3",
-                    label: "3ª revacinação",
-                    value: dogForm.data_revacinacao_3,
-                    onChange: (value) => setDogForm({ ...dogForm, data_revacinacao_3: value }),
-                    placeholder: "Selecione a data",
-                    optional: true,
-                  })}
-                  {renderTextField({
-                    fieldKey: "dog.nome_vacina_revacinacao_1",
-                    label: "Vacina da 1ª revacinação",
-                    value: dogForm.nome_vacina_revacinacao_1,
-                    onChange: (e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_1: e.target.value }),
-                    placeholder: "Ex: V10, Antirrábica",
-                    optional: !dogForm.data_revacinacao_1,
-                    requiredMessage: "Informe a vacina vinculada a esta data.",
-                  })}
-                  {renderTextField({
-                    fieldKey: "dog.nome_vacina_revacinacao_2",
-                    label: "Vacina da 2ª revacinação",
-                    value: dogForm.nome_vacina_revacinacao_2,
-                    onChange: (e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_2: e.target.value }),
-                    placeholder: "Ex: V10, Antirrábica",
-                    optional: !dogForm.data_revacinacao_2,
-                    requiredMessage: "Informe a vacina vinculada a esta data.",
-                  })}
-                  {renderTextField({
-                    fieldKey: "dog.nome_vacina_revacinacao_3",
-                    label: "Vacina da 3ª revacinação",
-                    value: dogForm.nome_vacina_revacinacao_3,
-                    onChange: (e) => setDogForm({ ...dogForm, nome_vacina_revacinacao_3: e.target.value }),
-                    placeholder: "Ex: V10, Antirrábica",
-                    optional: !dogForm.data_revacinacao_3,
-                    requiredMessage: "Informe a vacina vinculada a esta data.",
-                  })}
+                  <div className="col-span-full rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="mb-4">
+                      <h4 className="text-sm font-semibold text-slate-900">Datas importantes do Pet</h4>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        Cadastre até cinco lembretes. Ao preencher nome e data, o próximo aparece automaticamente.
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      {(dogForm.lembretes_importantes || [createEmptyDogReminder()]).map((reminder, index) => (
+                        <div key={`dog-reminder-${index}`} className="rounded-xl border border-slate-200 bg-white p-4">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-slate-900">{index + 1}º lembrete</p>
+                            {reminder.nome || reminder.data ? (
+                              <Button type="button" variant="outline" size="sm" onClick={() => removeDogReminder(index)}>
+                                <X className="mr-2 h-4 w-4" />
+                                Remover
+                              </Button>
+                            ) : null}
+                          </div>
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            {renderTextField({
+                              fieldKey: `dog.lembretes.${index}.nome`,
+                              label: "Nome do lembrete",
+                              value: reminder.nome || "",
+                              onChange: (event) => updateDogReminder(index, "nome", event.target.value),
+                              placeholder: "Ex: V10, Antirrábica ou retorno",
+                              optional: !reminder.data,
+                              requiredMessage: "Informe o nome deste lembrete.",
+                            })}
+                            {renderDateField({
+                              fieldKey: `dog.lembretes.${index}.data`,
+                              label: "Data do lembrete",
+                              value: reminder.data || "",
+                              onChange: (value) => updateDogReminder(index, "data", value),
+                              placeholder: "Selecione a data",
+                              optional: !reminder.nome,
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
                   <div className="col-span-full"><h4 className="font-semibold text-gray-900 mt-4 mb-2">Veterinário</h4></div>
                   <div className="col-span-full rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
@@ -2303,25 +2326,23 @@ export default function Cadastro() {
                   )}
 
                   <div className="col-span-full rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div>
-                        <h5 className="text-sm font-semibold text-gray-900">Refeições</h5>
-                        <p className="text-xs text-gray-500">Comece com uma linha e adicione outras conforme necessário.</p>
-                      </div>
-                      <Button type="button" variant="outline" onClick={addDogMeal} disabled={(dogForm.refeicoes || []).length >= 4}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Adicionar refeição
-                      </Button>
+                    <div className="mb-4">
+                      <h5 className="text-sm font-semibold text-gray-900">Refeições</h5>
+                      <p className="text-xs text-gray-500">
+                        Ao preencher quantidade e horário, a próxima refeição aparece automaticamente.
+                      </p>
                     </div>
                     <div className="space-y-3">
                       {(dogForm.refeicoes || [createEmptyDogMeal()]).map((meal, index) => (
                         <div key={`meal-${index}`} className="rounded-xl border border-gray-200 bg-white p-4">
                           <div className="mb-3 flex items-center justify-between gap-3">
                             <p className="text-sm font-semibold text-gray-900">{index + 1}ª refeição</p>
-                            <Button type="button" variant="outline" size="sm" onClick={() => removeDogMeal(index)}>
-                              <X className="mr-2 h-4 w-4" />
-                              Remover
-                            </Button>
+                            {meal.qnt || meal.horario || meal.obs ? (
+                              <Button type="button" variant="outline" size="sm" onClick={() => removeDogMeal(index)}>
+                                <X className="mr-2 h-4 w-4" />
+                                Remover
+                              </Button>
+                            ) : null}
                           </div>
                           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                             {renderTextField({
@@ -2578,7 +2599,7 @@ export default function Cadastro() {
                     type="button"
                     variant="outline"
                     onClick={() => responsavelImportInputRef.current?.click()}
-                    className="h-9 rounded-xl border-green-200 px-3 text-xs text-green-700 hover:bg-green-50 sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm"
+                    className="hidden h-9 rounded-xl border-green-200 px-3 text-xs text-green-700 hover:bg-green-50 sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm lg:inline-flex"
                   >
                     <Upload className="mr-2 h-4 w-4" />
                     Importar perfil
@@ -2724,7 +2745,7 @@ export default function Cadastro() {
                     type="button"
                     variant="outline"
                     onClick={() => carteiraImportInputRef.current?.click()}
-                    className="h-9 rounded-xl border-orange-200 px-3 text-xs text-orange-700 hover:bg-orange-50 sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm"
+                    className="hidden h-9 rounded-xl border-orange-200 px-3 text-xs text-orange-700 hover:bg-orange-50 sm:h-10 sm:rounded-2xl sm:px-4 sm:text-sm lg:inline-flex"
                   >
                     <Upload className="mr-2 h-4 w-4" />
                     Importar perfil

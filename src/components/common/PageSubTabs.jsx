@@ -15,7 +15,7 @@ export default function PageSubTabs({
   return (
     <div className={cn("w-full overflow-x-auto pb-1 touch-pan-x", className)}>
       <TabsList
-        className={cn("inline-grid h-auto min-w-max gap-1 rounded-xl bg-gray-100 p-0.5 sm:grid sm:min-w-full sm:rounded-2xl sm:p-1", listClassName)}
+        className={cn("mx-auto grid h-auto w-max min-w-max gap-1 rounded-xl bg-gray-100 p-0.5 sm:w-full sm:min-w-full sm:rounded-2xl sm:p-1", listClassName)}
         style={{ gridTemplateColumns: columns }}
       >
         {items.map((item) => (

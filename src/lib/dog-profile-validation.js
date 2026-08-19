@@ -20,7 +20,8 @@ export function validateDogNutrition(dog) {
     if (!hasValue(dog?.alimentacao_tipo)) return "Informe o tipo da ração.";
   }
 
-  const meals = Array.isArray(dog?.refeicoes) ? dog.refeicoes : [];
+  const meals = (Array.isArray(dog?.refeicoes) ? dog.refeicoes : [])
+    .filter((meal) => hasValue(meal?.qnt) || hasValue(meal?.horario) || hasValue(meal?.obs));
   if (meals.length === 0) {
     return "Informe ao menos uma refeição com quantidade e horário.";
   }
@@ -30,6 +31,21 @@ export function validateDogNutrition(dog) {
   }
 
   return "";
+}
+
+export function validateDogReminders(dog) {
+  const reminders = Array.isArray(dog?.lembretes_importantes)
+    ? dog.lembretes_importantes
+    : [];
+  const incompleteReminder = reminders.find((reminder) => {
+    const hasName = hasValue(reminder?.nome);
+    const hasDate = hasValue(reminder?.data);
+    return hasName !== hasDate;
+  });
+
+  return incompleteReminder
+    ? "Preencha o nome e a data do lembrete ou deixe os dois campos vazios."
+    : "";
 }
 
 export function validateDogCare(dog) {
@@ -73,5 +89,5 @@ export function validateDogCare(dog) {
 }
 
 export function validateDogOperationalProfile(dog) {
-  return validateDogNutrition(dog) || validateDogCare(dog);
+  return validateDogReminders(dog) || validateDogNutrition(dog) || validateDogCare(dog);
 }

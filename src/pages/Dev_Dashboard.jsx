@@ -871,25 +871,25 @@ export default function Dev_Dashboard() {
                         key={user.id}
                         type="button"
                         onClick={() => setSelectedManagedUserId(user.id)}
-                        className="group min-h-[148px] rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        className="group min-h-[112px] rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                         aria-label={`Acessar perfil de ${user.full_name || user.email}`}
                       >
-                        <div className="flex h-full flex-col">
-                          <p className="truncate text-base font-semibold text-slate-950">{user.full_name || user.email}</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="min-w-0 truncate text-base font-semibold text-slate-950">{user.full_name || user.email}</p>
+                          {user.is_platform_admin && (
+                            <Badge className="shrink-0 bg-slate-900 text-[10px] font-semibold text-white hover:bg-slate-900">ADM Sistema Pet</Badge>
+                          )}
+                        </div>
 
-                          <div className="mt-3">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Perfil de acesso</p>
+                        <div className="mt-4 flex items-end justify-between gap-4 border-t border-slate-200/80 pt-3">
+                          <div className="min-w-0">
+                            <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-400">Perfil de acesso</p>
                             <p className="mt-1 truncate text-sm font-medium text-slate-700">{accessProfileName}</p>
                           </div>
-
-                          <div className="mt-auto flex items-end justify-between gap-3 pt-4">
-                            <div>
-                              {user.is_platform_admin && (
-                                <Badge className="bg-slate-900 text-[11px] font-semibold text-white hover:bg-slate-900">ADM Sistema Pet</Badge>
-                              )}
-                            </div>
-                            <p className="text-right text-[11px] leading-4 text-slate-500">
-                              Atualizado em<br />{formatDateTime(user.updated_date || user.created_date)}
+                          <div className="shrink-0 text-right">
+                            <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">Última atualização</p>
+                            <p className="mt-1 text-[11px] leading-4 text-slate-600">
+                              {formatDateTime(user.updated_date || user.created_date)}
                             </p>
                           </div>
                         </div>
@@ -1092,119 +1092,132 @@ export default function Dev_Dashboard() {
       </Dialog>
 
       <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
-        <DialogContent className="w-[95vw] max-w-[640px] p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle>Convidar usuário</DialogTitle>
-            <DialogDescription>
-              Convide um usuário para uma unidade da Dog City Brasil ou para a administração central.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 py-3 sm:gap-4 sm:py-4">
-            <div>
-              <Label>Nome completo</Label>
-              <Input
-                value={inviteForm.full_name}
-                onChange={(event) => setInviteForm((current) => ({ ...current, full_name: sanitizeDisplayNameInput(event.target.value) }))}
-                onBlur={() => setInviteForm((current) => ({ ...current, full_name: formatDisplayName(current.full_name) }))}
-                className="mt-2"
-              />
-            </div>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[640px] flex-col gap-0 overflow-hidden rounded-[28px] border border-slate-200 bg-white p-0 shadow-2xl sm:max-h-[92vh]">
+          <div className="shrink-0 border-b border-slate-100 bg-gradient-to-br from-slate-50 to-blue-50 px-5 py-5 pr-14 sm:px-7 sm:py-6 sm:pr-16">
+            <DialogHeader className="space-y-0 text-left">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-200">
+                  <UserPlus className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 pt-0.5">
+                  <DialogTitle className="text-xl font-semibold text-slate-950 sm:text-2xl">Convidar usuário</DialogTitle>
+                  <DialogDescription className="mt-1.5 text-sm leading-5 text-slate-600 sm:leading-6">
+                    Defina a unidade e o perfil inicial do novo acesso.
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+          </div>
 
-            <div>
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={inviteForm.email}
-                onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
-                className="mt-2"
-              />
-            </div>
-
-            <div className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
-              <Switch
-                checked={inviteForm.is_platform_admin}
-                onCheckedChange={(checked) => {
-                  const currentProfile = activeProfiles.find((profile) => profile.id === inviteForm.access_profile_id) || null;
-                  const platformProfile = isPlatformAccessProfile(currentProfile) ? currentProfile : platformProfiles[0] || null;
-                  if (checked && !platformProfile) {
-                    alert("Nenhum perfil ativo da administração central está disponível.");
-                    return;
-                  }
-                  setInviteForm((current) => ({
-                    ...current,
-                    is_platform_admin: checked,
-                    empresa_id: checked ? "" : current.empresa_id || currentUser?.empresa_id || "",
-                    access_profile_id: checked
-                      ? platformProfile.id
-                      : (isPlatformAccessProfile(currentProfile) ? "" : current.access_profile_id),
-                  }));
-                }}
-              />
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="text-sm font-medium text-gray-900">ADM do Sistema Pet</p>
-                <p className="text-xs text-gray-500">Não vincula a uma unidade específica e libera acesso transversal.</p>
+                <Label>Nome completo</Label>
+                <Input
+                  value={inviteForm.full_name}
+                  onChange={(event) => setInviteForm((current) => ({ ...current, full_name: sanitizeDisplayNameInput(event.target.value) }))}
+                  onBlur={() => setInviteForm((current) => ({ ...current, full_name: formatDisplayName(current.full_name) }))}
+                  className="mt-2 h-11 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
+
+              <div>
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={inviteForm.email}
+                  onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
+                  className="mt-2 h-11 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">ADM do Sistema Pet</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Libera acesso central, sem vínculo exclusivo com uma unidade.</p>
+                </div>
+                <Switch
+                  checked={inviteForm.is_platform_admin}
+                  onCheckedChange={(checked) => {
+                    const currentProfile = activeProfiles.find((profile) => profile.id === inviteForm.access_profile_id) || null;
+                    const platformProfile = isPlatformAccessProfile(currentProfile) ? currentProfile : platformProfiles[0] || null;
+                    if (checked && !platformProfile) {
+                      alert("Nenhum perfil ativo da administração central está disponível.");
+                      return;
+                    }
+                    setInviteForm((current) => ({
+                      ...current,
+                      is_platform_admin: checked,
+                      empresa_id: checked ? "" : current.empresa_id || currentUser?.empresa_id || "",
+                      access_profile_id: checked
+                        ? platformProfile.id
+                        : (isPlatformAccessProfile(currentProfile) ? "" : current.access_profile_id),
+                    }));
+                  }}
+                />
+              </div>
+
+              <div>
+                <Label>Unidade a vincular</Label>
+                <Select
+                  value={inviteForm.empresa_id || "__none__"}
+                  onValueChange={(value) => setInviteForm((current) => ({ ...current, empresa_id: value === "__none__" ? "" : value }))}
+                  disabled={inviteForm.is_platform_admin}
+                >
+                  <SelectTrigger className="mt-2 h-11 rounded-xl border-slate-200 bg-white">
+                    <SelectValue placeholder="Selecionar unidade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Selecionar unidade</SelectItem>
+                    {units.map((unit) => (
+                      <SelectItem key={unit.id} value={unit.id}>
+                        {unit.nome_fantasia}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Tipo de acesso</Label>
+                <Select
+                  value={inviteForm.access_profile_id || "__none__"}
+                  onValueChange={(value) => {
+                    const nextProfileId = value === "__none__" ? "" : value;
+                    const nextProfile = activeProfiles.find((profile) => profile.id === nextProfileId) || null;
+                    const nextIsPlatformAdmin = isPlatformAccessProfile(nextProfile);
+                    setInviteForm((current) => ({
+                      ...current,
+                      access_profile_id: nextProfileId,
+                      is_platform_admin: nextIsPlatformAdmin,
+                      empresa_id: nextIsPlatformAdmin ? "" : current.empresa_id || currentUser?.empresa_id || "",
+                    }));
+                  }}
+                >
+                  <SelectTrigger className="mt-2 h-11 rounded-xl border-slate-200 bg-white">
+                    <SelectValue placeholder="Selecionar perfil" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sem perfil inicial</SelectItem>
+                    {activeProfiles.map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-700 sm:col-span-2 sm:text-sm sm:leading-6">
+                O usuário receberá um link seguro para concluir os dados pessoais e ativar o acesso.
               </div>
             </div>
-
-            <div>
-              <Label>Unidade a vincular</Label>
-              <Select
-                value={inviteForm.empresa_id || "__none__"}
-                onValueChange={(value) => setInviteForm((current) => ({ ...current, empresa_id: value === "__none__" ? "" : value }))}
-                disabled={inviteForm.is_platform_admin}
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue placeholder="Selecionar unidade" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Selecionar unidade</SelectItem>
-                  {units.map((unit) => (
-                    <SelectItem key={unit.id} value={unit.id}>
-                      {unit.nome_fantasia}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Tipo de acesso</Label>
-              <Select
-                value={inviteForm.access_profile_id || "__none__"}
-                onValueChange={(value) => {
-                  const nextProfileId = value === "__none__" ? "" : value;
-                  const nextProfile = activeProfiles.find((profile) => profile.id === nextProfileId) || null;
-                  const nextIsPlatformAdmin = isPlatformAccessProfile(nextProfile);
-                  setInviteForm((current) => ({
-                    ...current,
-                    access_profile_id: nextProfileId,
-                    is_platform_admin: nextIsPlatformAdmin,
-                    empresa_id: nextIsPlatformAdmin ? "" : current.empresa_id || currentUser?.empresa_id || "",
-                  }));
-                }}
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue placeholder="Selecionar perfil" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Sem perfil inicial</SelectItem>
-                  {activeProfiles.map((profile) => (
-                    <SelectItem key={profile.id} value={profile.id}>
-                      {profile.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-700 sm:text-sm sm:leading-6">
-              O convite envia o link de acesso e o usuário conclui a ficha cadastral com nome, CPF, nascimento, endereço, PIX, contato de emergência e foto de perfil.
-            </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowInviteModal(false)} className="h-9 w-full text-sm sm:h-10 sm:w-auto">Cancelar</Button>
-            <Button onClick={handleSendInvite} disabled={isSaving} className="h-9 w-full bg-blue-600 px-3 text-sm text-white hover:bg-blue-700 sm:h-10 sm:w-auto sm:px-4">
-              <Mail className="w-4 h-4 mr-2" />
+
+          <DialogFooter className="shrink-0 gap-2 border-t border-slate-100 bg-slate-50/80 px-5 py-4 sm:px-7">
+            <Button variant="outline" onClick={() => setShowInviteModal(false)} className="h-11 w-full rounded-xl text-sm sm:w-auto">Cancelar</Button>
+            <Button onClick={handleSendInvite} disabled={isSaving} className="h-11 w-full rounded-xl bg-blue-600 px-4 text-sm text-white hover:bg-blue-700 sm:w-auto">
+              <Mail className="mr-2 h-4 w-4" />
               {isSaving ? "Enviando..." : "Enviar convite"}
             </Button>
           </DialogFooter>

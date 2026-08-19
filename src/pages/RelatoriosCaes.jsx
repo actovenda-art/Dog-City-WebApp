@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dog as DogIcon, Users, Cake, Syringe, Eye } from "lucide-react";
+import { CalendarDays, Dog as DogIcon, Users, Cake, Eye } from "lucide-react";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Link, useLocation } from "react-router-dom";
 import { getInternalEntityReference } from "@/lib/entity-identifiers";
@@ -77,8 +77,8 @@ export default function RelatoriosCaes() {
     }).sort((a, b) => new Date(a.data_nascimento).getDate() - new Date(b.data_nascimento).getDate());
   };
 
-  // Próximas revacinações
-  const proximasRevacinacoes = () => {
+  // Próximas datas importantes
+  const proximasDatasImportantes = () => {
     const hoje = new Date();
     const dias = parseInt(filterPeriodoVacina);
     const limite = addDays(hoje, dias);
@@ -88,6 +88,8 @@ export default function RelatoriosCaes() {
         { dataRev: d.data_revacinacao_1, nomeVacina: d.nome_vacina_revacinacao_1, numeroVacina: 1 },
         { dataRev: d.data_revacinacao_2, nomeVacina: d.nome_vacina_revacinacao_2, numeroVacina: 2 },
         { dataRev: d.data_revacinacao_3, nomeVacina: d.nome_vacina_revacinacao_3, numeroVacina: 3 },
+        { dataRev: d.data_revacinacao_4, nomeVacina: d.nome_vacina_revacinacao_4, numeroVacina: 4 },
+        { dataRev: d.data_revacinacao_5, nomeVacina: d.nome_vacina_revacinacao_5, numeroVacina: 5 },
       ].forEach(({ dataRev, nomeVacina, numeroVacina }) => {
         if (dataRev) {
           const data = new Date(dataRev);
@@ -118,7 +120,7 @@ export default function RelatoriosCaes() {
           <Card className="border-blue-200 bg-white"><CardContent className="p-4 text-center"><DogIcon className="w-8 h-8 text-blue-600 mx-auto mb-2" /><p className="text-2xl font-bold text-blue-600">{dogs.length}</p><p className="text-sm text-gray-600">Total de Cães</p></CardContent></Card>
           <Card className="border-green-200 bg-white"><CardContent className="p-4 text-center"><Users className="w-8 h-8 text-green-600 mx-auto mb-2" /><p className="text-2xl font-bold text-green-600">{racas.length}</p><p className="text-sm text-gray-600">Raças</p></CardContent></Card>
           <Card className="border-orange-200 bg-white"><CardContent className="p-4 text-center"><Cake className="w-8 h-8 text-orange-600 mx-auto mb-2" /><p className="text-2xl font-bold text-orange-600">{aniversariantesMes().length}</p><p className="text-sm text-gray-600">Aniversariantes</p></CardContent></Card>
-          <Card className="border-purple-200 bg-white"><CardContent className="p-4 text-center"><Syringe className="w-8 h-8 text-purple-600 mx-auto mb-2" /><p className="text-2xl font-bold text-purple-600">{proximasRevacinacoes().length}</p><p className="text-sm text-gray-600">Vacinas Próximas</p></CardContent></Card>
+          <Card className="border-purple-200 bg-white"><CardContent className="p-4 text-center"><CalendarDays className="w-8 h-8 text-purple-600 mx-auto mb-2" /><p className="text-2xl font-bold text-purple-600">{proximasDatasImportantes().length}</p><p className="text-sm text-gray-600">Lembretes próximos</p></CardContent></Card>
         </div>
 
         <Tabs defaultValue="raca">
@@ -128,7 +130,7 @@ export default function RelatoriosCaes() {
               { value: "raca", label: "Por Raça", icon: DogIcon },
               { value: "responsavel", label: "Por Responsável", icon: Users },
               { value: "aniversario", label: "Aniversariantes", icon: Cake },
-              { value: "vacinas", label: "Revacinações", icon: Syringe },
+              { value: "vacinas", label: "Datas importantes", icon: CalendarDays },
             ]}
           />
 
@@ -227,16 +229,16 @@ export default function RelatoriosCaes() {
             </Card>
           </TabsContent>
 
-          {/* Revacinações */}
+          {/* Datas importantes */}
           <TabsContent value="vacinas">
             <Card className="mb-4 border-gray-200 bg-white"><CardContent className="p-4">
               <Select value={filterPeriodoVacina} onValueChange={setFilterPeriodoVacina}><SelectTrigger className="w-full sm:w-64"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="30">Próximos 30 dias</SelectItem><SelectItem value="60">Próximos 60 dias</SelectItem><SelectItem value="90">Próximos 90 dias</SelectItem></SelectContent></Select>
             </CardContent></Card>
             <Card className="border-gray-200 bg-white">
-              <CardHeader><CardTitle className="flex items-center gap-2"><Syringe className="w-5 h-5 text-purple-600" />Revacinações nos Próximos {filterPeriodoVacina} Dias</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="w-5 h-5 text-purple-600" />Datas importantes nos próximos {filterPeriodoVacina} dias</CardTitle></CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {proximasRevacinacoes().map((d, i) => (
+                  {proximasDatasImportantes().map((d, i) => (
                     <Link
                       key={i}
                       to={createPageUrl("PerfilCao") + `?id=${encodeURIComponent(getInternalEntityReference(d))}`}
@@ -244,11 +246,11 @@ export default function RelatoriosCaes() {
                       className={`flex items-center gap-4 p-3 rounded-lg border hover:opacity-80 transition-opacity ${d.diasRestantes <= 7 ? 'bg-red-50 border-red-200' : d.diasRestantes <= 14 ? 'bg-yellow-50 border-yellow-200' : 'bg-purple-50 border-purple-200'}`}
                     >
                       {d.foto_url ? <img src={d.foto_url} className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">🐕</div>}
-                      <div className="flex-1"><p className="font-semibold text-gray-900">{d.nome} {d.apelido && `(${d.apelido})`}</p><p className="text-sm text-gray-500">{d.numeroVacina}ª Revacinação - {formatDate(d.dataRevacinacao)}</p></div>
+                      <div className="flex-1"><p className="font-semibold text-gray-900">{d.nome} {d.apelido && `(${d.apelido})`}</p><p className="text-sm text-gray-500">{d.nomeVacina || `Lembrete ${d.numeroVacina}`} - {formatDate(d.dataRevacinacao)}</p></div>
                       <Badge className={d.diasRestantes <= 7 ? 'bg-red-100 text-red-700' : d.diasRestantes <= 14 ? 'bg-yellow-100 text-yellow-700' : 'bg-purple-100 text-purple-700'}>{d.diasRestantes === 0 ? 'Hoje!' : d.diasRestantes < 0 ? 'Vencida' : `${d.diasRestantes} dias`}</Badge>
                     </Link>
                   ))}
-                  {proximasRevacinacoes().length === 0 && <p className="text-center text-gray-500 py-8">Nenhuma revacinação nos próximos {filterPeriodoVacina} dias</p>}
+                  {proximasDatasImportantes().length === 0 && <p className="text-center text-gray-500 py-8">Nenhuma data importante nos próximos {filterPeriodoVacina} dias</p>}
                 </div>
               </CardContent>
             </Card>

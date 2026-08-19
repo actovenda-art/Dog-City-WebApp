@@ -40,7 +40,7 @@ function FilterChip({
           <span
             className={cn(
               "overflow-hidden whitespace-nowrap pl-1.5 text-[12px] font-medium transition-all duration-200 sm:pl-2 sm:text-sm",
-              open ? "max-w-[104px] opacity-100 sm:max-w-[120px]" : "max-w-0 opacity-0",
+              open ? "max-w-[104px] opacity-100 sm:max-w-[120px]" : "hidden",
               labelClassName,
             )}
           >

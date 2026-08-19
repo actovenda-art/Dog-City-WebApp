@@ -793,14 +793,27 @@ function validateDogOperationalFields(cao: Record<string, unknown>) {
     if (!sanitizeText(cao.alimentacao_tipo)) throw new Error("Informe o tipo da racao.");
   }
 
-  const meals = Array.isArray(cao.refeicoes)
+  const meals = (Array.isArray(cao.refeicoes)
     ? cao.refeicoes as Record<string, unknown>[]
-    : [];
+    : [])
+    .filter((meal) => (
+      sanitizeText(meal?.qnt)
+      || sanitizeText(meal?.horario)
+      || sanitizeText(meal?.obs)
+    ));
   if (meals.length === 0) {
     throw new Error("Informe ao menos uma refeicao com quantidade e horario.");
   }
   if (meals.some((meal) => !sanitizeText(meal?.qnt) || !sanitizeText(meal?.horario))) {
     throw new Error("Preencha a quantidade e o horario de todas as refeicoes adicionadas.");
+  }
+
+  for (let index = 1; index <= 5; index += 1) {
+    const hasReminderName = Boolean(sanitizeText(cao[`nome_vacina_revacinacao_${index}`]));
+    const hasReminderDate = Boolean(sanitizeText(cao[`data_revacinacao_${index}`]));
+    if (hasReminderName !== hasReminderDate) {
+      throw new Error("Preencha o nome e a data do lembrete ou deixe os dois campos vazios.");
+    }
   }
 
   const requiredCareFields = [
@@ -1264,6 +1277,10 @@ async function handleSubmit(payload: Record<string, unknown>) {
           nome_vacina_revacinacao_2: nullableText(cao.nome_vacina_revacinacao_2),
           data_revacinacao_3: nullableText(cao.data_revacinacao_3),
           nome_vacina_revacinacao_3: nullableText(cao.nome_vacina_revacinacao_3),
+          data_revacinacao_4: nullableText(cao.data_revacinacao_4),
+          nome_vacina_revacinacao_4: nullableText(cao.nome_vacina_revacinacao_4),
+          data_revacinacao_5: nullableText(cao.data_revacinacao_5),
+          nome_vacina_revacinacao_5: nullableText(cao.nome_vacina_revacinacao_5),
           alimentacao_marca_racao: isNaturalFood ? null : nullableText(cao.alimentacao_marca_racao),
           alimentacao_sabor: isNaturalFood ? null : nullableText(cao.alimentacao_sabor),
           alimentacao_tipo: isNaturalFood ? "Alimentação natural" : nullableText(cao.alimentacao_tipo),

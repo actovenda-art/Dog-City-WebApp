@@ -1757,7 +1757,7 @@ export default function Orcamentos() {
       </div>
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="flex max-h-[95vh] w-[98vw] max-w-[1100px] flex-col overflow-hidden">
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[1100px] flex-col overflow-hidden rounded-[24px] border-slate-200 bg-white p-4 shadow-2xl sm:max-h-[92vh] sm:w-[96vw] sm:rounded-3xl sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Calculator className="h-5 w-5 text-blue-600" />

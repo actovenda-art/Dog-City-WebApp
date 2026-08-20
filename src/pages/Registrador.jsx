@@ -2146,6 +2146,8 @@ export default function Registrador() {
         <PageHeader
           eyebrow="Operacional / Registrador"
           title="Registrador"
+          className="relative"
+          actionsClassName="absolute right-0 top-5 w-auto"
           actions={(
             <>
               <Button

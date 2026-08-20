@@ -264,6 +264,27 @@ function getLatestRecordTimestamp(record) {
   );
 }
 
+function hasCheckinTimestamp(record) {
+  return Boolean(record?.checkin_datetime || record?.data_checkin);
+}
+
+function hasCheckoutTimestamp(record) {
+  return Boolean(record?.checkout_datetime || record?.data_checkout);
+}
+
+function isOpenCheckinRecord(record) {
+  if (!record) return false;
+  const hasStarted = hasCheckinTimestamp(record) || record.status === "presente";
+  const hasFinished = hasCheckoutTimestamp(record) || record.status === "finalizado";
+  return hasStarted && !hasFinished;
+}
+
+function isOpenAppointmentAttendance(appointment, record) {
+  if (isOpenCheckinRecord(record)) return true;
+  if (hasCheckoutTimestamp(record) || record?.status === "finalizado") return false;
+  return appointment?.status === "presente";
+}
+
 function compareAppointments(left, right) {
   const leftDate = getAppointmentDateKey(left) || "";
   const rightDate = getAppointmentDateKey(right) || "";
@@ -282,7 +303,12 @@ function buildAppointmentRecordIndex(checkins) {
     .reduce((accumulator, record) => {
       if (!record?.appointment_id) return accumulator;
       const current = accumulator[record.appointment_id];
-      if (!current || getLatestRecordTimestamp(record) > getLatestRecordTimestamp(current)) {
+      const shouldPreferOpenRecord = isOpenCheckinRecord(record) && !isOpenCheckinRecord(current);
+      const shouldPreferLatestRecord = (
+        isOpenCheckinRecord(record) === isOpenCheckinRecord(current)
+        && getLatestRecordTimestamp(record) > getLatestRecordTimestamp(current)
+      );
+      if (!current || shouldPreferOpenRecord || shouldPreferLatestRecord) {
         accumulator[record.appointment_id] = record;
       }
       return accumulator;
@@ -360,10 +386,15 @@ function getAppointmentServiceLine(appointment) {
 
 function getAppointmentOperationalState(appointment, record) {
   const meta = getAppointmentMeta(appointment);
-  const hasCheckin = Boolean(record?.checkin_datetime || record?.data_checkin) || appointment?.status === "presente";
-  const hasCheckout = Boolean(record?.checkout_datetime || record?.data_checkout) || appointment?.status === "finalizado";
+  const hasCheckin = hasCheckinTimestamp(record) || appointment?.status === "presente";
+  const hasCheckout = hasCheckoutTimestamp(record) || appointment?.status === "finalizado";
+  const hasOpenAttendance = isOpenAppointmentAttendance(appointment, record);
   const isNoShowConfirmed = appointment?.status === "faltou" || Boolean(meta.absence_confirmed_at);
   const needsAbsenceReview = Boolean(meta.absence_review_pending);
+
+  if (hasOpenAttendance) {
+    return { key: "present", label: STATUS_STYLES.present.badgeLabel, needsAbsenceReview };
+  }
 
   if (isNoShowConfirmed) {
     return { key: "absent", label: STATUS_STYLES.absent.badgeLabel, needsAbsenceReview };
@@ -905,6 +936,7 @@ export default function Agendamentos() {
         sourceLabel: getAppointmentDetailLabel(appointment),
         checkinTime,
         checkoutTime,
+        hasOpenAttendance: isOpenAppointmentAttendance(appointment, record),
         hasCommercialPending: appointment.charge_type === "pendente_comercial",
         hasAbsenceReviewPending: Boolean(meta.absence_review_pending),
       };
@@ -913,8 +945,12 @@ export default function Agendamentos() {
 
   const selectedDayKey = filterDate || getTodayKey();
   const dailyRows = useMemo(() => {
+    const shouldIncludeOpenAttendances = selectedDayKey === getTodayKey();
     return appointmentPresentationRows
-      .filter((row) => doesAppointmentOccurOnDate(row.appointment, selectedDayKey))
+      .filter((row) => (
+        doesAppointmentOccurOnDate(row.appointment, selectedDayKey)
+        || (shouldIncludeOpenAttendances && row.hasOpenAttendance)
+      ))
       .sort((left, right) => left.sortTime.localeCompare(right.sortTime));
   }, [appointmentPresentationRows, selectedDayKey]);
 

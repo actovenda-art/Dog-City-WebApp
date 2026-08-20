@@ -12,6 +12,7 @@ import { canViewSensitivePersonalData } from "@/lib/access-control";
 import { maskCpfCnpj, maskEmail, maskPhone, maskSensitiveValue } from "@/lib/privacy";
 import { ensureWalletAccountForFinancialProfile } from "@/lib/wallet-account";
 import PageSubTabs from "@/components/common/PageSubTabs";
+import PageHeader from "@/components/common/PageHeader";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1511,18 +1512,14 @@ export default function Perfis() {
   return (
     <div className="min-h-screen bg-slate-50 p-2.5 sm:p-6">
       <div className="mx-auto max-w-[1480px] space-y-4 sm:space-y-6">
-        <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 sm:gap-4 sm:pb-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600 sm:text-xs">
-              Cadastros / Perfis
-            </p>
-            <h1 className="font-brand text-2xl leading-tight tracking-tight text-slate-950 sm:text-4xl">Perfis</h1>
-            <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500 sm:text-[15px]">
-              Consulte cães, responsáveis e responsáveis financeiros com seus vínculos em uma visão única da unidade.
-            </p>
-          </div>
-
-          <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto lg:shrink-0">
+        <PageHeader
+          eyebrow="Cadastros / Perfis"
+          title="Perfis"
+          description="Consulte cães, responsáveis e responsáveis financeiros com seus vínculos em uma visão única da unidade."
+          className="mb-0"
+          actionsClassName="grid grid-cols-2 gap-2 sm:grid-cols-3"
+          actions={(
+            <>
             <Button
               variant="outline"
               onClick={() => setDeletedProfilesOpen(true)}
@@ -1545,8 +1542,9 @@ export default function Perfis() {
                 Ir para Cadastro
               </Button>
             </Link>
-          </div>
-        </div>
+            </>
+          )}
+        />
 
         <input
           ref={importInputRef}

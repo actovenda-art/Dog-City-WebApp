@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { Schedule } from "@/api/entities/Schedule";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { Dog } from "@/api/entities";
 import { Client } from "@/api/entities";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,10 +38,8 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
-import { useBranding } from "@/hooks/use-branding";
 
 export default function Agenda_Comercial() {
-  const { companyName, logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [schedules, setSchedules] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [clients, setClients] = useState([]);
@@ -265,22 +264,12 @@ export default function Agenda_Comercial() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img
-              src={logoUrl}
-              alt={companyName}
-              className="h-10 w-10 sm:h-12 sm:w-12"
-            />
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Agenda - Comercial</h1>
-              <p className="text-sm sm:text-base text-gray-600">Gerenciamento de agendamentos</p>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-2">
+        <PageHeader
+          eyebrow="Comercial / Agenda"
+          title="Agenda Comercial"
+          description="Gerencie solicitações comerciais e novos agendamentos da unidade."
+          actions={(
+            <>
             <Button
               onClick={() => setShowBudgetModal(true)}
               className="bg-green-600 hover:bg-green-700 text-white"
@@ -295,8 +284,9 @@ export default function Agenda_Comercial() {
               <Plus className="w-4 h-4 mr-2" />
               <span className="hidden sm:inline">Novo Agendamento</span>
             </Button>
-          </div>
-        </div>
+            </>
+          )}
+        />
 
         {/* Filters */}
         <Card className="mb-6 border-gray-200 bg-white">

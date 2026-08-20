@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarClock, CheckCircle2, Clock3, Coffee, Copy, Link as LinkIcon, Plus, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Coffee, Copy, Link as LinkIcon, Plus, ShieldCheck, Users } from "lucide-react";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { useLocation } from "react-router-dom";
 
 import { ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
@@ -728,21 +729,14 @@ export default function Escalacao() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-blue-700">
-              <CalendarClock className="h-3.5 w-3.5" />
-              Gerência
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Escalação</h1>
-              <p className="mt-1 text-sm text-gray-600">
-                Cadastre funcionários e organize os horários da unidade ativa.
-              </p>
-            </div>
-          </div>
+        <PageHeader
+          eyebrow="Gerência / Escalação"
+          title="Escalação"
+          description="Cadastre funcionários e organize os horários da unidade ativa."
+          className="mb-0"
+        />
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Card className="border-blue-100 shadow-sm">
               <CardContent className="flex items-center gap-2.5 p-2.5 sm:gap-3 sm:p-4">
                 <div className="rounded-xl bg-blue-50 p-2.5 text-blue-600 sm:rounded-2xl sm:p-3">
@@ -776,7 +770,6 @@ export default function Escalacao() {
                 </div>
               </CardContent>
             </Card>
-          </div>
         </div>
 
         {loadWarnings.length > 0 ? (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { CentroCusto, Lancamento, User, ExtratoBancario, Despesa } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -449,20 +450,16 @@ export default function ContasPagar() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="mt-1">
-              <DollarSign className="w-6 h-6 text-orange-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Contas a Pagar</h1>
-            </div>
-          </div>
-          <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-md">
-            <Plus className="w-4 h-4 mr-2" />Nova Conta
-          </Button>
-        </div>
+        <PageHeader
+          eyebrow="Financeiro / Contas a pagar"
+          title="Contas a Pagar"
+          description="Organize vencimentos, pagamentos e compromissos financeiros da operação."
+          actions={(
+            <Button onClick={() => { resetForm(); setShowModal(true); }} className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none">
+              <Plus className="mr-2 h-4 w-4" />Nova conta
+            </Button>
+          )}
+        />
 
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">

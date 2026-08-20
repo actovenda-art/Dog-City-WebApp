@@ -2,29 +2,35 @@ import React from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
 const LOADER_LOGO = "/dog-city-loading-logo.png";
+const LOADER_ROTATION_DURATION_SECONDS = 1.65;
+const LOADER_ANIMATION_STARTED_AT = typeof performance !== "undefined" ? performance.now() : Date.now();
+
+function getLoaderRotationPhase() {
+  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+  const elapsedSeconds = Math.max(0, (now - LOADER_ANIMATION_STARTED_AT) / 1000);
+  return -((elapsedSeconds % LOADER_ROTATION_DURATION_SECONDS) / LOADER_ROTATION_DURATION_SECONDS) * 360;
+}
 
 export default function LoadingScreen() {
   const reduceMotion = useReducedMotion();
+  const rotationPhase = getLoaderRotationPhase();
 
   return (
-    <motion.div
+    <div
       role="status"
       aria-live="polite"
       aria-label="Carregando página"
       className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_center,_#ffffff_0%,_#f8fafc_58%,_#eef2f7_100%)]"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
     >
       <div className="relative flex flex-col items-center">
         <div className="relative h-28 w-28 sm:h-32 sm:w-32" style={{ perspective: "900px" }}>
           <motion.div
             className="relative h-full w-full"
             style={{ transformStyle: "preserve-3d" }}
-            animate={reduceMotion ? { scale: [0.96, 1.02, 0.96] } : { rotateY: [0, -360] }}
+            initial={reduceMotion ? false : { rotateY: rotationPhase }}
+            animate={reduceMotion ? { scale: [0.96, 1.02, 0.96] } : { rotateY: rotationPhase - 360 }}
             transition={{
-              duration: reduceMotion ? 1.4 : 1.65,
+              duration: reduceMotion ? 1.4 : LOADER_ROTATION_DURATION_SECONDS,
               ease: "linear",
               repeat: Infinity,
             }}
@@ -53,6 +59,6 @@ export default function LoadingScreen() {
         />
         <span className="sr-only">Carregando...</span>
       </div>
-    </motion.div>
+    </div>
   );
 }

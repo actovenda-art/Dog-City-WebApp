@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { PedidoInterno } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -185,33 +186,24 @@ export default function PedidosInternos() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-full mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-3">
-              <div className="mt-1">
-                <FileText className="w-6 h-6 text-orange-500" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Tarefas Internas</h1>
-                <p className="text-sm text-gray-600 mt-1">{pedidos.length} tarefas no total</p>
-              </div>
-            </div>
-            <Button 
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 p-3 sm:p-6">
+      <div className="mx-auto max-w-[1480px]">
+        <PageHeader
+          eyebrow="Configurações / Tarefas internas"
+          title="Tarefas Internas"
+          description={`${pedidos.length} tarefa${pedidos.length === 1 ? "" : "s"} no total, organizadas por etapa de execução.`}
+          actions={(
+            <Button
               onClick={() => { resetForm(); setShowModal(true); }} 
-              className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25 border-0"
+              className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none"
             >
               <Plus className="w-4 h-4 mr-2" />
               Nova Tarefa
             </Button>
-          </div>
-        </div>
-      </div>
+          )}
+        />
 
       {/* Pipeline Board */}
-      <div className="p-4 sm:p-6">
         <DragDropContext onDragEnd={handleDragEnd}>
           <div className="flex gap-4 overflow-x-auto pb-4 snap-x">
             {PIPELINES.map(pipeline => {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { Appointment, Carteira, Checkin, ContaReceber, Dog, Orcamento, Responsavel } from "@/api/entities";
 import {
   buildDogOwnerIndex,
@@ -1160,6 +1161,14 @@ export default function Agendamentos() {
 
   return (
     <div className="min-h-screen min-w-0 overflow-x-hidden bg-[#f6f8fc] p-2.5 sm:p-3 xl:p-4">
+      <div className="mx-auto w-full max-w-[1200px]">
+        <PageHeader
+          eyebrow="Operacional / Agendamentos"
+          title="Agendamentos"
+          description="Consulte os atendimentos por responsável, cão, monitor, status ou serviço."
+        />
+      </div>
+
       <div className="space-y-4 xl:hidden">
         <AppointmentSearchFilters
           searchTerm={searchTerm}
@@ -1230,19 +1239,7 @@ export default function Agendamentos() {
 
       <div className="hidden min-w-0 xl:block">
       <div className="mx-auto w-full min-w-0 max-w-[1200px] space-y-4">
-        <div className="space-y-3 rounded-[22px] border border-white/80 bg-white/90 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-blue-50 text-blue-600">
-              <Calendar className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-[26px] font-bold leading-none tracking-tight text-slate-950">Agendamentos</h1>
-              <p className="mt-1 max-w-2xl text-[13px] text-slate-500">
-                Consulte os atendimentos do dia por responsável, cão, monitor, status ou serviço.
-              </p>
-            </div>
-          </div>
-
+        <div className="rounded-[22px] border border-white/80 bg-white/90 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur">
           <AppointmentSearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}

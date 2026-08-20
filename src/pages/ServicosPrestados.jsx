@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ServiceProvided } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { Appointment } from "@/api/entities";
 import { Replacement } from "@/api/entities";
 import { Dog } from "@/api/entities";
@@ -203,20 +204,16 @@ export default function ServicosPrestados() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-              <Clipboard className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Serviços Prestados</h1>
-            </div>
-          </div>
-          <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-green-600 hover:bg-green-700 text-white">
-            <Plus className="w-4 h-4 mr-2" />Registrar Serviço
-          </Button>
-        </div>
+        <PageHeader
+          eyebrow="Operacional / Serviços"
+          title="Serviços Prestados"
+          description="Consulte e registre os serviços executados pela unidade."
+          actions={(
+            <Button onClick={() => { resetForm(); setShowModal(true); }} className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none">
+              <Plus className="mr-2 h-4 w-4" />Registrar serviço
+            </Button>
+          )}
+        />
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mb-6">

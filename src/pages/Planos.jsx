@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { PlanConfig as Plano } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { Dog } from "@/api/entities";
 import { Schedule } from "@/api/entities/Schedule";
 import { Checkin } from "@/api/entities";
@@ -23,10 +24,8 @@ import {
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { format, isPast, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { useBranding } from "@/hooks/use-branding";
 
 export default function Planos() {
-  const { logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [planos, setPlanos] = useState([]);
   const [dogs, setDogs] = useState([]);
   const [schedules, setSchedules] = useState([]);
@@ -225,18 +224,16 @@ export default function Planos() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <img src={logoUrl} alt="Logo" className="h-10 w-10 sm:h-12 sm:w-12" />
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestão de Planos</h1>
-            </div>
-          </div>
-          <Button onClick={() => { resetForm(); setShowModal(true); }} className="bg-blue-600 hover:bg-blue-700 text-white">
-            <Plus className="w-4 h-4 mr-2" />Novo Plano
-          </Button>
-        </div>
+        <PageHeader
+          eyebrow="Comercial / Planos"
+          title="Gestão de Planos"
+          description="Consulte planos ativos, vencimentos e situações de inadimplência."
+          actions={(
+            <Button onClick={() => { resetForm(); setShowModal(true); }} className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none">
+              <Plus className="mr-2 h-4 w-4" />Novo plano
+            </Button>
+          )}
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

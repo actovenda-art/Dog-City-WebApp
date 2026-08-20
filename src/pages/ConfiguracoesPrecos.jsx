@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { TabelaPrecos, User } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
-import { Bath, Home, Pencil, Percent, Plus, Save, Scissors, Settings, Tags, Trash2, Truck } from "lucide-react";
+import { Bath, Home, Pencil, Percent, Plus, Save, Scissors, Tags, Trash2, Truck } from "lucide-react";
 
 const SERVICE_TYPES = [
   { id: "hospedagem", label: "Hospedagem (Não mensalista)", category: "hospitalidade" },
@@ -475,25 +476,12 @@ export default function ConfiguracoesPrecos() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="hidden">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600">
-              <Settings className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Configurações de Preços</h1>
-              <p className="text-sm text-gray-600">Gerencie Day Care, hospedagem, banho, tosa, transporte e descontos.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600">
-              <Settings className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Preços e descontos</h1>
-            </div>
-          </div>
-          <Button
+        <PageHeader
+          eyebrow="Configurações / Preços"
+          title="Preços e descontos"
+          description="Gerencie Day Care, hospedagem, banho, tosa, transporte, raças e descontos."
+          actions={(
+            <Button
             onClick={() => {
               if (activeTab === "racas") {
                 resetBreedForm();
@@ -507,8 +495,9 @@ export default function ConfiguracoesPrecos() {
           >
             <Plus className="mr-2 h-4 w-4" />
             {activeTab === "racas" ? "Nova raça" : "Novo preço"}
-          </Button>
-        </div>
+            </Button>
+          )}
+        />
 
         <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Card className="border-blue-200 bg-white">

@@ -3,10 +3,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, Dog, Calendar, Database } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { useBranding } from "@/hooks/use-branding";
+import PageHeader from "@/components/common/PageHeader";
 
 export default function Backup() {
-  const { companyName, logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [notifyOpen, setNotifyOpen] = React.useState(false);
   const [notifyTitle, setNotifyTitle] = React.useState("");
   const [notifyMessage, setNotifyMessage] = React.useState("");
@@ -35,20 +34,11 @@ export default function Backup() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <img 
-              src={logoUrl}
-              alt={companyName}
-              className="h-10 w-10 sm:h-12 sm:w-12"
-            />
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Backup</h1>
-              <p className="text-sm sm:text-base text-gray-600">Exportação de dados do sistema</p>
-            </div>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Configurações / Backup"
+          title="Backup"
+          description="Exporte os dados operacionais do sistema de forma controlada."
+        />
 
         {/* Export Options */}
         <div className="space-y-4">

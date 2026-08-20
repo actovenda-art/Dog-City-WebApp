@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Orcamento, Dog, Carteira, Responsavel, TabelaPrecos, User, Appointment, Checkin, ContaReceber, RecurringPackage, Replacement, ObrigacaoFinanceira, CobrancaFinanceira, AppConfig, ServiceProvider, ServiceProviderSchedule } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { useLocation } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1706,17 +1707,12 @@ export default function Orcamentos() {
   return (
     <div className="min-h-screen bg-slate-50 p-2.5 sm:p-6">
       <div className="mx-auto max-w-[1480px]">
-        <div className="mb-4 flex flex-col gap-3 border-b border-slate-200 pb-5 sm:mb-6 sm:gap-4 sm:pb-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600 sm:text-xs">
-              Comercial / Orçamentos
-            </p>
-            <h1 className="font-brand text-2xl leading-tight tracking-tight text-slate-950 sm:text-4xl">Orçamentos</h1>
-            <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500 sm:text-[15px]">
-              Crie propostas, acompanhe aprovações e consulte o histórico comercial da unidade em uma única visão.
-            </p>
-          </div>
-          <div className="flex w-full items-center gap-2 lg:w-auto lg:shrink-0">
+        <PageHeader
+          eyebrow="Comercial / Orçamentos"
+          title="Orçamentos"
+          description="Crie propostas, acompanhe aprovações e consulte o histórico comercial da unidade em uma única visão."
+          actions={(
+            <>
             <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex">
               <FileText className="h-4 w-4 text-blue-600" />
               <span className="text-sm font-semibold text-slate-900">{orcamentos.length}</span>
@@ -1726,8 +1722,9 @@ export default function Orcamentos() {
               <Plus className="mr-2 h-4 w-4" />
               Novo Orçamento
             </Button>
-          </div>
-        </div>
+            </>
+          )}
+        />
 
         <div className="mb-4 grid grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_6px_20px_rgba(15,23,42,0.04)] sm:mb-6 lg:grid-cols-4 lg:divide-x lg:divide-slate-100">
           {[

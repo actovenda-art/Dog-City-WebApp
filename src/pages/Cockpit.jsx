@@ -15,6 +15,7 @@ import {
   User,
 } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -677,23 +678,17 @@ export default function Cockpit() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="mt-1">
-              <BarChart3 className="w-6 h-6 text-blue-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Cockpit</h1>
-              <p className="text-sm sm:text-base text-gray-600 mt-1">Visão completa do sistema</p>
-            </div>
-          </div>
-          {(cockpitV2Flags.cockpitV2Enabled || cockpitV2Flags.financialAlertsV2Enabled) ? (
-            <Button variant="outline" onClick={loadCockpitV2Data} disabled={cockpitV2Loading}>
+        <PageHeader
+          eyebrow="Gerência / Cockpit"
+          title="Cockpit"
+          description="Acompanhe os principais indicadores operacionais e financeiros da unidade."
+          actions={(cockpitV2Flags.cockpitV2Enabled || cockpitV2Flags.financialAlertsV2Enabled) ? (
+            <Button variant="outline" onClick={loadCockpitV2Data} disabled={cockpitV2Loading} className="h-10 flex-1 rounded-full px-4 sm:flex-none">
               <RefreshCw className={`w-4 h-4 mr-2 ${cockpitV2Loading ? "animate-spin" : ""}`} />
               Atualizar V2
             </Button>
           ) : null}
-        </div>
+        />
 
         {cockpitV2Error ? (
           <Card className="mb-6 border-amber-200 bg-amber-50">

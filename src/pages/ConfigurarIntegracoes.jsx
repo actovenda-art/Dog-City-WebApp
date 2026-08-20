@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { format, subDays } from "date-fns";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { IntegracaoConfig, User } from "@/api/entities";
 import { bancoInter, whatsappBridge } from "@/api/functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +26,6 @@ import {
   QrCode,
   RefreshCcw,
   Save,
-  Settings,
   ShieldCheck,
   Smartphone,
   XCircle,
@@ -716,14 +716,11 @@ export default function ConfigurarIntegracoes() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-5xl mx-auto">
-        <div className="mb-6 flex items-start gap-3">
-          <div className="mt-1">
-            <Settings className="w-6 h-6 text-blue-500" />
-          </div>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Configurar Integraes</h1>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Configurações / Integrações"
+          title="Configurar Integrações"
+          description="Acompanhe e configure as integrações externas utilizadas pela unidade."
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <Card className={statusMeta.cardClass}>

@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { appClient } from "@/api/appClient";
 import { AppAsset, AppConfig, Empresa, PerfilAcesso, TabelaPrecos, User, UserProfile, UserUnitAccess } from "@/api/entities";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
@@ -1269,16 +1270,14 @@ export default function AdministracaoSistema() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="mt-1">
-              <Building2 className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Administração Central</h1>
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2">
+        <PageHeader
+          eyebrow="Configurações / Administração"
+          title="Administração Central"
+          description="Gerencie unidades, perfis de acesso, identidade visual e configurações compartilhadas do sistema."
+          className="mb-0"
+          actionsClassName="flex-col sm:flex-row"
+          actions={(
+            <>
             {isUnitUnionActive ? (
               <Button variant="outline" onClick={separateMergedUnits}>
                 Separar
@@ -1292,8 +1291,9 @@ export default function AdministracaoSistema() {
                 </Button>
               </Link>
             ) : null}
-          </div>
-        </div>
+            </>
+          )}
+        />
 
         {setupError && (
           <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">

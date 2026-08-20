@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Check, Link as LinkIcon, Copy, ExternalLink, ArrowRight, ClipboardList, HeartPulse, CircleAlert } from "lucide-react";
+import { Dog as DogIcon, Users, Wallet, Upload, Save, Plus, X, Check, Link as LinkIcon, Copy, ExternalLink, HeartPulse, CircleAlert } from "lucide-react";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { CreateFileSignedUrl, UploadFile, UploadPrivateFile } from "@/api/integrations";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -21,6 +21,7 @@ import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeIn
 import DogColorMultiSelect from "@/components/common/DogColorMultiSelect";
 import { DOG_COAT_OPTIONS } from "@/lib/dog-profile-options";
 import PageSubTabs from "@/components/common/PageSubTabs";
+import PageHeader from "@/components/common/PageHeader";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import { isValidCpfChecksum, validateCpfWithGov } from "@/lib/cpf-validation";
 import {
@@ -180,21 +181,6 @@ const DOG_BREED_OPTIONS = [
   "Yorkshire",
   "Outro",
 ];
-
-const HEADER_TONE_BY_TAB = {
-  caes: {
-    panelClass: "border-blue-200 bg-blue-50/80",
-    iconClass: "bg-blue-100 text-blue-700",
-  },
-  responsaveis: {
-    panelClass: "border-emerald-200 bg-emerald-50/80",
-    iconClass: "bg-emerald-100 text-emerald-700",
-  },
-  carteiras: {
-    panelClass: "border-orange-200 bg-orange-50/80",
-    iconClass: "bg-orange-100 text-orange-700",
-  },
-};
 
 const OPTIONAL_TEXT = "opcional";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1612,38 +1598,6 @@ export default function Cadastro() {
     },
   ];
 
-  const tabItems = [
-    {
-      id: "caes",
-      label: "Cães",
-      description: "Ficha do cão, saúde, medicação e vínculos.",
-      icon: DogIcon,
-      count: dogs.length,
-      activeClass: "data-[state=active]:bg-blue-600 data-[state=active]:text-white",
-      badgeClass: "bg-blue-100 text-blue-700",
-    },
-    {
-      id: "responsaveis",
-      label: "Responsáveis",
-      description: "Contatos, CPF e associação com os cães.",
-      icon: Users,
-      count: responsaveis.length,
-      activeClass: "data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
-      badgeClass: "bg-emerald-100 text-emerald-700",
-    },
-    {
-      id: "carteiras",
-      label: "Financeiro",
-      description: "Cobrança, vencimento e vínculo financeiro.",
-      icon: Wallet,
-      count: carteiras.length,
-      activeClass: "data-[state=active]:bg-orange-600 data-[state=active]:text-white",
-      badgeClass: "bg-orange-100 text-orange-700",
-    },
-  ];
-  const activeTabItem = tabItems.find((item) => item.id === activeTab) || tabItems[0];
-  const ActiveTabHeaderIcon = activeTabItem.icon;
-  const activeHeaderTone = HEADER_TONE_BY_TAB[activeTabItem.id] || HEADER_TONE_BY_TAB.caes;
   const dogBreedOptions = buildSelectOptions(DOG_BREED_OPTIONS, dogForm.raca);
   const dogSizeOptions = buildSelectOptions(DOG_SIZE_OPTIONS, normalizeDogSize(dogForm.porte));
   const dogCoatOptions = buildSelectOptions(DOG_COAT_OPTIONS, normalizeDogCoat(dogForm.pelagem));
@@ -1731,89 +1685,17 @@ export default function Cadastro() {
           className="hidden"
           onChange={handleImportCarteiraProfileFile}
         />
-        <Card className="mb-6 overflow-hidden border border-gray-200 bg-white shadow-sm">
-          <div className="h-1 bg-gradient-to-r from-blue-500 via-emerald-500 to-orange-400" />
-          <CardContent className="p-5 sm:p-6">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-              <div className="max-w-3xl">
-                <div className="mb-3 hidden items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
-                  <ClipboardList className="h-3.5 w-3.5" />
-                  Central de cadastros
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="mt-1 rounded-2xl bg-blue-100 p-3 text-blue-700 shadow-sm">
-                    <DogIcon className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Cadastro</h1>
-                    <p className="hidden mt-2 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
-                      Organize cães, responsáveis e financeiro em um único fluxo, com leitura mais clara e ações rápidas no mesmo padrão visual do restante do sistema.
-                    </p>
-                    <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
-                      Organize cães, responsáveis e financeiro em um único fluxo.
-                    </p>
-                    <div className="mt-4 hidden flex-wrap gap-2">
-                      {tabItems.map((item) => {
-                        const Icon = item.icon;
-                        const isActive = activeTab === item.id;
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => setActiveTab(item.id)}
-                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                              isActive
-                                ? `${item.badgeClass} border-transparent`
-                                : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
-                            }`}
-                          >
-                            <Icon className="h-3.5 w-3.5" />
-                            {item.label}
-                            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-gray-700">
-                              {item.count}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex w-full max-w-sm flex-col gap-3">
-                <Button onClick={openClientLinkModal} className="justify-between bg-blue-600 text-white hover:bg-blue-700">
-                  <span className="flex items-center gap-2">
-                    <LinkIcon className="h-4 w-4" />
-                    Link de cadastro
-                  </span>
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-                <div className={`hidden rounded-2xl border p-4 ${activeHeaderTone.panelClass}`}>
-                  <div className="flex items-start gap-3">
-                    <div className={`rounded-2xl p-3 ${activeHeaderTone.iconClass}`}>
-                      <ActiveTabHeaderIcon className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-gray-900">{activeTabItem.label}</p>
-                        <Badge className={activeTabItem.badgeClass}>{activeTabItem.count} cadastro(s)</Badge>
-                      </div>
-                      <p className="mt-2 text-xs font-medium text-gray-500">
-                        {activeTab === "caes"
-                          ? activeDogRecord
-                            ? `Editando agora: ${activeDogRecord.nome}.`
-                            : "Use esta área para criar novas fichas de cães."
-                          : activeTab === "responsaveis"
-                            ? "Cadastre contatos, documentos e vínculos dos responsáveis."
-                            : "Mantenha os responsáveis financeiros vinculados aos cães corretos."}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <PageHeader
+          eyebrow="Cadastros / Cadastro"
+          title="Cadastro"
+          description="Organize cães, responsáveis e responsáveis financeiros em um único fluxo."
+          actions={(
+            <Button onClick={openClientLinkModal} className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none">
+              <LinkIcon className="mr-2 h-4 w-4" />
+              Link de cadastro
+            </Button>
+          )}
+        />
 
         <div className="mb-6 hidden grid gap-4 sm:grid-cols-3">
           {cadastroStats.map((stat) => {

@@ -59,6 +59,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
+import PageHeader from "@/components/common/PageHeader";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import { useStableCallback } from "@/hooks/use-stable-callback";
 import {
@@ -3207,24 +3208,13 @@ export default function Movimentacoes({ walletOnly = false }) {
     <div className="min-h-screen bg-gray-50 p-2.5 sm:p-6">
       <div className={`mx-auto ${walletOnly ? "max-w-[1480px]" : "max-w-6xl"}`}>
         {!(walletOnly && selectedWalletAccount) ? (
-          <div className={`mb-4 flex flex-col gap-3 sm:mb-6 sm:gap-4 lg:flex-row lg:items-start lg:justify-between ${walletOnly ? "border-b border-slate-200 pb-5 sm:pb-6" : ""}`}>
-            <div className="min-w-0">
-              {walletOnly ? (
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600 sm:text-xs">
-                  Financeiro / Carteiras
-                </p>
-              ) : null}
-              <h1 className={`${walletOnly ? "font-brand text-2xl tracking-tight sm:text-4xl" : "text-xl sm:text-3xl"} font-bold leading-tight text-gray-900`}>
-                {walletOnly ? "Carteiras dos responsáveis financeiros" : "Transações"}
-              </h1>
-              {walletOnly ? (
-                <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500 sm:text-[15px]">
-                  Consulte a carteira e o extrato de cada responsável financeiro em uma página dedicada do Financeiro, separada do extrato operacional da empresa.
-                </p>
-              ) : null}
-            </div>
-
-            {walletOnly ? (
+          <PageHeader
+            eyebrow={walletOnly ? "Financeiro / Carteiras" : "Financeiro / Transações"}
+            title={walletOnly ? "Carteiras dos responsáveis financeiros" : "Transações"}
+            description={walletOnly
+              ? "Consulte a carteira e o extrato de cada responsável financeiro em uma página dedicada do Financeiro, separada do extrato operacional da empresa."
+              : "Consulte o extrato bancário da empresa, complemente informações e vincule entradas e saídas aos seus destinos."}
+            actions={walletOnly ? (
               <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm lg:mt-1">
                 <Wallet className="h-4 w-4 text-blue-600" />
                 <span className="text-sm font-semibold text-slate-900">{walletAccounts.length}</span>
@@ -3242,7 +3232,7 @@ export default function Movimentacoes({ walletOnly = false }) {
                 </Button>
               </div>
             )}
-          </div>
+          />
         ) : null}
 
         {!walletOnly && refreshResult && (

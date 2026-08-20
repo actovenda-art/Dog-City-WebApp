@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { Appointment, AuditLog, Carteira, Checkin, ContaReceber, Dog, Notificacao, Orcamento, PerfilAcesso, Responsavel, ServiceProvided, ServiceProvider, ServiceProviderSchedule, TabelaPrecos, User } from "@/api/entities";
 import { CreateFileSignedUrl, UploadPrivateFile } from "@/api/integrations";
 import {
@@ -2142,15 +2143,12 @@ export default function Registrador() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="shrink-0 rounded-xl bg-green-100 p-2.5 sm:p-3">
-                <DogIcon className="h-5 w-5 text-green-700 sm:h-6 sm:w-6" />
-              </div>
-              <h1 className="truncate text-xl font-bold text-gray-900 sm:text-3xl">Registrador</h1>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
+        <PageHeader
+          eyebrow="Operacional / Registrador"
+          title="Registrador"
+          description="Acompanhe presenças, check-in, refeições, check-out e inclusões manuais da unidade."
+          actions={(
+            <>
               <Button
                 variant="outline"
                 onClick={() => {
@@ -2166,12 +2164,9 @@ export default function Registrador() {
               <Badge className="shrink-0 whitespace-nowrap bg-emerald-100 text-[10px] text-emerald-700 sm:text-xs">
                 {activePetCheckins.length} {activePetCheckins.length === 1 ? "presente" : "presentes"} agora
               </Badge>
-            </div>
-          </div>
-          <p className="ml-[60px] mt-1 hidden text-sm text-gray-600 sm:block">
-            Presenças do dia, check-in, refeição, check-out e inclusões manuais.
-          </p>
-        </div>
+            </>
+          )}
+        />
 
         <Tabs value={petMode} onValueChange={setPetMode}>
           <PageSubTabs

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { Empresa, PerfilAcesso, User, UserProfile, UserUnitAccess } from "@/api/entities";
 import { appClient } from "@/api/appClient";
 import { SendEmail } from "@/api/integrations";
@@ -17,7 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Eye, EyeOff, KeyRound, Mail, RotateCcw, Save, Shield, Trash2, UserPlus, UserX, Users } from "lucide-react";
+import { AlertCircle, Building2, Check, CircleCheckBig, Copy, Eye, EyeOff, KeyRound, Mail, RotateCcw, Save, Trash2, UserPlus, UserX, Users } from "lucide-react";
 
 const EMPTY_INVITE = {
   full_name: "",
@@ -680,15 +681,12 @@ export default function Dev_Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="mt-1">
-              <Shield className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestão de Usuários</h1>
-            </div>
-          </div>
+        <PageHeader
+          eyebrow="Configurações / Acessos"
+          title="Gestão de Usuários"
+          description="Convide usuários e administre perfis, unidades e permissões de acesso."
+          className="mb-0"
+          actions={(
           <Button
             type="button"
             size="icon"
@@ -699,7 +697,8 @@ export default function Dev_Dashboard() {
           >
             <UserPlus className="h-5 w-5" />
           </Button>
-        </div>
+          )}
+        />
 
         {setupError && (
           <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">

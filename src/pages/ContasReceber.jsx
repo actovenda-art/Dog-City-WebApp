@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Appointment, Checkin, Client, ContaReceber, Dog, Orcamento, ServiceProvided } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import {
   filterAppointmentsByApprovedOrcamentos,
   getAppointmentDateKey,
@@ -263,10 +264,17 @@ export default function ContasReceber() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3"><div className="mt-1 rounded-xl bg-blue-100 p-3"><DollarSign className="h-6 w-6 text-blue-600" /></div><div><h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Valores a Receber / Cobranças</h1></div></div>
-          <Button variant="outline" onClick={loadData}><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
-        </div>
+        <PageHeader
+          eyebrow="Financeiro / Contas a receber"
+          title="Valores a Receber / Cobranças"
+          description="Acompanhe valores pendentes, vencidos, recebidos e usos vinculados aos clientes."
+          className="mb-0"
+          actions={(
+            <Button variant="outline" onClick={loadData} className="h-10 flex-1 rounded-full px-4 sm:flex-none">
+              <RefreshCcw className="mr-2 h-4 w-4" />Atualizar
+            </Button>
+          )}
+        />
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Card className="border-blue-200 bg-white"><CardContent className="flex items-center justify-between p-4"><div><p className="text-sm text-gray-600">Pendente</p><p className="text-2xl font-bold text-blue-600">{fmtMoney(stats.pendente)}</p></div><Wallet className="h-10 w-10 text-blue-500" /></CardContent></Card>

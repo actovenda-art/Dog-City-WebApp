@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Dog } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { Responsavel } from "@/api/entities";
 import PageSubTabs from "@/components/common/PageSubTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,13 +15,11 @@ import { getInternalEntityReference } from "@/lib/entity-identifiers";
 import { createPageUrl } from "@/utils";
 import { format, addDays, isBefore, isAfter, subDays, differenceInDays, getMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { useBranding } from "@/hooks/use-branding";
 
 const DEFAULT_BIRTHDAY_MONTH = String(new Date().getMonth());
 
 export default function RelatoriosCaes() {
   const location = useLocation();
-  const { logoUrl } = useBranding({ variant: "base", updateDocument: false });
   const [dogs, setDogs] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -112,10 +111,11 @@ export default function RelatoriosCaes() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-6 flex items-center gap-3">
-          <img src={logoUrl} alt="Logo" className="h-10 w-10 sm:h-12 sm:w-12" />
-          <div><h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Relatórios de Cães</h1></div>
-        </div>
+        <PageHeader
+          eyebrow="Gerência / Relatórios"
+          title="Relatórios de Cães"
+          description="Acompanhe raças, responsáveis, aniversários e lembretes importantes dos cães cadastrados."
+        />
 
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

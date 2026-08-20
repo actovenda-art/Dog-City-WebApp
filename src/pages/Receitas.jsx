@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Carteira, CarteiraConta, ExtratoBancario, Receita, User } from "@/api/entities";
 import LoadingScreen from "@/components/layout/LoadingScreen";
+import PageHeader from "@/components/common/PageHeader";
 import { financeWalletAdminApplyOperation } from "@/api/functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -251,23 +252,17 @@ export default function Receitas() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="mt-1">
-              <ArrowUpCircle className="h-6 w-6 text-green-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Receitas</h1>
-              <p className="mt-1 text-sm text-gray-600">
-                Entradas registradas como recarga de carteira e vinculadas obrigatoriamente a uma transação do extrato.
-              </p>
-            </div>
-          </div>
-          <Button onClick={openCreateDialog} className="sm:w-auto">
+        <PageHeader
+          eyebrow="Financeiro / Receitas"
+          title="Receitas"
+          description="Entradas registradas como recarga de carteira e vinculadas obrigatoriamente a uma transação do extrato."
+          actions={(
+            <Button onClick={openCreateDialog} className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none">
             <Plus className="mr-2 h-4 w-4" />
             Nova recarga
-          </Button>
-        </div>
+            </Button>
+          )}
+        />
 
         <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <Card className="border-green-200">

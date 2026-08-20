@@ -191,7 +191,6 @@ export default function PedidosInternos() {
         <PageHeader
           eyebrow="Configurações / Tarefas internas"
           title="Tarefas Internas"
-          description={`${pedidos.length} tarefa${pedidos.length === 1 ? "" : "s"} no total, organizadas por etapa de execução.`}
           actions={(
             <Button
               onClick={() => { resetForm(); setShowModal(true); }} 

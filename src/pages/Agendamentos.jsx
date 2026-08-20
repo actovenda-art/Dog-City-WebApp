@@ -1165,7 +1165,6 @@ export default function Agendamentos() {
         <PageHeader
           eyebrow="Operacional / Agendamentos"
           title="Agendamentos"
-          description="Consulte os atendimentos por responsável, cão, monitor, status ou serviço."
         />
       </div>
 

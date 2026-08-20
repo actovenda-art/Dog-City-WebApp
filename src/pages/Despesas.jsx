@@ -216,7 +216,6 @@ export default function Despesas() {
         <PageHeader
           eyebrow="Financeiro / Despesas"
           title="Despesas"
-          description="Consulte despesas manuais vinculadas obrigatoriamente a uma transação do extrato bancário."
           actions={(
             <Button onClick={openCreateDialog} className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none">
             <Plus className="mr-2 h-4 w-4" />

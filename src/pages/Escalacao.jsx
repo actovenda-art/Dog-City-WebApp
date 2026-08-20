@@ -732,7 +732,6 @@ export default function Escalacao() {
         <PageHeader
           eyebrow="Gerência / Escalação"
           title="Escalação"
-          description="Cadastre funcionários e organize os horários da unidade ativa."
           className="mb-0"
         />
 

@@ -479,7 +479,6 @@ export default function ConfiguracoesPrecos() {
         <PageHeader
           eyebrow="Configurações / Preços"
           title="Preços e descontos"
-          description="Gerencie Day Care, hospedagem, banho, tosa, transporte, raças e descontos."
           actions={(
             <Button
             onClick={() => {

@@ -37,7 +37,6 @@ export default function Backup() {
         <PageHeader
           eyebrow="Configurações / Backup"
           title="Backup"
-          description="Exporte os dados operacionais do sistema de forma controlada."
         />
 
         {/* Export Options */}

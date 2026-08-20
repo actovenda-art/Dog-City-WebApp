@@ -114,7 +114,6 @@ export default function RelatoriosCaes() {
         <PageHeader
           eyebrow="Gerência / Relatórios"
           title="Relatórios de Cães"
-          description="Acompanhe raças, responsáveis, aniversários e lembretes importantes dos cães cadastrados."
         />
 
         {/* KPI Cards */}

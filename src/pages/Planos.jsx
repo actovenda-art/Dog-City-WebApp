@@ -227,7 +227,6 @@ export default function Planos() {
         <PageHeader
           eyebrow="Comercial / Planos"
           title="Gestão de Planos"
-          description="Consulte planos ativos, vencimentos e situações de inadimplência."
           actions={(
             <Button onClick={() => { resetForm(); setShowModal(true); }} className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none">
               <Plus className="mr-2 h-4 w-4" />Novo plano

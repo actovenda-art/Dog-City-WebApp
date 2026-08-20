@@ -267,7 +267,6 @@ export default function ContasReceber() {
         <PageHeader
           eyebrow="Financeiro / Contas a receber"
           title="Valores a Receber / Cobranças"
-          description="Acompanhe valores pendentes, vencidos, recebidos e usos vinculados aos clientes."
           className="mb-0"
           actions={(
             <Button variant="outline" onClick={loadData} className="h-10 flex-1 rounded-full px-4 sm:flex-none">

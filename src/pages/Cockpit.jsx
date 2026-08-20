@@ -681,7 +681,6 @@ export default function Cockpit() {
         <PageHeader
           eyebrow="Gerência / Cockpit"
           title="Cockpit"
-          description="Acompanhe os principais indicadores operacionais e financeiros da unidade."
           actions={(cockpitV2Flags.cockpitV2Enabled || cockpitV2Flags.financialAlertsV2Enabled) ? (
             <Button variant="outline" onClick={loadCockpitV2Data} disabled={cockpitV2Loading} className="h-10 flex-1 rounded-full px-4 sm:flex-none">
               <RefreshCw className={`w-4 h-4 mr-2 ${cockpitV2Loading ? "animate-spin" : ""}`} />

@@ -1710,7 +1710,6 @@ export default function Orcamentos() {
         <PageHeader
           eyebrow="Comercial / Orçamentos"
           title="Orçamentos"
-          description="Crie propostas, acompanhe aprovações e consulte o histórico comercial da unidade em uma única visão."
           actions={(
             <>
             <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex">

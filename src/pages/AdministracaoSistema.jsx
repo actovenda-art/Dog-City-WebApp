@@ -1273,7 +1273,6 @@ export default function AdministracaoSistema() {
         <PageHeader
           eyebrow="Configurações / Administração"
           title="Administração Central"
-          description="Gerencie unidades, perfis de acesso, identidade visual e configurações compartilhadas do sistema."
           className="mb-0"
           actionsClassName="flex-col sm:flex-row"
           actions={(

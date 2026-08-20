@@ -453,7 +453,6 @@ export default function ContasPagar() {
         <PageHeader
           eyebrow="Financeiro / Contas a pagar"
           title="Contas a Pagar"
-          description="Organize vencimentos, pagamentos e compromissos financeiros da operação."
           actions={(
             <Button onClick={() => { resetForm(); setShowModal(true); }} className="h-10 flex-1 rounded-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none">
               <Plus className="mr-2 h-4 w-4" />Nova conta

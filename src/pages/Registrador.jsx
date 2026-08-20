@@ -2146,7 +2146,6 @@ export default function Registrador() {
         <PageHeader
           eyebrow="Operacional / Registrador"
           title="Registrador"
-          description="Acompanhe presenças, check-in, refeições, check-out e inclusões manuais da unidade."
           actions={(
             <>
               <Button

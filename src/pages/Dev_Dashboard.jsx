@@ -684,7 +684,6 @@ export default function Dev_Dashboard() {
         <PageHeader
           eyebrow="Configurações / Acessos"
           title="Gestão de Usuários"
-          description="Convide usuários e administre perfis, unidades e permissões de acesso."
           className="mb-0"
           actions={(
           <Button

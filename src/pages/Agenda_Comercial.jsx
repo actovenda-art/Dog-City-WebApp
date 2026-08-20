@@ -267,7 +267,6 @@ export default function Agenda_Comercial() {
         <PageHeader
           eyebrow="Comercial / Agenda"
           title="Agenda Comercial"
-          description="Gerencie solicitações comerciais e novos agendamentos da unidade."
           actions={(
             <>
             <Button

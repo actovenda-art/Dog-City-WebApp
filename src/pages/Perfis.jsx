@@ -1515,7 +1515,6 @@ export default function Perfis() {
         <PageHeader
           eyebrow="Cadastros / Perfis"
           title="Perfis"
-          description="Consulte cães, responsáveis e responsáveis financeiros com seus vínculos em uma visão única da unidade."
           className="mb-0"
           actionsClassName="grid grid-cols-2 gap-2 sm:grid-cols-3"
           actions={(

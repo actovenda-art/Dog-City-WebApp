@@ -719,7 +719,6 @@ export default function ConfigurarIntegracoes() {
         <PageHeader
           eyebrow="Configurações / Integrações"
           title="Configurar Integrações"
-          description="Acompanhe e configure as integrações externas utilizadas pela unidade."
         />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

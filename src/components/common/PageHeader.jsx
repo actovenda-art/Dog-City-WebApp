@@ -3,7 +3,6 @@ import { cn } from "@/lib/utils";
 export default function PageHeader({
   eyebrow,
   title,
-  description,
   actions = null,
   className,
   actionsClassName,
@@ -24,11 +23,6 @@ export default function PageHeader({
         <h1 className="font-brand text-2xl leading-tight tracking-tight text-slate-950 sm:text-4xl">
           {title}
         </h1>
-        {description ? (
-          <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500 sm:text-[15px]">
-            {description}
-          </p>
-        ) : null}
       </div>
 
       {actions ? (

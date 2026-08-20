@@ -3187,7 +3187,6 @@ export default function PlanosConfig() {
         <PageHeader
           eyebrow="Comercial / Planos recorrentes"
           title="Planos Recorrentes"
-          description="Acompanhe contratações recorrentes, cães vinculados, serviços e resumos mensais de cada plano."
           actions={(
             <>
             <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex">

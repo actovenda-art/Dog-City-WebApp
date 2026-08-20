@@ -3211,9 +3211,6 @@ export default function Movimentacoes({ walletOnly = false }) {
           <PageHeader
             eyebrow={walletOnly ? "Financeiro / Carteiras" : "Financeiro / Transações"}
             title={walletOnly ? "Carteiras dos responsáveis financeiros" : "Transações"}
-            description={walletOnly
-              ? "Consulte a carteira e o extrato de cada responsável financeiro em uma página dedicada do Financeiro, separada do extrato operacional da empresa."
-              : "Consulte o extrato bancário da empresa, complemente informações e vincule entradas e saídas aos seus destinos."}
             actions={walletOnly ? (
               <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm lg:mt-1">
                 <Wallet className="h-4 w-4 text-blue-600" />

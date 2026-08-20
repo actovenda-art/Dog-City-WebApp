@@ -6,10 +6,10 @@ import { Dog } from "@/api/entities";
 import { Client } from "@/api/entities";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import PageSubTabs from "@/components/common/PageSubTabs";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import {
   Calendar as CalendarIcon,
   Home,
@@ -22,8 +22,7 @@ import {
   Plus,
   DollarSign,
   MessageSquare,
-  Clock,
-  Filter
+  Clock
 } from "lucide-react";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -302,47 +301,54 @@ export default function Agenda_Comercial() {
         {/* Filters */}
         <Card className="mb-6 border-gray-200 bg-white">
           <CardContent className="p-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <Label className="text-xs text-gray-600 mb-1">Data Início</Label>
-                <DateRangePickerInput
-                  startValue={dateFilter}
-                  endValue={dateFilterEnd}
-                  onStartChange={setDateFilter}
-                  onEndChange={setDateFilterEnd}
-                  className="h-10"
-                />
-              </div>
-              
-
-              <div>
-                <Label className="text-xs text-gray-600 mb-1">Ordenação</Label>
-                <Select value={sortOrder} onValueChange={setSortOrder}>
-                  <SelectTrigger className="h-10">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="asc">Mais próximos primeiro</SelectItem>
-                    <SelectItem value="desc">Mais distantes primeiro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-end">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setDateFilter("");
-                    setDateFilterEnd("");
-                    setSortOrder("asc");
-                  }}
-                  className="w-full h-10"
-                >
-                  <Filter className="w-4 h-4 mr-2" />
-                  Limpar Filtros
-                </Button>
-              </div>
-            </div>
+            <SearchFiltersToolbar
+              showSearch={false}
+              className="justify-end"
+              hasActiveFilters={Boolean(dateFilter || dateFilterEnd || sortOrder !== "asc")}
+              onClear={() => {
+                setDateFilter("");
+                setDateFilterEnd("");
+                setSortOrder("asc");
+              }}
+              filters={[
+                {
+                  id: "period",
+                  label: "Período",
+                  active: Boolean(dateFilter || dateFilterEnd),
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Período</p>
+                      <DateRangePickerInput
+                        startValue={dateFilter}
+                        endValue={dateFilterEnd}
+                        onStartChange={setDateFilter}
+                        onEndChange={setDateFilterEnd}
+                        className="h-10"
+                      />
+                    </div>
+                  ),
+                },
+                {
+                  id: "sort",
+                  label: "Ordenação",
+                  active: sortOrder !== "asc",
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Ordenação</p>
+                      <Select value={sortOrder} onValueChange={setSortOrder}>
+                        <SelectTrigger className="h-10">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="asc">Mais próximos primeiro</SelectItem>
+                          <SelectItem value="desc">Mais distantes primeiro</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
 

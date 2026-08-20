@@ -19,18 +19,18 @@ const pickerTriggerClassName = cn(
 );
 
 const calendarPopoverClassName =
-  "w-[calc(100vw-1rem)] max-w-[304px] rounded-[18px] border border-slate-200/90 bg-white p-2.5 shadow-[0_8px_24px_rgba(15,23,42,0.08)] sm:p-3";
+  "w-[272px] max-w-[calc(100vw-1rem)] rounded-2xl border border-slate-200/90 bg-white p-2 shadow-[0_8px_24px_rgba(15,23,42,0.08)]";
 
 const calendarClassNames = {
   months: "flex flex-col",
-  month: "w-full min-w-0 space-y-1",
-  caption: "relative flex h-8 items-center justify-center px-8 pb-0.5 pt-0",
+  month: "w-full min-w-0 space-y-0.5",
+  caption: "relative flex h-7 items-center justify-center px-7",
   caption_dropdowns: "flex min-w-0 items-center justify-center gap-1",
   caption_label:
-    "flex h-8 items-center justify-center text-center text-[13px] font-semibold leading-none text-slate-900 capitalize",
+    "flex h-7 items-center justify-center text-center text-xs font-semibold leading-none text-slate-900 capitalize",
   nav: "absolute inset-0 flex items-center justify-between",
   nav_button:
-    "h-8 w-8 rounded-full border border-slate-200 bg-white p-0 text-slate-500 opacity-100 shadow-none hover:bg-slate-50",
+    "h-7 w-7 rounded-full border border-slate-200 bg-white p-0 text-slate-500 opacity-100 shadow-none hover:bg-slate-50 [&_svg]:h-3 [&_svg]:w-3",
   nav_button_previous: "absolute left-0 top-0",
   nav_button_next: "absolute right-0 top-0",
   dropdown: "absolute inset-0 cursor-pointer opacity-0",
@@ -40,10 +40,10 @@ const calendarClassNames = {
   table: "w-full min-w-0 table-fixed border-collapse",
   head_row: "grid w-full grid-cols-7",
   head_cell:
-    "flex h-5 w-full items-center justify-center text-center text-[9px] font-medium uppercase tracking-[0.01em] text-slate-500/60",
-  row: "mt-0.5 grid w-full grid-cols-7",
-  cell: "h-8 w-full p-0 text-center align-middle text-[12px]",
-  day: "mx-auto inline-flex h-8 w-8 items-center justify-center rounded-full p-0 text-[13px] font-medium leading-none text-slate-700 hover:bg-slate-100 hover:text-slate-900",
+    "flex h-4 w-full items-center justify-center text-center text-[8px] font-medium uppercase tracking-normal text-slate-500/60",
+  row: "grid w-full grid-cols-7",
+  cell: "h-7 w-full p-0 text-center align-middle text-[11px]",
+  day: "mx-auto inline-flex h-7 w-7 items-center justify-center rounded-full p-0 text-xs font-medium leading-none text-slate-700 hover:bg-slate-100 hover:text-slate-900",
   day_selected: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white focus:bg-blue-500 focus:text-white",
   day_range_start: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
   day_range_end: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
@@ -55,14 +55,46 @@ const calendarClassNames = {
   vhidden: "sr-only",
 };
 
+function createValidDate(year, month, day) {
+  const numericYear = Number(year);
+  const numericMonth = Number(month);
+  const numericDay = Number(day);
+
+  if (
+    !Number.isInteger(numericYear)
+    || !Number.isInteger(numericMonth)
+    || !Number.isInteger(numericDay)
+    || numericYear < 1000
+    || numericYear > 9999
+    || numericMonth < 1
+    || numericMonth > 12
+    || numericDay < 1
+    || numericDay > 31
+  ) {
+    return null;
+  }
+
+  const parsed = new Date(2000, numericMonth - 1, numericDay, 12, 0, 0, 0);
+  parsed.setFullYear(numericYear);
+
+  if (
+    parsed.getFullYear() !== numericYear
+    || parsed.getMonth() !== numericMonth - 1
+    || parsed.getDate() !== numericDay
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
 function parseDateOnly(value) {
   if (!value) return null;
   const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
 
   const [, year, month, day] = match;
-  const parsed = new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0, 0);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  return createValidDate(year, month, day);
 }
 
 function formatDateOnly(date) {
@@ -79,10 +111,16 @@ function parseDateInputString(value) {
   const brMatch = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (brMatch) {
     const [, day, month, year] = brMatch;
-    const parsed = new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0, 0);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+    return createValidDate(year, month, day);
   }
   return parseDateOnly(normalized);
+}
+
+function maskDateInput(value) {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
 function extractDateTokens(value) {
@@ -222,6 +260,11 @@ function PickerTextTrigger({
   className,
   open = false,
   onToggle,
+  inputMode,
+  maxLength,
+  onInputKeyDown,
+  onBeforeInput,
+  ariaLabel,
 }) {
   return (
     <div
@@ -242,10 +285,17 @@ function PickerTextTrigger({
           value={textValue}
           disabled={disabled}
           placeholder={placeholder}
+          inputMode={inputMode}
+          maxLength={maxLength}
+          aria-label={ariaLabel}
+          autoComplete="off"
+          spellCheck={false}
           onClick={(event) => {
             event.stopPropagation();
             if (!disabled) onToggle?.();
           }}
+          onKeyDown={onInputKeyDown}
+          onBeforeInput={onBeforeInput}
           onChange={(event) => onTextChange?.(event.target.value)}
           className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-slate-900 outline-none placeholder:text-slate-400 sm:text-sm"
         />
@@ -271,20 +321,37 @@ export function DatePickerInput({
   const [inputValue, setInputValue] = React.useState(formatDisplayDate(value) || "");
   const selectedDate = parseDateOnly(value);
   const displayValue = formatDisplayDate(value) || "";
+  const [calendarMonth, setCalendarMonth] = React.useState(() => selectedDate || new Date());
 
   React.useEffect(() => {
     setInputValue(displayValue);
-  }, [displayValue]);
+    const nextSelectedDate = parseDateOnly(value);
+    if (nextSelectedDate) setCalendarMonth(nextSelectedDate);
+  }, [displayValue, value]);
 
   const handleInputChange = (nextValue) => {
-    setInputValue(nextValue);
-    if (!nextValue.trim()) {
+    const maskedValue = maskDateInput(nextValue);
+    setInputValue(maskedValue);
+    if (!maskedValue) {
       onChange?.("");
       return;
     }
-    const parsed = parseDateInputString(nextValue);
+    const parsed = parseDateInputString(maskedValue);
     if (parsed) {
+      setCalendarMonth(parsed);
       onChange?.(formatDateOnly(parsed));
+    }
+  };
+
+  const preventNonNumericInput = (event) => {
+    if (
+      event.key.length === 1
+      && !/\d/.test(event.key)
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+    ) {
+      event.preventDefault();
     }
   };
 
@@ -298,9 +365,12 @@ export function DatePickerInput({
           locale={ptBR}
           captionLayout="buttons"
           selected={selectedDate || undefined}
+          month={calendarMonth}
+          onMonthChange={setCalendarMonth}
           onSelect={(date) => {
             onChange?.(date ? formatDateOnly(date) : "");
             setInputValue(date ? formatInputDate(date) : "");
+            if (date) setCalendarMonth(date);
             setOpen(false);
           }}
           className="mx-auto w-full p-0"
@@ -317,6 +387,13 @@ export function DatePickerInput({
         className={className}
         open={open}
         onToggle={() => setOpen((current) => !current)}
+        inputMode="numeric"
+        maxLength={10}
+        ariaLabel="Data no formato dia, mês e ano"
+        onInputKeyDown={preventNonNumericInput}
+        onBeforeInput={(event) => {
+          if (event.data && /\D/.test(event.data)) event.preventDefault();
+        }}
       />
     </PickerPopover>
   );

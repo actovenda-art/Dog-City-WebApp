@@ -3879,8 +3879,6 @@ export default function Movimentacoes({ walletOnly = false }) {
                   searchInputClassName="h-8 pl-8 pr-2 text-[11px] sm:h-11 sm:pl-11 sm:pr-4 sm:text-sm"
                   searchIconClassName="left-2.5 h-3 w-3 sm:left-4 sm:h-4 sm:w-4"
                   filtersClassName="shrink-0 flex-nowrap gap-1 sm:gap-2"
-                  filterButtonClassName="h-8 sm:h-11"
-                  filterIconClassName="h-3 w-3 sm:h-4 sm:w-4"
                 />
               </CardContent>
             </Card>

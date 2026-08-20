@@ -31,6 +31,7 @@ export default function TableFilters({
           active: Boolean(dateStart || dateEnd),
           content: (
             <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Período</p>
               <label className="text-xs font-medium text-gray-700">Selecionar período</label>
               <DateRangePickerInput
                 startValue={dateStart}
@@ -47,18 +48,21 @@ export default function TableFilters({
           icon: filter.icon || Filter,
           active: Boolean(filter.value && filter.value !== "all"),
           content: (
-            <Select value={filter.value} onValueChange={filter.onChange}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {filter.options.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{filter.label}</p>
+              <Select value={filter.value} onValueChange={filter.onChange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {filter.options.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           ),
         })),
       ]}

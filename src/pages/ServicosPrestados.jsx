@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { DatePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
+import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
@@ -19,9 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
-import {
-  Plus, Clipboard, Search, Pencil, Trash2
-} from "lucide-react";
+import { Plus, Clipboard, Pencil, Trash2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { filterAppointmentsByApprovedOrcamentos, isApprovedOrcamento } from "@/lib/attendance";
@@ -243,24 +242,50 @@ export default function ServicosPrestados() {
 
         {/* Filters */}
         <Card className="mb-6 border-gray-200 bg-white">
-          <CardContent className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input placeholder="Buscar cão..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
-            </div>
-            <DatePickerInput value={filterDate} onChange={setFilterDate} />
-            <Select value={filterService} onValueChange={setFilterService}>
-              <SelectTrigger><SelectValue placeholder="Serviço" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos Serviços</SelectItem>
-                {SERVICES.map(s => (
-                  <SelectItem key={s.id} value={s.id}>{s.icon} {s.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" onClick={() => { setSearchTerm(""); setFilterService("all"); setFilterDate(""); }}>
-              Limpar
-            </Button>
+          <CardContent className="p-4">
+            <SearchFiltersToolbar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Buscar cão..."
+              hasActiveFilters={Boolean(searchTerm || filterDate || filterService !== "all")}
+              onClear={() => {
+                setSearchTerm("");
+                setFilterService("all");
+                setFilterDate("");
+              }}
+              filters={[
+                {
+                  id: "date",
+                  label: "Data",
+                  active: Boolean(filterDate),
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Data do serviço</p>
+                      <DatePickerInput value={filterDate} onChange={setFilterDate} />
+                    </div>
+                  ),
+                },
+                {
+                  id: "service",
+                  label: "Serviço",
+                  active: filterService !== "all",
+                  content: (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Serviço</p>
+                      <Select value={filterService} onValueChange={setFilterService}>
+                        <SelectTrigger><SelectValue placeholder="Serviço" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos os serviços</SelectItem>
+                          {SERVICES.map((service) => (
+                            <SelectItem key={service.id} value={service.id}>{service.icon} {service.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
 

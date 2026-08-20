@@ -2142,21 +2142,35 @@ export default function Registrador() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="mt-1 rounded-xl bg-green-100 p-2.5 sm:p-3">
-              <DogIcon className="h-5 w-5 text-green-700 sm:h-6 sm:w-6" />
+        <div className="mb-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="shrink-0 rounded-xl bg-green-100 p-2.5 sm:p-3">
+                <DogIcon className="h-5 w-5 text-green-700 sm:h-6 sm:w-6" />
+              </div>
+              <h1 className="truncate text-xl font-bold text-gray-900 sm:text-3xl">Registrador</h1>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 sm:text-3xl">Registrador</h1>
-              <p className="mt-1 hidden text-sm text-gray-600 sm:block">
-                Presenças do dia, check-in, refeição, check-out e inclusões manuais.
-              </p>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSearchTerm("");
+                  loadData();
+                }}
+                className="h-8 w-8 rounded-full p-0 sm:h-9 sm:w-9"
+                aria-label="Atualizar registrador"
+                title="Atualizar"
+              >
+                <RefreshCcw className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${isLoading ? "animate-spin" : ""}`} aria-hidden="true" />
+              </Button>
+              <Badge className="shrink-0 whitespace-nowrap bg-emerald-100 text-[10px] text-emerald-700 sm:text-xs">
+                {activePetCheckins.length} {activePetCheckins.length === 1 ? "presente" : "presentes"} agora
+              </Badge>
             </div>
           </div>
-          <Badge className="w-fit bg-emerald-100 text-emerald-700">
-            {activePetCheckins.length} presente(s) agora
-          </Badge>
+          <p className="ml-[60px] mt-1 hidden text-sm text-gray-600 sm:block">
+            Presenças do dia, check-in, refeição, check-out e inclusões manuais.
+          </p>
         </div>
 
         <Tabs value={petMode} onValueChange={setPetMode}>
@@ -2181,8 +2195,6 @@ export default function Registrador() {
                   searchInputClassName="h-9 pl-9 pr-3 text-xs sm:h-11 sm:pl-11 sm:pr-4 sm:text-base"
                   searchIconClassName="left-3 h-3.5 w-3.5 sm:left-4 sm:h-4 sm:w-4"
                   filtersClassName="shrink-0 flex-nowrap gap-1.5 sm:gap-2"
-                  filterButtonClassName="h-9 w-9 sm:h-11 sm:w-11"
-                  filterIconClassName="h-3.5 w-3.5 sm:h-4 sm:w-4"
                   onClear={() => {
                     setSearchTerm("");
                     setSelectedDate(TODAY_KEY);
@@ -2205,31 +2217,6 @@ export default function Registrador() {
                       ),
                     },
                   ]}
-                  rightContent={(
-                    <>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setSearchTerm("");
-                          loadData();
-                        }}
-                        className="h-9 w-9 rounded-full p-0 sm:hidden"
-                        aria-label="Atualizar agendamentos"
-                      >
-                        <RefreshCcw className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setSearchTerm("");
-                          loadData();
-                        }}
-                        className="hidden h-9 rounded-full px-3 text-xs sm:inline-flex sm:h-11 sm:px-5 sm:text-sm"
-                      >
-                        Atualizar
-                      </Button>
-                    </>
-                  )}
                 />
                 <p className="mt-2 px-1 text-[10px] font-medium text-gray-500 sm:mt-3 sm:px-0 sm:text-xs">
                   <span className="sm:hidden">{selectedDateTitle} • {filteredAppointments.length} encontrado(s)</span>
@@ -2486,7 +2473,7 @@ export default function Registrador() {
                   Registro de funcionários
                 </CardTitle>
                 <p className="text-xs leading-5 text-slate-500 sm:text-sm">
-                  Informe o CPF. Se o funcionário ainda não entrou, será iniciado o check-in; se já estiver presente, será iniciado o check-out.
+                  Registre seu ponto aqui.
                 </p>
               </CardHeader>
               <CardContent className="space-y-3 p-3 pt-0 sm:space-y-4 sm:p-6 sm:pt-0">
@@ -2497,7 +2484,11 @@ export default function Registrador() {
                     placeholder="CPF do funcionário"
                     className="h-10 text-[13px] sm:h-12 sm:text-sm"
                   />
-                  <Button onClick={handleProviderCheckin} disabled={isSaving} className="h-10 w-full rounded-full bg-orange-600 text-xs text-white hover:bg-orange-700 sm:h-12 sm:w-auto sm:rounded-md sm:text-sm">
+                  <Button
+                    onClick={handleProviderCheckin}
+                    disabled={isSaving}
+                    className="h-8 min-w-28 self-center rounded-full bg-orange-600 px-5 text-[11px] text-white hover:bg-orange-700 sm:h-10 sm:min-w-32 sm:rounded-md sm:text-xs"
+                  >
                     Continuar
                   </Button>
                 </div>
@@ -2507,14 +2498,20 @@ export default function Registrador() {
                     <p className="text-sm text-gray-500">Nenhum funcionário presente agora.</p>
                   ) : (
                     presentProviders.map(({ checkin, provider }) => (
-                      <div key={checkin.id} className="flex flex-col gap-3 rounded-xl border border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
+                      <div key={checkin.id} className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 p-4">
+                        <div className="min-w-0">
                           <p className="font-medium text-gray-900">{getProviderDisplayName(provider)}</p>
                           <p className="text-sm text-gray-500">CPF: {formatCpf(provider?.cpf || "")}</p>
                           <p className="text-sm text-gray-500">Entrada: {formatDateTime(getProviderCheckinStartValue(checkin))}</p>
                         </div>
-                        <Button variant="outline" onClick={() => openProviderCheckoutDialog(checkin, provider)} className="w-full sm:w-auto">
-                          Registrar saída
+                        <Button
+                          variant="outline"
+                          onClick={() => openProviderCheckoutDialog(checkin, provider)}
+                          className="h-9 w-9 shrink-0 rounded-full p-0 sm:h-10 sm:w-10"
+                          aria-label={`Registrar saída de ${getProviderDisplayName(provider)}`}
+                          title="Registrar saída"
+                        >
+                          <Clock3 className="h-4 w-4" aria-hidden="true" />
                         </Button>
                       </div>
                     ))

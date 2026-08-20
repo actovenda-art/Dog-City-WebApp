@@ -483,13 +483,13 @@ function AppointmentSearchFilters({
 function SummaryCard({ icon: Icon, label, value, iconClassName, valueClassName }) {
   return (
     <Card className="min-w-0 rounded-[16px] border border-slate-200 shadow-sm">
-      <CardContent className="flex items-center gap-3 p-3">
-        <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]", iconClassName)}>
-          <Icon className="h-3.5 w-3.5" />
+      <CardContent className="flex items-center gap-3.5 p-3.5">
+        <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px]", iconClassName)}>
+          <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-[11px] font-semibold text-slate-700">{label}</p>
-          <p className={cn("text-[24px] font-bold leading-none tracking-tight", valueClassName)}>{value}</p>
+          <p className="truncate text-[13px] font-semibold leading-4 text-slate-700">{label}</p>
+          <p className={cn("mt-0.5 text-[28px] font-bold leading-none tracking-tight", valueClassName)}>{value}</p>
         </div>
       </CardContent>
     </Card>
@@ -508,13 +508,13 @@ function AppointmentStatusBadge({ stateKey, label }) {
 function MobileSummaryCard({ icon: Icon, label, value, iconClassName, valueClassName }) {
   return (
     <Card className="min-w-0 rounded-[12px] border border-slate-200 shadow-sm">
-      <CardContent className="min-h-[72px] p-1.5">
-        <div className={cn("flex h-[18px] w-[18px] items-center justify-center rounded-md", iconClassName)}>
-          <Icon className="h-2 w-2" />
+      <CardContent className="flex min-h-[78px] flex-col justify-between p-2">
+        <div className={cn("flex h-6 w-6 items-center justify-center rounded-lg", iconClassName)}>
+          <Icon className="h-3 w-3" />
         </div>
-        <div className="mt-1.5 min-w-0 space-y-0.5">
-          <p className="break-words text-[7px] font-semibold leading-[9px] text-slate-800">{label}</p>
-          <p className={cn("text-[13px] font-bold leading-none tracking-tight", valueClassName)}>{value}</p>
+        <div className="mt-1.5 min-w-0">
+          <p className="break-words text-[9px] font-semibold leading-[11px] text-slate-800">{label}</p>
+          <p className={cn("mt-1 text-[17px] font-bold leading-none tracking-tight", valueClassName)}>{value}</p>
         </div>
       </CardContent>
     </Card>
@@ -1210,8 +1210,7 @@ export default function Agendamentos() {
           </CardContent>
         </Card>
 
-        <section className="min-w-0 space-y-2">
-          <h2 className="text-[16px] font-semibold tracking-tight text-slate-950 sm:text-[18px]">Resumo geral do dia</h2>
+        <section className="min-w-0">
           <div className="grid min-w-0 grid-cols-4 gap-1.5">
               {mobileSummaryCards.map((card) => (
                 <MobileSummaryCard
@@ -1258,11 +1257,7 @@ export default function Agendamentos() {
           />
         </div>
 
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-slate-950">Resumo geral do dia</h2>
-          </div>
-
+        <section>
           <div className="grid grid-cols-4 gap-2.5">
             <SummaryCard
               icon={Users}

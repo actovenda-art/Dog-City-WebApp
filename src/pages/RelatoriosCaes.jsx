@@ -16,6 +16,8 @@ import { format, addDays, isBefore, isAfter, subDays, differenceInDays, getMonth
 import { ptBR } from "date-fns/locale";
 import { useBranding } from "@/hooks/use-branding";
 
+const DEFAULT_BIRTHDAY_MONTH = String(new Date().getMonth());
+
 export default function RelatoriosCaes() {
   const location = useLocation();
   const { logoUrl } = useBranding({ variant: "base", updateDocument: false });
@@ -25,7 +27,7 @@ export default function RelatoriosCaes() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRaca, setFilterRaca] = useState("all");
   const [filterPeriodoVacina, setFilterPeriodoVacina] = useState("30");
-  const [filterMesAniversario, setFilterMesAniversario] = useState(String(new Date().getMonth()));
+  const [filterMesAniversario, setFilterMesAniversario] = useState(DEFAULT_BIRTHDAY_MONTH);
 
   useEffect(() => { loadData(); }, []);
 
@@ -137,7 +139,31 @@ export default function RelatoriosCaes() {
           {/* Por Raça */}
           <TabsContent value="raca">
             <Card className="mb-4 border-gray-200 bg-white"><CardContent className="p-4">
-              <Select value={filterRaca} onValueChange={setFilterRaca}><SelectTrigger className="w-full sm:w-64"><SelectValue placeholder="Filtrar por raça" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as raças</SelectItem>{racas.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent></Select>
+              <SearchFiltersToolbar
+                showSearch={false}
+                className="justify-end"
+                hasActiveFilters={filterRaca !== "all"}
+                onClear={() => setFilterRaca("all")}
+                filters={[
+                  {
+                    id: "breed",
+                    label: "Raça",
+                    active: filterRaca !== "all",
+                    content: (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Raça</p>
+                        <Select value={filterRaca} onValueChange={setFilterRaca}>
+                          <SelectTrigger><SelectValue placeholder="Filtrar por raça" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas as raças</SelectItem>
+                            {racas.map((raca) => <SelectItem key={raca} value={raca}>{raca}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ),
+                  },
+                ]}
+              />
             </CardContent></Card>
             <div className="space-y-4">
               {caesPorRaca().map(([raca, caes]) => (
@@ -205,7 +231,30 @@ export default function RelatoriosCaes() {
           {/* Aniversariantes */}
           <TabsContent value="aniversario">
             <Card className="mb-4 border-gray-200 bg-white"><CardContent className="p-4">
-              <Select value={filterMesAniversario} onValueChange={setFilterMesAniversario}><SelectTrigger className="w-full sm:w-64"><SelectValue /></SelectTrigger><SelectContent>{meses.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}</SelectContent></Select>
+              <SearchFiltersToolbar
+                showSearch={false}
+                className="justify-end"
+                hasActiveFilters={filterMesAniversario !== DEFAULT_BIRTHDAY_MONTH}
+                onClear={() => setFilterMesAniversario(DEFAULT_BIRTHDAY_MONTH)}
+                filters={[
+                  {
+                    id: "month",
+                    label: "Mês",
+                    active: filterMesAniversario !== DEFAULT_BIRTHDAY_MONTH,
+                    content: (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Mês do aniversário</p>
+                        <Select value={filterMesAniversario} onValueChange={setFilterMesAniversario}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {meses.map((mes, index) => <SelectItem key={mes} value={String(index)}>{mes}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ),
+                  },
+                ]}
+              />
             </CardContent></Card>
             <Card className="border-gray-200 bg-white">
               <CardHeader><CardTitle className="flex items-center gap-2"><Cake className="w-5 h-5 text-orange-600" />Aniversariantes de {meses[parseInt(filterMesAniversario)]}</CardTitle></CardHeader>
@@ -232,7 +281,32 @@ export default function RelatoriosCaes() {
           {/* Datas importantes */}
           <TabsContent value="vacinas">
             <Card className="mb-4 border-gray-200 bg-white"><CardContent className="p-4">
-              <Select value={filterPeriodoVacina} onValueChange={setFilterPeriodoVacina}><SelectTrigger className="w-full sm:w-64"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="30">Próximos 30 dias</SelectItem><SelectItem value="60">Próximos 60 dias</SelectItem><SelectItem value="90">Próximos 90 dias</SelectItem></SelectContent></Select>
+              <SearchFiltersToolbar
+                showSearch={false}
+                className="justify-end"
+                hasActiveFilters={filterPeriodoVacina !== "30"}
+                onClear={() => setFilterPeriodoVacina("30")}
+                filters={[
+                  {
+                    id: "period",
+                    label: "Período",
+                    active: filterPeriodoVacina !== "30",
+                    content: (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Período dos lembretes</p>
+                        <Select value={filterPeriodoVacina} onValueChange={setFilterPeriodoVacina}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="30">Próximos 30 dias</SelectItem>
+                            <SelectItem value="60">Próximos 60 dias</SelectItem>
+                            <SelectItem value="90">Próximos 90 dias</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ),
+                  },
+                ]}
+              />
             </CardContent></Card>
             <Card className="border-gray-200 bg-white">
               <CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="w-5 h-5 text-purple-600" />Datas importantes nos próximos {filterPeriodoVacina} dias</CardTitle></CardHeader>

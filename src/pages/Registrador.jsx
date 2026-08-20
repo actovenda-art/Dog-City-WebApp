@@ -38,7 +38,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerInput, DateTimePickerInput, TimePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
-import { BellRing, Building2, CalendarClock, Camera, CheckCircle2, Clock3, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, RefreshCcw, ShieldCheck, UserRound, UtensilsCrossed, X } from "lucide-react";
+import { ArrowRight, BellRing, Building2, CalendarClock, Camera, CheckCircle2, Clock3, Dog as DogIcon, LogIn, LogOut, MessageSquareText, Plus, RefreshCcw, ShieldCheck, UserRound, UtensilsCrossed, X } from "lucide-react";
 import { isCommercialProfile, isManagerialProfile, isOperationalProfile } from "@/lib/access-control";
 import { useStableCallback } from "@/hooks/use-stable-callback";
 
@@ -2477,19 +2477,26 @@ export default function Registrador() {
                 </p>
               </CardHeader>
               <CardContent className="space-y-3 p-3 pt-0 sm:space-y-4 sm:p-6 sm:pt-0">
-                <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="relative">
                   <Input
                     value={providerCpf}
                     onChange={(event) => setProviderCpf(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !isSaving) handleProviderCheckin();
+                    }}
                     placeholder="CPF do funcionário"
-                    className="h-10 text-[13px] sm:h-12 sm:text-sm"
+                    className="h-10 pr-12 text-[13px] sm:h-12 sm:pr-14 sm:text-sm"
                   />
                   <Button
+                    type="button"
+                    variant="ghost"
                     onClick={handleProviderCheckin}
                     disabled={isSaving}
-                    className="h-8 min-w-28 self-center rounded-full bg-orange-600 px-5 text-[11px] text-white hover:bg-orange-700 sm:h-10 sm:min-w-32 sm:rounded-md sm:text-xs"
+                    className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-lg p-0 text-orange-600 hover:bg-orange-50 hover:text-orange-700 sm:right-1.5 sm:h-9 sm:w-9"
+                    aria-label="Continuar registro de ponto"
+                    title="Continuar"
                   >
-                    Continuar
+                    <ArrowRight className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
                   </Button>
                 </div>
 

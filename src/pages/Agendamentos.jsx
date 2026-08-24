@@ -602,8 +602,6 @@ function getMobileOperationalMeta(row) {
 }
 
 function ResponsiveAppointmentCard({ row, isHighlighted, onPrimaryAction }) {
-  const bucket = row.bucket;
-  const BucketIcon = bucket.icon;
   const actionMeta = getMobileOperationalMeta(row);
   const ActionIcon = actionMeta.actionIcon;
   const thumbnail = getAppointmentThumbnail(row);
@@ -658,12 +656,8 @@ function ResponsiveAppointmentCard({ row, isHighlighted, onPrimaryAction }) {
             <span className={cn("inline-flex h-6 items-center rounded-full px-2 text-[9px] font-semibold", statusStyle.subtleClassName)}>
               {actionMeta.shortLabel}
             </span>
-            <span className="inline-flex h-6 min-w-0 max-w-full items-center gap-1 rounded-full bg-slate-50 px-2 text-[9px] text-slate-600 ring-1 ring-slate-200">
-              <span className={cn("flex h-4 w-4 shrink-0 items-center justify-center rounded-md", bucket.iconClassName)}>
-                <BucketIcon className="h-2 w-2" />
-              </span>
+            <span className="inline-flex h-6 min-w-0 max-w-full items-center rounded-full bg-slate-50 px-2 text-[9px] text-slate-600 ring-1 ring-slate-200">
               <span className="truncate font-semibold text-slate-700">{row.serviceLine.title}</span>
-              <span className="truncate text-slate-400">• {row.serviceLine.subtitle}</span>
             </span>
           </div>
         </div>
@@ -673,7 +667,6 @@ function ResponsiveAppointmentCard({ row, isHighlighted, onPrimaryAction }) {
         <div className="min-w-0">
           <p className="text-[8px] font-semibold uppercase tracking-[0.12em] text-slate-400">Responsável</p>
           <p className="mt-0.5 truncate text-[10px] font-medium text-slate-700">{row.ownerDisplayName}</p>
-          <p className="truncate text-[8px] text-slate-400">{row.sourceLabel}</p>
         </div>
         <div className="min-w-0 text-right">
           <p className="text-[8px] font-semibold uppercase tracking-[0.12em] text-slate-400">Andamento</p>
@@ -696,27 +689,8 @@ function ResponsiveAppointmentCard({ row, isHighlighted, onPrimaryAction }) {
 }
 
 function AppointmentActions({ appointment, state, isSaving, onOpenRegistrador, onOpenRecords, onOpenOrcamento, onOpenPackageDialog, onCreateOrcamento, onMarkAbsence }) {
-  const primaryAction =
-    state.key === "arriving"
-      ? {
-          label: "Registrar check-in",
-          onClick: () => onOpenRegistrador(appointment),
-        }
-      : appointment?.orcamento_id
-        ? {
-            label: "Abrir orçamento",
-            onClick: () => onOpenOrcamento(appointment),
-          }
-        : {
-            label: "Ver registros",
-            onClick: () => onOpenRecords(appointment),
-          };
-
   return (
-    <div className="flex items-center justify-end gap-2">
-      <Button variant="outline" className="h-10 rounded-xl px-4 text-sm" onClick={primaryAction.onClick}>
-        {primaryAction.label}
-      </Button>
+    <div className="flex items-center justify-end">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl border border-slate-200">
@@ -894,6 +868,7 @@ export default function Agendamentos() {
       );
       const serviceLine = getAppointmentServiceLine(appointment);
       const scheduleTime = getAppointmentTimeValue(appointment, "entrada");
+      const scheduleCheckoutTime = getAppointmentTimeValue(appointment, "saida");
       const checkinTime = record?.checkin_datetime || record?.data_checkin || null;
       const checkoutTime = record?.checkout_datetime || record?.data_checkout || null;
       const monitorNames = [
@@ -917,6 +892,7 @@ export default function Agendamentos() {
         serviceLine,
         appointmentDateKey: getAppointmentDateKey(appointment),
         scheduleTime,
+        scheduleCheckoutTime,
         sortTime: scheduleTime || "99:99",
         primaryLabel: getAppointmentPrimaryLabel(appointment, dog),
         secondaryLabel: getAppointmentSecondaryLabel(appointment, dog),
@@ -1337,38 +1313,29 @@ export default function Agendamentos() {
           </CardHeader>
           <CardContent className="min-w-0 px-4 pb-4">
             <div className="min-w-0 overflow-hidden rounded-[18px] border border-slate-200">
-              <div className="grid grid-cols-[58px_88px_minmax(130px,1.15fr)_minmax(116px,.9fr)_minmax(120px,1fr)_108px_126px] items-center gap-2.5 border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                <span>Horário</span>
+              <div className="grid grid-cols-[88px_minmax(130px,1.15fr)_minmax(100px,.8fr)_minmax(120px,1fr)_92px_92px_126px] items-center gap-2.5 border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                 <span>Status</span>
                 <span>Pet / atividade</span>
                 <span>Serviço</span>
                 <span>Detalhes</span>
                 <span>Check-in</span>
+                <span>Check-out</span>
                 <span className="text-right">Ações</span>
               </div>
 
               <div className="divide-y divide-slate-100 bg-white">
                 {filteredMainRows.length > 0 ? (
                   filteredMainRows.map((row) => {
-                    const bucket = row.bucket;
-                    const Icon = bucket.icon;
                     const isHighlighted = highlightAppointmentId === row.appointment.id;
-                    const recordSummary = row.checkinTime
-                      ? `Check-in: ${formatTime(row.checkinTime)}`
-                      : `Horário: ${row.scheduleTime || "--:--"}`;
 
                     return (
                       <div
                         key={row.appointment.id}
                         className={cn(
-                          "grid grid-cols-[58px_88px_minmax(130px,1.15fr)_minmax(116px,.9fr)_minmax(120px,1fr)_108px_126px] items-center gap-2.5 px-3 py-3 transition hover:bg-slate-50",
+                          "grid grid-cols-[88px_minmax(130px,1.15fr)_minmax(100px,.8fr)_minmax(120px,1fr)_92px_92px_126px] items-center gap-2.5 px-3 py-3 transition hover:bg-slate-50",
                           isHighlighted && "bg-amber-50/80",
                         )}
                       >
-                        <div>
-                          <p className="text-sm font-semibold text-slate-950">{row.scheduleTime || "--:--"}</p>
-                        </div>
-
                         <div className="flex min-w-0 flex-col items-start gap-1.5">
                           <AppointmentStatusBadge stateKey={row.state.key} label={row.state.label} />
                           {row.hasCommercialPending ? (
@@ -1389,25 +1356,25 @@ export default function Agendamentos() {
                           </div>
                         </div>
 
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]", bucket.iconClassName)}>
-                            <Icon className="h-3.5 w-3.5" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-950">{row.serviceLine.title}</p>
-                            <p className="truncate text-xs text-slate-500">{row.serviceLine.subtitle}</p>
-                          </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-950">{row.serviceLine.title}</p>
                         </div>
 
                         <div className="min-w-0">
                           <p className="truncate text-xs font-semibold text-slate-900">{row.ownerDisplayName}</p>
-                          <p className="truncate text-xs text-slate-500">{row.sourceLabel}</p>
                         </div>
 
                         <div>
-                          <p className="text-xs font-semibold text-slate-900">{recordSummary}</p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {row.checkoutTime ? `Check-out: ${formatTime(row.checkoutTime)}` : "Aguardando saida"}
+                          <p className="text-sm font-semibold text-slate-950">{row.scheduleTime || "--:--"}</p>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            {row.checkinTime ? `Realizado ${formatTime(row.checkinTime)}` : "Não realizado"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">{row.scheduleCheckoutTime || "--:--"}</p>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            {row.checkoutTime ? `Realizado ${formatTime(row.checkoutTime)}` : "Não realizado"}
                           </p>
                         </div>
 

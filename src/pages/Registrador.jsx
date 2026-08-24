@@ -2162,8 +2162,14 @@ export default function Registrador() {
               >
                 <RefreshCcw className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${isLoading ? "animate-spin" : ""}`} aria-hidden="true" />
               </Button>
-              <Badge className="shrink-0 whitespace-nowrap bg-emerald-100 text-[10px] text-emerald-700 sm:text-xs">
-                {activePetCheckins.length} {activePetCheckins.length === 1 ? "presente" : "presentes"} agora
+              <Badge className="flex shrink-0 flex-col items-start gap-0.5 whitespace-nowrap bg-emerald-100 px-2 py-1 text-[9px] leading-tight text-emerald-700 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
+                <span>
+                  {activePetCheckins.length} {activePetCheckins.length === 1 ? "Cão presente" : "Cães presentes"}
+                </span>
+                <span className="hidden text-emerald-400 sm:inline" aria-hidden="true">•</span>
+                <span>
+                  {activeProviderCheckins.length} {activeProviderCheckins.length === 1 ? "Funcionário presente" : "Funcionários presentes"}
+                </span>
               </Badge>
             </>
           )}
@@ -2173,7 +2179,7 @@ export default function Registrador() {
           <PageSubTabs
             className="mb-6"
             items={[
-              { value: "pets", label: "Pets" },
+              { value: "pets", label: "Dogs" },
               { value: "providers", label: "Funcionários" },
             ]}
           />

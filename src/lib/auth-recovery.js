@@ -75,21 +75,23 @@ export function clearRecordedNavigationSamples() {
   window.sessionStorage.removeItem(NAVIGATION_GUARD_KEY);
 }
 
-export function clearCorruptedBrowserAuthState() {
+export function clearBrowserAuthState({ resetDeviceTrust = false } = {}) {
   if (!canUseStorage()) return;
 
   const authStorageKeys = [];
   for (let index = 0; index < window.localStorage.length; index += 1) {
     const key = window.localStorage.key(index);
     if (!key) continue;
-    if (key.startsWith("sb-") && key.endsWith("-auth-token")) {
+    if (key.startsWith("sb-") && key.includes("-auth-token")) {
       authStorageKeys.push(key);
     }
   }
 
   authStorageKeys.forEach((key) => window.localStorage.removeItem(key));
-  window.localStorage.removeItem(DEVICE_ID_KEY);
-  window.localStorage.removeItem(TRUSTED_USERS_KEY);
+  if (resetDeviceTrust) {
+    window.localStorage.removeItem(DEVICE_ID_KEY);
+    window.localStorage.removeItem(TRUSTED_USERS_KEY);
+  }
   window.localStorage.removeItem(ACTIVE_UNIT_STORAGE_KEY);
   window.localStorage.removeItem(ACTIVE_UNIT_SELECTION_STORAGE_KEY);
 
@@ -97,7 +99,7 @@ export function clearCorruptedBrowserAuthState() {
     for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
       const key = window.sessionStorage.key(index);
       if (!key) continue;
-      if (key.startsWith("sb-") && key.endsWith("-auth-token")) {
+      if (key.startsWith("sb-") && key.includes("-auth-token")) {
         window.sessionStorage.removeItem(key);
       }
     }
@@ -106,6 +108,10 @@ export function clearCorruptedBrowserAuthState() {
   }
 
   clearRecordedNavigationSamples();
+}
+
+export function clearCorruptedBrowserAuthState() {
+  clearBrowserAuthState({ resetDeviceTrust: true });
   markAuthRecovery();
 }
 

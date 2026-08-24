@@ -4,6 +4,7 @@ import LoadingScreen from "@/components/layout/LoadingScreen";
 import { User } from "@/api/entities";
 import { useBranding } from "@/hooks/use-branding";
 import { getSafeNextPathFromSearch, isSameAppLocation } from "@/lib/auth-navigation";
+import { clearBrowserAuthState } from "@/lib/auth-recovery";
 import { normalizePin, validatePin } from "@/lib/pin-auth";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
@@ -74,8 +75,14 @@ export default function DefinirPin() {
   }, [location.hash, location.pathname, location.search, navigate, nextPath]);
 
   async function handleLogout() {
-    await User.logout?.();
-    window.location.replace(createPageUrl("Login"));
+    try {
+      await User.logout?.();
+    } catch (error) {
+      console.warn("Nao foi possivel confirmar a revogacao remota da sessao.", error);
+      clearBrowserAuthState();
+    } finally {
+      window.location.replace(createPageUrl("Login"));
+    }
   }
 
   async function handleSubmit(event) {

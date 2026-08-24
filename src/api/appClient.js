@@ -55,6 +55,7 @@ import {
 import { isValidCpfChecksum } from '@/lib/cpf-validation';
 import { validateDogOperationalProfile } from '@/lib/dog-profile-validation';
 import { normalizePin as normalizeAccessPin, validatePin as validateAccessPin } from '@/lib/pin-auth';
+import { clearBrowserAuthState } from '@/lib/auth-recovery';
 
 const STORAGE_PREFIX = 'local_app_client_';
 const makeId = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -7449,12 +7450,30 @@ if (USE_SUPABASE_BACKEND) {
     },
     logout: async () => {
       const userId = supabaseAuth.currentUser?.id || null;
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      clearSessionActivity(userId);
-      supabaseAuth.currentUser = null;
-      clearStoredActiveUnitId();
-      return { ok: true };
+      let remoteError = null;
+
+      try {
+        const result = await Promise.race([
+          supabase.auth.signOut(),
+          new Promise((resolve) => {
+            globalThis.setTimeout(() => resolve({ error: new Error('Tempo limite ao revogar a sessao remota.') }), 4000);
+          }),
+        ]);
+        remoteError = result?.error || null;
+      } catch (error) {
+        remoteError = error;
+      } finally {
+        clearSessionActivity(userId);
+        supabaseAuth.currentUser = null;
+        clearStoredActiveUnitId();
+        clearBrowserAuthState();
+      }
+
+      if (remoteError) {
+        console.warn('A sessao local foi encerrada, mas a revogacao remota nao foi confirmada.', remoteError);
+      }
+
+      return { ok: true, remote_revocation_confirmed: !remoteError };
     },
     list: async (sort, limit) => {
       try {

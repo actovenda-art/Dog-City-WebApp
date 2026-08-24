@@ -26,6 +26,7 @@ import {
   Users,
   Wallet,
   Building2,
+  LoaderCircle,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "@/components/layout/LoadingScreen";
@@ -33,6 +34,7 @@ import NotificationBell from "@/components/layout/NotificationBell";
 import LegalLinks from "@/components/legal/LegalLinks";
 import { useStableCallback } from "@/hooks/use-stable-callback";
 import { hasPageAccess, isOperationalProfile } from "@/lib/access-control";
+import { clearBrowserAuthState } from "@/lib/auth-recovery";
 import { isPageBlockedInMergedMode } from "@/lib/unit-page-policy";
 import {
   ACTIVE_UNIT_EVENT,
@@ -55,6 +57,7 @@ function getUnitLogo(unit, unitLogoMap = {}) {
 
 export default function Layout({ children, currentPageName, initialUser = null }) {
   const [currentUser, setCurrentUser] = useState(initialUser);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [availableUnits, setAvailableUnits] = useState([]);
   const [unitLogoMap, setUnitLogoMap] = useState({});
   const [activeUnitId, setActiveUnitId] = useState("");
@@ -178,8 +181,17 @@ export default function Layout({ children, currentPageName, initialUser = null }
   }, [initialUser?.id, loadUserStable]);
 
   const handleLogout = async () => {
-    await User.logout();
-    window.location.reload();
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+
+    try {
+      await User.logout();
+    } catch (error) {
+      console.warn("Nao foi possivel confirmar a revogacao remota da sessao.", error);
+      clearBrowserAuthState();
+    } finally {
+      window.location.replace(createPageUrl("Login"));
+    }
   };
 
   const handleUnitChange = (unitId) => {
@@ -397,10 +409,11 @@ export default function Layout({ children, currentPageName, initialUser = null }
                   variant="outline"
                   size="sm"
                   onClick={handleLogout}
+                  disabled={isLoggingOut}
                   className="mt-4 w-full border-orange-300 text-orange-600 hover:bg-orange-50"
                 >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Logout
+                  {isLoggingOut ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
+                  {isLoggingOut ? "Saindo..." : "Logout"}
                 </Button>
               </div>
             </div>

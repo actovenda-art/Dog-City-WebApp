@@ -291,7 +291,7 @@ export default function Dev_Dashboard() {
       window.setTimeout(() => setHasCopiedFeedbackValue(false), 2000);
     } catch (error) {
       console.error("Erro ao copiar valor do modal:", error);
-      alert("Não foi possível copiar o link.");
+      alert("Não foi possível copiar o conteúdo.");
     }
   }
 
@@ -332,7 +332,7 @@ export default function Dev_Dashboard() {
     };
   }
 
-  async function handleSendInvite() {
+  async function handleCreateUser() {
     const formattedName = formatDisplayName(inviteForm.full_name);
     const selectedProfile = activeProfiles.find((profile) => profile.id === inviteForm.access_profile_id) || null;
 
@@ -346,62 +346,43 @@ export default function Dev_Dashboard() {
       return;
     }
 
-    if (inviteForm.is_platform_admin && !selectedProfile) {
-      alert("Selecione um perfil de acesso da administração central.");
+    if (!selectedProfile) {
+      alert("Selecione um perfil de acesso.");
       return;
     }
 
     if (selectedProfile && isPlatformAccessProfile(selectedProfile) !== inviteForm.is_platform_admin) {
-      alert("O perfil selecionado não corresponde ao nível administrativo do convite.");
+      alert("O perfil selecionado não corresponde ao tipo de acesso.");
       return;
     }
 
     setIsSaving(true);
     try {
-      const token = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-      const invitePayload = {
-        action: "create_user_invite",
-        token,
+      const result = await appClient.functions.userAdmin({
+        action: "create_managed_user",
         full_name: formattedName,
         email: inviteForm.email.trim().toLowerCase(),
         empresa_id: inviteForm.is_platform_admin ? null : inviteForm.empresa_id || null,
         access_profile_id: inviteForm.access_profile_id || null,
         is_platform_admin: !!inviteForm.is_platform_admin,
-        company_role: inviteForm.is_platform_admin ? "platform_admin" : "company_user",
-        status: "pendente",
-        invited_by_user_id: currentUser?.id || null,
-        invited_at: new Date().toISOString(),
-      };
-
-      const inviteResult = await appClient.functions.userAdmin(invitePayload);
-      const createdInvite = normalizeInviteUser(inviteResult?.invite || {});
-      const emailPayload = buildInviteEmail(createdInvite);
-      const emailResult = await SendEmail({
-        to: createdInvite.email,
-        subject: emailPayload.subject,
-        body: emailPayload.body,
-        html: emailPayload.html,
       });
 
       setShowInviteModal(false);
       setInviteForm(EMPTY_INVITE);
       await loadData();
 
-      if (emailResult?.provider || emailResult?.mode) {
-        openInviteFeedbackModal({
-          title: "Convite Enviado com Sucesso",
-          description: `Convite enviado com sucesso para ${createdInvite.full_name}. Em breve se juntara a equipe!`,
-          link: emailPayload.inviteLink,
-        });
-      } else {
-        alert(`Convite criado para ${createdInvite.full_name}.`);
-      }
+      setHasCopiedFeedbackValue(false);
+      setFeedbackModal({
+        open: true,
+        title: "Usuário cadastrado",
+        description: `${result.user.full_name} já pode acessar o aplicativo.`,
+        fieldLabel: "Email de acesso",
+        fieldValue: result.user.email,
+        note: "Senha inicial: 123456. No primeiro acesso, o usuário deverá definir uma nova senha.",
+      });
     } catch (error) {
-      console.error("Erro ao enviar convite:", error);
-      alert(formatApiError(error, "Erro ao criar ou enviar convite."));
+      console.error("Erro ao cadastrar usuário:", error);
+      alert(formatApiError(error, "Não foi possível cadastrar o usuário."));
     } finally {
       setIsSaving(false);
     }
@@ -690,8 +671,8 @@ export default function Dev_Dashboard() {
             type="button"
             size="icon"
             onClick={openInviteModal}
-            aria-label="Convidar usuário"
-            title="Convidar usuário"
+            aria-label="Cadastrar usuário"
+            title="Cadastrar usuário"
             className="h-10 w-10 shrink-0 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
           >
             <UserPlus className="h-5 w-5" />
@@ -1098,9 +1079,9 @@ export default function Dev_Dashboard() {
                   <UserPlus className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 pt-0.5">
-                  <DialogTitle className="text-xl font-semibold text-slate-950 sm:text-2xl">Convidar usuário</DialogTitle>
+                  <DialogTitle className="text-xl font-semibold text-slate-950 sm:text-2xl">Cadastrar usuário</DialogTitle>
                   <DialogDescription className="mt-1.5 text-sm leading-5 text-slate-600 sm:leading-6">
-                    Defina a unidade e o perfil inicial do novo acesso.
+                    Defina a unidade e o perfil de acesso do novo usuário.
                   </DialogDescription>
                 </div>
               </div>
@@ -1196,7 +1177,7 @@ export default function Dev_Dashboard() {
                     <SelectValue placeholder="Selecionar perfil" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">Sem perfil inicial</SelectItem>
+                    <SelectItem value="__none__">Selecionar perfil</SelectItem>
                     {activeProfiles.map((profile) => (
                       <SelectItem key={profile.id} value={profile.id}>
                         {profile.nome}
@@ -1207,16 +1188,16 @@ export default function Dev_Dashboard() {
               </div>
 
               <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-700 sm:col-span-2 sm:text-sm sm:leading-6">
-                O usuário receberá um link seguro para concluir os dados pessoais e ativar o acesso.
+                O usuário poderá entrar com este email e a senha inicial 123456. No primeiro acesso, deverá criar outra senha.
               </div>
             </div>
           </div>
 
           <DialogFooter className="shrink-0 gap-2 border-t border-slate-100 bg-slate-50/80 px-5 py-4 sm:px-7">
             <Button variant="outline" onClick={() => setShowInviteModal(false)} className="h-11 w-full rounded-xl text-sm sm:w-auto">Cancelar</Button>
-            <Button onClick={handleSendInvite} disabled={isSaving} className="h-11 w-full rounded-xl bg-blue-600 px-4 text-sm text-white hover:bg-blue-700 sm:w-auto">
-              <Mail className="mr-2 h-4 w-4" />
-              {isSaving ? "Enviando..." : "Enviar convite"}
+            <Button onClick={handleCreateUser} disabled={isSaving} className="h-11 w-full rounded-xl bg-blue-600 px-4 text-sm text-white hover:bg-blue-700 sm:w-auto">
+              <UserPlus className="mr-2 h-4 w-4" />
+              {isSaving ? "Cadastrando..." : "Cadastrar"}
             </Button>
           </DialogFooter>
         </DialogContent>

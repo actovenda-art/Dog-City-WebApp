@@ -2275,6 +2275,119 @@ async function handleCreateUserInvite(request: Request, payload: Record<string, 
   });
 }
 
+async function handleCreateManagedUser(request: Request, payload: Record<string, unknown>) {
+  const ctx = await getRequestContext(request);
+  const fullName = sanitizeText(payload.full_name);
+  const email = sanitizeText(payload.email).toLowerCase();
+  const isPlatformAdmin = payload.is_platform_admin === true;
+  const empresaId = isPlatformAdmin ? null : sanitizeText(payload.empresa_id);
+  const accessProfileId = sanitizeText(payload.access_profile_id);
+
+  if (!ctx.profile || !canManageUsers(ctx, empresaId ? [empresaId] : [], isPlatformAdmin)) {
+    return jsonResponse({ error: "Sem permissao para cadastrar este usuario." }, 403);
+  }
+  if (!fullName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return jsonResponse({ error: "Informe nome completo e email valido." }, 400);
+  }
+  if (!isPlatformAdmin && !empresaId) {
+    return jsonResponse({ error: "Selecione a unidade do usuario." }, 400);
+  }
+  if (!accessProfileId) {
+    return jsonResponse({ error: "Selecione um perfil de acesso." }, 400);
+  }
+
+  const accessProfile = await loadAccessProfile(accessProfileId);
+  if (!accessProfile || accessProfile.ativo === false) {
+    return jsonResponse({ error: "Perfil de acesso indisponivel." }, 400);
+  }
+  if ((sanitizeText(accessProfile.escopo) === "plataforma") !== isPlatformAdmin) {
+    return jsonResponse({ error: "O perfil nao corresponde ao tipo de acesso." }, 400);
+  }
+  if (empresaId) {
+    const { data: unit, error: unitError } = await admin
+      .from("empresa")
+      .select("id")
+      .eq("id", empresaId)
+      .maybeSingle();
+    if (unitError || !unit) {
+      return jsonResponse({ error: "Unidade nao encontrada." }, 400);
+    }
+  }
+  if (await loadAppUserByEmail(email) || await findAuthUserByEmail(email)) {
+    return jsonResponse({ error: "Este email ja possui cadastro. Use a redefinicao de senha no perfil existente." }, 409);
+  }
+
+  const now = new Date().toISOString();
+  const initialPassword = "123456";
+  const { data: createdAuth, error: authError } = await admin.auth.admin.createUser({
+    email,
+    password: initialPassword,
+    email_confirm: true,
+    user_metadata: { full_name: fullName },
+  });
+  if (authError || !createdAuth?.user?.id) {
+    return jsonResponse({
+      error: isAuthDuplicateEmailError(authError)
+        ? "Este email ja possui cadastro."
+        : "Nao foi possivel criar o acesso. Tente novamente.",
+    }, isAuthDuplicateEmailError(authError) ? 409 : 500);
+  }
+
+  const userId = createdAuth.user.id;
+  try {
+    const { data: savedUser, error: profileError } = await admin
+      .from("users")
+      .insert([{
+        id: userId,
+        email,
+        full_name: fullName,
+        profile: "usuario",
+        active: true,
+        empresa_id: empresaId,
+        access_profile_id: accessProfileId,
+        company_role: isPlatformAdmin ? "platform_admin" : "company_user",
+        is_platform_admin: isPlatformAdmin,
+        onboarding_status: "completo",
+        onboarding_completed_at: now,
+        invite_sent: false,
+        invite_accepted: false,
+        pin_required_reset: true,
+        pin_bootstrap_status: "pronto",
+        created_date: now,
+        updated_date: now,
+      }])
+      .select("*")
+      .single();
+    if (profileError) throw profileError;
+
+    if (empresaId) {
+      await upsertUserUnitAccessRow({
+        userId,
+        empresaId,
+        accessProfileId,
+        papel: "company_user",
+      });
+    }
+    console.info("managed_user_created", {
+      actor_user_id: ctx.authUser?.id || null,
+      target_user_id: userId,
+      empresa_id: empresaId,
+      occurred_at: now,
+    });
+    return jsonResponse({ ok: true, user: savedUser, requires_password_change: true });
+  } catch (error) {
+    await admin.from("user_unit_access").delete().eq("user_id", userId);
+    await admin.from("users").delete().eq("id", userId);
+    const { error: rollbackError } = await admin.auth.admin.deleteUser(userId);
+    console.error("create_managed_user_error", {
+      user_id: userId,
+      error: error instanceof Error ? error.message : String(error),
+      rollback_error: rollbackError?.message || null,
+    });
+    return jsonResponse({ error: "Nao foi possivel concluir o cadastro do usuario." }, 500);
+  }
+}
+
 async function handleCancelUserInvite(request: Request, payload: Record<string, unknown>) {
   const ctx = await getRequestContext(request);
   if (!ctx.profile || (!ctx.profile.is_platform_admin && !hasPermission(ctx.permissions, "usuarios:update"))) {
@@ -2335,6 +2448,10 @@ Deno.serve(async (request) => {
 
     if (action === "create_user_invite") {
       return await handleCreateUserInvite(request, payload || {});
+    }
+
+    if (action === "create_managed_user") {
+      return await handleCreateManagedUser(request, payload || {});
     }
 
     if (action === "cancel_user_invite") {

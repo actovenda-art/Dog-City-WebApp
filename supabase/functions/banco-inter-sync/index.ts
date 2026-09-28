@@ -29,6 +29,7 @@ const INTER_TOKEN_REFRESH_POLL_MS = 350;
 const INTER_TOKEN_EXPIRY_SAFETY_MS = 30_000;
 const MAX_RECEIPT_PDF_BYTES = 12 * 1024 * 1024;
 const MIN_INTER_CHARGE_AMOUNT = 2.5;
+const INTER_CHARGE_SCHEDULED_DAYS = 60;
 
 type InterTokenResult = {
   accessToken: string;
@@ -1998,7 +1999,7 @@ async function hashWalletChargePublicToken(token: string) {
 function buildWalletChargeTokenExpiry(dueDate: string) {
   const dueAt = new Date(`${dueDate}T23:59:59.999-03:00`);
   const baseDate = Number.isNaN(dueAt.getTime()) ? new Date() : dueAt;
-  baseDate.setDate(baseDate.getDate() + 30);
+  baseDate.setDate(baseDate.getDate() + INTER_CHARGE_SCHEDULED_DAYS);
   return baseDate.toISOString();
 }
 
@@ -2018,7 +2019,7 @@ function buildWalletChargePublicResponse(row: Record<string, unknown>) {
   return {
     id: sanitizeText(row.id),
     provider: "Banco Inter",
-    responsavel_nome: sanitizeText(metadata.responsavel_nome, "Responsavel financeiro"),
+    responsavel_nome: sanitizeText(metadata.responsavel_nome, sanitizeText(row.carteira_nome, "Responsavel financeiro")),
     descricao: sanitizeText(row.descricao),
     valor: toNumber(row.valor),
     data_vencimento: sanitizeText(row.data_vencimento),
@@ -2075,7 +2076,7 @@ function buildChargeIssuePayload(payload: Record<string, unknown>) {
     seuNumero,
     valorNominal: Number(amount.toFixed(2)),
     dataVencimento: dueDate,
-    numDiasAgenda: Number(payload.num_dias_agenda || 0),
+    numDiasAgenda: INTER_CHARGE_SCHEDULED_DAYS,
     pagador: {
       tipoPessoa: inferPagadorTipo(payerDocument),
       nome: payerName,
@@ -2345,10 +2346,12 @@ async function saveWalletChargeRow(row: Record<string, unknown>) {
 }
 
 function buildWalletChargeStaffResponse(row: Record<string, unknown>) {
+  const metadata = getWalletChargeMetadata(row);
   return {
     id: sanitizeText(row.id),
     carteira_id: sanitizeText(row.carteira_id),
     carteira_conta_id: sanitizeText(row.carteira_conta_id) || null,
+    responsavel_nome: sanitizeText(metadata.responsavel_nome, sanitizeText(row.carteira_nome, "Responsavel financeiro")),
     metodo: sanitizeText(row.metodo, "boleto_bancario"),
     status: sanitizeText(row.status, "pendente_emissao"),
     status_inter: sanitizeText(row.status_inter) || null,
@@ -2752,6 +2755,8 @@ async function applyBudgetPaymentToWallet(row: Record<string, unknown>) {
 async function applyWalletChargePaymentToWallet(row: Record<string, unknown>) {
   if (row.credited_wallet_movement_id) return row;
 
+  const chargeMetadata = getWalletChargeMetadata(row);
+
   const ensuredWalletAccountId = sanitizeText(row.carteira_conta_id) || await ensureWalletAccountForBudget(
     sanitizeText(row.empresa_id),
     sanitizeText(row.carteira_id),
@@ -2761,7 +2766,10 @@ async function applyWalletChargePaymentToWallet(row: Record<string, unknown>) {
   const amount = toNumber(firstDefined(row.valor_recebido, row.valor));
   if (amount <= 0) return row;
 
-  const linkedTransactionId = await ensurePaymentExtratoTransaction(row, "carteira_cobranca");
+  const isManualReceipt = Boolean(chargeMetadata.manual_received_at);
+  const linkedTransactionId = isManualReceipt
+    ? null
+    : await ensurePaymentExtratoTransaction(row, "carteira_cobranca");
   const { data, error } = await supabase.rpc("finance_wallet_admin_apply_operation", {
     p_carteira_conta_id: ensuredWalletAccountId,
     p_operacao_idempotencia: `carteira_cobranca|${sanitizeText(row.id)}|recebido`,
@@ -2769,11 +2777,19 @@ async function applyWalletChargePaymentToWallet(row: Record<string, unknown>) {
     p_natureza: "entrada",
     p_valor: amount,
     p_referencia_amigavel: `Pagamento de cobranca: ${sanitizeText(row.descricao, "Carteira")}`.slice(0, 180),
-    p_motivo: "Recarga de carteira por cobranca recebida",
-    p_observacao: `Cobranca recebida via Banco Inter (${sanitizeText(row.codigo_solicitacao)})`,
-    p_origem: "carteira_cobranca_banco_inter",
+    p_motivo: isManualReceipt
+      ? "Recarga de carteira por recebimento confirmado manualmente"
+      : "Recarga de carteira por cobranca recebida",
+    p_observacao: isManualReceipt
+      ? `Recebimento confirmado manualmente (${sanitizeText(row.codigo_solicitacao)})`
+      : `Cobranca recebida via Banco Inter (${sanitizeText(row.codigo_solicitacao)})`,
+    p_origem: isManualReceipt
+      ? "carteira_cobranca_recebimento_manual"
+      : "carteira_cobranca_banco_inter",
     p_transacao_id: linkedTransactionId,
-    p_usuario_id: sanitizeText(row.created_by_user_id) || null,
+    p_usuario_id: sanitizeText(chargeMetadata.manual_received_by_user_id)
+      || sanitizeText(row.created_by_user_id)
+      || null,
     p_metadata: {
       carteira_cobranca_id: row.id,
       provider: row.provider,
@@ -2884,6 +2900,12 @@ async function processWalletChargeWebhookEvent(event: Record<string, unknown>) {
 
   const now = new Date().toISOString();
   const situacao = sanitizeText(event.situacao, sanitizeText(data.status_inter || data.status));
+  const existingMetadata = getWalletChargeMetadata(data);
+  const wasManuallyReceived = sanitizeText(data.status).toLowerCase() === "recebido"
+    && Boolean(existingMetadata.manual_received_at);
+  if (wasManuallyReceived && situacao.toUpperCase() !== "RECEBIDO") {
+    return data;
+  }
   const mappedStatus = mapInterChargeStatus(situacao);
   const active = mappedStatus === "emitido";
   const received = sanitizeText(situacao).toUpperCase() === "RECEBIDO";
@@ -2902,7 +2924,7 @@ async function processWalletChargeWebhookEvent(event: Record<string, unknown>) {
       : Number(data.valor_recebido || 0),
     pago_em: received ? (sanitizeText(event.dataHoraSituacao) || data.pago_em || now) : data.pago_em || null,
     metadata: {
-      ...getWalletChargeMetadata(data),
+      ...existingMetadata,
       webhook_last_event: event,
     },
     updated_date: now,
@@ -3059,6 +3081,39 @@ async function listOpenWalletCharges(empresaId: string, carteiraId: string, sort
 
   if (error) throw error;
   return (data || []).map((row) => buildWalletChargeStaffResponse(row));
+}
+
+async function listIssuedWalletCharges(empresaId: string, sortBy: string) {
+  const safeSortBy = sortBy === "due_date" ? "data_vencimento" : "emitido_em";
+  const { data, error } = await supabase
+    .from("carteira_cobranca")
+    .select("*")
+    .eq("empresa_id", empresaId)
+    .order(safeSortBy, { ascending: safeSortBy === "data_vencimento" })
+    .order("created_date", { ascending: false })
+    .limit(500);
+
+  if (error) throw error;
+
+  const rows = data || [];
+  const carteiraIds = [...new Set(rows.map((row) => sanitizeText(row.carteira_id)).filter(Boolean))];
+  const carteiraNames = new Map<string, string>();
+  if (carteiraIds.length) {
+    const { data: carteiras, error: carteiraError } = await supabase
+      .from("carteira")
+      .select("id, nome_razao_social")
+      .eq("empresa_id", empresaId)
+      .in("id", carteiraIds);
+    if (carteiraError) throw carteiraError;
+    (carteiras || []).forEach((carteira) => {
+      carteiraNames.set(sanitizeText(carteira.id), sanitizeText(carteira.nome_razao_social));
+    });
+  }
+
+  return rows.map((row) => buildWalletChargeStaffResponse({
+    ...row,
+    carteira_nome: carteiraNames.get(sanitizeText(row.carteira_id)) || null,
+  }));
 }
 
 async function normalizeTransactions(
@@ -5373,12 +5428,23 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: true, charges });
     }
 
+    if (action === "listWalletIssuedCharges") {
+      const empresaId = sanitizeText(payload.empresa_id);
+      if (!empresaId) {
+        return jsonResponse({ error: "empresa_id e obrigatorio para listar cobrancas emitidas." }, 400);
+      }
+      await requireWalletChargeStaff(request, empresaId);
+      const charges = await listIssuedWalletCharges(empresaId, sanitizeText(payload.sort_by));
+      return jsonResponse({ ok: true, charges });
+    }
+
     const walletChargeRestrictedActions = new Set([
       "issueWalletCharge",
       "refreshWalletChargeStatus",
       "getWalletChargePublicLink",
       "renewWalletChargePublicLink",
       "cancelWalletCharge",
+      "markWalletChargeReceived",
     ]);
     let walletChargeStaff: { profile: Record<string, unknown>; empresaId: string } | null = null;
     if (walletChargeRestrictedActions.has(action)) {
@@ -5766,6 +5832,67 @@ Deno.serve(async (request) => {
 
       const refreshedRow = await refreshWalletChargeFromInter(config, existingRow);
       return jsonResponse({ ok: true, charge: buildWalletChargeStaffResponse(refreshedRow) });
+    }
+
+    if (action === "markWalletChargeReceived") {
+      const chargeId = sanitizeText(payload.carteira_cobranca_id);
+      if (!chargeId) {
+        return jsonResponse({ error: "carteira_cobranca_id e obrigatorio para confirmar o recebimento." }, 400);
+      }
+
+      let existingRow = await loadWalletChargeRow(chargeId);
+      if (!existingRow || sanitizeText(existingRow.empresa_id) !== walletChargeStaff?.empresaId) {
+        return jsonResponse({ error: "Cobranca da carteira nao localizada." }, 404);
+      }
+      if (!isWalletChargeActive(existingRow)) {
+        return jsonResponse({ error: "Somente cobrancas em aberto podem ser marcadas como recebidas." }, 409);
+      }
+
+      existingRow = await refreshWalletChargeFromInter(config, existingRow);
+      if (sanitizeText(existingRow.status).toLowerCase() === "recebido") {
+        return jsonResponse({ ok: true, charge: buildWalletChargeStaffResponse(existingRow) });
+      }
+      if (!isWalletChargeActive(existingRow)) {
+        return jsonResponse({ error: "A cobranca nao esta mais em aberto no Banco Inter." }, 409);
+      }
+
+      const codigoSolicitacao = sanitizeText(existingRow.codigo_solicitacao);
+      if (!codigoSolicitacao) {
+        return jsonResponse({ error: "A cobranca nao possui codigo de solicitacao do Banco Inter." }, 409);
+      }
+
+      const cancellation = await cancelChargeForBudget(
+        config,
+        codigoSolicitacao,
+        "Baixa manual por recebimento confirmado pela operacao Dog City",
+      );
+      const now = new Date().toISOString();
+      const invalidToken = buildWalletChargePublicToken();
+      const receivedRow = await saveWalletChargeRow({
+        ...existingRow,
+        status: "recebido",
+        status_inter: "RECEBIDO_MANUAL",
+        valor_recebido: Number(existingRow.valor || 0),
+        pago_em: now,
+        pdf_disponivel: false,
+        linha_digitavel: null,
+        codigo_barras: null,
+        pix_copia_cola: null,
+        public_token_hash: await hashWalletChargePublicToken(invalidToken),
+        public_token_ciphertext: null,
+        public_token_iv: null,
+        public_token_expires_at: now,
+        metadata: {
+          ...getWalletChargeMetadata(existingRow),
+          manual_received_at: now,
+          manual_received_by_user_id: sanitizeText(walletChargeStaff?.profile?.id) || null,
+          manual_received_cancellation_requested_async: cancellation.accepted,
+          manual_received_cancellation_response: cancellation.response,
+        },
+        updated_date: now,
+      });
+      const finalizedRow = await applyWalletChargePaymentToWallet(receivedRow);
+      return jsonResponse({ ok: true, charge: buildWalletChargeStaffResponse(finalizedRow) });
     }
 
     if (action === "cancelWalletCharge") {

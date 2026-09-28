@@ -60,6 +60,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DatePickerInput, DateRangePickerInput } from "@/components/common/DateTimeInputs";
 import SearchFiltersToolbar from "@/components/common/SearchFiltersToolbar";
 import PageHeader from "@/components/common/PageHeader";
+import WalletBulkIssuanceDialog from "@/components/finance/WalletBulkIssuanceDialog";
 import LoadingScreen from "@/components/layout/LoadingScreen";
 import { useStableCallback } from "@/hooks/use-stable-callback";
 import {
@@ -83,6 +84,7 @@ import {
   Plus,
   QrCode,
   RefreshCw,
+  Send,
   ShieldAlert,
   ShieldCheck,
   Trash2,
@@ -1447,6 +1449,7 @@ export default function Movimentacoes({ walletOnly = false }) {
   const [walletOpenChargeCopyingId, setWalletOpenChargeCopyingId] = useState("");
   const [walletOpenChargeCancellingId, setWalletOpenChargeCancellingId] = useState("");
   const [walletChargePendingCancellation, setWalletChargePendingCancellation] = useState(null);
+  const [showWalletBulkIssuance, setShowWalletBulkIssuance] = useState(false);
   const [walletManualDeletingId, setWalletManualDeletingId] = useState("");
   const [walletManualMovementPendingDeletion, setWalletManualMovementPendingDeletion] = useState(null);
   const [showWalletReversalModal, setShowWalletReversalModal] = useState(false);
@@ -3212,10 +3215,23 @@ export default function Movimentacoes({ walletOnly = false }) {
             eyebrow={walletOnly ? "Financeiro / Carteiras" : "Financeiro / Transações"}
             title={walletOnly ? "Carteiras dos responsáveis financeiros" : "Transações"}
             actions={walletOnly ? (
-              <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm lg:mt-1">
-                <Wallet className="h-4 w-4 text-blue-600" />
-                <span className="text-sm font-semibold text-slate-900">{walletAccounts.length}</span>
-                <span className="text-xs text-slate-500">carteira{walletAccounts.length === 1 ? "" : "s"}</span>
+              <div className="flex shrink-0 items-center gap-2 self-start lg:mt-1">
+                {canIssueWalletCharges ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowWalletBulkIssuance(true)}
+                    className="h-10 rounded-full border-blue-200 bg-white px-4 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-50 sm:text-sm"
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    Emissão em massa
+                  </Button>
+                ) : null}
+                <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <Wallet className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-semibold text-slate-900">{walletAccounts.length}</span>
+                  <span className="hidden text-xs text-slate-500 sm:inline">carteira{walletAccounts.length === 1 ? "" : "s"}</span>
+                </div>
               </div>
             ) : (
               <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-auto sm:flex-wrap sm:gap-2">
@@ -5380,6 +5396,21 @@ export default function Movimentacoes({ walletOnly = false }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <WalletBulkIssuanceDialog
+        open={showWalletBulkIssuance}
+        onOpenChange={setShowWalletBulkIssuance}
+        wallets={walletAccounts}
+        currentUser={currentUser}
+        onCompleted={({ successful, failed }) => {
+          setWalletActionMessage({
+            type: failed.length ? "warning" : "success",
+            message: failed.length
+              ? `${successful.length} cobrança(s) emitida(s) e ${failed.length} não concluída(s).`
+              : `${successful.length} cobrança(s) emitida(s) com sucesso.`,
+          });
+        }}
+      />
     </div>
   );
 }

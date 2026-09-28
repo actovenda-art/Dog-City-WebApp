@@ -70,6 +70,7 @@ const SUPABASE_PUBLIC_BUCKET = import.meta.env.VITE_SUPABASE_PUBLIC_BUCKET || 'p
 const SUPABASE_PRIVATE_BUCKET = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'private-files';
 const DEFAULT_EMAIL_WEBHOOK_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/send-email` : '';
 const MIN_INTER_CHARGE_AMOUNT = 2.5;
+const INTER_CHARGE_SCHEDULED_DAYS = 60;
 const MOCK_QA_ROLE_STORAGE_KEY = `${STORAGE_PREFIX}mock_qa_role`;
 const INVALID_LOGIN_MESSAGE = 'Usuário ou senha inválidos.';
 const LOGIN_RETRY_MESSAGE = 'Muitas tentativas de acesso. Aguarde alguns segundos e tente novamente.';
@@ -2096,6 +2097,7 @@ function buildMockWalletChargeResponse(row = {}) {
     id: row?.id || null,
     carteira_id: row?.carteira_id || null,
     carteira_conta_id: row?.carteira_conta_id || null,
+    responsavel_nome: row?.metadata?.responsavel_nome || 'Responsavel financeiro',
     metodo: row?.metodo || 'boleto_bancario',
     status: row?.status || 'pendente_emissao',
     status_inter: row?.status_inter || null,
@@ -2140,12 +2142,13 @@ function buildMockWalletChargePublicResponse(row = {}) {
 function applyMockWalletChargePaymentToWallet(row = {}) {
   if (row?.credited_wallet_movement_id || !row?.carteira_conta_id) return row;
 
+  const isManualReceipt = Boolean(row?.metadata?.manual_received_at);
   const walletResult = applyMockWalletOperationCore({
     carteira_conta_id: row.carteira_conta_id,
     operacao_idempotencia: `carteira_cobranca|${row.id}|recebido`,
     tipo: 'entrada_direcionada',
     natureza: 'entrada',
-    origem: 'carteira_cobranca_banco_inter',
+    origem: isManualReceipt ? 'carteira_cobranca_recebimento_manual' : 'carteira_cobranca_banco_inter',
     valor: Number(row?.valor_recebido || row?.valor || 0),
     referencia_amigavel: `Pagamento de cobranca: ${row?.descricao || 'Carteira'}`.slice(0, 180),
     descricao: row?.descricao || 'Cobranca da carteira',
@@ -2387,7 +2390,7 @@ const mockFunctions = {
       const codigoSolicitacao = crypto.randomUUID();
       const codigoBarras = generateMockChargeCode(44);
       const tokenExpiresAt = new Date(`${dataVencimento}T23:59:59.999-03:00`);
-      tokenExpiresAt.setDate(tokenExpiresAt.getDate() + 30);
+      tokenExpiresAt.setDate(tokenExpiresAt.getDate() + INTER_CHARGE_SCHEDULED_DAYS);
       const row = {
         id,
         empresa_id: empresaId,
@@ -2455,6 +2458,29 @@ const mockFunctions = {
           return String(left?.data_vencimento || '').localeCompare(String(right?.data_vencimento || ''));
         })
         .map(buildMockWalletChargeResponse);
+      return { ok: true, charges };
+    }
+
+    if (payload?.action === 'listWalletIssuedCharges') {
+      const empresaId = String(payload?.empresa_id || '').trim() || getMockScopedUnitId();
+      const sortBy = payload?.sort_by === 'due_date' ? 'due_date' : 'issued_at';
+      const carteiraNames = new Map(readStorage('Carteira')
+        .filter((row) => row?.empresa_id === empresaId)
+        .map((row) => [row?.id, row?.nome_razao_social || row?.nome_fantasia || 'Responsavel financeiro']));
+      const charges = readStorage('CarteiraCobranca')
+        .filter((row) => row?.empresa_id === empresaId)
+        .sort((left, right) => {
+          if (sortBy === 'due_date') return String(left?.data_vencimento || '').localeCompare(String(right?.data_vencimento || ''));
+          return new Date(right?.emitido_em || right?.created_date || 0).getTime() - new Date(left?.emitido_em || left?.created_date || 0).getTime();
+        })
+        .slice(0, 500)
+        .map((row) => buildMockWalletChargeResponse({
+          ...row,
+          metadata: {
+            ...(row?.metadata || {}),
+            responsavel_nome: row?.metadata?.responsavel_nome || carteiraNames.get(row?.carteira_id),
+          },
+        }));
       return { ok: true, charges };
     }
 
@@ -2530,6 +2556,35 @@ const mockFunctions = {
         },
         updated_date: new Date().toISOString(),
       };
+      writeStorage('CarteiraCobranca', rows);
+      return { ok: true, charge: buildMockWalletChargeResponse(rows[index]) };
+    }
+
+    if (payload?.action === 'markWalletChargeReceived') {
+      const chargeId = String(payload?.carteira_cobranca_id || '').trim();
+      const rows = readStorage('CarteiraCobranca');
+      const index = rows.findIndex((row) => row?.id === chargeId);
+      if (index < 0) throw new Error('Cobranca da carteira nao localizada.');
+      if (rows[index]?.status !== 'emitido') throw new Error('Somente cobrancas em aberto podem ser marcadas como recebidas.');
+      const now = new Date().toISOString();
+      rows[index] = applyMockWalletChargePaymentToWallet({
+        ...rows[index],
+        status: 'recebido',
+        status_inter: 'RECEBIDO_MANUAL',
+        valor_recebido: Number(rows[index]?.valor || 0),
+        pago_em: now,
+        pdf_disponivel: false,
+        linha_digitavel: null,
+        codigo_barras: null,
+        pix_copia_cola: null,
+        public_token_expires_at: now,
+        metadata: {
+          ...(rows[index]?.metadata || {}),
+          mock_public_token: null,
+          manual_received_at: now,
+        },
+        updated_date: now,
+      });
       writeStorage('CarteiraCobranca', rows);
       return { ok: true, charge: buildMockWalletChargeResponse(rows[index]) };
     }

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
+  ArrowDown,
+  ArrowUp,
   Calendar,
   Check,
   CheckCircle2,
@@ -140,7 +142,7 @@ export default function WalletBulkIssuanceDialog({ open, onOpenChange, wallets, 
   const [form, setForm] = useState(INITIAL_FORM);
   const [error, setError] = useState("");
   const [issuedCharges, setIssuedCharges] = useState([]);
-  const [issuedSort, setIssuedSort] = useState("issued_at");
+  const [issuedSort, setIssuedSort] = useState({ key: "issued_at", direction: "desc" });
   const [loadingIssued, setLoadingIssued] = useState(false);
   const [issuing, setIssuing] = useState(false);
   const [issueProgress, setIssueProgress] = useState({ current: 0, total: 0 });
@@ -172,7 +174,32 @@ export default function WalletBulkIssuanceDialog({ open, onOpenChange, wallets, 
     [availableWallets, selectedWalletIds],
   );
 
-  const loadIssuedCharges = useStableCallback(async (sortBy = issuedSort) => {
+  const sortedIssuedCharges = useMemo(() => {
+    const { key, direction } = issuedSort;
+    return [...issuedCharges].sort((left, right) => {
+      let comparison = 0;
+      if (key === "name") {
+        comparison = String(left.responsavel_nome || left.carteira_nome || "")
+          .localeCompare(String(right.responsavel_nome || right.carteira_nome || ""), "pt-BR", { sensitivity: "base" });
+      } else if (key === "amount") {
+        comparison = Number(left.valor || 0) - Number(right.valor || 0);
+      } else {
+        const field = key === "due_date" ? "data_vencimento" : "emitido_em";
+        comparison = String(left[field] || (key === "issued_at" ? left.criado_em : ""))
+          .localeCompare(String(right[field] || (key === "issued_at" ? right.criado_em : "")));
+      }
+      return (direction === "asc" ? comparison : -comparison)
+        || String(left.id || "").localeCompare(String(right.id || ""));
+    });
+  }, [issuedCharges, issuedSort]);
+
+  const selectIssuedSort = (key) => {
+    setIssuedSort((current) => current.key === key
+      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+      : { key, direction: key === "name" ? "asc" : "desc" });
+  };
+
+  const loadIssuedCharges = useStableCallback(async () => {
     if (!currentUser?.empresa_id) return;
     setLoadingIssued(true);
     setError("");
@@ -180,7 +207,7 @@ export default function WalletBulkIssuanceDialog({ open, onOpenChange, wallets, 
       const result = await bancoInter({
         action: "listWalletIssuedCharges",
         empresa_id: currentUser.empresa_id,
-        sort_by: sortBy,
+        sort_by: "issued_at",
       });
       setIssuedCharges(Array.isArray(result?.charges) ? result.charges : []);
     } catch (loadError) {
@@ -197,7 +224,7 @@ export default function WalletBulkIssuanceDialog({ open, onOpenChange, wallets, 
     setStep(1);
     setError("");
     setIssueSummary(null);
-    loadIssuedCharges("issued_at");
+    loadIssuedCharges();
   }, [open, currentUser?.empresa_id, loadIssuedCharges]);
 
   const resetNewIssue = () => {
@@ -212,7 +239,7 @@ export default function WalletBulkIssuanceDialog({ open, onOpenChange, wallets, 
   const selectView = (nextView) => {
     setView(nextView);
     setError("");
-    if (nextView === "issued") loadIssuedCharges(issuedSort);
+    if (nextView === "issued") loadIssuedCharges();
   };
 
   const toggleWallet = (walletId) => {
@@ -277,8 +304,8 @@ export default function WalletBulkIssuanceDialog({ open, onOpenChange, wallets, 
 
     setIssuing(false);
     setIssueSummary({ successful, failed });
-    await loadIssuedCharges("issued_at");
-    setIssuedSort("issued_at");
+    await loadIssuedCharges();
+    setIssuedSort({ key: "issued_at", direction: "desc" });
     setView("issued");
     onCompleted?.({ successful, failed });
   };
@@ -317,7 +344,7 @@ export default function WalletBulkIssuanceDialog({ open, onOpenChange, wallets, 
         motivo_cancelamento: "Cancelada pela emissão em massa",
       });
       setPendingAction(null);
-      await loadIssuedCharges(issuedSort);
+      await loadIssuedCharges();
     } catch (actionError) {
       setFeedback((current) => ({ ...current, [charge.id]: { type: "error", message: actionError?.message || "Não foi possível concluir a ação." } }));
       setPendingAction(null);
@@ -371,17 +398,22 @@ export default function WalletBulkIssuanceDialog({ open, onOpenChange, wallets, 
                   ) : null}
                 </div>
                 <div className="flex items-center gap-2">
-                  <Select value={issuedSort} onValueChange={(value) => { setIssuedSort(value); loadIssuedCharges(value); }}>
-                    <SelectTrigger className="h-9 min-w-0 flex-1 rounded-xl border-slate-200 bg-slate-50 text-xs shadow-none sm:w-[210px] sm:flex-none">
+                  <Select value={issuedSort.key} onValueChange={selectIssuedSort}>
+                    <SelectTrigger aria-label="Ordenar cobranças" className="h-9 min-w-0 flex-1 rounded-xl border-slate-200 bg-slate-50 text-xs shadow-none lg:hidden">
                       <ListFilter className="mr-2 h-3.5 w-3.5" />
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="issued_at">Emissão mais recente</SelectItem>
-                      <SelectItem value="due_date">Vencimento mais próximo</SelectItem>
+                      <SelectItem value="name">Nome</SelectItem>
+                      <SelectItem value="due_date">Vencimento</SelectItem>
+                      <SelectItem value="issued_at">Emissão</SelectItem>
+                      <SelectItem value="amount">Valor</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => loadIssuedCharges(issuedSort)} disabled={loadingIssued} aria-label="Atualizar cobranças">
+                  <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0 rounded-xl lg:hidden" onClick={() => selectIssuedSort(issuedSort.key)} aria-label={`Inverter ordem: ${issuedSort.direction === "asc" ? "crescente" : "decrescente"}`}>
+                    {issuedSort.direction === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                  </Button>
+                  <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0 rounded-xl" onClick={() => loadIssuedCharges()} disabled={loadingIssued} aria-label="Atualizar cobranças">
                     <RefreshCw className={`h-3.5 w-3.5 ${loadingIssued ? "animate-spin" : ""}`} />
                   </Button>
                 </div>
@@ -393,7 +425,7 @@ export default function WalletBulkIssuanceDialog({ open, onOpenChange, wallets, 
                 ) : error ? (
                   <div className="mx-auto flex min-h-[280px] max-w-md flex-col items-center justify-center text-center">
                     <p className="text-sm font-semibold text-red-700">{error}</p>
-                    <Button variant="outline" className="mt-4 rounded-full" onClick={() => loadIssuedCharges(issuedSort)}>Tentar novamente</Button>
+                    <Button variant="outline" className="mt-4 rounded-full" onClick={() => loadIssuedCharges()}>Tentar novamente</Button>
                   </div>
                 ) : issuedCharges.length === 0 ? (
                   <div className="flex min-h-[280px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white px-6 text-center">
@@ -404,10 +436,21 @@ export default function WalletBulkIssuanceDialog({ open, onOpenChange, wallets, 
                 ) : (
                   <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white">
                     <div className="hidden grid-cols-[minmax(180px,1.5fr)_120px_150px_120px_150px_44px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 lg:grid">
-                      <span>Nome da carteira</span><span>Vencimento</span><span>Data de emissão</span><span>Valor</span><span>Link cliente</span><span />
+                      {[
+                        ["name", "Nome da carteira"],
+                        ["due_date", "Vencimento"],
+                        ["issued_at", "Data de emissão"],
+                        ["amount", "Valor"],
+                      ].map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => selectIssuedSort(key)} aria-label={`Ordenar por ${label}${issuedSort.key === key ? `, ordem ${issuedSort.direction === "asc" ? "crescente" : "decrescente"}` : ""}`} className={`flex items-center gap-1 text-left hover:text-blue-700 ${issuedSort.key === key ? "text-blue-700" : ""}`}>
+                          {label}
+                          {issuedSort.key === key ? (issuedSort.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : null}
+                        </button>
+                      ))}
+                      <span>Link cliente</span><span />
                     </div>
                     <div className="divide-y divide-slate-100">
-                      {issuedCharges.map((charge) => {
+                      {sortedIssuedCharges.map((charge) => {
                         const status = getStatusPresentation(charge.status);
                         const openCharge = isChargeOpen(charge);
                         const chargeFeedback = feedback[charge.id];
